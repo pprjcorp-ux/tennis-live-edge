@@ -41,9 +41,12 @@ def main() -> int:
         "PRIVATE_ALLOWED_EMAILS",
         "ADMIN_API_TOKEN",
         "TENNIS_EDGE_CORS_ORIGIN",
-        "TENNIS_EDGE_RUNTIME_PROFILE=lean_atp",
-        "TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men",
-        "ENTERPRISE_FEEDS_ENABLED=false",
+        "TENNIS_EDGE_RUNTIME_PROFILE=enterprise",
+        "TENNIS_EDGE_COVERAGE=atp,wta,challenger,itf,grand_slam_men,grand_slam_women",
+        "SCORE_PRIMARY=sportradar",
+        "ODDS_PRIMARY=txodds",
+        "ODDS_ARCHIVE=betradar_uof",
+        "ENTERPRISE_FEEDS_ENABLED=true",
         "EXECUTION_ENABLED=false",
     ]:
         if key not in env_text:

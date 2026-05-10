@@ -8,7 +8,12 @@ from tennis_edge.services.repository import AnalysisRepository
 
 
 def test_lean_atp_profile_stays_under_budget_and_defers_enterprise_feeds() -> None:
-    settings = Settings(data_mode="sample", runtime_profile="lean_atp")
+    settings = Settings(
+        data_mode="sample",
+        runtime_profile="lean_atp",
+        enterprise_feeds_enabled=False,
+        coverage="atp_main,grand_slam_men",
+    )
     profile = cost_profile(settings)
 
     assert profile.active_plan == "lean_atp"

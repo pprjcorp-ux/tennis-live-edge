@@ -58,33 +58,33 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("EXECUTION_ENABLED", "TENNIS_EDGE_EXECUTION_ENABLED"),
     )
     runtime_profile: str = Field(
-        default="lean_atp",
+        default="enterprise",
         validation_alias=AliasChoices("TENNIS_EDGE_RUNTIME_PROFILE", "RUNTIME_PROFILE"),
     )
     coverage: str = Field(
-        default="atp_main,grand_slam_men",
+        default="atp,wta,challenger,itf,grand_slam_men,grand_slam_women",
         validation_alias=AliasChoices("TENNIS_EDGE_COVERAGE", "COVERAGE"),
     )
     score_primary: str = Field(
-        default="api_tennis",
+        default="sportradar",
         validation_alias=AliasChoices("SCORE_PRIMARY", "TENNIS_EDGE_SCORE_PRIMARY"),
     )
     odds_primary: str = Field(
-        default="odds_api_io_ws",
+        default="txodds",
         validation_alias=AliasChoices("ODDS_PRIMARY", "TENNIS_EDGE_ODDS_PRIMARY"),
     )
     odds_archive: str = Field(
-        default="theoddsapi",
+        default="betradar_uof",
         validation_alias=AliasChoices("ODDS_ARCHIVE", "TENNIS_EDGE_ODDS_ARCHIVE"),
     )
     enterprise_feeds_enabled: bool = Field(
-        default=False,
+        default=True,
         validation_alias=AliasChoices(
             "ENTERPRISE_FEEDS_ENABLED", "TENNIS_EDGE_ENTERPRISE_FEEDS_ENABLED"
         ),
     )
     monthly_budget_usd: float = Field(
-        default=500,
+        default=0,
         validation_alias=AliasChoices("TENNIS_EDGE_MONTHLY_BUDGET_USD", "MONTHLY_BUDGET_USD"),
     )
     data_mode: str = Field(
@@ -99,6 +99,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file="../../.env",
         extra="ignore",
+        populate_by_name=True,
     )
 
     @property

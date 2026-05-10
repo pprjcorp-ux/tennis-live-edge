@@ -8,7 +8,7 @@ Dashboard e backend para analisar jogos ATP/WTA, estimar probabilidade justa, co
 - Motor de features, modelo baseline, remocao de vig, threshold por contexto live/pre-match e stake Kelly fracionado.
 - Dashboard Next.js para jogos do dia, odds, probabilidade modelo, edge, confianca e status do sinal.
 - Modo enterprise local-first com adaptadores para Sportradar/Betradar, TXODDS, API-Tennis e Odds-API.io.
-- Perfil `lean_atp` para reduzir custo: ATP main-tour + Grand Slam masculino, API-Tennis, Odds-API.io WebSocket e TheOddsAPI archive, com Sportradar/TXODDS desativados ate prova de valor.
+- Branch `enterprise` usa Sportradar/Betradar/TXODDS como feeds primarios, com API-Tennis, Odds-API.io e TheOddsAPI como fallback/archive.
 - Replay deterministico, backtest com gate de promocao de modelo e endpoints administrativos protegidos por `ADMIN_API_TOKEN`.
 - Schema Postgres/TimescaleDB event-sourced para payloads brutos, score/odds ticks, point events, suspensoes, latencia, predicoes, sinais, paper orders e futura execucao.
 
@@ -27,14 +27,15 @@ npm run dev
 Backend: `http://localhost:8000`  
 Dashboard: `http://localhost:3000`
 
-Sem chaves, o sistema usa `TENNIS_EDGE_DATA_MODE=sample`. Para dados reais, preencha `.env` com feeds pagos e defina:
+Sem chaves, o sistema usa `TENNIS_EDGE_DATA_MODE=sample`. Para dados reais enterprise, preencha `.env` com feeds pagos e defina:
 
 - `SPORTRADAR_API_KEY`, `BETRADAR_UOF_TOKEN`, `TXODDS_USER`, `TXODDS_PASSWORD`
-- `API_TENNIS_KEY`, `ODDS_API_IO_KEY`, `THE_ODDS_API_KEY` para o perfil lean
+- `API_TENNIS_KEY`, `ODDS_API_IO_KEY`, `THE_ODDS_API_KEY` para fallback/archive
 - `ADMIN_API_TOKEN` para replay/backtest/promocao
-- `TENNIS_EDGE_RUNTIME_PROFILE=lean_atp`, `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men`
-- `SCORE_PRIMARY=api_tennis`, `ODDS_PRIMARY=odds_api_io_ws`, `ODDS_ARCHIVE=theoddsapi`
-- `ENTERPRISE_FEEDS_ENABLED=false`
+- `TENNIS_EDGE_RUNTIME_PROFILE=enterprise`
+- `TENNIS_EDGE_COVERAGE=atp,wta,challenger,itf,grand_slam_men,grand_slam_women`
+- `SCORE_PRIMARY=sportradar`, `ODDS_PRIMARY=txodds`, `ODDS_ARCHIVE=betradar_uof`
+- `ENTERPRISE_FEEDS_ENABLED=true`
 - `TENNIS_EDGE_CORS_ORIGIN=http://localhost:3000,https://edge.<domain>`
 - `EXECUTION_ENABLED=false`
 

@@ -28,7 +28,7 @@ def test_v1_live_matches_and_provider_health() -> None:
     assert len(matches.json()) >= 1
     assert {item["provider"] for item in health.json()} >= {"sportradar", "txodds"}
     assert all("cost_tier" in item for item in health.json())
-    assert cost_profile.json()["active_plan"] == "lean_atp"
+    assert cost_profile.json()["active_plan"] == "enterprise"
     assert cost_report.json()["estimated_monthly_spend_usd"] <= 500
 
 

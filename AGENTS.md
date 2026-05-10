@@ -51,7 +51,7 @@ Backend:
 - `EXECUTION_ENABLED=false` must stay false.
 - Sample/replay mode works without paid data.
 - Live adapters are scaffolded for API-Tennis, Odds-API.io, Sportradar/TXODDS/Betradar payloads, but full production feed wiring depends on paid credentials/contracts and final provider payload validation.
-- `lean_atp` is the active cost-control profile: ATP main-tour + men's Grand Slam singles can generate entries; WTA, Challenger, ITF, doubles, juniors, and exhibitions are monitor-only or skipped by coverage gate.
+- This branch is the `enterprise` version: Sportradar is the score primary, TXODDS is the low-latency odds primary, Betradar UOF is the odds archive/market-state feed, and API-Tennis/Odds-API.io/TheOddsAPI remain fallback/archive adapters.
 - Provider health now includes cost tier, coverage scope, quota fields, and last billable call metadata.
 - Daily cost reporting is available at `GET /api/v1/cost-report/daily`; cost profile is available at `GET /api/v1/cost-profile`.
 
@@ -59,7 +59,7 @@ Frontend:
 
 - Next.js App Router dashboard is running.
 - It shows live board, provider health, active signals, match detail, replay/backtest lab.
-- It shows the `lean_atp` cost profile, projected monthly spend, skipped matches, WebSocket uptime, and cost per signal.
+- It shows the `enterprise` cost profile, provider health, custom-quote placeholders, skipped matches, WebSocket uptime, and cost per signal.
 - Fetches include `credentials: "include"` for Cloudflare Access compatibility.
 - Replay/backtest lab asks for the local admin token.
 - shadcn/Tailwind v4 was initialized in `apps/web`:
@@ -159,6 +159,12 @@ CLOUDFLARE_TUNNEL_TOKEN=
 PRIVATE_ALLOWED_EMAILS=you@email.com
 ADMIN_API_TOKEN=<random-hex-secret>
 EXECUTION_ENABLED=false
+TENNIS_EDGE_RUNTIME_PROFILE=enterprise
+TENNIS_EDGE_COVERAGE=atp,wta,challenger,itf,grand_slam_men,grand_slam_women
+SCORE_PRIMARY=sportradar
+ODDS_PRIMARY=txodds
+ODDS_ARCHIVE=betradar_uof
+ENTERPRISE_FEEDS_ENABLED=true
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 TENNIS_EDGE_CORS_ORIGIN=http://localhost:3000,https://edge.example.com
 DATABASE_URL=postgresql://tennis:tennis@localhost:5432/tennis_edge
@@ -180,8 +186,8 @@ Do not expose `.env` or secrets to the browser bundle. Only `NEXT_PUBLIC_*` can 
 When the user returns, likely next requests:
 
 1. Provide paid provider credentials/API contracts.
-2. Replace sample/replay mode with real live ingestion for API-Tennis, Odds-API.io WebSocket, and TheOddsAPI first.
-3. Keep Sportradar, Betradar UOF, and TXODDS disabled until lean profile CLV/ROI proves the extra spend.
+2. Replace sample/replay mode with real live ingestion for Sportradar, TXODDS, and Betradar UOF first.
+3. Keep API-Tennis, Odds-API.io, and TheOddsAPI as fallback/archive feeds for validation and redundancy.
 4. Configure Cloudflare domain:
    - `edge.<domain>` -> local dashboard at `localhost:3000`
    - `api.edge.<domain>` -> local API at `localhost:8000`

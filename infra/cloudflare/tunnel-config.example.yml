@@ -1,0 +1,9 @@
+tunnel: tennis-live-edge
+credentials-file: /Users/ppfahd/.cloudflared/tennis-live-edge.json
+
+ingress:
+  - hostname: edge.example.com
+    service: http://localhost:3000
+  - hostname: api.edge.example.com
+    service: http://localhost:8000
+  - service: http_status:404

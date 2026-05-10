@@ -1,0 +1,14 @@
+{
+  "name": "tennis-live-edge",
+  "private": true,
+  "scripts": {
+    "web:dev": "npm --prefix apps/web run dev",
+    "web:build": "npm --prefix apps/web run build",
+    "api:dev": "cd services/api && ../../.venv/bin/uvicorn tennis_edge.main:app --host 0.0.0.0 --port 8000 --reload",
+    "api:test": "cd services/api && ../../.venv/bin/pytest",
+    "dev": "concurrently \"npm run api:dev\" \"npm run web:dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

@@ -1,0 +1,58 @@
+from math import exp, log
+
+from tennis_edge.domain import Confidence, FeatureVector, Match, Prediction
+
+
+def _sigmoid(value: float) -> float:
+    return 1 / (1 + exp(-value))
+
+
+def _logit(probability: float) -> float:
+    clipped = min(0.98, max(0.02, probability))
+    return log(clipped / (1 - clipped))
+
+
+def _elo_probability(diff: float) -> float:
+    return 1 / (1 + 10 ** (-diff / 400))
+
+
+def predict_match(match: Match, features: FeatureVector) -> Prediction:
+    base_prob = _elo_probability(features.elo_diff)
+    score = _logit(base_prob)
+    score += features.ranking_diff * 0.003
+    score += features.form_diff * 0.75
+    score -= features.fatigue_diff * 0.35
+    score += features.live_score_pressure
+    score *= 0.86 + (features.data_quality * 0.14)
+
+    p1 = min(0.97, max(0.03, _sigmoid(score)))
+    p2 = 1 - p1
+
+    certainty = abs(p1 - 0.5)
+    data_penalty = features.market_volatility * 0.08 + (1 - features.data_quality) * 0.18
+    confidence_score = max(0, certainty - data_penalty)
+    if confidence_score >= 0.22:
+        confidence = Confidence.HIGH
+    elif confidence_score >= 0.1:
+        confidence = Confidence.MEDIUM
+    else:
+        confidence = Confidence.LOW
+
+    explanations = [
+        f"Surface Elo diff: {features.elo_diff:+.0f}",
+        f"Form diff: {features.form_diff:+.2f}",
+        f"Data quality: {features.data_quality:.2f}",
+    ]
+    if match.state.status == "live":
+        explanations.append(f"Live score pressure: {features.live_score_pressure:+.2f}")
+    if features.market_volatility > 0.5:
+        explanations.append("Odds feed latency/volatility elevated")
+
+    return Prediction(
+        match_id=match.id,
+        p1_win_prob=round(p1, 4),
+        p2_win_prob=round(p2, 4),
+        confidence=confidence,
+        mode="live" if match.state.status == "live" else "prematch",
+        explanations=explanations,
+    )

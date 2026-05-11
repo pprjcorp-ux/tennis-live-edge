@@ -46,8 +46,63 @@ def test_v1_replay_and_backtest() -> None:
     assert "brier_score" in backtest.json()
 
 
+def test_v1_execution_endpoints_are_safe_by_default() -> None:
+    status = client.get("/api/v1/execution/status")
+    bankroll = client.get("/api/v1/bankroll")
+    signals = client.get("/api/v1/signals/live").json()
+    entry = next(signal for signal in signals if signal["status"] == "Entrada")
+    paper = client.post(
+        "/api/v1/orders/paper",
+        headers=ADMIN_HEADERS,
+        json={"signal_id": entry["id"]},
+    )
+    submit = client.post(
+        "/api/v1/orders/submit",
+        headers=ADMIN_HEADERS,
+        json={"signal_id": entry["id"]},
+    )
+    orders = client.get("/api/v1/orders")
+
+    assert status.status_code == 200
+    assert status.json()["can_submit_real_orders"] is False
+    assert bankroll.status_code == 200
+    assert bankroll.json()["execution_stage"] == "paper"
+    assert paper.status_code == 200
+    assert paper.json()["status"] == "paper"
+    assert submit.status_code == 200
+    assert submit.json()["status"] == "execution_blocked"
+    assert orders.status_code == 200
+    assert len(orders.json()) >= 2
+
+
+def test_v1_learning_promotion_rejects_bad_candidate() -> None:
+    response = client.post(
+        "/api/v1/models/promote-from-learning",
+        headers=ADMIN_HEADERS,
+        json={
+            "candidate_model_version": "bad_candidate",
+            "roi": 0.04,
+            "clv": -0.01,
+            "brier_score": 0.21,
+            "log_loss": 0.6,
+            "calibration_error": 0.03,
+            "max_drawdown": 0.22,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["promoted"] is False
+    assert "CLV" in " ".join(response.json()["reasons"])
+
+
 def test_operational_endpoints_require_token() -> None:
     response = client.post("/api/v1/replay/run", json={"match_id": "match_atp_002"})
+
+    assert response.status_code == 401
+
+
+def test_execution_submit_requires_token() -> None:
+    response = client.post("/api/v1/orders/submit", json={"signal_id": "missing"})
 
     assert response.status_code == 401
 

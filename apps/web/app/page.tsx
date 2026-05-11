@@ -16,21 +16,32 @@ import {
   Zap
 } from "lucide-react";
 import {
+  createPaperOrder,
   getCostProfile,
+  getBankroll,
   getDailyMetrics,
   getDailyCostReport,
+  getExecutionStatus,
   getLiveSignals,
+  getOrders,
   getProviderHealth,
   getTodayMatches,
+  promoteFromLearning,
   runBacktest,
-  runReplay
+  runReplay,
+  setKillSwitch,
+  submitOrder
 } from "@/lib/api";
 import type {
   BacktestMetrics,
+  BankrollSnapshot,
   CostProfile,
   DailyMetrics,
   DailyCostReport,
+  ExecutionOrder,
+  ExecutionStatus,
   MatchAnalysis,
+  ModelPromotionDecision,
   ProviderHealth,
   ReplayRunResult,
   Signal
@@ -67,11 +78,15 @@ export default function Page() {
   const [metrics, setMetrics] = useState<DailyMetrics | null>(null);
   const [costProfile, setCostProfile] = useState<CostProfile | null>(null);
   const [costReport, setCostReport] = useState<DailyCostReport | null>(null);
+  const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | null>(null);
+  const [bankroll, setBankroll] = useState<BankrollSnapshot | null>(null);
+  const [orders, setOrders] = useState<ExecutionOrder[]>([]);
   const [health, setHealth] = useState<ProviderHealth[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [replay, setReplay] = useState<ReplayRunResult | null>(null);
   const [backtest, setBacktest] = useState<BacktestMetrics | null>(null);
+  const [promotion, setPromotion] = useState<ModelPromotionDecision | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,10 +106,18 @@ export default function Page() {
         getCostProfile(),
         getDailyCostReport()
       ]);
+      const [nextExecutionStatus, nextBankroll, nextOrders] = await Promise.all([
+        getExecutionStatus(),
+        getBankroll(),
+        getOrders()
+      ]);
       setMatches(nextMatches);
       setMetrics(nextMetrics);
       setCostProfile(nextCostProfile);
       setCostReport(nextCostReport);
+      setExecutionStatus(nextExecutionStatus);
+      setBankroll(nextBankroll);
+      setOrders(nextOrders);
       setHealth(nextHealth);
       setSignals(nextSignals);
       setSelectedMatchId((current) => current ?? nextMatches[0]?.match.id ?? null);
@@ -139,6 +162,77 @@ export default function Page() {
     }
   }
 
+  function requireAdminToken() {
+    if (!adminToken.trim()) {
+      setError("Informe o ADMIN_API_TOKEN para acoes operacionais.");
+      return null;
+    }
+    return adminToken.trim();
+  }
+
+  async function triggerPaperOrder() {
+    const token = requireAdminToken();
+    const signal = selected ? bestSignal(selected) : null;
+    if (!token || !signal) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const order = await createPaperOrder(signal.id, token);
+      setOrders((current) => [order, ...current]);
+      setBankroll(await getBankroll());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Paper order failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function triggerSubmitOrder() {
+    const token = requireAdminToken();
+    const signal = selected ? bestSignal(selected) : null;
+    if (!token || !signal) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const order = await submitOrder(signal.id, token);
+      setOrders((current) => [order, ...current]);
+      setExecutionStatus(await getExecutionStatus());
+      setBankroll(await getBankroll());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Submit order failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function triggerKillSwitch(enabled: boolean) {
+    const token = requireAdminToken();
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setExecutionStatus(await setKillSwitch(enabled, token));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kill switch update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function triggerLearningPromotion() {
+    const token = requireAdminToken();
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setPromotion(await promoteFromLearning(token));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Learning promotion failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     load();
     const id = window.setInterval(load, 15000);
@@ -154,6 +248,8 @@ export default function Page() {
     () => signals.filter((signal) => signal.status === "Entrada"),
     [signals]
   );
+
+  const selectedSignal = selected ? bestSignal(selected) : null;
 
   return (
     <main className="shell">
@@ -321,6 +417,52 @@ export default function Page() {
           <section className="panel">
             <div className="panelHeader">
               <div>
+                <p className="eyebrow">Betfair execution</p>
+                <h2>{executionStatus?.stage ?? "paper"}</h2>
+              </div>
+              <ShieldCheck size={20} />
+            </div>
+            <div className="executionGrid">
+              <span>Venue</span>
+              <strong>{executionStatus?.venue ?? "betfair"}</strong>
+              <span>Real enabled</span>
+              <strong>{executionStatus?.can_submit_real_orders ? "ready" : "blocked"}</strong>
+              <span>Bankroll</span>
+              <strong>
+                {bankroll ? `${bankroll.base_currency} ${bankroll.bankroll_amount.toFixed(0)}` : "-"}
+              </strong>
+              <span>Open exposure</span>
+              <strong>
+                {bankroll ? `${bankroll.base_currency} ${bankroll.open_exposure.toFixed(0)}` : "-"}
+              </strong>
+              <span>CLV</span>
+              <strong>{bankroll?.clv === null || bankroll?.clv === undefined ? "-" : pct(bankroll.clv)}</strong>
+            </div>
+            <div className="executionWarnings">
+              {executionStatus?.reasons.slice(0, 3).map((reason) => (
+                <span key={reason}>{reason}</span>
+              ))}
+            </div>
+            <div className="executionActions">
+              <button onClick={triggerPaperOrder} disabled={busy || !selectedSignal}>
+                Paper order
+              </button>
+              <button onClick={triggerSubmitOrder} disabled={busy || !selectedSignal}>
+                Submit Betfair
+              </button>
+              <button
+                className={executionStatus?.kill_switch_enabled ? "dangerGhost" : ""}
+                onClick={() => triggerKillSwitch(!executionStatus?.kill_switch_enabled)}
+                disabled={busy}
+              >
+                {executionStatus?.kill_switch_enabled ? "Reset kill" : "Kill switch"}
+              </button>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panelHeader">
+              <div>
                 <p className="eyebrow">Provider health</p>
                 <h2>Feeds enterprise</h2>
               </div>
@@ -432,6 +574,9 @@ export default function Page() {
             <button onClick={triggerBacktest} disabled={busy}>
               Run backtest
             </button>
+            <button onClick={triggerLearningPromotion} disabled={busy}>
+              Promote learning
+            </button>
           </div>
           <div className="labResults">
             {replay ? (
@@ -455,6 +600,36 @@ export default function Page() {
                 </span>
               </div>
             ) : null}
+            {promotion ? (
+              <div className="labCard">
+                <strong>{promotion.candidate_model_version}</strong>
+                <span>
+                  ROI {pct(promotion.metrics.roi)} · CLV {pct(promotion.metrics.clv)} ·
+                  Drawdown {pct(promotion.metrics.max_drawdown)}
+                </span>
+                <span className={promotion.promoted ? "status statusEntry" : "status statusBlocked"}>
+                  {promotion.promoted ? "learning-promoted" : "learning-blocked"}
+                </span>
+              </div>
+            ) : null}
+            <div className="orderJournal">
+              {orders.slice(0, 5).map((order) => (
+                <div className="orderRow" key={order.id}>
+                  <div>
+                    <strong>{order.player_name}</strong>
+                    <span>
+                      {order.venue} · {order.side} · odd {order.requested_odds.toFixed(2)}
+                    </span>
+                  </div>
+                  <span className={order.status === "execution_blocked" ? "status statusBlocked" : "status statusMonitor"}>
+                    {order.status}
+                  </span>
+                  <strong>
+                    {bankroll?.base_currency ?? "$"} {order.stake_amount.toFixed(0)}
+                  </strong>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       </section>

@@ -42,6 +42,14 @@ Backend:
   - `GET /api/v1/matches/{match_id}`
   - `GET /api/v1/signals/live`
   - `GET /api/v1/provider-health`
+  - `GET /api/v1/execution/status`
+  - `GET /api/v1/bankroll`
+  - `GET /api/v1/orders`
+  - `POST /api/v1/orders/paper`
+  - `POST /api/v1/orders/submit`
+  - `POST /api/v1/orders/{order_id}/cancel`
+  - `POST /api/v1/execution/kill-switch`
+  - `POST /api/v1/models/promote-from-learning`
   - `POST /api/v1/replay/run`
   - `POST /api/v1/backtests/run`
   - `GET /api/v1/backtests/{run_id}`
@@ -49,6 +57,8 @@ Backend:
 - Replay/backtest/model promotion endpoints require `x-admin-token`.
 - `ADMIN_API_TOKEN` is generated in local `.env`; do not print it in chat.
 - `EXECUTION_ENABLED=false` must stay false.
+- Execution is Betfair-first and deterministic: paper orders work in sample mode; real submission must stay blocked unless `EXECUTION_ENABLED=true`, `EXECUTION_STAGE` is `tiny_real` or `scaled`, Betfair credentials are configured, `BETFAIR_LIVE_KEY_APPROVED=true`, and the kill switch is off.
+- No LLM, Cloudflare Agent, OpenClaw agent, browser automation, scraping, or geolocation workaround is allowed to place bets directly. Agents may only explain, review, monitor, or call internal APIs that enforce deterministic gates.
 - Sample/replay mode works without paid data.
 - Live adapters are scaffolded for API-Tennis, Odds-API.io, Sportradar/TXODDS/Betradar payloads, but full production feed wiring depends on paid credentials/contracts and final provider payload validation.
 - This branch is the `enterprise` version: Sportradar is the score primary, TXODDS is the low-latency odds primary, Betradar UOF is the odds archive/market-state feed, and API-Tennis/Odds-API.io/TheOddsAPI remain fallback/archive adapters.
@@ -59,7 +69,9 @@ Frontend:
 
 - Next.js App Router dashboard is running.
 - It shows live board, provider health, active signals, match detail, replay/backtest lab.
-- It shows the `enterprise` cost profile, provider health, custom-quote placeholders, skipped matches, WebSocket uptime, and cost per signal.
+- It shows enterprise tabs for Data Health, Model Lab, Paper Trading, Entity Resolution, and Risk/Bankroll.
+- It shows the `enterprise_roi_clv` cost profile, projected monthly spend, provider cursors, model registry, calibration buckets, paper ROI/CLV, and entity conflicts.
+- It shows Betfair execution stage, bankroll, exposure, kill-switch state, order journal, and learning promotion result.
 - Fetches include `credentials: "include"` for Cloudflare Access compatibility.
 - Replay/backtest lab asks for the local admin token.
 - shadcn/Tailwind v4 was initialized in `apps/web`:
@@ -159,17 +171,32 @@ CLOUDFLARE_TUNNEL_TOKEN=
 PRIVATE_ALLOWED_EMAILS=you@email.com
 ADMIN_API_TOKEN=<random-hex-secret>
 EXECUTION_ENABLED=false
-TENNIS_EDGE_RUNTIME_PROFILE=enterprise
-TENNIS_EDGE_COVERAGE=atp,wta,challenger,itf,grand_slam_men,grand_slam_women
-SCORE_PRIMARY=sportradar
-ODDS_PRIMARY=txodds
-ODDS_ARCHIVE=betradar_uof
-ENTERPRISE_FEEDS_ENABLED=true
+EXECUTION_VENUE=betfair
+EXECUTION_STAGE=paper
+REAL_EXECUTION_HARD_BLOCK=true
+MODEL_CHAMPION_VERSION=baseline_v0
+MIN_PAPER_SIGNALS_FOR_REAL_REVIEW=500
+MIN_PAPER_DAYS_FOR_REAL_REVIEW=60
+ODDS_WS_RESYNC_REQUIRED_BLOCKS_SIGNALS=true
+MODEL_PROMOTION_REQUIRE_CLV=true
+BETFAIR_APP_KEY=
+BETFAIR_USERNAME=
+BETFAIR_CERT_PATH=
+BETFAIR_KEY_PATH=
+BETFAIR_PASSWORD_SECRET_REF=
+BETFAIR_LIVE_KEY_APPROVED=false
+BANKROLL_BASE_CURRENCY=USD
+BANKROLL_STARTING_BALANCE=10000
+MAX_ORDER_STAKE_FRACTION=0.015
+MAX_OPEN_EXPOSURE_FRACTION=0.03
+DAILY_LOSS_LIMIT_FRACTION=0.005
+WEEKLY_DRAWDOWN_LIMIT_FRACTION=0.015
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 TENNIS_EDGE_CORS_ORIGIN=http://localhost:3000,https://edge.example.com
 DATABASE_URL=postgresql://tennis:tennis@localhost:5432/tennis_edge
 REDIS_URL=redis://localhost:6379/0
 NATS_URL=nats://localhost:4222
+TENNIS_EDGE_RUNTIME_PROFILE=enterprise_roi_clv
 TENNIS_EDGE_DATA_MODE=sample
 ```
 
@@ -198,7 +225,7 @@ When the user returns, likely next requests:
    - Redis
    - NATS JetStream
 7. Add historical replay/backtest ingestion and model promotion gates using real historical data.
-8. Keep auto-betting disabled unless explicitly starting a separate compliance/execution task.
+8. Wire the live Betfair connector only after legal/KYC/live app key checks are complete; until then keep sample/paper execution as the only active path.
 
 ## Verification Checklist Before Saying Done
 

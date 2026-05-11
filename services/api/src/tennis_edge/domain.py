@@ -48,6 +48,28 @@ class Provider(StrEnum):
     SAMPLE = "sample"
 
 
+class ExecutionVenue(StrEnum):
+    BETFAIR = "betfair"
+
+
+class ExecutionStage(StrEnum):
+    PAPER = "paper"
+    TINY_REAL = "tiny_real"
+    SCALED = "scaled"
+
+
+class OrderStatus(StrEnum):
+    PAPER = "paper"
+    PENDING = "pending"
+    EXECUTION_BLOCKED = "execution_blocked"
+    SUBMITTED = "submitted"
+    PARTIALLY_MATCHED = "partially_matched"
+    MATCHED = "matched"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
+    SETTLED = "settled"
+
+
 class MarketStatus(StrEnum):
     OPEN = "open"
     SUSPENDED = "suspended"
@@ -284,6 +306,108 @@ class BacktestMetrics(BaseModel):
     max_drawdown: float
     promoted: bool = False
     rejection_reason: str | None = None
+
+
+class BetfairOrderMapping(BaseModel):
+    market_id: str
+    selection_id: int
+    side: Literal["BACK", "LAY"] = "BACK"
+    limit_price: float = Field(gt=1)
+    stake_amount: float = Field(gt=0)
+    customer_order_ref: str
+    customer_strategy_ref: str = "tennis-edge"
+
+
+class ExecutionStatus(BaseModel):
+    execution_enabled: bool
+    venue: ExecutionVenue
+    stage: ExecutionStage
+    betfair_configured: bool
+    betfair_live_key_approved: bool
+    kill_switch_enabled: bool
+    can_submit_real_orders: bool
+    reasons: list[str]
+
+
+class BankrollSnapshot(BaseModel):
+    base_currency: str
+    bankroll_amount: float
+    available_amount: float
+    open_exposure: float
+    realized_pnl: float = 0
+    daily_pnl: float = 0
+    weekly_drawdown: float = 0
+    clv: float | None = None
+    execution_stage: ExecutionStage
+    max_order_stake_fraction: float
+    daily_loss_limit_fraction: float
+    weekly_drawdown_limit_fraction: float
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class OrderRequest(BaseModel):
+    signal_id: str
+    bankroll_amount: float | None = Field(default=None, gt=0)
+    requested_odds: float | None = Field(default=None, gt=1)
+    notes: str | None = None
+
+
+class CancelOrderResult(BaseModel):
+    order_id: str
+    status: OrderStatus
+    reason: str
+
+
+class KillSwitchRequest(BaseModel):
+    enabled: bool = True
+    reason: str = "manual"
+
+
+class ExecutionOrder(BaseModel):
+    id: str
+    signal_id: str
+    match_id: str
+    player_id: str
+    player_name: str
+    venue: ExecutionVenue
+    status: OrderStatus
+    side: Literal["BACK", "LAY"] = "BACK"
+    requested_odds: float
+    accepted_odds: float | None = None
+    stake_fraction: float
+    stake_amount: float
+    matched_stake: float = 0
+    average_price: float | None = None
+    external_order_id: str | None = None
+    customer_order_ref: str | None = None
+    customer_strategy_ref: str = "tennis-edge"
+    rejection_reason: str | None = None
+    settlement_status: str | None = None
+    pnl: float | None = None
+    clv: float | None = None
+    risk_snapshot: dict[str, Any] = Field(default_factory=dict)
+    audit: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class LearningPromotionRequest(BaseModel):
+    candidate_model_version: str = "ensemble_learning_candidate"
+    roi: float = 0.032
+    clv: float = 0.011
+    brier_score: float = 0.213
+    log_loss: float = 0.604
+    calibration_error: float = 0.031
+    max_drawdown: float = 0.11
+
+
+class ModelPromotionDecision(BaseModel):
+    run_id: str
+    candidate_model_version: str
+    promoted: bool
+    reasons: list[str]
+    metrics: BacktestMetrics
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ProviderHealth(BaseModel):

@@ -57,6 +57,76 @@ class Settings(BaseSettings):
         default=False,
         validation_alias=AliasChoices("EXECUTION_ENABLED", "TENNIS_EDGE_EXECUTION_ENABLED"),
     )
+    execution_venue: str = Field(
+        default="betfair",
+        validation_alias=AliasChoices("EXECUTION_VENUE", "TENNIS_EDGE_EXECUTION_VENUE"),
+    )
+    execution_stage: str = Field(
+        default="paper",
+        validation_alias=AliasChoices("EXECUTION_STAGE", "TENNIS_EDGE_EXECUTION_STAGE"),
+    )
+    bankroll_base_currency: str = Field(
+        default="USD",
+        validation_alias=AliasChoices("BANKROLL_BASE_CURRENCY", "TENNIS_EDGE_BANKROLL_BASE_CURRENCY"),
+    )
+    bankroll_starting_balance: float = Field(
+        default=10000,
+        validation_alias=AliasChoices(
+            "BANKROLL_STARTING_BALANCE", "TENNIS_EDGE_BANKROLL_STARTING_BALANCE"
+        ),
+    )
+    max_order_stake_fraction: float = Field(
+        default=0.015,
+        validation_alias=AliasChoices(
+            "MAX_ORDER_STAKE_FRACTION", "TENNIS_EDGE_MAX_ORDER_STAKE_FRACTION"
+        ),
+    )
+    max_open_exposure_fraction: float = Field(
+        default=0.03,
+        validation_alias=AliasChoices(
+            "MAX_OPEN_EXPOSURE_FRACTION", "TENNIS_EDGE_MAX_OPEN_EXPOSURE_FRACTION"
+        ),
+    )
+    daily_loss_limit_fraction: float = Field(
+        default=0.005,
+        validation_alias=AliasChoices(
+            "DAILY_LOSS_LIMIT_FRACTION", "TENNIS_EDGE_DAILY_LOSS_LIMIT_FRACTION"
+        ),
+    )
+    weekly_drawdown_limit_fraction: float = Field(
+        default=0.015,
+        validation_alias=AliasChoices(
+            "WEEKLY_DRAWDOWN_LIMIT_FRACTION", "TENNIS_EDGE_WEEKLY_DRAWDOWN_LIMIT_FRACTION"
+        ),
+    )
+    betfair_app_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BETFAIR_APP_KEY", "TENNIS_EDGE_BETFAIR_APP_KEY"),
+    )
+    betfair_username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BETFAIR_USERNAME", "TENNIS_EDGE_BETFAIR_USERNAME"),
+    )
+    betfair_cert_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BETFAIR_CERT_PATH", "TENNIS_EDGE_BETFAIR_CERT_PATH"),
+    )
+    betfair_key_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("BETFAIR_KEY_PATH", "TENNIS_EDGE_BETFAIR_KEY_PATH"),
+    )
+    betfair_password_secret_ref: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BETFAIR_PASSWORD_SECRET_REF", "TENNIS_EDGE_BETFAIR_PASSWORD_SECRET_REF"
+        ),
+    )
+    betfair_live_key_approved: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "BETFAIR_LIVE_KEY_APPROVED", "TENNIS_EDGE_BETFAIR_LIVE_KEY_APPROVED"
+        ),
+    )
     runtime_profile: str = Field(
         default="enterprise",
         validation_alias=AliasChoices("TENNIS_EDGE_RUNTIME_PROFILE", "RUNTIME_PROFILE"),

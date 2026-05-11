@@ -9,6 +9,17 @@ export type Provider =
   | "theoddsapi"
   | "sample";
 export type CompetitionLevel = "ATP" | "WTA" | "Challenger" | "WTA125" | "ITF";
+export type ExecutionStage = "paper" | "tiny_real" | "scaled";
+export type OrderStatus =
+  | "paper"
+  | "pending"
+  | "execution_blocked"
+  | "submitted"
+  | "partially_matched"
+  | "matched"
+  | "cancelled"
+  | "rejected"
+  | "settled";
 
 export type Player = {
   id: string;
@@ -179,6 +190,70 @@ export type DailyCostReport = {
   cost_per_positive_clv_signal_usd: number | null;
   watchlist_escalations: number;
   note: string;
+};
+
+export type ExecutionStatus = {
+  execution_enabled: boolean;
+  venue: "betfair";
+  stage: ExecutionStage;
+  betfair_configured: boolean;
+  betfair_live_key_approved: boolean;
+  kill_switch_enabled: boolean;
+  can_submit_real_orders: boolean;
+  reasons: string[];
+};
+
+export type BankrollSnapshot = {
+  base_currency: string;
+  bankroll_amount: number;
+  available_amount: number;
+  open_exposure: number;
+  realized_pnl: number;
+  daily_pnl: number;
+  weekly_drawdown: number;
+  clv: number | null;
+  execution_stage: ExecutionStage;
+  max_order_stake_fraction: number;
+  daily_loss_limit_fraction: number;
+  weekly_drawdown_limit_fraction: number;
+  updated_at: string;
+};
+
+export type ExecutionOrder = {
+  id: string;
+  signal_id: string;
+  match_id: string;
+  player_id: string;
+  player_name: string;
+  venue: "betfair";
+  status: OrderStatus;
+  side: "BACK" | "LAY";
+  requested_odds: number;
+  accepted_odds: number | null;
+  stake_fraction: number;
+  stake_amount: number;
+  matched_stake: number;
+  average_price: number | null;
+  external_order_id: string | null;
+  customer_order_ref: string | null;
+  customer_strategy_ref: string;
+  rejection_reason: string | null;
+  settlement_status: string | null;
+  pnl: number | null;
+  clv: number | null;
+  risk_snapshot: Record<string, unknown>;
+  audit: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type ModelPromotionDecision = {
+  run_id: string;
+  candidate_model_version: string;
+  promoted: boolean;
+  reasons: string[];
+  metrics: BacktestMetrics;
+  created_at: string;
 };
 
 export type ReplayRunResult = {

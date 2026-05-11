@@ -12,9 +12,9 @@ positive-EV signals with abstention and risk gates.
   Betfair execution architecture hard-blocked by default, OpenClaw Autopilot,
   provider health, replay/backtest lab, and private runtime docs.
 
-This branch is the `enterprise` profile. Real-money execution remains disabled
-by default and must not be enabled without a separate compliance/account/API
-activation task.
+This branch is the `budget` profile. It keeps the complete core architecture,
+but defaults to lean ATP coverage, cheaper feeds, strict abstention, and
+enterprise feeds disabled.
 
 ## Quick Start
 
@@ -43,13 +43,14 @@ Without paid keys the system runs in `TENNIS_EDGE_DATA_MODE=sample`.
 - [OpenClaw Autopilot](docs/openclaw-autopilot.md)
 - [Cloudflare private access](infra/cloudflare/README.md)
 
-## Enterprise Defaults
+## Budget Defaults
 
-Use `.env.example` as the contract. The important enterprise defaults are:
+Use `.env.example` as the contract. The important budget defaults are:
 
-- `TENNIS_EDGE_RUNTIME_PROFILE=enterprise_roi_clv`
+- `TENNIS_EDGE_RUNTIME_PROFILE=lean_atp`
 - `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men`
-- `ENTERPRISE_FEEDS_ENABLED=false` until paid contracts and payloads are validated
+- `TENNIS_EDGE_MONTHLY_BUDGET_USD=500`
+- `ENTERPRISE_FEEDS_ENABLED=false`
 - `EXECUTION_ENABLED=false`
 - `EXECUTION_STAGE=paper`
 - `REAL_EXECUTION_HARD_BLOCK=true`

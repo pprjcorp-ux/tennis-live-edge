@@ -75,17 +75,18 @@ def main() -> int:
         "OPENCLAW_CRITICAL_MODEL=gpt-5.5",
         "OPENCLAW_ROUTER_POLICY=cost_optimized",
         "TENNIS_EDGE_CORS_ORIGIN",
-        "TENNIS_EDGE_RUNTIME_PROFILE=enterprise_roi_clv",
+        "TENNIS_EDGE_RUNTIME_PROFILE=lean_atp",
         "TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men",
+        "TENNIS_EDGE_MONTHLY_BUDGET_USD=500",
         "ENTERPRISE_FEEDS_ENABLED=false",
         "EXECUTION_ENABLED=false",
     ]:
         if key not in env_text:
             errors.append(f".env.example missing {key}")
     if os.environ.get("EXECUTION_ENABLED", "false").lower() != "false":
-        errors.append("EXECUTION_ENABLED must remain false for enterprise v1")
+        errors.append("EXECUTION_ENABLED must remain false for budget v1")
     if os.environ.get("REAL_EXECUTION_HARD_BLOCK", "true").lower() != "true":
-        errors.append("REAL_EXECUTION_HARD_BLOCK must remain true for paper-first enterprise phase")
+        errors.append("REAL_EXECUTION_HARD_BLOCK must remain true for paper-first budget phase")
     for path in [openclaw_skill, openclaw_script, openclaw_policy]:
         if not path.exists():
             errors.append(f"OpenClaw artifact missing {path.relative_to(ROOT)}")

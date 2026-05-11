@@ -208,7 +208,7 @@ class Settings(BaseSettings):
         ),
     )
     runtime_profile: str = Field(
-        default="enterprise_roi_clv",
+        default="lean_atp",
         validation_alias=AliasChoices("TENNIS_EDGE_RUNTIME_PROFILE", "RUNTIME_PROFILE"),
     )
     coverage: str = Field(
@@ -234,7 +234,7 @@ class Settings(BaseSettings):
         ),
     )
     monthly_budget_usd: float = Field(
-        default=6000,
+        default=500,
         validation_alias=AliasChoices("TENNIS_EDGE_MONTHLY_BUDGET_USD", "MONTHLY_BUDGET_USD"),
     )
     data_mode: str = Field(

@@ -68,6 +68,17 @@ def cost_profile(settings: Settings) -> CostProfile:
         Provider.THE_ODDS_API,
     ]
     enabled = lean_providers + (enterprise_providers if settings.enterprise_feeds_enabled else [])
+    notes = (
+        [
+            "Lean ATP profile uses API-Tennis, Odds-API.io and TheOddsAPI while enterprise feeds stay disabled.",
+            "Coverage gates restrict actionable signals to ATP main tour and men's Grand Slam singles.",
+        ]
+        if settings.runtime_profile == "lean_atp"
+        else [
+            "Enterprise profile budgets for Sportradar, Betradar UOF and TXODDS, but adapters stay feature-flagged until credentials/contracts are validated.",
+            "Paper-first mode records CLV/ROI before any real-money activation review.",
+        ]
+    )
     return CostProfile(
         active_plan=settings.runtime_profile,
         monthly_budget_usd=settings.monthly_budget_usd,
@@ -79,10 +90,7 @@ def cost_profile(settings: Settings) -> CostProfile:
         odds_primary=settings.odds_primary,
         odds_archive=settings.odds_archive,
         enterprise_feeds_enabled=settings.enterprise_feeds_enabled,
-        notes=[
-            "Enterprise profile budgets for Sportradar, Betradar UOF and TXODDS, but adapters stay feature-flagged until credentials/contracts are validated.",
-            "Paper-first mode records CLV/ROI before any real-money activation review.",
-        ],
+        notes=notes,
     )
 
 

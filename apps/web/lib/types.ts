@@ -10,6 +10,7 @@ export type Provider =
   | "sample";
 export type CompetitionLevel = "ATP" | "WTA" | "Challenger" | "WTA125" | "ITF";
 export type ExecutionStage = "paper" | "tiny_real" | "scaled";
+export type CursorStatus = "healthy" | "gap_detected" | "resync_required" | "resynced";
 export type OrderStatus =
   | "paper"
   | "pending"
@@ -82,8 +83,12 @@ export type Prediction = {
   match_id: string;
   p1_win_prob: number;
   p2_win_prob: number;
+  raw_p1_win_prob: number | null;
+  raw_p2_win_prob: number | null;
   confidence: Confidence;
   mode: "prematch" | "live";
+  model_version: string;
+  confidence_interval: [number, number] | null;
   explanations: string[];
   generated_at: string;
 };
@@ -198,6 +203,7 @@ export type ExecutionStatus = {
   stage: ExecutionStage;
   betfair_configured: boolean;
   betfair_live_key_approved: boolean;
+  real_execution_hard_block: boolean;
   kill_switch_enabled: boolean;
   can_submit_real_orders: boolean;
   reasons: string[];
@@ -279,4 +285,109 @@ export type BacktestMetrics = {
   max_drawdown: number;
   promoted: boolean;
   rejection_reason: string | null;
+};
+
+export type ProviderCursor = {
+  provider: Provider;
+  stream: string;
+  last_seq: number | null;
+  expected_next_seq: number | null;
+  status: CursorStatus;
+  gap_count: number;
+  resync_required: boolean;
+  last_message_at: string | null;
+  last_resync_at: string | null;
+  note: string;
+};
+
+export type DataQualitySnapshot = {
+  id: string;
+  provider: Provider;
+  feed: string;
+  score_completeness: number;
+  odds_completeness: number;
+  entity_resolution_rate: number;
+  sequence_health: number;
+  latency_ms: number | null;
+  stale_ticks: number;
+  duplicate_ticks: number;
+  blocked_signals: number;
+  generated_at: string;
+  notes: string[];
+};
+
+export type CanonicalEntityConflict = {
+  id: string;
+  entity_type: "player" | "match" | "tournament" | "market";
+  provider: Provider;
+  canonical_id: string | null;
+  candidate_id: string;
+  confidence: Confidence;
+  similarity: number;
+  reason: string;
+  source_payload_ids: string[];
+  created_at: string;
+};
+
+export type ModelRegistryEntry = {
+  model_version: string;
+  role: "champion" | "challenger" | "baseline" | "archived";
+  model_type: string;
+  feature_set: string;
+  training_window: Record<string, unknown>;
+  metrics: BacktestMetrics;
+  promoted: boolean;
+  promoted_at: string | null;
+  notes: string[];
+};
+
+export type CalibrationBucket = {
+  bucket: string;
+  lower_bound: number;
+  upper_bound: number;
+  predictions: number;
+  average_prediction: number;
+  observed_win_rate: number;
+  brier_score: number;
+  log_loss: number;
+};
+
+export type CalibrationReport = {
+  run_id: string;
+  model_version: string;
+  buckets: CalibrationBucket[];
+  brier_score: number;
+  log_loss: number;
+  calibration_error: number;
+  generated_at: string;
+};
+
+export type PaperSettlement = {
+  order_id: string;
+  status: OrderStatus;
+  result_win: boolean;
+  requested_odds: number;
+  average_price: number;
+  matched_stake: number;
+  gross_pnl: number;
+  commission: number;
+  net_pnl: number;
+  closing_odds: number;
+  clv: number;
+  settled_at: string;
+};
+
+export type PaperPerformance = {
+  orders: number;
+  settled_orders: number;
+  wins: number;
+  losses: number;
+  open_orders: number;
+  roi: number | null;
+  clv: number | null;
+  realized_pnl: number;
+  max_drawdown: number;
+  calibration_error: number | null;
+  readiness_status: "collecting" | "review_ready";
+  readiness_reasons: string[];
 };

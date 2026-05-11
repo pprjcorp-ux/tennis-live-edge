@@ -127,34 +127,72 @@ class Settings(BaseSettings):
             "BETFAIR_LIVE_KEY_APPROVED", "TENNIS_EDGE_BETFAIR_LIVE_KEY_APPROVED"
         ),
     )
+    real_execution_hard_block: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "REAL_EXECUTION_HARD_BLOCK", "TENNIS_EDGE_REAL_EXECUTION_HARD_BLOCK"
+        ),
+    )
+    model_champion_version: str = Field(
+        default="baseline_v0",
+        validation_alias=AliasChoices(
+            "MODEL_CHAMPION_VERSION", "TENNIS_EDGE_MODEL_CHAMPION_VERSION"
+        ),
+    )
+    min_paper_signals_for_real_review: int = Field(
+        default=500,
+        validation_alias=AliasChoices(
+            "MIN_PAPER_SIGNALS_FOR_REAL_REVIEW",
+            "TENNIS_EDGE_MIN_PAPER_SIGNALS_FOR_REAL_REVIEW",
+        ),
+    )
+    min_paper_days_for_real_review: int = Field(
+        default=60,
+        validation_alias=AliasChoices(
+            "MIN_PAPER_DAYS_FOR_REAL_REVIEW", "TENNIS_EDGE_MIN_PAPER_DAYS_FOR_REAL_REVIEW"
+        ),
+    )
+    odds_ws_resync_required_blocks_signals: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "ODDS_WS_RESYNC_REQUIRED_BLOCKS_SIGNALS",
+            "TENNIS_EDGE_ODDS_WS_RESYNC_REQUIRED_BLOCKS_SIGNALS",
+        ),
+    )
+    model_promotion_require_clv: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "MODEL_PROMOTION_REQUIRE_CLV", "TENNIS_EDGE_MODEL_PROMOTION_REQUIRE_CLV"
+        ),
+    )
     runtime_profile: str = Field(
-        default="enterprise",
+        default="enterprise_roi_clv",
         validation_alias=AliasChoices("TENNIS_EDGE_RUNTIME_PROFILE", "RUNTIME_PROFILE"),
     )
     coverage: str = Field(
-        default="atp,wta,challenger,itf,grand_slam_men,grand_slam_women",
+        default="atp_main,grand_slam_men",
         validation_alias=AliasChoices("TENNIS_EDGE_COVERAGE", "COVERAGE"),
     )
     score_primary: str = Field(
-        default="sportradar",
+        default="api_tennis",
         validation_alias=AliasChoices("SCORE_PRIMARY", "TENNIS_EDGE_SCORE_PRIMARY"),
     )
     odds_primary: str = Field(
-        default="txodds",
+        default="odds_api_io_ws",
         validation_alias=AliasChoices("ODDS_PRIMARY", "TENNIS_EDGE_ODDS_PRIMARY"),
     )
     odds_archive: str = Field(
-        default="betradar_uof",
+        default="theoddsapi",
         validation_alias=AliasChoices("ODDS_ARCHIVE", "TENNIS_EDGE_ODDS_ARCHIVE"),
     )
     enterprise_feeds_enabled: bool = Field(
-        default=True,
+        default=False,
         validation_alias=AliasChoices(
             "ENTERPRISE_FEEDS_ENABLED", "TENNIS_EDGE_ENTERPRISE_FEEDS_ENABLED"
         ),
     )
     monthly_budget_usd: float = Field(
-        default=0,
+        default=6000,
         validation_alias=AliasChoices("TENNIS_EDGE_MONTHLY_BUDGET_USD", "MONTHLY_BUDGET_USD"),
     )
     data_mode: str = Field(

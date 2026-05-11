@@ -136,6 +136,51 @@ SELECT create_hypertable('provider_latency', 'ingested_at', if_not_exists => TRU
 CREATE INDEX IF NOT EXISTS provider_latency_provider_idx
   ON provider_latency (provider, feed, ingested_at DESC);
 
+CREATE TABLE IF NOT EXISTS provider_cursors (
+  provider TEXT NOT NULL,
+  stream TEXT NOT NULL,
+  last_seq BIGINT,
+  expected_next_seq BIGINT,
+  status TEXT NOT NULL,
+  gap_count INTEGER NOT NULL DEFAULT 0,
+  resync_required BOOLEAN NOT NULL DEFAULT false,
+  last_message_at TIMESTAMPTZ,
+  last_resync_at TIMESTAMPTZ,
+  note TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (provider, stream)
+);
+
+CREATE TABLE IF NOT EXISTS data_quality_snapshots (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  feed TEXT NOT NULL,
+  score_completeness NUMERIC(8, 6) NOT NULL,
+  odds_completeness NUMERIC(8, 6) NOT NULL,
+  entity_resolution_rate NUMERIC(8, 6) NOT NULL,
+  sequence_health NUMERIC(8, 6) NOT NULL,
+  latency_ms INTEGER,
+  stale_ticks INTEGER NOT NULL DEFAULT 0,
+  duplicate_ticks INTEGER NOT NULL DEFAULT 0,
+  blocked_signals INTEGER NOT NULL DEFAULT 0,
+  notes JSONB NOT NULL DEFAULT '[]',
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS canonical_entity_conflicts (
+  id TEXT PRIMARY KEY,
+  entity_type TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  canonical_id TEXT,
+  candidate_id TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  similarity NUMERIC(8, 6) NOT NULL,
+  reason TEXT NOT NULL,
+  source_payload_ids JSONB NOT NULL DEFAULT '[]',
+  resolved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS feature_snapshots (
   id BIGSERIAL PRIMARY KEY,
   match_id TEXT NOT NULL REFERENCES matches(id),
@@ -160,6 +205,9 @@ CREATE TABLE IF NOT EXISTS prediction_snapshots (
   mode TEXT NOT NULL,
   p1_win_prob NUMERIC(8, 6) NOT NULL,
   p2_win_prob NUMERIC(8, 6) NOT NULL,
+  raw_p1_win_prob NUMERIC(8, 6),
+  raw_p2_win_prob NUMERIC(8, 6),
+  confidence_interval JSONB,
   confidence TEXT NOT NULL,
   feature_snapshot_id BIGINT REFERENCES feature_snapshots(id),
   explanations JSONB NOT NULL DEFAULT '[]',
@@ -202,6 +250,35 @@ CREATE TABLE IF NOT EXISTS paper_orders (
   clv NUMERIC(8, 6),
   status TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS paper_fills (
+  id BIGSERIAL PRIMARY KEY,
+  paper_order_id BIGINT REFERENCES paper_orders(id),
+  status TEXT NOT NULL,
+  requested_odds NUMERIC(8, 4) NOT NULL,
+  available_odds NUMERIC(8, 4) NOT NULL,
+  matched_stake NUMERIC(14, 2) NOT NULL,
+  average_price NUMERIC(8, 4) NOT NULL,
+  unmatched_stake NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  slippage NUMERIC(8, 4) NOT NULL DEFAULT 0,
+  commission_rate NUMERIC(8, 6) NOT NULL DEFAULT 0.02,
+  event_ts TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS paper_settlements (
+  id BIGSERIAL PRIMARY KEY,
+  paper_order_id BIGINT REFERENCES paper_orders(id),
+  result_win BOOLEAN NOT NULL,
+  requested_odds NUMERIC(8, 4) NOT NULL,
+  average_price NUMERIC(8, 4) NOT NULL,
+  matched_stake NUMERIC(14, 2) NOT NULL,
+  gross_pnl NUMERIC(14, 2) NOT NULL,
+  commission NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  net_pnl NUMERIC(14, 2) NOT NULL,
+  closing_odds NUMERIC(8, 4) NOT NULL,
+  clv NUMERIC(8, 6) NOT NULL,
+  settled_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS execution_orders (
@@ -260,6 +337,44 @@ CREATE TABLE IF NOT EXISTS model_promotion_decisions (
   reasons JSONB NOT NULL DEFAULT '[]',
   metrics JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS closing_line_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  match_id TEXT NOT NULL REFERENCES matches(id),
+  player_id TEXT NOT NULL REFERENCES players(id),
+  bookmaker TEXT NOT NULL,
+  closing_decimal_odds NUMERIC(8, 4) NOT NULL,
+  no_vig_probability NUMERIC(8, 6) NOT NULL,
+  source_ts TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS training_examples (
+  id TEXT PRIMARY KEY,
+  match_id TEXT NOT NULL REFERENCES matches(id),
+  player_id TEXT NOT NULL REFERENCES players(id),
+  model_version TEXT NOT NULL,
+  feature_snapshot_id BIGINT REFERENCES feature_snapshots(id),
+  decision_ts TIMESTAMPTZ NOT NULL,
+  model_probability NUMERIC(8, 6) NOT NULL,
+  market_probability NUMERIC(8, 6) NOT NULL,
+  closing_probability NUMERIC(8, 6),
+  result_win BOOLEAN,
+  pnl NUMERIC(14, 2),
+  clv NUMERIC(8, 6),
+  calibration_bucket TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS calibration_reports (
+  run_id TEXT PRIMARY KEY,
+  model_version TEXT NOT NULL,
+  buckets JSONB NOT NULL DEFAULT '[]',
+  brier_score NUMERIC(8, 6) NOT NULL,
+  log_loss NUMERIC(8, 6) NOT NULL,
+  calibration_error NUMERIC(8, 6) NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS execution_audit_events (

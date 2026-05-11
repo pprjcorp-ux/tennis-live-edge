@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from tennis_edge.domain import OddsQuote
+from tennis_edge.services.provider_cursor import ingest_odds_api_sequence
 
 
 class OddsApiIoClient:
@@ -49,6 +50,7 @@ class OddsApiIoClient:
                 yield self.parse_message(json.loads(message))
 
     def parse_message(self, payload: dict[str, Any]) -> list[OddsQuote]:
+        ingest_odds_api_sequence(payload)
         rows = payload.get("odds") or payload.get("data") or payload.get("events") or []
         if isinstance(rows, dict):
             rows = [rows]

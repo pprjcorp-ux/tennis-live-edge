@@ -32,14 +32,14 @@ LEAN_PROVIDER_MONTHLY_USD = {
     Provider.THE_ODDS_API: 99.0,
 }
 
-ENTERPRISE_PROVIDERS = [
-    Provider.SPORTRADAR,
-    Provider.BETRADAR_UOF,
-    Provider.TXODDS,
-    Provider.API_TENNIS,
-    Provider.ODDS_API_IO,
-    Provider.THE_ODDS_API,
-]
+ENTERPRISE_PROVIDER_MONTHLY_USD = {
+    Provider.SPORTRADAR: 2500.0,
+    Provider.BETRADAR_UOF: 1200.0,
+    Provider.TXODDS: 1000.0,
+    Provider.API_TENNIS: 80.0,
+    Provider.ODDS_API_IO: 251.0,
+    Provider.THE_ODDS_API: 99.0,
+}
 
 
 @dataclass(frozen=True)
@@ -49,49 +49,39 @@ class CoverageDecision:
 
 
 def estimated_monthly_spend(settings: Settings) -> float:
-    if settings.runtime_profile != "lean_atp":
-        return 0
-    return round(sum(LEAN_PROVIDER_MONTHLY_USD.values()), 2)
+    if settings.runtime_profile == "lean_atp":
+        return round(sum(LEAN_PROVIDER_MONTHLY_USD.values()), 2)
+    if settings.runtime_profile == "enterprise_roi_clv":
+        return round(sum(ENTERPRISE_PROVIDER_MONTHLY_USD.values()), 2)
+    return 0
 
 
 def cost_profile(settings: Settings) -> CostProfile:
-    if settings.runtime_profile == "enterprise":
-        return CostProfile(
-            active_plan=settings.runtime_profile,
-            monthly_budget_usd=settings.monthly_budget_usd,
-            estimated_monthly_spend_usd=estimated_monthly_spend(settings),
-            enabled_providers=ENTERPRISE_PROVIDERS,
-            disabled_providers=[],
-            coverage_scope=sorted(settings.coverage_set),
-            score_primary=settings.score_primary,
-            odds_primary=settings.odds_primary,
-            odds_archive=settings.odds_archive,
-            enterprise_feeds_enabled=True,
-            notes=[
-                "Enterprise feeds use custom sales pricing, so estimated spend stays 0 until contracts are entered.",
-                "Sportradar/Betradar/TXODDS are primary; API-Tennis, Odds-API.io and TheOddsAPI stay as fallback/archive adapters.",
-            ],
-        )
-
-    enterprise_disabled = [Provider.SPORTRADAR, Provider.BETRADAR_UOF, Provider.TXODDS]
+    enterprise_providers = [
+        Provider.SPORTRADAR,
+        Provider.BETRADAR_UOF,
+        Provider.TXODDS,
+    ]
+    lean_providers = [
+        Provider.API_TENNIS,
+        Provider.ODDS_API_IO,
+        Provider.THE_ODDS_API,
+    ]
+    enabled = lean_providers + (enterprise_providers if settings.enterprise_feeds_enabled else [])
     return CostProfile(
         active_plan=settings.runtime_profile,
         monthly_budget_usd=settings.monthly_budget_usd,
         estimated_monthly_spend_usd=estimated_monthly_spend(settings),
-        enabled_providers=[
-            Provider.API_TENNIS,
-            Provider.ODDS_API_IO,
-            Provider.THE_ODDS_API,
-        ],
-        disabled_providers=enterprise_disabled if not settings.enterprise_feeds_enabled else [],
+        enabled_providers=enabled,
+        disabled_providers=enterprise_providers if not settings.enterprise_feeds_enabled else [],
         coverage_scope=sorted(settings.coverage_set),
         score_primary=settings.score_primary,
         odds_primary=settings.odds_primary,
         odds_archive=settings.odds_archive,
         enterprise_feeds_enabled=settings.enterprise_feeds_enabled,
         notes=[
-            "Sportradar, Betradar UOF and TXODDS stay disabled until model value is proven.",
-            "Odds WebSocket is reserved for live/watchlist matches to reduce paid usage.",
+            "Enterprise profile budgets for Sportradar, Betradar UOF and TXODDS, but adapters stay feature-flagged until credentials/contracts are validated.",
+            "Paper-first mode records CLV/ROI before any real-money activation review.",
         ],
     )
 
@@ -155,12 +145,11 @@ def should_escalate_polling(analysis: MatchAnalysis) -> bool:
 def provider_health_for(settings: Settings) -> list[ProviderHealth]:
     now = datetime.now(timezone.utc).replace(microsecond=0)
     sample = settings.data_mode == "sample"
-    enterprise_enabled = settings.runtime_profile == "enterprise" or settings.enterprise_feeds_enabled
     enterprise_status = (
-        "enterprise sample feed" if sample and enterprise_enabled else "enterprise provider configured"
+        "enterprise adapter contract-gated"
+        if settings.runtime_profile == "enterprise_roi_clv"
+        else "disabled by lean_atp profile"
     )
-    if not enterprise_enabled:
-        enterprise_status = "disabled by lean_atp profile"
     return [
         ProviderHealth(
             provider=Provider.API_TENNIS,
@@ -168,19 +157,9 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
             healthy=bool(settings.api_tennis_key) or sample,
             latency_ms=900 if sample else None,
             last_message_at=now if sample else None,
-            status=(
-                "fallback score sample feed"
-                if settings.runtime_profile == "enterprise" and sample
-                else "score primary sample feed"
-                if sample
-                else "score provider configured"
-            ),
+            status="score primary sample feed" if sample else "score primary configured",
             cost_tier="$80/mo",
-            coverage_scope=(
-                "Fallback fixtures/livescore/rankings"
-                if settings.runtime_profile == "enterprise"
-                else "ATP main + men's Grand Slam score/livescore"
-            ),
+            coverage_scope="ATP main + men's Grand Slam score/livescore",
             quota_used=0 if sample else None,
             quota_limit=200000,
             last_billable_call_at=None,
@@ -191,19 +170,9 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
             healthy=bool(settings.odds_api_io_key) or sample,
             latency_ms=740 if sample else None,
             last_message_at=now if sample else None,
-            status=(
-                "fallback odds websocket sample feed"
-                if settings.runtime_profile == "enterprise" and sample
-                else "odds websocket sample feed"
-                if sample
-                else "odds provider configured"
-            ),
+            status="odds websocket sample feed" if sample else "odds websocket primary",
             cost_tier="£198/mo Starter+WS",
-            coverage_scope=(
-                "Fallback odds comparison"
-                if settings.runtime_profile == "enterprise"
-                else "Live/watchlist ML odds"
-            ),
+            coverage_scope="Live/watchlist ML odds",
             quota_used=0 if sample else None,
             quota_limit=5000,
             last_billable_call_at=None,
@@ -223,47 +192,39 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
         ),
         ProviderHealth(
             provider=Provider.SPORTRADAR,
-            configured=bool(settings.sportradar_api_key) if enterprise_enabled else False,
-            healthy=(bool(settings.sportradar_api_key) or sample) if enterprise_enabled else True,
-            latency_ms=520 if sample and enterprise_enabled else None,
-            last_message_at=now if sample and enterprise_enabled else None,
-            status=enterprise_status,
-            cost_tier="custom sales quote",
-            coverage_scope="Tennis live scores, schedules, timelines and event states"
-            if enterprise_enabled
-            else "disabled",
+            configured=bool(settings.sportradar_api_key),
+            healthy=bool(settings.sportradar_api_key) or sample,
+            latency_ms=520 if sample else None,
+            last_message_at=now if sample else None,
+            status="score/live-state sample adapter" if sample else enterprise_status,
+            cost_tier="enterprise quote estimate $2.5k/mo",
+            coverage_scope="ATP/WTA/Challenger/ITF score, timeline, delay/retirement",
             quota_used=0,
-            quota_limit=None if enterprise_enabled else 0,
+            quota_limit=None,
         ),
         ProviderHealth(
             provider=Provider.BETRADAR_UOF,
-            configured=bool(settings.betradar_uof_token) if enterprise_enabled else False,
-            healthy=(bool(settings.betradar_uof_token) or sample) if enterprise_enabled else True,
-            latency_ms=610 if sample and enterprise_enabled else None,
-            last_message_at=now if sample and enterprise_enabled else None,
-            status=enterprise_status,
-            cost_tier="custom sales quote",
-            coverage_scope="UOF market state, odds changes and suspensions"
-            if enterprise_enabled
-            else "disabled",
+            configured=bool(settings.betradar_uof_token),
+            healthy=bool(settings.betradar_uof_token) or sample,
+            latency_ms=600 if sample else None,
+            last_message_at=now if sample else None,
+            status="market-state sample adapter" if sample else enterprise_status,
+            cost_tier="enterprise quote estimate $1.2k/mo",
+            coverage_scope="Market state, betstop, suspension and settlement status",
             quota_used=0,
-            quota_limit=None if enterprise_enabled else 0,
+            quota_limit=None,
         ),
         ProviderHealth(
             provider=Provider.TXODDS,
-            configured=bool(settings.txodds_user and settings.txodds_password)
-            if enterprise_enabled
-            else False,
-            healthy=(bool(settings.txodds_user and settings.txodds_password) or sample)
-            if enterprise_enabled
-            else True,
-            latency_ms=430 if sample and enterprise_enabled else None,
-            last_message_at=now if sample and enterprise_enabled else None,
-            status=enterprise_status,
-            cost_tier="custom sales quote",
-            coverage_scope="Low-latency in-running odds" if enterprise_enabled else "disabled",
+            configured=bool(settings.txodds_user and settings.txodds_password),
+            healthy=bool(settings.txodds_user and settings.txodds_password) or sample,
+            latency_ms=480 if sample else None,
+            last_message_at=now if sample else None,
+            status="in-running odds sample adapter" if sample else enterprise_status,
+            cost_tier="enterprise quote estimate $1k/mo",
+            coverage_scope="Low-latency independent in-running tennis odds",
             quota_used=0,
-            quota_limit=None if enterprise_enabled else 0,
+            quota_limit=None,
         ),
     ]
 
@@ -277,38 +238,62 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
     live_matches = sum(1 for analysis in analyses if analysis.match.state.status == "live")
     watchlist = sum(1 for analysis in analyses if should_escalate_polling(analysis))
 
+    price_map = (
+        ENTERPRISE_PROVIDER_MONTHLY_USD
+        if settings.runtime_profile == "enterprise_roi_clv"
+        else LEAN_PROVIDER_MONTHLY_USD
+    )
     usages = [
         ProviderCostUsage(
-            provider=Provider.SPORTRADAR if settings.runtime_profile == "enterprise" else Provider.API_TENNIS,
+            provider=Provider.API_TENNIS,
             api_calls=max(1, len(analyses)),
             quota_used=max(1, len(analyses)),
-            quota_limit=None if settings.runtime_profile == "enterprise" else 200000,
-            estimated_daily_cost_usd=0
-            if settings.runtime_profile == "enterprise"
-            else round(LEAN_PROVIDER_MONTHLY_USD[Provider.API_TENNIS] / 30, 2),
+            quota_limit=200000,
+            estimated_daily_cost_usd=round(price_map[Provider.API_TENNIS] / 30, 2),
         ),
         ProviderCostUsage(
-            provider=Provider.TXODDS if settings.runtime_profile == "enterprise" else Provider.ODDS_API_IO,
+            provider=Provider.ODDS_API_IO,
             api_calls=max(1, live_matches + watchlist),
             websocket_minutes=live_matches * 120,
             quota_used=max(1, live_matches + watchlist),
-            quota_limit=None if settings.runtime_profile == "enterprise" else 5000,
-            estimated_daily_cost_usd=0
-            if settings.runtime_profile == "enterprise"
-            else round(LEAN_PROVIDER_MONTHLY_USD[Provider.ODDS_API_IO] / 30, 2),
+            quota_limit=5000,
+            estimated_daily_cost_usd=round(price_map[Provider.ODDS_API_IO] / 30, 2),
         ),
         ProviderCostUsage(
-            provider=Provider.BETRADAR_UOF
-            if settings.runtime_profile == "enterprise"
-            else Provider.THE_ODDS_API,
+            provider=Provider.THE_ODDS_API,
             api_calls=1,
             quota_used=1,
-            quota_limit=None if settings.runtime_profile == "enterprise" else 200000,
-            estimated_daily_cost_usd=0
-            if settings.runtime_profile == "enterprise"
-            else round(LEAN_PROVIDER_MONTHLY_USD[Provider.THE_ODDS_API] / 30, 2),
+            quota_limit=200000,
+            estimated_daily_cost_usd=round(price_map[Provider.THE_ODDS_API] / 30, 2),
         ),
     ]
+    if settings.runtime_profile == "enterprise_roi_clv":
+        usages.extend(
+            [
+                ProviderCostUsage(
+                    provider=Provider.SPORTRADAR,
+                    api_calls=max(1, len(analyses)),
+                    quota_used=max(1, len(analyses)),
+                    quota_limit=None,
+                    estimated_daily_cost_usd=round(price_map[Provider.SPORTRADAR] / 30, 2),
+                ),
+                ProviderCostUsage(
+                    provider=Provider.BETRADAR_UOF,
+                    api_calls=max(1, live_matches),
+                    quota_used=max(1, live_matches),
+                    quota_limit=None,
+                    estimated_daily_cost_usd=round(price_map[Provider.BETRADAR_UOF] / 30, 2),
+                ),
+                ProviderCostUsage(
+                    provider=Provider.TXODDS,
+                    api_calls=max(1, live_matches + watchlist),
+                    websocket_minutes=live_matches * 120,
+                    quota_used=max(1, live_matches + watchlist),
+                    quota_limit=None,
+                    estimated_daily_cost_usd=round(price_map[Provider.TXODDS] / 30, 2),
+                ),
+            ]
+        )
 
     return DailyCostReport(
         active_plan=settings.runtime_profile,
@@ -322,9 +307,5 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
         cost_per_signal_usd=round(daily / len(entry_signals), 2) if entry_signals else None,
         cost_per_positive_clv_signal_usd=None,
         watchlist_escalations=watchlist,
-        note=(
-            "Enterprise feed costs stay 0 until sales-contract pricing is entered."
-            if settings.runtime_profile == "enterprise"
-            else "Positive-CLV cost stays null until closing-line results are imported."
-        ),
+        note="Positive-CLV cost stays null until closing-line results are imported.",
     )

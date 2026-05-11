@@ -1,13 +1,20 @@
 import type {
   BacktestMetrics,
   BankrollSnapshot,
+  CalibrationReport,
+  CanonicalEntityConflict,
   CostProfile,
   DailyMetrics,
   DailyCostReport,
+  DataQualitySnapshot,
   ExecutionOrder,
   ExecutionStatus,
   MatchAnalysis,
+  ModelRegistryEntry,
   ModelPromotionDecision,
+  PaperPerformance,
+  PaperSettlement,
+  ProviderCursor,
   ProviderHealth,
   ReplayRunResult,
   Signal
@@ -50,6 +57,34 @@ export function getDailyCostReport(): Promise<DailyCostReport> {
   return getJson<DailyCostReport>("/api/v1/cost-report/daily");
 }
 
+export function getDataQuality(): Promise<DataQualitySnapshot[]> {
+  return getJson<DataQualitySnapshot[]>("/api/v1/data-quality");
+}
+
+export function getProviderCursors(): Promise<ProviderCursor[]> {
+  return getJson<ProviderCursor[]>("/api/v1/provider-cursors");
+}
+
+export function getModelRegistry(): Promise<ModelRegistryEntry[]> {
+  return getJson<ModelRegistryEntry[]>("/api/v1/models/registry");
+}
+
+export function getChampionModel(): Promise<ModelRegistryEntry> {
+  return getJson<ModelRegistryEntry>("/api/v1/models/champion");
+}
+
+export function getCalibrationReport(runId: string): Promise<CalibrationReport> {
+  return getJson<CalibrationReport>(`/api/v1/backtests/${encodeURIComponent(runId)}/calibration`);
+}
+
+export function getPaperPerformance(): Promise<PaperPerformance> {
+  return getJson<PaperPerformance>("/api/v1/paper/performance");
+}
+
+export function getEntityConflicts(): Promise<CanonicalEntityConflict[]> {
+  return getJson<CanonicalEntityConflict[]>("/api/v1/entity-resolution/conflicts");
+}
+
 export function getExecutionStatus(): Promise<ExecutionStatus> {
   return getJson<ExecutionStatus>("/api/v1/execution/status");
 }
@@ -85,8 +120,13 @@ export async function runReplay(matchId: string, adminToken: string): Promise<Re
 export async function runBacktest(adminToken: string): Promise<BacktestMetrics> {
   const response = await fetch(`${API_BASE}/api/v1/backtests/run`, {
     method: "POST",
-    headers: { "x-admin-token": adminToken },
-    credentials: "include"
+    headers: adminHeaders(adminToken),
+    credentials: "include",
+    body: JSON.stringify({
+      model_version: "prematch_ensemble_v1",
+      feature_set: "enterprise_v1",
+      walk_forward: true
+    })
   });
   if (!response.ok) {
     throw new Error(`Backtest request failed: ${response.status}`);
@@ -150,4 +190,26 @@ export async function promoteFromLearning(adminToken: string): Promise<ModelProm
     throw new Error(`Learning promotion failed: ${response.status}`);
   }
   return response.json() as Promise<ModelPromotionDecision>;
+}
+
+export async function settlePaperOrder(
+  orderId: string,
+  resultWin: boolean,
+  closingOdds: number,
+  adminToken: string
+): Promise<PaperSettlement> {
+  const response = await fetch(`${API_BASE}/api/v1/paper/settle`, {
+    method: "POST",
+    headers: adminHeaders(adminToken),
+    credentials: "include",
+    body: JSON.stringify({
+      order_id: orderId,
+      result_win: resultWin,
+      closing_odds: closingOdds
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`Paper settlement failed: ${response.status}`);
+  }
+  return response.json() as Promise<PaperSettlement>;
 }

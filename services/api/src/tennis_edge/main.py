@@ -1,23 +1,32 @@
 from datetime import date
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from tennis_edge.config import Settings, get_settings
 from tennis_edge.domain import (
     BacktestMetrics,
+    BacktestRunRequest,
     BankrollSnapshot,
     CancelOrderResult,
+    CalibrationReport,
+    CanonicalEntityConflict,
     CostProfile,
     DailyCostReport,
     DailyMetrics,
+    DataQualitySnapshot,
     ExecutionOrder,
     ExecutionStatus,
     KillSwitchRequest,
     LearningPromotionRequest,
     MatchAnalysis,
+    ModelRegistryEntry,
     ModelPromotionDecision,
     OrderRequest,
+    PaperPerformance,
+    PaperSettlement,
+    PaperSettleRequest,
+    ProviderCursor,
     ProviderHealth,
     ReplayRunRequest,
     ReplayRunResult,
@@ -117,6 +126,60 @@ async def v1_daily_cost_report(
     return await repo.daily_cost_report(date.today())
 
 
+@app.get("/api/v1/data-quality", response_model=list[DataQualitySnapshot])
+async def v1_data_quality(
+    repo: AnalysisRepository = Depends(repository),
+) -> list[DataQualitySnapshot]:
+    return await repo.data_quality()
+
+
+@app.get("/api/v1/provider-cursors", response_model=list[ProviderCursor])
+async def v1_provider_cursors(
+    repo: AnalysisRepository = Depends(repository),
+) -> list[ProviderCursor]:
+    return await repo.provider_cursors()
+
+
+@app.get("/api/v1/models/registry", response_model=list[ModelRegistryEntry])
+async def v1_models_registry(
+    repo: AnalysisRepository = Depends(repository),
+) -> list[ModelRegistryEntry]:
+    return await repo.model_registry()
+
+
+@app.get("/api/v1/models/champion", response_model=ModelRegistryEntry)
+async def v1_model_champion(
+    repo: AnalysisRepository = Depends(repository),
+) -> ModelRegistryEntry:
+    return await repo.champion_model()
+
+
+@app.get("/api/v1/entity-resolution/conflicts", response_model=list[CanonicalEntityConflict])
+async def v1_entity_resolution_conflicts(
+    repo: AnalysisRepository = Depends(repository),
+) -> list[CanonicalEntityConflict]:
+    return await repo.entity_conflicts()
+
+
+@app.get("/api/v1/paper/performance", response_model=PaperPerformance)
+async def v1_paper_performance(
+    repo: AnalysisRepository = Depends(repository),
+) -> PaperPerformance:
+    return await repo.paper_performance()
+
+
+@app.post("/api/v1/paper/settle", response_model=PaperSettlement)
+async def v1_paper_settle(
+    request: PaperSettleRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> PaperSettlement:
+    try:
+        return await repo.settle_paper(request)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Order not found") from None
+
+
 @app.get("/api/v1/execution/status", response_model=ExecutionStatus)
 async def v1_execution_status(
     repo: AnalysisRepository = Depends(repository),
@@ -203,10 +266,11 @@ async def v1_run_replay(
 
 @app.post("/api/v1/backtests/run", response_model=BacktestMetrics)
 async def v1_run_backtest(
+    request: BacktestRunRequest | None = Body(default=None),
     _: None = Depends(require_admin_token),
     repo: AnalysisRepository = Depends(repository),
 ) -> BacktestMetrics:
-    return await repo.run_backtest()
+    return await repo.run_backtest(request)
 
 
 @app.get("/api/v1/backtests/{run_id}", response_model=BacktestMetrics)
@@ -218,6 +282,14 @@ async def v1_backtest(
         return await repo.get_backtest(run_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Backtest not found") from None
+
+
+@app.get("/api/v1/backtests/{run_id}/calibration", response_model=CalibrationReport)
+async def v1_backtest_calibration(
+    run_id: str,
+    repo: AnalysisRepository = Depends(repository),
+) -> CalibrationReport:
+    return await repo.calibration_report(run_id)
 
 
 @app.post("/api/v1/admin/model/promote", response_model=BacktestMetrics)

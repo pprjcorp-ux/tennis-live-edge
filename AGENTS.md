@@ -6,7 +6,7 @@ This project is a private, local-first tennis live edge analytics system for ATP
 
 Core goal: ingest live tennis scores and odds, store every tick, estimate fair win probabilities, and recommend only positive-EV signals with abstention and risk controls. The target is risk-adjusted EV/ROI, not forced picks or raw win rate.
 
-This is not financial advice, betting advice, or a promise of profit. Auto-betting must remain disabled until a separate legal/account/API review is completed.
+This is not financial advice, betting advice, or a promise of profit. Auto-betting must remain disabled until a separate legal/account/API review is completed. The active enterprise phase is paper-first and also uses `REAL_EXECUTION_HARD_BLOCK=true`.
 
 ## Working Directory
 
@@ -42,6 +42,14 @@ Backend:
   - `GET /api/v1/matches/{match_id}`
   - `GET /api/v1/signals/live`
   - `GET /api/v1/provider-health`
+  - `GET /api/v1/data-quality`
+  - `GET /api/v1/provider-cursors`
+  - `GET /api/v1/models/registry`
+  - `GET /api/v1/models/champion`
+  - `GET /api/v1/backtests/{run_id}/calibration`
+  - `GET /api/v1/paper/performance`
+  - `POST /api/v1/paper/settle`
+  - `GET /api/v1/entity-resolution/conflicts`
   - `GET /api/v1/execution/status`
   - `GET /api/v1/bankroll`
   - `GET /api/v1/orders`
@@ -56,12 +64,15 @@ Backend:
   - `POST /api/v1/admin/model/promote`
 - Replay/backtest/model promotion endpoints require `x-admin-token`.
 - `ADMIN_API_TOKEN` is generated in local `.env`; do not print it in chat.
-- `EXECUTION_ENABLED=false` must stay false.
+- `EXECUTION_ENABLED=false` and `REAL_EXECUTION_HARD_BLOCK=true` must stay set for this phase.
 - Execution is Betfair-first and deterministic: paper orders work in sample mode; real submission must stay blocked unless `EXECUTION_ENABLED=true`, `EXECUTION_STAGE` is `tiny_real` or `scaled`, Betfair credentials are configured, `BETFAIR_LIVE_KEY_APPROVED=true`, and the kill switch is off.
+- In the enterprise paper-first phase, real submission remains blocked even if all Betfair credentials exist, because `REAL_EXECUTION_HARD_BLOCK=true` overrides all other gates.
 - No LLM, Cloudflare Agent, OpenClaw agent, browser automation, scraping, or geolocation workaround is allowed to place bets directly. Agents may only explain, review, monitor, or call internal APIs that enforce deterministic gates.
 - Sample/replay mode works without paid data.
 - Live adapters are scaffolded for API-Tennis, Odds-API.io, Sportradar/TXODDS/Betradar payloads, but full production feed wiring depends on paid credentials/contracts and final provider payload validation.
-- This branch is the `enterprise` version: Sportradar is the score primary, TXODDS is the low-latency odds primary, Betradar UOF is the odds archive/market-state feed, and API-Tennis/Odds-API.io/TheOddsAPI remain fallback/archive adapters.
+- `enterprise_roi_clv` is the active profile. It budgets for Sportradar/Betradar/TXODDS but leaves those adapters feature-flagged until contracts and payloads are validated. `lean_atp` still exists as a lower-cost profile.
+- The model stack now exposes `baseline_v0`, `prematch_ensemble_v1`, and `live_markov_v1`; challengers require walk-forward ROI/CLV/Brier/log-loss/calibration/drawdown gates before promotion.
+- Odds-API.io websocket cursor tracking stores `seq/lastSeq` state and blocks trust when `resync_required` or sequence gaps appear.
 - Provider health now includes cost tier, coverage scope, quota fields, and last billable call metadata.
 - Daily cost reporting is available at `GET /api/v1/cost-report/daily`; cost profile is available at `GET /api/v1/cost-profile`.
 
@@ -213,8 +224,8 @@ Do not expose `.env` or secrets to the browser bundle. Only `NEXT_PUBLIC_*` can 
 When the user returns, likely next requests:
 
 1. Provide paid provider credentials/API contracts.
-2. Replace sample/replay mode with real live ingestion for Sportradar, TXODDS, and Betradar UOF first.
-3. Keep API-Tennis, Odds-API.io, and TheOddsAPI as fallback/archive feeds for validation and redundancy.
+2. Replace sample/replay mode with real live ingestion for API-Tennis, Odds-API.io WebSocket, and TheOddsAPI first.
+3. Validate Sportradar, Betradar UOF, and TXODDS contracts/payloads, then turn on `ENTERPRISE_FEEDS_ENABLED=true`.
 4. Configure Cloudflare domain:
    - `edge.<domain>` -> local dashboard at `localhost:3000`
    - `api.edge.<domain>` -> local API at `localhost:8000`
@@ -224,8 +235,8 @@ When the user returns, likely next requests:
    - Postgres/TimescaleDB
    - Redis
    - NATS JetStream
-7. Add historical replay/backtest ingestion and model promotion gates using real historical data.
-8. Wire the live Betfair connector only after legal/KYC/live app key checks are complete; until then keep sample/paper execution as the only active path.
+7. Import real historical odds, closing lines, and outcomes so model promotion gates run on real walk-forward data.
+8. Keep live Betfair real execution blocked until paper readiness, legal/KYC/live app key checks, and a separate activation task are complete.
 
 ## Verification Checklist Before Saying Done
 
@@ -243,6 +254,9 @@ For local smoke:
 curl -fsS http://localhost:8000/health
 curl -fsS http://localhost:8000/api/v1/live/matches
 curl -fsS http://localhost:8000/api/v1/provider-health
+curl -fsS http://localhost:8000/api/v1/data-quality
+curl -fsS http://localhost:8000/api/v1/models/champion
+curl -fsS http://localhost:8000/api/v1/paper/performance
 ```
 
 For admin smoke, read `ADMIN_API_TOKEN` from `.env` locally and do not print it:
@@ -260,6 +274,7 @@ Also confirm unauthenticated operational endpoints reject with `401`.
 ## Important Constraints
 
 - Do not enable automatic betting in this project by default.
+- Do not remove `REAL_EXECUTION_HARD_BLOCK=true` in this branch.
 - Do not present sample-mode predictions as real live predictions.
 - Do not claim profit or guaranteed accuracy.
 - Do not allow stale odds, missing score state, suspended markets, or weak ITF/Challenger data quality to generate unrestricted entries.

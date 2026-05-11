@@ -48,6 +48,13 @@ class Provider(StrEnum):
     SAMPLE = "sample"
 
 
+class CursorStatus(StrEnum):
+    HEALTHY = "healthy"
+    GAP_DETECTED = "gap_detected"
+    RESYNC_REQUIRED = "resync_required"
+    RESYNCED = "resynced"
+
+
 class ExecutionVenue(StrEnum):
     BETFAIR = "betfair"
 
@@ -163,8 +170,12 @@ class Prediction(BaseModel):
     match_id: str
     p1_win_prob: float = Field(ge=0, le=1)
     p2_win_prob: float = Field(ge=0, le=1)
+    raw_p1_win_prob: float | None = Field(default=None, ge=0, le=1)
+    raw_p2_win_prob: float | None = Field(default=None, ge=0, le=1)
     confidence: Confidence
     mode: Literal["prematch", "live"]
+    model_version: str = "baseline_v0"
+    confidence_interval: tuple[float, float] | None = None
     explanations: list[str]
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -308,6 +319,14 @@ class BacktestMetrics(BaseModel):
     rejection_reason: str | None = None
 
 
+class BacktestRunRequest(BaseModel):
+    start_date: str | None = None
+    end_date: str | None = None
+    model_version: str = "prematch_ensemble_v1"
+    feature_set: str = "enterprise_v1"
+    walk_forward: bool = True
+
+
 class BetfairOrderMapping(BaseModel):
     market_id: str
     selection_id: int
@@ -324,6 +343,7 @@ class ExecutionStatus(BaseModel):
     stage: ExecutionStage
     betfair_configured: bool
     betfair_live_key_approved: bool
+    real_execution_hard_block: bool = True
     kill_switch_enabled: bool
     can_submit_real_orders: bool
     reasons: list[str]
@@ -408,6 +428,164 @@ class ModelPromotionDecision(BaseModel):
     reasons: list[str]
     metrics: BacktestMetrics
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ProviderCursor(BaseModel):
+    provider: Provider
+    stream: str
+    last_seq: int | None = None
+    expected_next_seq: int | None = None
+    status: CursorStatus
+    gap_count: int = 0
+    resync_required: bool = False
+    last_message_at: datetime | None = None
+    last_resync_at: datetime | None = None
+    note: str
+
+
+class DataQualitySnapshot(BaseModel):
+    id: str
+    provider: Provider
+    feed: str
+    score_completeness: float = Field(ge=0, le=1)
+    odds_completeness: float = Field(ge=0, le=1)
+    entity_resolution_rate: float = Field(ge=0, le=1)
+    sequence_health: float = Field(ge=0, le=1)
+    latency_ms: int | None = None
+    stale_ticks: int = 0
+    duplicate_ticks: int = 0
+    blocked_signals: int = 0
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    notes: list[str] = Field(default_factory=list)
+
+
+class CanonicalEntityConflict(BaseModel):
+    id: str
+    entity_type: Literal["player", "match", "tournament", "market"]
+    provider: Provider
+    canonical_id: str | None = None
+    candidate_id: str
+    confidence: Confidence
+    similarity: float = Field(ge=0, le=1)
+    reason: str
+    source_payload_ids: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class FeatureSnapshot(BaseModel):
+    id: str
+    match_id: str
+    feature_set: str
+    values: dict[str, Any]
+    as_of: datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ClosingLineSnapshot(BaseModel):
+    match_id: str
+    player_id: str
+    bookmaker: str
+    closing_decimal_odds: float = Field(gt=1)
+    no_vig_probability: float = Field(ge=0, le=1)
+    source_ts: datetime
+
+
+class TrainingExample(BaseModel):
+    id: str
+    match_id: str
+    player_id: str
+    model_version: str
+    feature_snapshot_id: str
+    decision_ts: datetime
+    model_probability: float = Field(ge=0, le=1)
+    market_probability: float = Field(ge=0, le=1)
+    closing_probability: float | None = Field(default=None, ge=0, le=1)
+    result_win: bool | None = None
+    pnl: float | None = None
+    clv: float | None = None
+    calibration_bucket: str
+
+
+class ModelRegistryEntry(BaseModel):
+    model_version: str
+    role: Literal["champion", "challenger", "baseline", "archived"]
+    model_type: str
+    feature_set: str
+    training_window: dict[str, Any]
+    metrics: BacktestMetrics
+    promoted: bool = False
+    promoted_at: datetime | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
+class CalibrationBucket(BaseModel):
+    bucket: str
+    lower_bound: float
+    upper_bound: float
+    predictions: int
+    average_prediction: float
+    observed_win_rate: float
+    brier_score: float
+    log_loss: float
+
+
+class CalibrationReport(BaseModel):
+    run_id: str
+    model_version: str
+    buckets: list[CalibrationBucket]
+    brier_score: float
+    log_loss: float
+    calibration_error: float
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PaperFill(BaseModel):
+    order_id: str
+    status: OrderStatus
+    requested_odds: float
+    available_odds: float
+    matched_stake: float
+    average_price: float
+    unmatched_stake: float
+    slippage: float
+    commission_rate: float = 0.02
+    event_ts: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PaperSettlement(BaseModel):
+    order_id: str
+    status: OrderStatus
+    result_win: bool
+    requested_odds: float
+    average_price: float
+    matched_stake: float
+    gross_pnl: float
+    commission: float
+    net_pnl: float
+    closing_odds: float
+    clv: float
+    settled_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PaperSettleRequest(BaseModel):
+    order_id: str
+    result_win: bool
+    closing_odds: float = Field(gt=1)
+
+
+class PaperPerformance(BaseModel):
+    orders: int
+    settled_orders: int
+    wins: int
+    losses: int
+    open_orders: int
+    roi: float | None
+    clv: float | None
+    realized_pnl: float
+    max_drawdown: float
+    calibration_error: float | None
+    readiness_status: Literal["collecting", "review_ready"]
+    readiness_reasons: list[str]
 
 
 class ProviderHealth(BaseModel):

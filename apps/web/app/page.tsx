@@ -7,6 +7,8 @@ import {
   BarChart3,
   CircleDollarSign,
   DatabaseZap,
+  GitCompareArrows,
+  LineChart,
   LockKeyhole,
   Play,
   RefreshCcw,
@@ -17,31 +19,45 @@ import {
 } from "lucide-react";
 import {
   createPaperOrder,
+  getCalibrationReport,
   getCostProfile,
   getBankroll,
+  getChampionModel,
   getDailyMetrics,
   getDailyCostReport,
+  getDataQuality,
+  getEntityConflicts,
   getExecutionStatus,
   getLiveSignals,
+  getModelRegistry,
   getOrders,
+  getPaperPerformance,
+  getProviderCursors,
   getProviderHealth,
   getTodayMatches,
   promoteFromLearning,
   runBacktest,
   runReplay,
+  settlePaperOrder,
   setKillSwitch,
   submitOrder
 } from "@/lib/api";
 import type {
   BacktestMetrics,
   BankrollSnapshot,
+  CalibrationReport,
+  CanonicalEntityConflict,
   CostProfile,
   DailyMetrics,
   DailyCostReport,
+  DataQualitySnapshot,
   ExecutionOrder,
   ExecutionStatus,
   MatchAnalysis,
+  ModelRegistryEntry,
   ModelPromotionDecision,
+  PaperPerformance,
+  ProviderCursor,
   ProviderHealth,
   ReplayRunResult,
   Signal
@@ -78,6 +94,13 @@ export default function Page() {
   const [metrics, setMetrics] = useState<DailyMetrics | null>(null);
   const [costProfile, setCostProfile] = useState<CostProfile | null>(null);
   const [costReport, setCostReport] = useState<DailyCostReport | null>(null);
+  const [dataQuality, setDataQuality] = useState<DataQualitySnapshot[]>([]);
+  const [providerCursors, setProviderCursors] = useState<ProviderCursor[]>([]);
+  const [modelRegistry, setModelRegistry] = useState<ModelRegistryEntry[]>([]);
+  const [championModel, setChampionModel] = useState<ModelRegistryEntry | null>(null);
+  const [calibration, setCalibration] = useState<CalibrationReport | null>(null);
+  const [paperPerformance, setPaperPerformance] = useState<PaperPerformance | null>(null);
+  const [entityConflicts, setEntityConflicts] = useState<CanonicalEntityConflict[]>([]);
   const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | null>(null);
   const [bankroll, setBankroll] = useState<BankrollSnapshot | null>(null);
   const [orders, setOrders] = useState<ExecutionOrder[]>([]);
@@ -91,6 +114,9 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adminToken, setAdminToken] = useState("");
+  const [activeDesk, setActiveDesk] = useState<
+    "data" | "models" | "paper" | "resolution" | "risk"
+  >("data");
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   async function load() {
@@ -106,6 +132,21 @@ export default function Page() {
         getCostProfile(),
         getDailyCostReport()
       ]);
+      const [
+        nextDataQuality,
+        nextProviderCursors,
+        nextModelRegistry,
+        nextChampionModel,
+        nextPaperPerformance,
+        nextEntityConflicts
+      ] = await Promise.all([
+        getDataQuality(),
+        getProviderCursors(),
+        getModelRegistry(),
+        getChampionModel(),
+        getPaperPerformance(),
+        getEntityConflicts()
+      ]);
       const [nextExecutionStatus, nextBankroll, nextOrders] = await Promise.all([
         getExecutionStatus(),
         getBankroll(),
@@ -115,6 +156,12 @@ export default function Page() {
       setMetrics(nextMetrics);
       setCostProfile(nextCostProfile);
       setCostReport(nextCostReport);
+      setDataQuality(nextDataQuality);
+      setProviderCursors(nextProviderCursors);
+      setModelRegistry(nextModelRegistry);
+      setChampionModel(nextChampionModel);
+      setPaperPerformance(nextPaperPerformance);
+      setEntityConflicts(nextEntityConflicts);
       setExecutionStatus(nextExecutionStatus);
       setBankroll(nextBankroll);
       setOrders(nextOrders);
@@ -154,7 +201,9 @@ export default function Page() {
     setBusy(true);
     setError(null);
     try {
-      setBacktest(await runBacktest(adminToken.trim()));
+      const result = await runBacktest(adminToken.trim());
+      setBacktest(result);
+      setCalibration(await getCalibrationReport(result.run_id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Backtest failed");
     } finally {
@@ -180,6 +229,7 @@ export default function Page() {
       const order = await createPaperOrder(signal.id, token);
       setOrders((current) => [order, ...current]);
       setBankroll(await getBankroll());
+      setPaperPerformance(await getPaperPerformance());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Paper order failed");
     } finally {
@@ -198,6 +248,7 @@ export default function Page() {
       setOrders((current) => [order, ...current]);
       setExecutionStatus(await getExecutionStatus());
       setBankroll(await getBankroll());
+      setPaperPerformance(await getPaperPerformance());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit order failed");
     } finally {
@@ -228,6 +279,24 @@ export default function Page() {
       setPromotion(await promoteFromLearning(token));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Learning promotion failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function triggerPaperSettlement(order: ExecutionOrder, resultWin: boolean) {
+    const token = requireAdminToken();
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const closingOdds = Math.max(1.01, order.requested_odds - 0.03);
+      await settlePaperOrder(order.id, resultWin, closingOdds, token);
+      setOrders(await getOrders());
+      setBankroll(await getBankroll());
+      setPaperPerformance(await getPaperPerformance());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Paper settlement failed");
     } finally {
       setBusy(false);
     }
@@ -306,6 +375,265 @@ export default function Page() {
           <span>Perfil custo</span>
           <strong>{costProfile ? usd(costProfile.estimated_monthly_spend_usd) : "-"}</strong>
         </div>
+      </section>
+
+      <section className="enterpriseTabs" aria-label="Enterprise operations">
+        {[
+          ["data", "Data Health"],
+          ["models", "Model Lab"],
+          ["paper", "Paper Trading"],
+          ["resolution", "Entity Resolution"],
+          ["risk", "Risk/Bankroll"]
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            className={activeDesk === id ? "activeTab" : ""}
+            onClick={() => setActiveDesk(id as typeof activeDesk)}
+          >
+            {label}
+          </button>
+        ))}
+      </section>
+
+      <section className="enterprisePanel">
+        {activeDesk === "data" ? (
+          <div className="enterpriseGrid">
+            <div className="panel">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Data Health</p>
+                  <h2>Sequencia, completude e latencia</h2>
+                </div>
+                <DatabaseZap size={20} />
+              </div>
+              <div className="qualityRows">
+                {dataQuality.map((snapshot) => (
+                  <div className="qualityRow" key={snapshot.id}>
+                    <div>
+                      <strong>{snapshot.provider}</strong>
+                      <span>{snapshot.feed}</span>
+                    </div>
+                    <span>score {pct(snapshot.score_completeness)}</span>
+                    <span>odds {pct(snapshot.odds_completeness)}</span>
+                    <span>seq {pct(snapshot.sequence_health)}</span>
+                    <span>{snapshot.latency_ms ?? "-"}ms</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="panel">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Provider Latency</p>
+                  <h2>Odds websocket cursors</h2>
+                </div>
+                <Timer size={20} />
+              </div>
+              <div className="cursorRows">
+                {providerCursors.map((cursor) => (
+                  <div className="cursorRow" key={`${cursor.provider}-${cursor.stream}`}>
+                    <div>
+                      <strong>{cursor.provider}</strong>
+                      <span>{cursor.stream}</span>
+                    </div>
+                    <span className={cursor.resync_required ? "status statusBlocked" : "status statusEntry"}>
+                      {cursor.status}
+                    </span>
+                    <span>seq {cursor.last_seq ?? "-"}</span>
+                    <span>gaps {cursor.gap_count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {activeDesk === "models" ? (
+          <div className="enterpriseGrid">
+            <div className="panel">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Model Lab</p>
+                  <h2>Champion vs challengers</h2>
+                </div>
+                <LineChart size={20} />
+              </div>
+              <div className="modelRows">
+                {modelRegistry.map((model) => (
+                  <div className="modelRow" key={model.model_version}>
+                    <div>
+                      <strong>{model.model_version}</strong>
+                      <span>{model.model_type}</span>
+                    </div>
+                    <span className={model.role === "champion" ? "status statusEntry" : "status statusMonitor"}>
+                      {model.role}
+                    </span>
+                    <span>ROI {pct(model.metrics.roi)}</span>
+                    <span>CLV {pct(model.metrics.clv)}</span>
+                    <span>Brier {model.metrics.brier_score.toFixed(3)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="panel">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Calibration</p>
+                  <h2>{calibration?.model_version ?? championModel?.model_version ?? "baseline_v0"}</h2>
+                </div>
+                <BarChart3 size={20} />
+              </div>
+              {calibration ? (
+                <div className="calibrationRows">
+                  {calibration.buckets.map((bucket) => (
+                    <div className="calibrationRow" key={bucket.bucket}>
+                      <span>{bucket.bucket}</span>
+                      <span>pred {pct(bucket.average_prediction)}</span>
+                      <span>obs {pct(bucket.observed_win_rate)}</span>
+                      <span>{bucket.predictions} picks</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty">Rode um backtest para gerar curva de calibracao.</p>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {activeDesk === "paper" ? (
+          <div className="enterpriseGrid">
+            <div className="panel">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Paper Trading</p>
+                  <h2>ROI, CLV e readiness</h2>
+                </div>
+                <CircleDollarSign size={20} />
+              </div>
+              <div className="paperStats">
+                <span>Orders</span>
+                <strong>{paperPerformance?.orders ?? 0}</strong>
+                <span>Settled</span>
+                <strong>{paperPerformance?.settled_orders ?? 0}</strong>
+                <span>ROI</span>
+                <strong>{paperPerformance?.roi === null || paperPerformance?.roi === undefined ? "-" : pct(paperPerformance.roi)}</strong>
+                <span>CLV</span>
+                <strong>{paperPerformance?.clv === null || paperPerformance?.clv === undefined ? "-" : pct(paperPerformance.clv)}</strong>
+              </div>
+              <div className="executionWarnings">
+                {paperPerformance?.readiness_reasons.map((reason) => (
+                  <span key={reason}>{reason}</span>
+                ))}
+              </div>
+            </div>
+            <div className="panel">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">CLV/ROI Journal</p>
+                  <h2>Latest paper fills</h2>
+                </div>
+                <Activity size={20} />
+              </div>
+              <div className="orderJournal">
+                {orders.slice(0, 6).map((order) => (
+                  <div className="orderRow" key={order.id}>
+                    <div>
+                      <strong>{order.player_name}</strong>
+                      <span>
+                        {order.status} · matched {order.matched_stake.toFixed(0)} · CLV{" "}
+                        {order.clv === null || order.clv === undefined ? "-" : pct(order.clv)}
+                      </span>
+                    </div>
+                    {order.status !== "settled" ? (
+                      <div className="settleActions">
+                        <button onClick={() => triggerPaperSettlement(order, true)} disabled={busy}>
+                          Win
+                        </button>
+                        <button onClick={() => triggerPaperSettlement(order, false)} disabled={busy}>
+                          Loss
+                        </button>
+                      </div>
+                    ) : (
+                      <strong>{usd(order.pnl)}</strong>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {activeDesk === "resolution" ? (
+          <div className="enterpriseGrid">
+            <div className="panel wide">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Entity Resolution</p>
+                  <h2>Provider conflicts queue</h2>
+                </div>
+                <GitCompareArrows size={20} />
+              </div>
+              <div className="conflictRows">
+                {entityConflicts.map((conflict) => (
+                  <div className="conflictRow" key={conflict.id}>
+                    <div>
+                      <strong>{conflict.entity_type}: {conflict.candidate_id}</strong>
+                      <span>{conflict.reason}</span>
+                    </div>
+                    <span>{conflict.provider}</span>
+                    <span>{conflict.confidence}</span>
+                    <span>{pct(conflict.similarity)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {activeDesk === "risk" ? (
+          <div className="enterpriseGrid">
+            <div className="panel">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Risk/Bankroll</p>
+                  <h2>Hard-block state</h2>
+                </div>
+                <ShieldCheck size={20} />
+              </div>
+              <div className="executionGrid">
+                <span>Hard block</span>
+                <strong>{executionStatus?.real_execution_hard_block ? "on" : "off"}</strong>
+                <span>Can submit real</span>
+                <strong>{executionStatus?.can_submit_real_orders ? "yes" : "no"}</strong>
+                <span>Daily cap</span>
+                <strong>{bankroll ? pct(bankroll.daily_loss_limit_fraction) : "-"}</strong>
+                <span>Weekly cap</span>
+                <strong>{bankroll ? pct(bankroll.weekly_drawdown_limit_fraction) : "-"}</strong>
+              </div>
+            </div>
+            <div className="panel">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Signal reasons</p>
+                  <h2>Allow, block, abstain</h2>
+                </div>
+                <ShieldCheck size={20} />
+              </div>
+              <div className="entryList">
+                {signals.slice(0, 5).map((signal) => (
+                  <div className="entry" key={signal.id}>
+                    <div>
+                      <strong>{signal.player_name}</strong>
+                      <span>{signal.reason}</span>
+                    </div>
+                    <span className={statusClass(signal.status)}>{signal.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="contentGrid">

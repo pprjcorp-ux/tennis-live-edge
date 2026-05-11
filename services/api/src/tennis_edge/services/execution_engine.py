@@ -75,6 +75,8 @@ def execution_status(settings: Settings) -> ExecutionStatus:
 
     if not settings.execution_enabled:
         reasons.append("EXECUTION_ENABLED=false.")
+    if settings.real_execution_hard_block:
+        reasons.append("REAL_EXECUTION_HARD_BLOCK=true; paper-first phase blocks all real orders.")
     if venue != ExecutionVenue.BETFAIR:
         reasons.append("Only Betfair execution is enabled in v1.")
     if stage == ExecutionStage.PAPER:
@@ -92,6 +94,7 @@ def execution_status(settings: Settings) -> ExecutionStatus:
         stage=stage,
         betfair_configured=configured,
         betfair_live_key_approved=settings.betfair_live_key_approved,
+        real_execution_hard_block=settings.real_execution_hard_block,
         kill_switch_enabled=bool(KILL_SWITCH["enabled"]),
         can_submit_real_orders=not reasons,
         reasons=reasons,
@@ -264,8 +267,14 @@ def create_order(
                 status = OrderStatus.REJECTED
                 rejection_reason = str(exc)
                 audit.append("Betfair API call failed; order rejected without retry.")
-    elif risk_reasons:
-        audit.append("Paper order records risk warnings but does not submit real money.")
+    elif not real:
+        available_odds = round(max(1.01, requested_odds - 0.01), 2)
+        matched_stake = round(stake_amount * 0.72, 2) if stake_amount > 0 else 0
+        average_price = available_odds if matched_stake else None
+        accepted_odds = available_odds if matched_stake else None
+        audit.append("Paper order simulated with queue, slippage and partial-fill assumptions.")
+        if risk_reasons:
+            audit.append("Paper order records risk warnings but does not submit real money.")
 
     order = ExecutionOrder(
         id=order_id,
@@ -290,6 +299,15 @@ def create_order(
             "bankroll_amount": bankroll_amount,
             "stake_cap": stage_stake_cap(settings),
             "betfair_mapping": mapping.model_dump() if mapping else None,
+            "paper_fill": {
+                "available_odds": average_price,
+                "matched_stake": matched_stake,
+                "unmatched_stake": round(max(0, stake_amount - matched_stake), 2),
+                "commission_rate": 0.02,
+                "slippage": round(requested_odds - average_price, 4) if average_price else None,
+            }
+            if not real
+            else None,
         },
         audit=audit,
         updated_at=_now(),

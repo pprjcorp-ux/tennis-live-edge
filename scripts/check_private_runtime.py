@@ -31,6 +31,14 @@ def main() -> int:
         "learning_runs",
         "model_promotion_decisions",
         "execution_audit_events",
+        "provider_cursors",
+        "data_quality_snapshots",
+        "canonical_entity_conflicts",
+        "paper_fills",
+        "paper_settlements",
+        "closing_line_snapshots",
+        "training_examples",
+        "calibration_reports",
     ]:
         if table not in schema_text:
             errors.append(f"Schema missing {table}")
@@ -53,19 +61,24 @@ def main() -> int:
         "BETFAIR_KEY_PATH",
         "BETFAIR_PASSWORD_SECRET_REF",
         "BETFAIR_LIVE_KEY_APPROVED=false",
+        "REAL_EXECUTION_HARD_BLOCK=true",
+        "MODEL_CHAMPION_VERSION=baseline_v0",
+        "MIN_PAPER_SIGNALS_FOR_REAL_REVIEW=500",
+        "MIN_PAPER_DAYS_FOR_REAL_REVIEW=60",
+        "ODDS_WS_RESYNC_REQUIRED_BLOCKS_SIGNALS=true",
+        "MODEL_PROMOTION_REQUIRE_CLV=true",
         "TENNIS_EDGE_CORS_ORIGIN",
-        "TENNIS_EDGE_RUNTIME_PROFILE=enterprise",
-        "TENNIS_EDGE_COVERAGE=atp,wta,challenger,itf,grand_slam_men,grand_slam_women",
-        "SCORE_PRIMARY=sportradar",
-        "ODDS_PRIMARY=txodds",
-        "ODDS_ARCHIVE=betradar_uof",
-        "ENTERPRISE_FEEDS_ENABLED=true",
+        "TENNIS_EDGE_RUNTIME_PROFILE=enterprise_roi_clv",
+        "TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men",
+        "ENTERPRISE_FEEDS_ENABLED=false",
         "EXECUTION_ENABLED=false",
     ]:
         if key not in env_text:
             errors.append(f".env.example missing {key}")
     if os.environ.get("EXECUTION_ENABLED", "false").lower() != "false":
         errors.append("EXECUTION_ENABLED must remain false for enterprise v1")
+    if os.environ.get("REAL_EXECUTION_HARD_BLOCK", "true").lower() != "true":
+        errors.append("REAL_EXECUTION_HARD_BLOCK must remain true for paper-first enterprise phase")
 
     if errors:
         sys.stderr.write("\n".join(errors) + "\n")

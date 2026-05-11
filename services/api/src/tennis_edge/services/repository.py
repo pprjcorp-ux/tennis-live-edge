@@ -3,18 +3,27 @@ from datetime import date
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
     BacktestMetrics,
+    BacktestRunRequest,
     BankrollSnapshot,
     CancelOrderResult,
+    CalibrationReport,
+    CanonicalEntityConflict,
     CostProfile,
     DailyCostReport,
     DailyMetrics,
+    DataQualitySnapshot,
     ExecutionOrder,
     ExecutionStatus,
     KillSwitchRequest,
     LearningPromotionRequest,
     MatchAnalysis,
+    ModelRegistryEntry,
     ModelPromotionDecision,
     OrderRequest,
+    PaperPerformance,
+    PaperSettlement,
+    PaperSettleRequest,
+    ProviderCursor,
     ProviderHealth,
     ReplayRunRequest,
     ReplayRunResult,
@@ -23,13 +32,22 @@ from tennis_edge.domain import (
 )
 from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.sample_data import sample_raw_payloads
-from tennis_edge.services.backtest import evaluate_promotion, sample_backtest
+from tennis_edge.services.backtest import run_walk_forward_backtest
 from tennis_edge.services.cost_profile import (
     apply_coverage_gate,
     cost_profile,
     coverage_decision,
     daily_cost_report,
     provider_health_for,
+)
+from tennis_edge.services.enterprise_analytics import (
+    calibration_report,
+    champion_model,
+    data_quality_snapshots,
+    entity_conflicts,
+    model_registry,
+    paper_performance,
+    settle_paper_order,
 )
 from tennis_edge.services.execution_engine import (
     ORDERS,
@@ -40,6 +58,7 @@ from tennis_edge.services.execution_engine import (
     promote_from_learning,
     set_kill_switch_for,
 )
+from tennis_edge.services.provider_cursor import default_provider_cursors
 from tennis_edge.services.feature_engine import build_features
 from tennis_edge.services.model_service import predict_match
 from tennis_edge.services.replay_engine import ReplayEngine
@@ -95,6 +114,30 @@ class AnalysisRepository:
     async def daily_cost_report(self, target_date: date) -> DailyCostReport:
         return daily_cost_report(self.settings, await self.analyses_for_date(target_date))
 
+    async def data_quality(self) -> list[DataQualitySnapshot]:
+        return data_quality_snapshots(self.settings)
+
+    async def provider_cursors(self) -> list[ProviderCursor]:
+        return default_provider_cursors(self.settings)
+
+    async def model_registry(self) -> list[ModelRegistryEntry]:
+        return model_registry(self.settings)
+
+    async def champion_model(self) -> ModelRegistryEntry:
+        return champion_model(self.settings)
+
+    async def calibration_report(self, run_id: str) -> CalibrationReport:
+        return calibration_report(run_id)
+
+    async def entity_conflicts(self) -> list[CanonicalEntityConflict]:
+        return entity_conflicts()
+
+    async def paper_performance(self) -> PaperPerformance:
+        return paper_performance(self.settings)
+
+    async def settle_paper(self, request: PaperSettleRequest) -> PaperSettlement:
+        return settle_paper_order(request)
+
     async def execution_status(self) -> ExecutionStatus:
         return execution_status(self.settings)
 
@@ -148,8 +191,8 @@ class AnalysisRepository:
         REPLAYS[result.run_id] = result
         return result
 
-    async def run_backtest(self) -> BacktestMetrics:
-        metrics = evaluate_promotion(sample_backtest())
+    async def run_backtest(self, request: BacktestRunRequest | None = None) -> BacktestMetrics:
+        metrics = run_walk_forward_backtest(request)
         BACKTESTS[metrics.run_id] = metrics
         return metrics
 

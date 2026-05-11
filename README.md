@@ -56,4 +56,4 @@ O sistema pode e deve se abster. `ENTRY` so aparece quando:
 
 Isto nao e promessa de lucro nem conselho de aposta. A qualidade deve ser medida por ROI, CLV, Brier score, log loss, calibracao e drawdown.
 
-Auto-betting fica desativado por default. Para sair do modo paper, a conta Betfair precisa estar legalmente disponivel, com KYC/live app key aprovados, credenciais locais configuradas e `EXECUTION_ENABLED=true`. O sistema nao usa browser automation, scraping, bypass de geolocalizacao ou automacao contra casas que proíbem bots.
+Auto-betting fica desativado por default e esta fase adiciona `REAL_EXECUTION_HARD_BLOCK=true`: mesmo com credenciais, `/api/v1/orders/submit` continua bloqueado. Para abrir uma revisao futura de execucao real, o sistema precisa acumular pelo menos 60 dias ou 500 sinais paper liquidados, com ROI/CLV/calibracao/drawdown aprovados, alem de conta Betfair legalmente disponivel, KYC/live app key aprovados e revisao separada. O sistema nao usa browser automation, scraping, bypass de geolocalizacao ou automacao contra casas que proibem bots.

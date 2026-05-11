@@ -31,8 +31,11 @@ npm run openclaw:runs
 npm run openclaw:autopilot
 ```
 
-`openclaw:autopilot` only creates paper orders for backend-approved `Entrada`
-signals. Real execution remains blocked by `REAL_EXECUTION_HARD_BLOCK=true`.
+`openclaw:autopilot` reads `ADMIN_API_TOKEN` from the repo-local `.env` in the
+npm wrapper and passes it to the skill through stdin. The skill itself does not
+read `.env` or environment variables. It only creates paper orders for
+backend-approved `Entrada` signals. Real execution remains blocked by
+`REAL_EXECUTION_HARD_BLOCK=true`.
 Cron creation examples are in `openclaw/cron.examples.md`; create them only
 after Telegram pairing/allowlist and local admin secrets are configured.
 

@@ -9,7 +9,7 @@
     "openclaw:briefing": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs briefing",
     "openclaw:anomalies": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies",
     "openclaw:runs": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs",
-    "openclaw:autopilot": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot",
+    "openclaw:autopilot": "zsh -lc 'set -a; source .env; set +a; printf \"%s\" \"$ADMIN_API_TOKEN\" | node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin'",
     "dev": "concurrently \"npm run api:dev\" \"npm run web:dev\""
   },
   "devDependencies": {

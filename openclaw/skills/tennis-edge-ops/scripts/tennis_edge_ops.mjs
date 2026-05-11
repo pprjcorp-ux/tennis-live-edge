@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-const API_BASE = process.env.TENNIS_EDGE_API_BASE ?? "http://localhost:8000";
-const ADMIN_TOKEN = process.env.ADMIN_API_TOKEN ?? process.env.TENNIS_EDGE_ADMIN_API_TOKEN;
-
 const command = process.argv[2] ?? "briefing";
+const apiBaseArg = process.argv.find((arg) => arg.startsWith("--api-base="));
+const API_BASE = apiBaseArg ? apiBaseArg.slice("--api-base=".length) : "http://127.0.0.1:8000";
+const TOKEN_STDIN_FLAG = "--token-stdin";
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -20,11 +20,19 @@ async function request(path, options = {}) {
   return response.json();
 }
 
-function adminHeaders() {
-  if (!ADMIN_TOKEN) {
-    throw new Error("ADMIN_API_TOKEN is required for this OpenClaw command.");
+async function adminHeaders() {
+  if (!process.argv.includes(TOKEN_STDIN_FLAG)) {
+    throw new Error("Pass the admin token through stdin with --token-stdin for this command.");
   }
-  return { "x-admin-token": ADMIN_TOKEN };
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk);
+  }
+  const token = Buffer.concat(chunks).toString("utf8").trim();
+  if (!token) {
+    throw new Error("Admin token stdin was empty.");
+  }
+  return { "x-admin-token": token };
 }
 
 function printJson(data) {
@@ -59,12 +67,12 @@ async function runs() {
 async function autopilot() {
   const data = await request("/api/v1/agent/autopilot/evaluate", {
     method: "POST",
-    headers: adminHeaders(),
+    headers: await adminHeaders(),
     body: JSON.stringify({
       source: "openclaw",
       create_paper_orders: true,
       request_real_execution: false,
-      max_paper_orders: Number(process.env.OPENCLAW_MAX_PAPER_ORDERS ?? 3),
+      max_paper_orders: 3,
       notes: "openclaw local skill paper autopilot"
     })
   });

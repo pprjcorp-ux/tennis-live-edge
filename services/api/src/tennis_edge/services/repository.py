@@ -2,6 +2,11 @@ from datetime import date
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
+    AgentAnomaly,
+    AgentAutopilotRequest,
+    AgentAutopilotResult,
+    AgentBriefing,
+    AgentRun,
     BacktestMetrics,
     BacktestRunRequest,
     BankrollSnapshot,
@@ -29,6 +34,12 @@ from tennis_edge.domain import (
     ReplayRunResult,
     Signal,
     SignalStatus,
+)
+from tennis_edge.services.agent_ops import (
+    agent_runs,
+    build_agent_briefing,
+    detect_anomalies,
+    run_agent_autopilot,
 )
 from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.sample_data import sample_raw_payloads
@@ -134,6 +145,54 @@ class AnalysisRepository:
 
     async def paper_performance(self) -> PaperPerformance:
         return paper_performance(self.settings)
+
+    async def agent_briefing(self) -> AgentBriefing:
+        analyses = await self.analyses_for_date(date.today())
+        return build_agent_briefing(
+            self.settings,
+            analyses=analyses,
+            provider_health=await self.provider_health(),
+            provider_cursors=await self.provider_cursors(),
+            data_quality=await self.data_quality(),
+            execution_status=await self.execution_status(),
+            paper_performance=await self.paper_performance(),
+            bankroll=await self.bankroll(),
+            cost_report=await self.daily_cost_report(date.today()),
+        )
+
+    async def agent_anomalies(self) -> list[AgentAnomaly]:
+        analyses = await self.analyses_for_date(date.today())
+        return detect_anomalies(
+            self.settings,
+            analyses=analyses,
+            provider_health=await self.provider_health(),
+            provider_cursors=await self.provider_cursors(),
+            data_quality=await self.data_quality(),
+            execution_status=await self.execution_status(),
+            paper_performance=await self.paper_performance(),
+            bankroll=await self.bankroll(),
+            cost_report=await self.daily_cost_report(date.today()),
+        )
+
+    async def agent_autopilot(
+        self, request: AgentAutopilotRequest
+    ) -> AgentAutopilotResult:
+        analyses = await self.analyses_for_date(date.today())
+        anomalies = detect_anomalies(
+            self.settings,
+            analyses=analyses,
+            provider_health=await self.provider_health(),
+            provider_cursors=await self.provider_cursors(),
+            data_quality=await self.data_quality(),
+            execution_status=await self.execution_status(),
+            paper_performance=await self.paper_performance(),
+            bankroll=await self.bankroll(),
+            cost_report=await self.daily_cost_report(date.today()),
+        )
+        return run_agent_autopilot(self.settings, analyses, request, anomalies)
+
+    async def agent_runs(self) -> list[AgentRun]:
+        return agent_runs()
 
     async def settle_paper(self, request: PaperSettleRequest) -> PaperSettlement:
         return settle_paper_order(request)

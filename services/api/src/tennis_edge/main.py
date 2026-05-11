@@ -5,6 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from tennis_edge.config import Settings, get_settings
 from tennis_edge.domain import (
+    AgentAnomaly,
+    AgentAutopilotRequest,
+    AgentAutopilotResult,
+    AgentBriefing,
+    AgentRun,
     BacktestMetrics,
     BacktestRunRequest,
     BankrollSnapshot,
@@ -166,6 +171,36 @@ async def v1_paper_performance(
     repo: AnalysisRepository = Depends(repository),
 ) -> PaperPerformance:
     return await repo.paper_performance()
+
+
+@app.get("/api/v1/agent/briefing", response_model=AgentBriefing)
+async def v1_agent_briefing(
+    repo: AnalysisRepository = Depends(repository),
+) -> AgentBriefing:
+    return await repo.agent_briefing()
+
+
+@app.get("/api/v1/agent/anomalies", response_model=list[AgentAnomaly])
+async def v1_agent_anomalies(
+    repo: AnalysisRepository = Depends(repository),
+) -> list[AgentAnomaly]:
+    return await repo.agent_anomalies()
+
+
+@app.post("/api/v1/agent/autopilot/evaluate", response_model=AgentAutopilotResult)
+async def v1_agent_autopilot_evaluate(
+    request: AgentAutopilotRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> AgentAutopilotResult:
+    return await repo.agent_autopilot(request)
+
+
+@app.get("/api/v1/agent/runs", response_model=list[AgentRun])
+async def v1_agent_runs(
+    repo: AnalysisRepository = Depends(repository),
+) -> list[AgentRun]:
+    return await repo.agent_runs()
 
 
 @app.post("/api/v1/paper/settle", response_model=PaperSettlement)

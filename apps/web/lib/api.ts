@@ -1,4 +1,9 @@
 import type {
+  AgentAnomaly,
+  AgentAutopilotRequest,
+  AgentAutopilotResult,
+  AgentBriefing,
+  AgentRun,
   BacktestMetrics,
   BankrollSnapshot,
   CalibrationReport,
@@ -81,6 +86,18 @@ export function getPaperPerformance(): Promise<PaperPerformance> {
   return getJson<PaperPerformance>("/api/v1/paper/performance");
 }
 
+export function getAgentBriefing(): Promise<AgentBriefing> {
+  return getJson<AgentBriefing>("/api/v1/agent/briefing");
+}
+
+export function getAgentAnomalies(): Promise<AgentAnomaly[]> {
+  return getJson<AgentAnomaly[]>("/api/v1/agent/anomalies");
+}
+
+export function getAgentRuns(): Promise<AgentRun[]> {
+  return getJson<AgentRun[]>("/api/v1/agent/runs");
+}
+
 export function getEntityConflicts(): Promise<CanonicalEntityConflict[]> {
   return getJson<CanonicalEntityConflict[]>("/api/v1/entity-resolution/conflicts");
 }
@@ -148,6 +165,28 @@ export async function createPaperOrder(
     throw new Error(`Paper order failed: ${response.status}`);
   }
   return response.json() as Promise<ExecutionOrder>;
+}
+
+export async function runAgentAutopilot(
+  adminToken: string,
+  request: AgentAutopilotRequest = {}
+): Promise<AgentAutopilotResult> {
+  const response = await fetch(`${API_BASE}/api/v1/agent/autopilot/evaluate`, {
+    method: "POST",
+    headers: adminHeaders(adminToken),
+    credentials: "include",
+    body: JSON.stringify({
+      source: "dashboard",
+      create_paper_orders: true,
+      request_real_execution: false,
+      max_paper_orders: 3,
+      ...request
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`Agent autopilot failed: ${response.status}`);
+  }
+  return response.json() as Promise<AgentAutopilotResult>;
 }
 
 export async function submitOrder(signalId: string, adminToken: string): Promise<ExecutionOrder> {

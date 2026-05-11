@@ -5,11 +5,14 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  Bot,
   CircleDollarSign,
+  Cpu,
   DatabaseZap,
   GitCompareArrows,
   LineChart,
   LockKeyhole,
+  MessageCircle,
   Play,
   RefreshCcw,
   ShieldCheck,
@@ -19,6 +22,9 @@ import {
 } from "lucide-react";
 import {
   createPaperOrder,
+  getAgentAnomalies,
+  getAgentBriefing,
+  getAgentRuns,
   getCalibrationReport,
   getCostProfile,
   getBankroll,
@@ -36,6 +42,7 @@ import {
   getProviderHealth,
   getTodayMatches,
   promoteFromLearning,
+  runAgentAutopilot,
   runBacktest,
   runReplay,
   settlePaperOrder,
@@ -43,6 +50,10 @@ import {
   submitOrder
 } from "@/lib/api";
 import type {
+  AgentAnomaly,
+  AgentAutopilotResult,
+  AgentBriefing,
+  AgentRun,
   BacktestMetrics,
   BankrollSnapshot,
   CalibrationReport,
@@ -100,6 +111,10 @@ export default function Page() {
   const [championModel, setChampionModel] = useState<ModelRegistryEntry | null>(null);
   const [calibration, setCalibration] = useState<CalibrationReport | null>(null);
   const [paperPerformance, setPaperPerformance] = useState<PaperPerformance | null>(null);
+  const [agentBriefing, setAgentBriefing] = useState<AgentBriefing | null>(null);
+  const [agentAnomalies, setAgentAnomalies] = useState<AgentAnomaly[]>([]);
+  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+  const [autopilotResult, setAutopilotResult] = useState<AgentAutopilotResult | null>(null);
   const [entityConflicts, setEntityConflicts] = useState<CanonicalEntityConflict[]>([]);
   const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | null>(null);
   const [bankroll, setBankroll] = useState<BankrollSnapshot | null>(null);
@@ -115,7 +130,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [adminToken, setAdminToken] = useState("");
   const [activeDesk, setActiveDesk] = useState<
-    "data" | "models" | "paper" | "resolution" | "risk"
+    "data" | "models" | "paper" | "agent" | "resolution" | "risk"
   >("data");
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
@@ -138,6 +153,9 @@ export default function Page() {
         nextModelRegistry,
         nextChampionModel,
         nextPaperPerformance,
+        nextAgentBriefing,
+        nextAgentAnomalies,
+        nextAgentRuns,
         nextEntityConflicts
       ] = await Promise.all([
         getDataQuality(),
@@ -145,6 +163,9 @@ export default function Page() {
         getModelRegistry(),
         getChampionModel(),
         getPaperPerformance(),
+        getAgentBriefing(),
+        getAgentAnomalies(),
+        getAgentRuns(),
         getEntityConflicts()
       ]);
       const [nextExecutionStatus, nextBankroll, nextOrders] = await Promise.all([
@@ -161,6 +182,9 @@ export default function Page() {
       setModelRegistry(nextModelRegistry);
       setChampionModel(nextChampionModel);
       setPaperPerformance(nextPaperPerformance);
+      setAgentBriefing(nextAgentBriefing);
+      setAgentAnomalies(nextAgentAnomalies);
+      setAgentRuns(nextAgentRuns);
       setEntityConflicts(nextEntityConflicts);
       setExecutionStatus(nextExecutionStatus);
       setBankroll(nextBankroll);
@@ -232,6 +256,42 @@ export default function Page() {
       setPaperPerformance(await getPaperPerformance());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Paper order failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function triggerAgentAutopilot() {
+    const token = requireAdminToken();
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await runAgentAutopilot(token, {
+        source: "dashboard",
+        create_paper_orders: true,
+        request_real_execution: false,
+        max_paper_orders: 3,
+        notes: "dashboard manual openclaw autopilot"
+      });
+      setAutopilotResult(result);
+      const [nextOrders, nextBankroll, nextPaperPerformance, nextBriefing, nextRuns, nextAnomalies] =
+        await Promise.all([
+          getOrders(),
+          getBankroll(),
+          getPaperPerformance(),
+          getAgentBriefing(),
+          getAgentRuns(),
+          getAgentAnomalies()
+        ]);
+      setOrders(nextOrders);
+      setBankroll(nextBankroll);
+      setPaperPerformance(nextPaperPerformance);
+      setAgentBriefing(nextBriefing);
+      setAgentRuns(nextRuns);
+      setAgentAnomalies(nextAnomalies);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Agent autopilot failed");
     } finally {
       setBusy(false);
     }
@@ -382,6 +442,7 @@ export default function Page() {
           ["data", "Data Health"],
           ["models", "Model Lab"],
           ["paper", "Paper Trading"],
+          ["agent", "OpenClaw Autopilot"],
           ["resolution", "Entity Resolution"],
           ["risk", "Risk/Bankroll"]
         ].map(([id, label]) => (
@@ -557,6 +618,106 @@ export default function Page() {
                     ) : (
                       <strong>{usd(order.pnl)}</strong>
                     )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {activeDesk === "agent" ? (
+          <div className="enterpriseGrid">
+            <div className="panel">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">OpenClaw Autopilot</p>
+                  <h2>Dashboard + Telegram paper ops</h2>
+                </div>
+                <Bot size={20} />
+              </div>
+              <div className="agentStats">
+                {[
+                  ["Status", agentBriefing?.autopilot_enabled ? "enabled" : "disabled"],
+                  ["Channel", agentBriefing?.channel ?? "dashboard,telegram"],
+                  ["Triage", agentBriefing?.triage_model ?? "gpt-5.4-mini"],
+                  ["Critical", agentBriefing?.critical_model ?? "gpt-5.5"],
+                  ["Alerts", String(agentBriefing?.provider_alerts ?? agentAnomalies.length)],
+                  ["Paper orders", String(agentBriefing?.paper_orders ?? 0)]
+                ].map(([label, value]) => (
+                  <div className="agentStat" key={label}>
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="agentSummary">
+                <p>{agentBriefing?.summary ?? "OpenClaw aguardando briefing da API local."}</p>
+                <div className="agentActionBar">
+                  <button onClick={triggerAgentAutopilot} disabled={busy}>
+                    <Play size={15} />
+                    Run paper autopilot
+                  </button>
+                  <span>
+                    <Cpu size={14} />
+                    Router {agentBriefing?.router_policy ?? "cost_optimized"}
+                  </span>
+                  <span>
+                    <MessageCircle size={14} />
+                    Telegram allowlist only
+                  </span>
+                </div>
+              </div>
+              <div className="agentAllowed">
+                {agentBriefing?.allowed_actions.map((action) => (
+                  <span key={action}>{action}</span>
+                ))}
+              </div>
+              {autopilotResult ? (
+                <div className="agentResult">
+                  <strong>{autopilotResult.run.summary}</strong>
+                  <span>
+                    created {autopilotResult.paper_orders_created} · skipped{" "}
+                    {autopilotResult.paper_orders_skipped} · real blocked{" "}
+                    {autopilotResult.real_execution_blocked ? "yes" : "no"}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="panel">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Agent Ops</p>
+                  <h2>Anomalies and audit runs</h2>
+                </div>
+                <AlertTriangle size={20} />
+              </div>
+              <div className="anomalyRows">
+                {agentAnomalies.length ? (
+                  agentAnomalies.slice(0, 5).map((anomaly) => (
+                    <div className="anomalyRow" key={anomaly.id}>
+                      <div>
+                        <strong>{anomaly.summary}</strong>
+                        <span>{anomaly.detail}</span>
+                      </div>
+                      <span className={anomaly.severity === "critical" ? "status statusBlocked" : "status statusMonitor"}>
+                        {anomaly.severity}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="empty">Nenhuma anomalia operacional ativa.</p>
+                )}
+              </div>
+              <div className="runRows">
+                {(agentRuns.length ? agentRuns : agentBriefing?.latest_run ? [agentBriefing.latest_run] : []).slice(0, 4).map((run) => (
+                  <div className="runRow" key={run.id}>
+                    <div>
+                      <strong>{run.run_type}</strong>
+                      <span>{run.summary}</span>
+                    </div>
+                    <span>{run.source}</span>
+                    <span>{run.model_routes.map((route) => route.model).join(", ")}</span>
                   </div>
                 ))}
               </div>

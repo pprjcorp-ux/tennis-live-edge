@@ -165,6 +165,48 @@ class Settings(BaseSettings):
             "MODEL_PROMOTION_REQUIRE_CLV", "TENNIS_EDGE_MODEL_PROMOTION_REQUIRE_CLV"
         ),
     )
+    openclaw_autopilot_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "OPENCLAW_AUTOPILOT_ENABLED", "TENNIS_EDGE_OPENCLAW_AUTOPILOT_ENABLED"
+        ),
+    )
+    openclaw_channel: str = Field(
+        default="dashboard,telegram",
+        validation_alias=AliasChoices("OPENCLAW_CHANNEL", "TENNIS_EDGE_OPENCLAW_CHANNEL"),
+    )
+    openclaw_triage_model: str = Field(
+        default="gpt-5.4-mini",
+        validation_alias=AliasChoices(
+            "OPENCLAW_TRIAGE_MODEL", "TENNIS_EDGE_OPENCLAW_TRIAGE_MODEL"
+        ),
+    )
+    openclaw_critical_model: str = Field(
+        default="gpt-5.5",
+        validation_alias=AliasChoices(
+            "OPENCLAW_CRITICAL_MODEL", "TENNIS_EDGE_OPENCLAW_CRITICAL_MODEL"
+        ),
+    )
+    openclaw_router_policy: str = Field(
+        default="cost_optimized",
+        validation_alias=AliasChoices(
+            "OPENCLAW_ROUTER_POLICY", "TENNIS_EDGE_OPENCLAW_ROUTER_POLICY"
+        ),
+    )
+    openclaw_daily_model_budget_usd: float = Field(
+        default=15,
+        validation_alias=AliasChoices(
+            "OPENCLAW_DAILY_MODEL_BUDGET_USD",
+            "TENNIS_EDGE_OPENCLAW_DAILY_MODEL_BUDGET_USD",
+        ),
+    )
+    openclaw_telegram_allowed_user_ids: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS",
+            "TENNIS_EDGE_OPENCLAW_TELEGRAM_ALLOWED_USER_IDS",
+        ),
+    )
     runtime_profile: str = Field(
         default="enterprise_roi_clv",
         validation_alias=AliasChoices("TENNIS_EDGE_RUNTIME_PROFILE", "RUNTIME_PROFILE"),
@@ -217,6 +259,10 @@ class Settings(BaseSettings):
     @property
     def coverage_set(self) -> set[str]:
         return {item.strip() for item in self.coverage.split(",") if item.strip()}
+
+    @property
+    def openclaw_channels(self) -> list[str]:
+        return [channel.strip() for channel in self.openclaw_channel.split(",") if channel.strip()]
 
 
 @lru_cache

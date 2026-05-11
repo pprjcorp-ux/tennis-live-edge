@@ -588,6 +588,94 @@ class PaperPerformance(BaseModel):
     readiness_reasons: list[str]
 
 
+class AgentActionStatus(StrEnum):
+    PLANNED = "planned"
+    EXECUTED = "executed"
+    BLOCKED = "blocked"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class AgentRunType(StrEnum):
+    BRIEFING = "briefing"
+    ANOMALY_SCAN = "anomaly_scan"
+    AUTOPILOT_EVALUATE = "autopilot_evaluate"
+    DAILY_REPORT = "daily_report"
+    WEEKLY_LEARNING_REPORT = "weekly_learning_report"
+
+
+class AgentModelRoute(BaseModel):
+    task: str
+    model: str
+    reason: str
+    estimated_cost_usd: float = 0
+
+
+class AgentAction(BaseModel):
+    type: str
+    status: AgentActionStatus
+    target_id: str | None = None
+    summary: str
+    cost_usd: float = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class AgentRun(BaseModel):
+    id: str
+    run_type: AgentRunType
+    source: Literal["dashboard", "telegram", "cron", "openclaw", "system"] = "system"
+    model_routes: list[AgentModelRoute] = Field(default_factory=list)
+    actions: list[AgentAction] = Field(default_factory=list)
+    summary: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class AgentAnomaly(BaseModel):
+    id: str
+    severity: Literal["info", "warning", "critical"]
+    category: str
+    summary: str
+    detail: str
+    blocked_signals: int = 0
+    detected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class AgentBriefing(BaseModel):
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    autopilot_enabled: bool
+    channel: str
+    allowed_actions: list[str]
+    triage_model: str
+    critical_model: str
+    router_policy: str
+    daily_model_budget_usd: float
+    live_matches: int
+    entry_signals: int
+    paper_orders: int
+    open_orders: int
+    provider_alerts: int
+    readiness_status: Literal["collecting", "review_ready"]
+    summary: str
+    next_actions: list[str]
+    latest_run: AgentRun | None = None
+
+
+class AgentAutopilotRequest(BaseModel):
+    source: Literal["dashboard", "telegram", "cron", "openclaw", "system"] = "dashboard"
+    create_paper_orders: bool = True
+    request_real_execution: bool = False
+    max_paper_orders: int = Field(default=3, ge=1, le=10)
+    notes: str | None = None
+
+
+class AgentAutopilotResult(BaseModel):
+    run: AgentRun
+    paper_orders_created: int
+    paper_orders_skipped: int
+    real_execution_blocked: bool
+    anomalies: list[AgentAnomaly]
+
+
 class ProviderHealth(BaseModel):
     provider: Provider
     configured: bool

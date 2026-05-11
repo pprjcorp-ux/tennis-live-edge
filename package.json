@@ -6,6 +6,10 @@
     "web:build": "npm --prefix apps/web run build",
     "api:dev": "cd services/api && ../../.venv/bin/uvicorn tennis_edge.main:app --host 0.0.0.0 --port 8000 --reload",
     "api:test": "cd services/api && ../../.venv/bin/pytest",
+    "openclaw:briefing": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs briefing",
+    "openclaw:anomalies": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies",
+    "openclaw:runs": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs",
+    "openclaw:autopilot": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot",
     "dev": "concurrently \"npm run api:dev\" \"npm run web:dev\""
   },
   "devDependencies": {

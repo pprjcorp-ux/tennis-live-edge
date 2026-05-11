@@ -599,6 +599,160 @@ h2 {
   font-weight: 800;
 }
 
+.agentStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px;
+}
+
+.agentStat {
+  display: grid;
+  gap: 4px;
+  min-height: 64px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f4f7fa;
+  overflow-wrap: anywhere;
+}
+
+.agentStat span {
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agentStat strong {
+  font-size: 14px;
+}
+
+.agentSummary {
+  display: grid;
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+.agentSummary p {
+  margin: 0;
+  color: var(--app-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.agentActionBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.agentActionBar button,
+.agentActionBar span {
+  min-height: 36px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agentActionBar button {
+  background: var(--ink);
+  color: white;
+}
+
+.agentActionBar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.agentActionBar span {
+  color: var(--app-muted);
+  background: #fbfcfd;
+}
+
+.agentAllowed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.agentAllowed span {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #eef2f6;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agentResult {
+  display: grid;
+  gap: 4px;
+  margin: 0 14px 14px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.agentResult span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.anomalyRows,
+.runRows {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.runRows {
+  padding-top: 0;
+}
+
+.anomalyRow,
+.runRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.runRow {
+  grid-template-columns: minmax(0, 1fr) auto minmax(100px, auto);
+}
+
+.anomalyRow strong,
+.anomalyRow span,
+.runRow strong,
+.runRow span {
+  overflow-wrap: anywhere;
+}
+
+.anomalyRow div span,
+.runRow div span {
+  display: block;
+  margin-top: 2px;
+  color: var(--app-muted);
+  font-size: 12px;
+}
+
+.runRow > span {
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .settleActions {
   display: flex;
   gap: 6px;
@@ -822,11 +976,17 @@ h2 {
   .modelRow,
   .calibrationRow,
   .conflictRow,
+  .anomalyRow,
+  .runRow,
   .orderRow {
     grid-template-columns: 1fr;
   }
 
   .paperStats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .agentStats {
     grid-template-columns: 1fr 1fr;
   }
 }

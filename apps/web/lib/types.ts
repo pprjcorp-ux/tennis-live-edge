@@ -21,6 +21,13 @@ export type OrderStatus =
   | "cancelled"
   | "rejected"
   | "settled";
+export type AgentActionStatus = "planned" | "executed" | "blocked" | "skipped" | "failed";
+export type AgentRunType =
+  | "briefing"
+  | "anomaly_scan"
+  | "autopilot_evaluate"
+  | "daily_report"
+  | "weekly_learning_report";
 
 export type Player = {
   id: string;
@@ -390,4 +397,76 @@ export type PaperPerformance = {
   calibration_error: number | null;
   readiness_status: "collecting" | "review_ready";
   readiness_reasons: string[];
+};
+
+export type AgentModelRoute = {
+  task: string;
+  model: string;
+  reason: string;
+  estimated_cost_usd: number;
+};
+
+export type AgentAction = {
+  type: string;
+  status: AgentActionStatus;
+  target_id: string | null;
+  summary: string;
+  cost_usd: number;
+  created_at: string;
+};
+
+export type AgentRun = {
+  id: string;
+  run_type: AgentRunType;
+  source: "dashboard" | "telegram" | "cron" | "openclaw" | "system";
+  model_routes: AgentModelRoute[];
+  actions: AgentAction[];
+  summary: string;
+  created_at: string;
+};
+
+export type AgentAnomaly = {
+  id: string;
+  severity: "info" | "warning" | "critical";
+  category: string;
+  summary: string;
+  detail: string;
+  blocked_signals: number;
+  detected_at: string;
+};
+
+export type AgentBriefing = {
+  generated_at: string;
+  autopilot_enabled: boolean;
+  channel: string;
+  allowed_actions: string[];
+  triage_model: string;
+  critical_model: string;
+  router_policy: string;
+  daily_model_budget_usd: number;
+  live_matches: number;
+  entry_signals: number;
+  paper_orders: number;
+  open_orders: number;
+  provider_alerts: number;
+  readiness_status: "collecting" | "review_ready";
+  summary: string;
+  next_actions: string[];
+  latest_run: AgentRun | null;
+};
+
+export type AgentAutopilotRequest = {
+  source?: "dashboard" | "telegram" | "cron" | "openclaw" | "system";
+  create_paper_orders?: boolean;
+  request_real_execution?: boolean;
+  max_paper_orders?: number;
+  notes?: string | null;
+};
+
+export type AgentAutopilotResult = {
+  run: AgentRun;
+  paper_orders_created: number;
+  paper_orders_skipped: number;
+  real_execution_blocked: boolean;
+  anomalies: AgentAnomaly[];
 };

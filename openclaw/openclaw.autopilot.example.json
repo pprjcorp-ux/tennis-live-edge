@@ -1,0 +1,51 @@
+{
+  "name": "tennis-live-edge-local-autopilot",
+  "gateway": {
+    "host": "127.0.0.1",
+    "http_port": 48741,
+    "public_network": false
+  },
+  "channels": {
+    "dashboard": {
+      "enabled": true,
+      "api_base_env": "TENNIS_EDGE_API_BASE"
+    },
+    "telegram": {
+      "enabled": true,
+      "allowed_user_ids_env": "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS",
+      "pairing_required": true
+    }
+  },
+  "model_router": {
+    "policy": "cost_optimized",
+    "default_model": "gpt-5.4-mini",
+    "critical_model": "gpt-5.5",
+    "critical_routes": [
+      "critical_anomaly",
+      "model_promotion_report",
+      "real_execution_readiness_review"
+    ],
+    "daily_budget_usd": 15
+  },
+  "http_policy": {
+    "allowed_origins": [
+      "http://localhost:8000",
+      "http://127.0.0.1:8000",
+      "http://localhost:3000",
+      "http://127.0.0.1:3000"
+    ],
+    "allow_sportsbook_domains": false,
+    "allow_betfair_direct_api": false
+  },
+  "secrets_policy": {
+    "read_env_files": false,
+    "print_secret_values": false,
+    "admin_token_env": "ADMIN_API_TOKEN"
+  },
+  "automation_policy": {
+    "paper_autopilot": true,
+    "real_execution": false,
+    "browser_sportsbook_automation": false,
+    "requires_backend_gates": true
+  }
+}

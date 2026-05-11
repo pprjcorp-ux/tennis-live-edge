@@ -1,20 +1,22 @@
 # Tennis Live Edge
 
-Dashboard e backend para analisar jogos ATP/WTA, estimar probabilidade justa, comparar com odds de mercado e recomendar apenas sinais com edge positivo.
+Private local-first tennis trading analytics system. It ingests scores/odds,
+estimates fair probabilities, records paper outcomes, and recommends only
+positive-EV signals with abstention and risk gates.
 
-## O que a v1 entrega
+## Canonical Branches
 
-- API FastAPI com fixtures de exemplo e clientes prontos para API-Tennis e Odds-API.io.
-- Motor de features, modelo baseline auditavel, ensemble pre-match, Markov live point/game/set/match, calibracao e stake Kelly fracionado.
-- Dashboard Next.js para jogos do dia, odds, probabilidade modelo, edge, confianca e status do sinal.
-- Modo enterprise local-first com adaptadores para Sportradar/Betradar, TXODDS, API-Tennis e Odds-API.io.
-- Perfil `enterprise_roi_clv` para maximizar ROI/CLV em modo paper-first, com orcamento alvo enterprise, adapters Sportradar/Betradar/TXODDS feature-flagged e API-Tennis/Odds-API.io/TheOddsAPI como fallback/comparador.
-- Execution engine Betfair-first: paper orders, bankroll caps, kill switch, audit trail e learning promotion gates. Real orders ficam bloqueadas por default.
-- Provider cursors para Odds-API.io `seq/lastSeq`, data-quality snapshots, entity-resolution conflicts, model registry, calibration reports e paper performance.
-- Replay deterministico, backtest com gate de promocao de modelo e endpoints administrativos protegidos por `ADMIN_API_TOKEN`.
-- Schema Postgres/TimescaleDB event-sourced para payloads brutos, score/odds ticks, point events, suspensoes, latencia, predicoes, sinais, paper orders e futura execucao.
+- `budget`: default public branch. Same core system with lean ATP defaults,
+  approximately `$500/mo` vendor target, and enterprise feeds disabled.
+- `enterprise`: complete enterprise profile with ROI/CLV paper trading,
+  Betfair execution architecture hard-blocked by default, OpenClaw Autopilot,
+  provider health, replay/backtest lab, and private runtime docs.
 
-## Rodando localmente
+This branch is the `enterprise` profile. Real-money execution remains disabled
+by default and must not be enabled without a separate compliance/account/API
+activation task.
+
+## Quick Start
 
 ```bash
 cd /Users/ppfahd/Workspace/projects/tennis-live-edge
@@ -23,37 +25,36 @@ python3 -m venv .venv
 npm install
 npm --prefix apps/web install
 npm run api:test
+npm --prefix apps/web run build
 npm run dev
 ```
 
 Backend: `http://localhost:8000`  
 Dashboard: `http://localhost:3000`
 
-Sem chaves, o sistema usa `TENNIS_EDGE_DATA_MODE=sample`. Para dados reais, preencha `.env` com feeds pagos e defina:
+Without paid keys the system runs in `TENNIS_EDGE_DATA_MODE=sample`.
 
-- `SPORTRADAR_API_KEY`, `BETRADAR_UOF_TOKEN`, `TXODDS_USER`, `TXODDS_PASSWORD`
-- `API_TENNIS_KEY`, `ODDS_API_IO_KEY`, `THE_ODDS_API_KEY` para fallback, archive e comparacao de odds
-- `ADMIN_API_TOKEN` para replay/backtest/promocao
-- `TENNIS_EDGE_RUNTIME_PROFILE=enterprise_roi_clv`, `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men`
-- `SCORE_PRIMARY=api_tennis`, `ODDS_PRIMARY=odds_api_io_ws`, `ODDS_ARCHIVE=theoddsapi`
-- `ENTERPRISE_FEEDS_ENABLED=false`
-- `EXECUTION_VENUE=betfair`, `EXECUTION_STAGE=paper`, `EXECUTION_ENABLED=false`
-- `REAL_EXECUTION_HARD_BLOCK=true`, `MODEL_CHAMPION_VERSION=baseline_v0`, `MIN_PAPER_SIGNALS_FOR_REAL_REVIEW=500`, `MIN_PAPER_DAYS_FOR_REAL_REVIEW=60`
-- `BETFAIR_APP_KEY`, `BETFAIR_USERNAME`, `BETFAIR_CERT_PATH`, `BETFAIR_KEY_PATH`, `BETFAIR_PASSWORD_SECRET_REF`, `BETFAIR_LIVE_KEY_APPROVED=false`
-- `BANKROLL_BASE_CURRENCY`, `BANKROLL_STARTING_BALANCE`, `MAX_ORDER_STAKE_FRACTION`, `DAILY_LOSS_LIMIT_FRACTION`, `WEEKLY_DRAWDOWN_LIMIT_FRACTION`
-- `TENNIS_EDGE_CORS_ORIGIN=http://localhost:3000,https://edge.<domain>`
+## Documentation
 
-Para acesso privado, use Cloudflare Tunnel + Access conforme `infra/cloudflare/README.md`. O dashboard envia cookies do Cloudflare Access com `credentials: include`; o backend nao deve ser aberto publicamente fora do tunel protegido.
+- [Common architecture](docs/architecture.md)
+- [Budget profile](docs/budget-profile.md)
+- [Enterprise profile](docs/enterprise-profile.md)
+- [Execution safety](docs/execution-safety.md)
+- [OpenClaw Autopilot](docs/openclaw-autopilot.md)
+- [Cloudflare private access](infra/cloudflare/README.md)
 
-## Regra de sinal
+## Enterprise Defaults
 
-O sistema pode e deve se abster. `ENTRY` so aparece quando:
+Use `.env.example` as the contract. The important enterprise defaults are:
 
-- odds validas existem para os dois lados;
-- probabilidade do modelo supera a probabilidade justa do mercado;
-- edge passa o threshold: 4% pre-match, 3% live normal, 6% live volatil;
-- stake Kelly fracionado fica positivo e dentro do cap de 1.5% da banca.
+- `TENNIS_EDGE_RUNTIME_PROFILE=enterprise_roi_clv`
+- `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men`
+- `ENTERPRISE_FEEDS_ENABLED=false` until paid contracts and payloads are validated
+- `EXECUTION_ENABLED=false`
+- `EXECUTION_STAGE=paper`
+- `REAL_EXECUTION_HARD_BLOCK=true`
+- `OPENCLAW_CRITICAL_MODEL=gpt-5.5`
 
-Isto nao e promessa de lucro nem conselho de aposta. A qualidade deve ser medida por ROI, CLV, Brier score, log loss, calibracao e drawdown.
-
-Auto-betting fica desativado por default e esta fase adiciona `REAL_EXECUTION_HARD_BLOCK=true`: mesmo com credenciais, `/api/v1/orders/submit` continua bloqueado. Para abrir uma revisao futura de execucao real, o sistema precisa acumular pelo menos 60 dias ou 500 sinais paper liquidados, com ROI/CLV/calibracao/drawdown aprovados, alem de conta Betfair legalmente disponivel, KYC/live app key aprovados e revisao separada. O sistema nao usa browser automation, scraping, bypass de geolocalizacao ou automacao contra casas que proibem bots.
+The system is analytical software, not betting advice or a profit guarantee.
+No browser automation, scraping, geolocation bypass, or direct LLM-initiated
+betting is allowed.

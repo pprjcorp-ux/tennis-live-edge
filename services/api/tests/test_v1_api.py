@@ -9,6 +9,8 @@ from tennis_edge.config import get_settings
 get_settings.cache_clear()
 
 from tennis_edge.main import app
+from tennis_edge.services.agent_ops import AGENT_RUNS
+from tennis_edge.services.execution_engine import ORDERS
 
 
 client = TestClient(app)
@@ -48,6 +50,59 @@ def test_v1_enterprise_observability_endpoints() -> None:
     assert paper.status_code == 200
     assert any(item["provider"] == "odds_api_io" for item in cursors.json())
     assert champion.json()["model_version"] == "baseline_v0"
+
+
+def test_v1_agent_ops_endpoints_expose_openclaw_router() -> None:
+    briefing = client.get("/api/v1/agent/briefing")
+    anomalies = client.get("/api/v1/agent/anomalies")
+    runs = client.get("/api/v1/agent/runs")
+
+    assert briefing.status_code == 200
+    assert anomalies.status_code == 200
+    assert runs.status_code == 200
+    assert briefing.json()["critical_model"] == "gpt-5.5"
+    assert "create_paper_order" in briefing.json()["allowed_actions"]
+    assert isinstance(anomalies.json(), list)
+
+
+def test_v1_agent_autopilot_requires_token() -> None:
+    response = client.post("/api/v1/agent/autopilot/evaluate", json={})
+
+    assert response.status_code == 401
+
+
+def test_v1_agent_autopilot_creates_paper_orders_and_blocks_real_request() -> None:
+    ORDERS.clear()
+    AGENT_RUNS.clear()
+
+    first = client.post(
+        "/api/v1/agent/autopilot/evaluate",
+        headers=ADMIN_HEADERS,
+        json={
+            "source": "openclaw",
+            "create_paper_orders": True,
+            "request_real_execution": True,
+            "max_paper_orders": 2,
+        },
+    )
+    second = client.post(
+        "/api/v1/agent/autopilot/evaluate",
+        headers=ADMIN_HEADERS,
+        json={"source": "openclaw", "create_paper_orders": True, "max_paper_orders": 2},
+    )
+    orders = client.get("/api/v1/orders")
+    runs = client.get("/api/v1/agent/runs")
+
+    assert first.status_code == 200
+    assert first.json()["paper_orders_created"] >= 1
+    assert first.json()["real_execution_blocked"] is True
+    assert any(action["status"] == "blocked" for action in first.json()["run"]["actions"])
+    assert second.status_code == 200
+    assert second.json()["paper_orders_skipped"] >= 1
+    assert orders.status_code == 200
+    assert all(order["status"] == "paper" for order in orders.json())
+    assert runs.status_code == 200
+    assert runs.json()[0]["model_routes"][-1]["model"] == "gpt-5.5"
 
 
 def test_v1_replay_and_backtest() -> None:

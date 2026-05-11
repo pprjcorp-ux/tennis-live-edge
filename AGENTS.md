@@ -2,8 +2,9 @@
 
 ## Canonical Branches
 
-- `budget`: default public branch, lean ATP profile, approximately `$500/mo`
-  vendor target, enterprise feeds disabled.
+- `budget`: default public branch, ATP main-tour plus men's/women's Grand Slam
+  singles profile, approximately `$500/mo` vendor target, enterprise feeds
+  disabled.
 - `enterprise`: full enterprise profile, ROI/CLV paper trading, Betfair
   architecture hard-blocked by default, OpenClaw Autopilot, private runtime docs.
 
@@ -35,6 +36,7 @@ Enterprise branch:
 
 - `TENNIS_EDGE_RUNTIME_PROFILE=enterprise_roi_clv`
 - `TENNIS_EDGE_MONTHLY_BUDGET_USD=6000`
+- `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women`
 - `EXECUTION_ENABLED=false`
 - `EXECUTION_STAGE=paper`
 - `REAL_EXECUTION_HARD_BLOCK=true`
@@ -44,7 +46,7 @@ Budget branch:
 
 - `TENNIS_EDGE_RUNTIME_PROFILE=lean_atp`
 - `TENNIS_EDGE_MONTHLY_BUDGET_USD=500`
-- `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men`
+- `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women`
 - `ENTERPRISE_FEEDS_ENABLED=false`
 - `EXECUTION_ENABLED=false`
 - `REAL_EXECUTION_HARD_BLOCK=true`

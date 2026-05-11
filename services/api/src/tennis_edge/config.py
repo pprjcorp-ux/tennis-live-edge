@@ -212,7 +212,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("TENNIS_EDGE_RUNTIME_PROFILE", "RUNTIME_PROFILE"),
     )
     coverage: str = Field(
-        default="atp_main,grand_slam_men",
+        default="atp_main,grand_slam_men,grand_slam_women",
         validation_alias=AliasChoices("TENNIS_EDGE_COVERAGE", "COVERAGE"),
     )
     score_primary: str = Field(

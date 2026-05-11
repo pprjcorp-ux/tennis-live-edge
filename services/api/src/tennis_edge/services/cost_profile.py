@@ -71,7 +71,7 @@ def cost_profile(settings: Settings) -> CostProfile:
     notes = (
         [
             "Lean ATP profile uses API-Tennis, Odds-API.io and TheOddsAPI while enterprise feeds stay disabled.",
-            "Coverage gates restrict actionable signals to ATP main tour and men's Grand Slam singles.",
+            "Coverage gates restrict actionable signals to ATP main tour and men's/women's Grand Slam singles.",
         ]
         if settings.runtime_profile == "lean_atp"
         else [
@@ -94,9 +94,17 @@ def cost_profile(settings: Settings) -> CostProfile:
     )
 
 
-def is_grand_slam_men(match: Match) -> bool:
+def is_grand_slam_tournament(match: Match) -> bool:
     tournament = match.tournament.lower()
-    return match.tour == Tour.ATP and any(name in tournament for name in GRAND_SLAMS)
+    return any(name in tournament for name in GRAND_SLAMS)
+
+
+def is_grand_slam_men(match: Match) -> bool:
+    return match.tour == Tour.ATP and is_grand_slam_tournament(match)
+
+
+def is_grand_slam_women(match: Match) -> bool:
+    return match.tour == Tour.WTA and is_grand_slam_tournament(match)
 
 
 def is_atp_main(match: Match) -> bool:
@@ -112,7 +120,9 @@ def coverage_decision(match: Match, settings: Settings) -> CoverageDecision:
         return CoverageDecision(True, "ATP main-tour coverage.")
     if "grand_slam_men" in allowed and is_grand_slam_men(match):
         return CoverageDecision(True, "Men's Grand Slam singles coverage.")
-    return CoverageDecision(False, "Outside lean ATP coverage; monitor-only.")
+    if "grand_slam_women" in allowed and is_grand_slam_women(match):
+        return CoverageDecision(True, "Women's Grand Slam singles coverage.")
+    return CoverageDecision(False, "Outside lean Grand Slam/ATP coverage; monitor-only.")
 
 
 def apply_coverage_gate(signals: list[Signal], decision: CoverageDecision) -> list[Signal]:
@@ -167,7 +177,7 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
             last_message_at=now if sample else None,
             status="score primary sample feed" if sample else "score primary configured",
             cost_tier="$80/mo",
-            coverage_scope="ATP main + men's Grand Slam score/livescore",
+            coverage_scope="ATP main + men's/women's Grand Slam score/livescore",
             quota_used=0 if sample else None,
             quota_limit=200000,
             last_billable_call_at=None,

@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: tennis
       POSTGRES_PASSWORD: tennis
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - tennis_edge_pg:/var/lib/postgresql/data
       - ./infra/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
@@ -14,14 +14,14 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
   nats:
     image: nats:2.10-alpine
     command: ["-js"]
     ports:
-      - "4222:4222"
-      - "8222:8222"
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
 
 volumes:
   tennis_edge_pg:

@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.backup-*
+.secrets/
 .logs/
 .venv/
 __pycache__/

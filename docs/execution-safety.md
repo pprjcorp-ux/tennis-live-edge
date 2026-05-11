@@ -25,3 +25,6 @@ Real execution requires a separate task that reviews legal availability, KYC,
 approved Betfair live app key, account constraints, jurisdiction, risk caps,
 and operational monitoring. The activation task must explicitly change the hard
 block; no current code path should do that automatically.
+
+Betfair onboarding steps and enterprise feed outreach are tracked in
+[Provider access runbook](provider-access-runbook.md).

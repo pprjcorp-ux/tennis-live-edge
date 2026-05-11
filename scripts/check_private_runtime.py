@@ -76,7 +76,8 @@ def main() -> int:
         "OPENCLAW_ROUTER_POLICY=cost_optimized",
         "TENNIS_EDGE_CORS_ORIGIN",
         "TENNIS_EDGE_RUNTIME_PROFILE=enterprise_roi_clv",
-        "TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men",
+        "TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women",
+        "TENNIS_EDGE_MONTHLY_BUDGET_USD=6000",
         "ENTERPRISE_FEEDS_ENABLED=false",
         "EXECUTION_ENABLED=false",
     ]:

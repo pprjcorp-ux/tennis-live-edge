@@ -6,8 +6,9 @@ positive-EV signals with abstention and risk gates.
 
 ## Canonical Branches
 
-- `budget`: default public branch. Same core system with lean ATP defaults,
-  approximately `$500/mo` vendor target, and enterprise feeds disabled.
+- `budget`: default public branch. Same core system with ATP main-tour plus
+  men's/women's Grand Slam singles defaults, approximately `$500/mo` vendor
+  target, and enterprise feeds disabled.
 - `enterprise`: complete enterprise profile with ROI/CLV paper trading,
   Betfair execution architecture hard-blocked by default, OpenClaw Autopilot,
   provider health, replay/backtest lab, and private runtime docs.
@@ -48,7 +49,8 @@ Without paid keys the system runs in `TENNIS_EDGE_DATA_MODE=sample`.
 Use `.env.example` as the contract. The important enterprise defaults are:
 
 - `TENNIS_EDGE_RUNTIME_PROFILE=enterprise_roi_clv`
-- `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men`
+- `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women`
+- `TENNIS_EDGE_MONTHLY_BUDGET_USD=6000`
 - `ENTERPRISE_FEEDS_ENABLED=false` until paid contracts and payloads are validated
 - `EXECUTION_ENABLED=false`
 - `EXECUTION_STAGE=paper`

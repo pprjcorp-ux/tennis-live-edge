@@ -1,0 +1,149 @@
+import asyncio
+from datetime import date
+
+from tennis_edge.config import Settings
+from tennis_edge.domain import (
+    ExecutionStage,
+    KillSwitchRequest,
+    LearningPromotionRequest,
+    OrderRequest,
+    OrderStatus,
+    SignalStatus,
+)
+from tennis_edge.services.execution_engine import (
+    KILL_SWITCH,
+    build_betfair_mapping,
+    create_order,
+    execution_status,
+    promote_from_learning,
+    set_kill_switch_for,
+    stage_stake_cap,
+)
+from tennis_edge.providers.betfair import BetfairClient
+from tennis_edge.services.repository import AnalysisRepository
+
+
+def _settings(**overrides: object) -> Settings:
+    defaults = {
+        "data_mode": "sample",
+        "execution_enabled": False,
+        "execution_stage": "paper",
+        "execution_venue": "betfair",
+        "bankroll_starting_balance": 10000,
+        "betfair_live_key_approved": False,
+    }
+    defaults.update(overrides)
+    return Settings(**defaults)
+
+
+def _entry_signal_context(settings: Settings):
+    repo = AnalysisRepository(settings)
+    analyses = asyncio.run(repo.analyses_for_date(date.today()))
+    for analysis in analyses:
+        for signal in analysis.signals:
+            if signal.status == SignalStatus.ENTRY:
+                return analyses, analysis, signal
+    raise AssertionError("sample data must include at least one executable entry signal")
+
+
+def test_execution_status_blocks_real_orders_by_default() -> None:
+    KILL_SWITCH["enabled"] = False
+    status = execution_status(_settings())
+
+    assert status.stage == ExecutionStage.PAPER
+    assert status.can_submit_real_orders is False
+    assert any("EXECUTION_ENABLED=false" in reason for reason in status.reasons)
+    assert any("paper" in reason for reason in status.reasons)
+
+
+def test_betfair_mapping_uses_market_and_selection_ids() -> None:
+    settings = _settings()
+    _, analysis, signal = _entry_signal_context(settings)
+    mapping = build_betfair_mapping(analysis, signal, 10, signal.best_odds, "ord_123456789abc")
+
+    assert mapping.market_id.startswith("1.")
+    assert mapping.selection_id > 0
+    assert mapping.side == "BACK"
+    assert mapping.customer_order_ref == "te-123456789abc"
+
+    payload = BetfairClient.place_orders_payload(mapping)
+    instruction = payload["params"]["instructions"][0]
+    assert payload["method"] == "SportsAPING/v1.0/placeOrders"
+    assert payload["params"]["marketId"] == mapping.market_id
+    assert instruction["orderType"] == "LIMIT"
+    assert instruction["limitOrder"]["persistenceType"] == "LAPSE"
+
+
+def test_paper_order_records_audit_without_real_submission() -> None:
+    settings = _settings()
+    analyses, _, signal = _entry_signal_context(settings)
+
+    order = create_order(settings, analyses, request=OrderRequest(signal_id=signal.id), real=False)
+
+    assert order.status == OrderStatus.PAPER
+    assert order.external_order_id is None
+    assert order.customer_order_ref is not None
+    assert "No browser automation" in " ".join(order.audit)
+
+
+def test_real_order_is_blocked_until_all_execution_gates_pass() -> None:
+    settings = _settings()
+    analyses, _, signal = _entry_signal_context(settings)
+
+    order = create_order(settings, analyses, request=OrderRequest(signal_id=signal.id), real=True)
+
+    assert order.status == OrderStatus.EXECUTION_BLOCKED
+    assert order.external_order_id is None
+    assert "EXECUTION_ENABLED=false" in (order.rejection_reason or "")
+
+
+def test_tiny_real_stage_caps_stake_to_tenth_percent() -> None:
+    settings = _settings(
+        execution_enabled=True,
+        execution_stage="tiny_real",
+        betfair_app_key="app",
+        betfair_username="user",
+        betfair_cert_path="/tmp/cert",
+        betfair_key_path="/tmp/key",
+        betfair_password_secret_ref="secret://betfair",
+        betfair_live_key_approved=True,
+    )
+
+    assert stage_stake_cap(settings) == 0.001
+
+
+def test_kill_switch_blocks_even_configured_real_execution() -> None:
+    settings = _settings(
+        execution_enabled=True,
+        execution_stage="tiny_real",
+        betfair_app_key="app",
+        betfair_username="user",
+        betfair_cert_path="/tmp/cert",
+        betfair_key_path="/tmp/key",
+        betfair_password_secret_ref="secret://betfair",
+        betfair_live_key_approved=True,
+    )
+
+    status = set_kill_switch_for(settings, KillSwitchRequest(enabled=True, reason="manual test"))
+
+    assert status.can_submit_real_orders is False
+    assert any("Kill switch" in reason for reason in status.reasons)
+    set_kill_switch_for(settings, KillSwitchRequest(enabled=False, reason="reset"))
+
+
+def test_learning_promotion_rejects_worse_clv_or_drawdown() -> None:
+    decision = promote_from_learning(
+        LearningPromotionRequest(
+            candidate_model_version="bad_clv_candidate",
+            roi=0.04,
+            clv=-0.01,
+            brier_score=0.21,
+            log_loss=0.6,
+            calibration_error=0.03,
+            max_drawdown=0.22,
+        )
+    )
+
+    assert decision.promoted is False
+    assert "CLV" in " ".join(decision.reasons)
+    assert "Drawdown" in " ".join(decision.reasons)

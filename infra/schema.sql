@@ -185,9 +185,21 @@ CREATE TABLE IF NOT EXISTS signals (
 CREATE TABLE IF NOT EXISTS paper_orders (
   id BIGSERIAL PRIMARY KEY,
   signal_id BIGINT NOT NULL REFERENCES signals(id),
+  venue TEXT NOT NULL DEFAULT 'betfair',
+  market_id TEXT,
+  selection_id BIGINT,
+  customer_order_ref TEXT,
   requested_odds NUMERIC(8, 4) NOT NULL,
   accepted_odds NUMERIC(8, 4),
   stake_fraction NUMERIC(8, 6) NOT NULL,
+  stake_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  matched_stake NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  average_price NUMERIC(8, 4),
+  risk_snapshot JSONB NOT NULL DEFAULT '{}',
+  rejection_reason TEXT,
+  settlement_status TEXT,
+  pnl NUMERIC(14, 2),
+  clv NUMERIC(8, 6),
   status TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -196,11 +208,67 @@ CREATE TABLE IF NOT EXISTS execution_orders (
   id BIGSERIAL PRIMARY KEY,
   paper_order_id BIGINT REFERENCES paper_orders(id),
   exchange TEXT NOT NULL,
+  market_id TEXT,
+  selection_id BIGINT,
+  customer_order_ref TEXT,
+  customer_strategy_ref TEXT NOT NULL DEFAULT 'tennis-edge',
   external_order_id TEXT,
   status TEXT NOT NULL,
+  requested_odds NUMERIC(8, 4),
+  accepted_odds NUMERIC(8, 4),
+  stake_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  matched_stake NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  average_price NUMERIC(8, 4),
+  rejection_reason TEXT,
+  settlement_status TEXT,
+  pnl NUMERIC(14, 2),
+  clv NUMERIC(8, 6),
+  risk_snapshot JSONB NOT NULL DEFAULT '{}',
   payload JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT execution_orders_disabled_guard CHECK (status <> 'enabled_without_compliance')
+);
+
+CREATE TABLE IF NOT EXISTS bankroll_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  base_currency TEXT NOT NULL,
+  bankroll_amount NUMERIC(14, 2) NOT NULL,
+  available_amount NUMERIC(14, 2) NOT NULL,
+  open_exposure NUMERIC(14, 2) NOT NULL,
+  realized_pnl NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  daily_pnl NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  weekly_drawdown NUMERIC(8, 6) NOT NULL DEFAULT 0,
+  execution_stage TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS learning_runs (
+  id TEXT PRIMARY KEY,
+  model_version_id TEXT REFERENCES model_versions(id),
+  run_type TEXT NOT NULL,
+  training_window JSONB NOT NULL DEFAULT '{}',
+  metrics JSONB NOT NULL DEFAULT '{}',
+  promoted BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS model_promotion_decisions (
+  id BIGSERIAL PRIMARY KEY,
+  learning_run_id TEXT REFERENCES learning_runs(id),
+  candidate_model_version TEXT NOT NULL,
+  promoted BOOLEAN NOT NULL,
+  reasons JSONB NOT NULL DEFAULT '[]',
+  metrics JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS execution_audit_events (
+  id BIGSERIAL PRIMARY KEY,
+  order_id BIGINT,
+  event_type TEXT NOT NULL,
+  message TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS backtests (

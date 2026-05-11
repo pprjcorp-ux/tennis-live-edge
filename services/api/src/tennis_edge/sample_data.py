@@ -29,6 +29,7 @@ def _quote(bookmaker: str, player_id: str, odds: float, minutes_ago: int = 1) ->
 PLAYERS = {
     "atp_sinner": Player(
         id="atp_sinner",
+        provider_ids={"betfair_selection_id": "1001"},
         name="Jannik Sinner",
         tour=Tour.ATP,
         country="ITA",
@@ -43,6 +44,7 @@ PLAYERS = {
     ),
     "atp_musetti": Player(
         id="atp_musetti",
+        provider_ids={"betfair_selection_id": "1002"},
         name="Lorenzo Musetti",
         tour=Tour.ATP,
         country="ITA",
@@ -57,6 +59,7 @@ PLAYERS = {
     ),
     "atp_zverev": Player(
         id="atp_zverev",
+        provider_ids={"betfair_selection_id": "1003"},
         name="Alexander Zverev",
         tour=Tour.ATP,
         country="GER",
@@ -71,6 +74,7 @@ PLAYERS = {
     ),
     "atp_navone": Player(
         id="atp_navone",
+        provider_ids={"betfair_selection_id": "1004"},
         name="Mariano Navone",
         tour=Tour.ATP,
         country="ARG",
@@ -85,6 +89,7 @@ PLAYERS = {
     ),
     "wta_swiatek": Player(
         id="wta_swiatek",
+        provider_ids={"betfair_selection_id": "2001"},
         name="Iga Swiatek",
         tour=Tour.WTA,
         country="POL",
@@ -99,6 +104,7 @@ PLAYERS = {
     ),
     "wta_andreeva": Player(
         id="wta_andreeva",
+        provider_ids={"betfair_selection_id": "2002"},
         name="Mirra Andreeva",
         tour=Tour.WTA,
         country="RUS",
@@ -113,6 +119,7 @@ PLAYERS = {
     ),
     "wta_gauff": Player(
         id="wta_gauff",
+        provider_ids={"betfair_selection_id": "2003"},
         name="Coco Gauff",
         tour=Tour.WTA,
         country="USA",
@@ -127,6 +134,7 @@ PLAYERS = {
     ),
     "wta_keys": Player(
         id="wta_keys",
+        provider_ids={"betfair_selection_id": "2004"},
         name="Madison Keys",
         tour=Tour.WTA,
         country="USA",
@@ -141,6 +149,7 @@ PLAYERS = {
     ),
     "itf_lima": Player(
         id="itf_lima",
+        provider_ids={"betfair_selection_id": "3001"},
         name="Mateo Lima",
         tour=Tour.ATP,
         country="BRA",
@@ -155,6 +164,7 @@ PLAYERS = {
     ),
     "itf_sato": Player(
         id="itf_sato",
+        provider_ids={"betfair_selection_id": "3002"},
         name="Ren Sato",
         tour=Tour.ATP,
         country="JPN",
@@ -175,6 +185,7 @@ def sample_matches() -> list[Match]:
     return [
         Match(
             id="match_atp_001",
+            provider_ids={"betfair_market_id": "1.100000001"},
             provider_match_id="sample-api-tennis-001",
             tournament="Rome Masters",
             round="R16",
@@ -196,6 +207,7 @@ def sample_matches() -> list[Match]:
         ),
         Match(
             id="match_atp_002",
+            provider_ids={"betfair_market_id": "1.100000002"},
             provider_match_id="sample-api-tennis-002",
             tournament="Rome Masters",
             round="R16",
@@ -227,6 +239,7 @@ def sample_matches() -> list[Match]:
         ),
         Match(
             id="match_gs_001",
+            provider_ids={"betfair_market_id": "1.100000005"},
             provider_match_id="sample-api-tennis-005",
             tournament="Roland Garros",
             round="R32",
@@ -249,6 +262,7 @@ def sample_matches() -> list[Match]:
         ),
         Match(
             id="match_wta_001",
+            provider_ids={"betfair_market_id": "1.100000003"},
             provider_match_id="sample-api-tennis-003",
             tournament="Rome WTA",
             round="QF",
@@ -281,6 +295,7 @@ def sample_matches() -> list[Match]:
         ),
         Match(
             id="match_wta_002",
+            provider_ids={"betfair_market_id": "1.100000004"},
             provider_match_id="sample-api-tennis-004",
             tournament="Rome WTA",
             round="R16",
@@ -305,6 +320,7 @@ def sample_matches() -> list[Match]:
             provider_ids={
                 "sportradar": "sr:match:itf-001",
                 "txodds": "TX-ITF-001",
+                "betfair_market_id": "1.100000006",
             },
             provider_match_id="sample-itf-001",
             tournament="ITF M25 Curitiba",

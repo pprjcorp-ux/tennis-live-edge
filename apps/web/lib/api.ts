@@ -1,9 +1,13 @@
 import type {
   BacktestMetrics,
+  BankrollSnapshot,
   CostProfile,
   DailyMetrics,
   DailyCostReport,
+  ExecutionOrder,
+  ExecutionStatus,
   MatchAnalysis,
+  ModelPromotionDecision,
   ProviderHealth,
   ReplayRunResult,
   Signal
@@ -46,6 +50,18 @@ export function getDailyCostReport(): Promise<DailyCostReport> {
   return getJson<DailyCostReport>("/api/v1/cost-report/daily");
 }
 
+export function getExecutionStatus(): Promise<ExecutionStatus> {
+  return getJson<ExecutionStatus>("/api/v1/execution/status");
+}
+
+export function getBankroll(): Promise<BankrollSnapshot> {
+  return getJson<BankrollSnapshot>("/api/v1/bankroll");
+}
+
+export function getOrders(): Promise<ExecutionOrder[]> {
+  return getJson<ExecutionOrder[]>("/api/v1/orders");
+}
+
 function adminHeaders(adminToken: string) {
   return {
     "Content-Type": "application/json",
@@ -76,4 +92,62 @@ export async function runBacktest(adminToken: string): Promise<BacktestMetrics> 
     throw new Error(`Backtest request failed: ${response.status}`);
   }
   return response.json() as Promise<BacktestMetrics>;
+}
+
+export async function createPaperOrder(
+  signalId: string,
+  adminToken: string
+): Promise<ExecutionOrder> {
+  const response = await fetch(`${API_BASE}/api/v1/orders/paper`, {
+    method: "POST",
+    headers: adminHeaders(adminToken),
+    credentials: "include",
+    body: JSON.stringify({ signal_id: signalId })
+  });
+  if (!response.ok) {
+    throw new Error(`Paper order failed: ${response.status}`);
+  }
+  return response.json() as Promise<ExecutionOrder>;
+}
+
+export async function submitOrder(signalId: string, adminToken: string): Promise<ExecutionOrder> {
+  const response = await fetch(`${API_BASE}/api/v1/orders/submit`, {
+    method: "POST",
+    headers: adminHeaders(adminToken),
+    credentials: "include",
+    body: JSON.stringify({ signal_id: signalId })
+  });
+  if (!response.ok) {
+    throw new Error(`Submit order failed: ${response.status}`);
+  }
+  return response.json() as Promise<ExecutionOrder>;
+}
+
+export async function setKillSwitch(
+  enabled: boolean,
+  adminToken: string
+): Promise<ExecutionStatus> {
+  const response = await fetch(`${API_BASE}/api/v1/execution/kill-switch`, {
+    method: "POST",
+    headers: adminHeaders(adminToken),
+    credentials: "include",
+    body: JSON.stringify({ enabled, reason: enabled ? "dashboard" : "dashboard reset" })
+  });
+  if (!response.ok) {
+    throw new Error(`Kill switch update failed: ${response.status}`);
+  }
+  return response.json() as Promise<ExecutionStatus>;
+}
+
+export async function promoteFromLearning(adminToken: string): Promise<ModelPromotionDecision> {
+  const response = await fetch(`${API_BASE}/api/v1/models/promote-from-learning`, {
+    method: "POST",
+    headers: adminHeaders(adminToken),
+    credentials: "include",
+    body: JSON.stringify({})
+  });
+  if (!response.ok) {
+    throw new Error(`Learning promotion failed: ${response.status}`);
+  }
+  return response.json() as Promise<ModelPromotionDecision>;
 }

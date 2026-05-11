@@ -381,10 +381,27 @@ h2 {
   padding: 14px;
 }
 
+.executionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  padding: 14px;
+}
+
 .costGrid span {
   color: var(--app-muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.executionGrid span {
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.executionGrid strong {
+  overflow-wrap: anywhere;
 }
 
 .providerChips {
@@ -401,6 +418,49 @@ h2 {
   color: var(--app-muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.executionWarnings {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.executionWarnings span {
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.executionActions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.executionActions button {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.executionActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.executionActions .dangerGhost {
+  background: var(--red);
 }
 
 .healthRow {
@@ -546,6 +606,33 @@ h2 {
 .labCard span {
   color: var(--app-muted);
   font-size: 13px;
+}
+
+.orderJournal {
+  display: grid;
+  gap: 8px;
+}
+
+.orderRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.orderRow strong,
+.orderRow span {
+  overflow-wrap: anywhere;
+}
+
+.orderRow div span {
+  display: block;
+  margin-top: 2px;
+  color: var(--app-muted);
+  font-size: 12px;
 }
 
 @media (max-width: 980px) {

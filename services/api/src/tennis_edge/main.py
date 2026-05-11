@@ -6,10 +6,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from tennis_edge.config import Settings, get_settings
 from tennis_edge.domain import (
     BacktestMetrics,
+    BankrollSnapshot,
+    CancelOrderResult,
     CostProfile,
     DailyCostReport,
     DailyMetrics,
+    ExecutionOrder,
+    ExecutionStatus,
+    KillSwitchRequest,
+    LearningPromotionRequest,
     MatchAnalysis,
+    ModelPromotionDecision,
+    OrderRequest,
     ProviderHealth,
     ReplayRunRequest,
     ReplayRunResult,
@@ -107,6 +115,81 @@ async def v1_daily_cost_report(
     repo: AnalysisRepository = Depends(repository),
 ) -> DailyCostReport:
     return await repo.daily_cost_report(date.today())
+
+
+@app.get("/api/v1/execution/status", response_model=ExecutionStatus)
+async def v1_execution_status(
+    repo: AnalysisRepository = Depends(repository),
+) -> ExecutionStatus:
+    return await repo.execution_status()
+
+
+@app.get("/api/v1/bankroll", response_model=BankrollSnapshot)
+async def v1_bankroll(
+    repo: AnalysisRepository = Depends(repository),
+) -> BankrollSnapshot:
+    return await repo.bankroll()
+
+
+@app.get("/api/v1/orders", response_model=list[ExecutionOrder])
+async def v1_orders(
+    repo: AnalysisRepository = Depends(repository),
+) -> list[ExecutionOrder]:
+    return await repo.orders()
+
+
+@app.post("/api/v1/orders/paper", response_model=ExecutionOrder)
+async def v1_create_paper_order(
+    request: OrderRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ExecutionOrder:
+    try:
+        return await repo.create_paper_order(request)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Signal not found") from None
+
+
+@app.post("/api/v1/orders/submit", response_model=ExecutionOrder)
+async def v1_submit_order(
+    request: OrderRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ExecutionOrder:
+    try:
+        return await repo.submit_order(request)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Signal not found") from None
+
+
+@app.post("/api/v1/orders/{order_id}/cancel", response_model=CancelOrderResult)
+async def v1_cancel_order(
+    order_id: str,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> CancelOrderResult:
+    try:
+        return await repo.cancel_order(order_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Order not found") from None
+
+
+@app.post("/api/v1/execution/kill-switch", response_model=ExecutionStatus)
+async def v1_kill_switch(
+    request: KillSwitchRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ExecutionStatus:
+    return await repo.set_kill_switch(request)
+
+
+@app.post("/api/v1/models/promote-from-learning", response_model=ModelPromotionDecision)
+async def v1_promote_from_learning(
+    request: LearningPromotionRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ModelPromotionDecision:
+    return await repo.promote_from_learning(request)
 
 
 @app.post("/api/v1/replay/run", response_model=ReplayRunResult)

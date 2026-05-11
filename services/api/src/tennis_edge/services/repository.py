@@ -3,10 +3,18 @@ from datetime import date
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
     BacktestMetrics,
+    BankrollSnapshot,
+    CancelOrderResult,
     CostProfile,
     DailyCostReport,
     DailyMetrics,
+    ExecutionOrder,
+    ExecutionStatus,
+    KillSwitchRequest,
+    LearningPromotionRequest,
     MatchAnalysis,
+    ModelPromotionDecision,
+    OrderRequest,
     ProviderHealth,
     ReplayRunRequest,
     ReplayRunResult,
@@ -22,6 +30,15 @@ from tennis_edge.services.cost_profile import (
     coverage_decision,
     daily_cost_report,
     provider_health_for,
+)
+from tennis_edge.services.execution_engine import (
+    ORDERS,
+    bankroll_snapshot,
+    cancel_order,
+    create_order,
+    execution_status,
+    promote_from_learning,
+    set_kill_switch_for,
 )
 from tennis_edge.services.feature_engine import build_features
 from tennis_edge.services.model_service import predict_match
@@ -77,6 +94,42 @@ class AnalysisRepository:
 
     async def daily_cost_report(self, target_date: date) -> DailyCostReport:
         return daily_cost_report(self.settings, await self.analyses_for_date(target_date))
+
+    async def execution_status(self) -> ExecutionStatus:
+        return execution_status(self.settings)
+
+    async def bankroll(self) -> BankrollSnapshot:
+        return bankroll_snapshot(self.settings)
+
+    async def orders(self) -> list[ExecutionOrder]:
+        return sorted(ORDERS.values(), key=lambda order: order.created_at, reverse=True)
+
+    async def create_paper_order(self, request: OrderRequest) -> ExecutionOrder:
+        return create_order(
+            self.settings,
+            await self.analyses_for_date(date.today()),
+            request,
+            real=False,
+        )
+
+    async def submit_order(self, request: OrderRequest) -> ExecutionOrder:
+        return create_order(
+            self.settings,
+            await self.analyses_for_date(date.today()),
+            request,
+            real=True,
+        )
+
+    async def cancel_order(self, order_id: str) -> CancelOrderResult:
+        return cancel_order(order_id)
+
+    async def set_kill_switch(self, request: KillSwitchRequest) -> ExecutionStatus:
+        return set_kill_switch_for(self.settings, request)
+
+    async def promote_from_learning(
+        self, request: LearningPromotionRequest
+    ) -> ModelPromotionDecision:
+        return promote_from_learning(request)
 
     async def run_replay(self, request: ReplayRunRequest) -> ReplayRunResult:
         analyses = await self.analyses_for_date(date.today())

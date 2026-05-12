@@ -50,7 +50,7 @@ Without paid keys the system runs in `TENNIS_EDGE_DATA_MODE=sample`.
 Use `.env.example` as the contract. The important budget defaults are:
 
 - `TENNIS_EDGE_RUNTIME_PROFILE=lean_atp`
-- `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women`
+- `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women` (also the built-in default when `lean_atp` is used without an explicit coverage override)
 - `TENNIS_EDGE_MONTHLY_BUDGET_USD=500`
 - `ENTERPRISE_FEEDS_ENABLED=false`
 - `EXECUTION_ENABLED=false`

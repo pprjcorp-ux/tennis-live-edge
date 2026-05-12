@@ -1,5 +1,7 @@
 from functools import lru_cache
 
+LEAN_ATP_DEFAULT_COVERAGE = "atp_main,grand_slam_men,grand_slam_women"
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -212,7 +214,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("TENNIS_EDGE_RUNTIME_PROFILE", "RUNTIME_PROFILE"),
     )
     coverage: str = Field(
-        default="atp_main,grand_slam_men,grand_slam_women",
+        default=LEAN_ATP_DEFAULT_COVERAGE,
         validation_alias=AliasChoices("TENNIS_EDGE_COVERAGE", "COVERAGE"),
     )
     score_primary: str = Field(

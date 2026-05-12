@@ -7,6 +7,7 @@ plus men's/women's Grand Slam singles analytics at roughly `$500/mo`.
 
 - `TENNIS_EDGE_RUNTIME_PROFILE=lean_atp`
 - `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women`
+  - If this variable is unset, `lean_atp` uses this same built-in coverage default so ATP main-tour and men's/women's Grand Slam singles remain eligible for actionable signals.
 - `TENNIS_EDGE_MONTHLY_BUDGET_USD=500`
 - `SCORE_PRIMARY=api_tennis`
 - `ODDS_PRIMARY=odds_api_io_ws`

@@ -41,6 +41,7 @@ Without paid keys the system runs in `TENNIS_EDGE_DATA_MODE=sample`.
 - [Budget profile](docs/budget-profile.md)
 - [Enterprise profile](docs/enterprise-profile.md)
 - [Execution safety](docs/execution-safety.md)
+- [Strategy Learning Lab](docs/strategy-learning-lab.md)
 - [Provider access runbook](docs/provider-access-runbook.md)
 - [OpenClaw Autopilot](docs/openclaw-autopilot.md)
 - [Cloudflare private access](infra/cloudflare/README.md)

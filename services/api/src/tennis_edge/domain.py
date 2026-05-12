@@ -317,6 +317,21 @@ class BacktestMetrics(BaseModel):
     max_drawdown: float
     promoted: bool = False
     rejection_reason: str | None = None
+    strategy_id: str = "value_edge"
+    market: str = "ML"
+    feature_set: str = "enterprise_v1"
+    stake_policy: str = "fractional_kelly"
+    start_date: str | None = None
+    end_date: str | None = None
+    walk_forward: bool = True
+    bankroll_starting_balance: float = 10000
+    pnl: float = 0
+    turnover: float = 0
+    yield_on_turnover: float = 0
+    hit_rate: float = 0
+    average_stake_fraction: float = 0
+    settled_signals: int = 0
+    strategy_breakdown: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class BacktestRunRequest(BaseModel):
@@ -325,6 +340,10 @@ class BacktestRunRequest(BaseModel):
     model_version: str = "prematch_ensemble_v1"
     feature_set: str = "enterprise_v1"
     walk_forward: bool = True
+    strategy_id: str = "value_edge"
+    market: str = "ML"
+    stake_policy: str = "fractional_kelly"
+    bankroll_starting_balance: float = Field(default=10000, gt=0)
 
 
 class BetfairOrderMapping(BaseModel):

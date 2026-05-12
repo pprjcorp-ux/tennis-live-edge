@@ -33,6 +33,12 @@ npm run dev
 Backend: `http://localhost:8000`  
 Dashboard: `http://localhost:3000`
 
+After the backend is running, verify the budget runtime smoke path with:
+
+```bash
+python3 scripts/verify_tennis_live_edge.py --base-url http://localhost:8000 --runtime-profile lean_atp
+```
+
 Without paid keys the system runs in `TENNIS_EDGE_DATA_MODE=sample`.
 
 ## Documentation

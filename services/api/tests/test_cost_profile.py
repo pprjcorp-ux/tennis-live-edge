@@ -103,3 +103,66 @@ def test_daily_cost_report_counts_skipped_matches_and_signal_cost() -> None:
         "odds_api_io",
         "theoddsapi",
     }
+
+
+def test_lean_atp_without_explicit_coverage_uses_valid_atp_defaults() -> None:
+    settings = Settings(data_mode="sample", runtime_profile="lean_atp")
+
+    assert settings.coverage_set >= {"atp_main", "grand_slam_men", "grand_slam_women"}
+    assert coverage_decision(_grand_slam_match("US Open", Tour.ATP), settings).eligible
+
+
+def test_lean_atp_default_coverage_keeps_atp_matches_actionable() -> None:
+    settings = Settings(data_mode="sample", runtime_profile="lean_atp")
+    repo = AnalysisRepository(settings)
+    analyses = asyncio.run(repo.analyses_for_date(date.today()))
+
+    atp_main = [
+        analysis
+        for analysis in analyses
+        if analysis.match.tour == Tour.ATP
+        and analysis.match.competition_level == CompetitionLevel.ATP
+        and not analysis.match.tournament.lower().endswith("open")
+    ]
+
+    assert atp_main
+    assert all(coverage_decision(analysis.match, settings).eligible for analysis in atp_main)
+    assert all(
+        "Outside lean Grand Slam/ATP coverage" not in signal.reason
+        for analysis in atp_main
+        for signal in analysis.signals
+    )
+
+
+def test_enterprise_daily_cost_report_uses_api_tennis_when_score_routing_is_api_tennis() -> None:
+    settings = Settings(
+        data_mode="sample",
+        runtime_profile="enterprise_roi_clv",
+        enterprise_feeds_enabled=True,
+        score_primary="api_tennis",
+        monthly_budget_usd=6000,
+    )
+    repo = AnalysisRepository(settings)
+
+    report = asyncio.run(repo.daily_cost_report(date.today()))
+    providers = {usage.provider for usage in report.api_calls_by_provider}
+
+    assert "api_tennis" in providers
+    assert "sportradar" not in providers
+
+
+def test_enterprise_daily_cost_report_uses_sportradar_when_score_routing_is_sportradar() -> None:
+    settings = Settings(
+        data_mode="sample",
+        runtime_profile="enterprise_roi_clv",
+        enterprise_feeds_enabled=True,
+        score_primary="sportradar",
+        monthly_budget_usd=6000,
+    )
+    repo = AnalysisRepository(settings)
+
+    report = asyncio.run(repo.daily_cost_report(date.today()))
+    providers = {usage.provider for usage in report.api_calls_by_provider}
+
+    assert "sportradar" in providers
+    assert "api_tennis" not in providers

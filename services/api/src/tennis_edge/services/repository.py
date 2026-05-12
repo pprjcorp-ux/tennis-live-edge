@@ -50,6 +50,7 @@ from tennis_edge.services.cost_profile import (
     coverage_decision,
     daily_cost_report,
     provider_health_for,
+    routed_score_provider,
 )
 from tennis_edge.services.enterprise_analytics import (
     calibration_report,
@@ -123,7 +124,11 @@ class AnalysisRepository:
         return cost_profile(self.settings)
 
     async def daily_cost_report(self, target_date: date) -> DailyCostReport:
-        return daily_cost_report(self.settings, await self.analyses_for_date(target_date))
+        return daily_cost_report(
+            self.settings,
+            await self.analyses_for_date(target_date),
+            score_provider=routed_score_provider(self.settings),
+        )
 
     async def data_quality(self) -> list[DataQualitySnapshot]:
         return data_quality_snapshots(self.settings)

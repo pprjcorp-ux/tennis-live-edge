@@ -14,6 +14,8 @@ decide whether the system behaves as budget or enterprise.
   score/odds ticks, predictions, signals, paper orders, model versions, and
   audit events.
 - `openclaw/`: local-only OpenClaw skill, policy example, and cron examples.
+- `docs/historical-data-learning-loop.md`: historical import, replay/backtest,
+  strategy-search, and champion/challenger learning loop.
 
 ## Runtime Flow
 

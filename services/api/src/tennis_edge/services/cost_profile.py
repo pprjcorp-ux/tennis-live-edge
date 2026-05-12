@@ -285,7 +285,7 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
             estimated_daily_cost_usd=round(price_map[Provider.THE_ODDS_API] / 30, 2),
         ),
     ]
-    if settings.runtime_profile == "enterprise_roi_clv":
+    if settings.runtime_profile == "enterprise_roi_clv" and settings.enterprise_feeds_enabled:
         usages.extend(
             [
                 ProviderCostUsage(

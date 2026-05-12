@@ -258,7 +258,10 @@ class Settings(BaseSettings):
 
     @property
     def coverage_set(self) -> set[str]:
-        return {item.strip() for item in self.coverage.split(",") if item.strip()}
+        coverage = {item.strip() for item in self.coverage.split(",") if item.strip()}
+        if self.runtime_profile == "lean_atp" and not coverage:
+            return {"atp_main", "grand_slam_men", "grand_slam_women"}
+        return coverage
 
     @property
     def openclaw_channels(self) -> list[str]:

@@ -47,6 +47,7 @@ Budget branch:
 - `TENNIS_EDGE_RUNTIME_PROFILE=lean_atp`
 - `TENNIS_EDGE_MONTHLY_BUDGET_USD=500`
 - `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women`
+- `TENNIS_EDGE_PERSISTENCE_ENABLED=true`
 - `ENTERPRISE_FEEDS_ENABLED=false`
 - `EXECUTION_ENABLED=false`
 - `REAL_EXECUTION_HARD_BLOCK=true`
@@ -66,6 +67,8 @@ Budget branch:
 Run from the repo root:
 
 ```bash
+docker compose up -d
+docker compose exec -T postgres psql -U tennis -d tennis_edge < infra/schema.sql
 npm run api:test
 npm --prefix apps/web run build
 python3 scripts/check_private_runtime.py

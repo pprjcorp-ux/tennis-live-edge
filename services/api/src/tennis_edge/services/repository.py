@@ -34,6 +34,8 @@ from tennis_edge.domain import (
     ReplayRunResult,
     Signal,
     SignalStatus,
+    CursorStatus,
+    Provider,
 )
 from tennis_edge.services.agent_ops import (
     agent_runs,
@@ -42,6 +44,7 @@ from tennis_edge.services.agent_ops import (
     run_agent_autopilot,
 )
 from tennis_edge.providers.api_tennis import ApiTennisClient
+from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.backtest import run_walk_forward_backtest
 from tennis_edge.services.cost_profile import (
@@ -69,11 +72,13 @@ from tennis_edge.services.execution_engine import (
     promote_from_learning,
     set_kill_switch_for,
 )
+from tennis_edge.services.normalizer import normalize_name
 from tennis_edge.services.provider_cursor import default_provider_cursors
 from tennis_edge.services.feature_engine import build_features
 from tennis_edge.services.model_service import predict_match
 from tennis_edge.services.replay_engine import ReplayEngine
 from tennis_edge.services.signal_engine import build_signals
+from tennis_edge.services.storage import PersistentStore
 
 
 BACKTESTS: dict[str, BacktestMetrics] = {}
@@ -84,16 +89,27 @@ class AnalysisRepository:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.api_tennis = ApiTennisClient(settings.api_tennis_key, settings.data_mode)
+        self.the_odds_api = TheOddsApiClient(settings.the_odds_api_key, settings.data_mode)
         self.replay_engine = ReplayEngine()
+        self.store = PersistentStore(settings)
 
     async def analyses_for_date(self, target_date: date) -> list[MatchAnalysis]:
-        matches = await self.api_tennis.get_today_matches(target_date)
+        try:
+            matches = await self.api_tennis.get_today_matches(target_date)
+        except Exception:
+            matches = []
+        if not matches:
+            stored = self.store.latest_analyses(target_date)
+            if stored:
+                return stored
+        matches = await self._augment_with_archive_odds(matches)
         analyses: list[MatchAnalysis] = []
         for match in matches:
             features = build_features(match)
             prediction = predict_match(match, features)
             signals = build_signals(match, prediction, features)
             signals = apply_coverage_gate(signals, coverage_decision(match, self.settings))
+            signals = self._apply_provider_gates(signals)
             analyses.append(
                 MatchAnalysis(
                     match=match,
@@ -102,7 +118,74 @@ class AnalysisRepository:
                     signals=signals,
                 )
             )
+        self.store.save_analyses(analyses)
         return analyses
+
+    async def _augment_with_archive_odds(self, matches):
+        if self.settings.data_mode == "sample" or not self.settings.the_odds_api_key:
+            return matches
+        try:
+            events = await self.the_odds_api.get_tennis_h2h_events()
+        except Exception:
+            return matches
+
+        by_names = {event.name_key: event for event in events}
+        updated = []
+        for match in matches:
+            key = frozenset({normalize_name(match.player1.name), normalize_name(match.player2.name)})
+            event = by_names.get(key)
+            if not event or not event.quotes:
+                updated.append(match)
+                continue
+            player_map = {
+                normalize_name(match.player1.name): match.player1.id,
+                normalize_name(match.player2.name): match.player2.id,
+            }
+            translated = [
+                quote.model_copy(update={"player_id": player_map[quote.player_id]})
+                for quote in event.quotes
+                if quote.player_id in player_map
+            ]
+            provider_ids = dict(match.provider_ids)
+            provider_ids.setdefault("theoddsapi", event.id)
+            updated.append(
+                match.model_copy(
+                    update={
+                        "provider_ids": provider_ids,
+                        "odds": translated or match.odds,
+                    }
+                )
+            )
+        return updated
+
+    def _apply_provider_gates(self, signals: list[Signal]) -> list[Signal]:
+        if self.settings.data_mode == "sample" or not self.settings.odds_ws_resync_required_blocks_signals:
+            return signals
+        cursors = self.store.provider_cursors() or default_provider_cursors(self.settings)
+        odds_cursor = next(
+            (
+                cursor
+                for cursor in cursors
+                if cursor.provider == Provider.ODDS_API_IO
+                and cursor.status in {CursorStatus.GAP_DETECTED, CursorStatus.RESYNC_REQUIRED}
+            ),
+            None,
+        )
+        if not odds_cursor:
+            return signals
+        gated: list[Signal] = []
+        for signal in signals:
+            status = SignalStatus.BLOCKED if signal.status == SignalStatus.ENTRY else signal.status
+            gated.append(
+                signal.model_copy(
+                    update={
+                        "status": status,
+                        "stake_fraction": 0,
+                        "reason": f"Odds websocket cursor requires resync; blocking entries. {signal.reason}",
+                    }
+                )
+            )
+        return gated
 
     async def live_signals(self, target_date: date) -> list[Signal]:
         analyses = await self.analyses_for_date(target_date)
@@ -117,7 +200,7 @@ class AnalysisRepository:
         return None
 
     async def provider_health(self) -> list[ProviderHealth]:
-        return provider_health_for(self.settings)
+        return self.store.provider_health()
 
     async def cost_profile(self) -> CostProfile:
         return cost_profile(self.settings)
@@ -126,10 +209,12 @@ class AnalysisRepository:
         return daily_cost_report(self.settings, await self.analyses_for_date(target_date))
 
     async def data_quality(self) -> list[DataQualitySnapshot]:
-        return data_quality_snapshots(self.settings)
+        persisted = self.store.data_quality()
+        return persisted or data_quality_snapshots(self.settings)
 
     async def provider_cursors(self) -> list[ProviderCursor]:
-        return default_provider_cursors(self.settings)
+        persisted = self.store.provider_cursors()
+        return persisted or default_provider_cursors(self.settings)
 
     async def model_registry(self) -> list[ModelRegistryEntry]:
         return model_registry(self.settings)
@@ -144,7 +229,8 @@ class AnalysisRepository:
         return entity_conflicts()
 
     async def paper_performance(self) -> PaperPerformance:
-        return paper_performance(self.settings)
+        persisted = self.store.paper_performance()
+        return persisted or paper_performance(self.settings)
 
     async def agent_briefing(self) -> AgentBriefing:
         analyses = await self.analyses_for_date(date.today())
@@ -195,7 +281,9 @@ class AnalysisRepository:
         return agent_runs()
 
     async def settle_paper(self, request: PaperSettleRequest) -> PaperSettlement:
-        return settle_paper_order(request)
+        settlement = settle_paper_order(request)
+        self.store.save_settlement(settlement)
+        return settlement
 
     async def execution_status(self) -> ExecutionStatus:
         return execution_status(self.settings)
@@ -207,20 +295,24 @@ class AnalysisRepository:
         return sorted(ORDERS.values(), key=lambda order: order.created_at, reverse=True)
 
     async def create_paper_order(self, request: OrderRequest) -> ExecutionOrder:
-        return create_order(
+        order = create_order(
             self.settings,
             await self.analyses_for_date(date.today()),
             request,
             real=False,
         )
+        self.store.save_order(order)
+        return order
 
     async def submit_order(self, request: OrderRequest) -> ExecutionOrder:
-        return create_order(
+        order = create_order(
             self.settings,
             await self.analyses_for_date(date.today()),
             request,
             real=True,
         )
+        self.store.save_order(order)
+        return order
 
     async def cancel_order(self, order_id: str) -> CancelOrderResult:
         return cancel_order(order_id)
@@ -251,7 +343,8 @@ class AnalysisRepository:
         return result
 
     async def run_backtest(self, request: BacktestRunRequest | None = None) -> BacktestMetrics:
-        metrics = run_walk_forward_backtest(request)
+        metrics = self.store.backtest_metrics(request) or run_walk_forward_backtest(request)
+        self.store.save_backtest(metrics, request)
         BACKTESTS[metrics.run_id] = metrics
         return metrics
 

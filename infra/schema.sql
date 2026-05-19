@@ -233,6 +233,10 @@ CREATE TABLE IF NOT EXISTS signals (
 CREATE TABLE IF NOT EXISTS paper_orders (
   id BIGSERIAL PRIMARY KEY,
   signal_id BIGINT NOT NULL REFERENCES signals(id),
+  external_order_ref TEXT UNIQUE,
+  external_signal_id TEXT,
+  match_id TEXT REFERENCES matches(id),
+  player_id TEXT REFERENCES players(id),
   venue TEXT NOT NULL DEFAULT 'betfair',
   market_id TEXT,
   selection_id BIGINT,
@@ -249,8 +253,15 @@ CREATE TABLE IF NOT EXISTS paper_orders (
   pnl NUMERIC(14, 2),
   clv NUMERIC(8, 6),
   status TEXT NOT NULL,
+  audit JSONB NOT NULL DEFAULT '[]',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE IF EXISTS paper_orders ADD COLUMN IF NOT EXISTS external_order_ref TEXT UNIQUE;
+ALTER TABLE IF EXISTS paper_orders ADD COLUMN IF NOT EXISTS external_signal_id TEXT;
+ALTER TABLE IF EXISTS paper_orders ADD COLUMN IF NOT EXISTS match_id TEXT REFERENCES matches(id);
+ALTER TABLE IF EXISTS paper_orders ADD COLUMN IF NOT EXISTS player_id TEXT REFERENCES players(id);
+ALTER TABLE IF EXISTS paper_orders ADD COLUMN IF NOT EXISTS audit JSONB NOT NULL DEFAULT '[]';
 
 CREATE TABLE IF NOT EXISTS paper_fills (
   id BIGSERIAL PRIMARY KEY,

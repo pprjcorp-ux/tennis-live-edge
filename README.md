@@ -35,6 +35,19 @@ Dashboard: `http://localhost:3000`
 
 Without paid keys the system runs in `TENNIS_EDGE_DATA_MODE=sample`.
 
+For live budget mode, keep Docker running and use Postgres/Timescale as the
+operational cache:
+
+```bash
+docker compose up -d
+docker compose exec -T postgres psql -U tennis -d tennis_edge < infra/schema.sql
+TENNIS_EDGE_DATA_MODE=live npm run api:dev
+```
+
+Live mode persists matches, score ticks, odds ticks, feature snapshots,
+predictions, signals, provider cursors, provider latency, and paper orders when
+`DATABASE_URL` is configured.
+
 ## Documentation
 
 - [Common architecture](docs/architecture.md)
@@ -52,6 +65,8 @@ Use `.env.example` as the contract. The important budget defaults are:
 - `TENNIS_EDGE_RUNTIME_PROFILE=lean_atp`
 - `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women`
 - `TENNIS_EDGE_MONTHLY_BUDGET_USD=500`
+- `TENNIS_EDGE_PERSISTENCE_ENABLED=true`
+- `TENNIS_EDGE_MAX_ODDS_STALENESS_MS=2500`
 - `ENTERPRISE_FEEDS_ENABLED=false`
 - `EXECUTION_ENABLED=false`
 - `EXECUTION_STAGE=paper`

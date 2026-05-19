@@ -241,6 +241,22 @@ class Settings(BaseSettings):
         default="sample",
         validation_alias=AliasChoices("TENNIS_EDGE_DATA_MODE", "DATA_MODE"),
     )
+    database_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("DATABASE_URL", "TENNIS_EDGE_DATABASE_URL"),
+    )
+    persistence_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "TENNIS_EDGE_PERSISTENCE_ENABLED", "PERSISTENCE_ENABLED"
+        ),
+    )
+    max_odds_staleness_ms: int = Field(
+        default=2500,
+        validation_alias=AliasChoices(
+            "TENNIS_EDGE_MAX_ODDS_STALENESS_MS", "MAX_ODDS_STALENESS_MS"
+        ),
+    )
     cors_origin: str = Field(
         default="http://localhost:3000",
         validation_alias=AliasChoices("TENNIS_EDGE_CORS_ORIGIN", "CORS_ORIGIN"),

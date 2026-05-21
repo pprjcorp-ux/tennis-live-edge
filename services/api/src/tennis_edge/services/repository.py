@@ -281,7 +281,13 @@ class AnalysisRepository:
         return agent_runs()
 
     async def settle_paper(self, request: PaperSettleRequest) -> PaperSettlement:
-        settlement = settle_paper_order(request)
+        try:
+            settlement = settle_paper_order(request)
+        except KeyError:
+            persisted = self.store.settle_paper_order(request)
+            if persisted is None:
+                raise
+            return persisted
         self.store.save_settlement(settlement)
         return settlement
 
@@ -292,7 +298,9 @@ class AnalysisRepository:
         return bankroll_snapshot(self.settings)
 
     async def orders(self) -> list[ExecutionOrder]:
-        return sorted(ORDERS.values(), key=lambda order: order.created_at, reverse=True)
+        merged = {order.id: order for order in self.store.orders()}
+        merged.update({order.id: order for order in ORDERS.values()})
+        return sorted(merged.values(), key=lambda order: order.created_at, reverse=True)
 
     async def create_paper_order(self, request: OrderRequest) -> ExecutionOrder:
         order = create_order(
@@ -315,7 +323,17 @@ class AnalysisRepository:
         return order
 
     async def cancel_order(self, order_id: str) -> CancelOrderResult:
-        return cancel_order(order_id)
+        try:
+            return cancel_order(order_id)
+        except KeyError:
+            status = self.store.cancel_order(order_id)
+            if status is None:
+                raise
+            return CancelOrderResult(
+                order_id=order_id,
+                status=status,
+                reason="Persisted paper order cancelled.",
+            )
 
     async def set_kill_switch(self, request: KillSwitchRequest) -> ExecutionStatus:
         return set_kill_switch_for(self.settings, request)
@@ -352,7 +370,10 @@ class AnalysisRepository:
         if run_id == "latest" and BACKTESTS:
             return list(BACKTESTS.values())[-1]
         if run_id not in BACKTESTS:
-            raise KeyError(run_id)
+            persisted = self.store.get_backtest(run_id)
+            if persisted is None:
+                raise KeyError(run_id)
+            return persisted
         return BACKTESTS[run_id]
 
     async def daily_metrics(self, target_date: date) -> DailyMetrics:

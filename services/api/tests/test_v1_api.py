@@ -3,6 +3,8 @@ import os
 from fastapi.testclient import TestClient
 
 os.environ["ADMIN_API_TOKEN"] = "test-admin-token"
+os.environ["TENNIS_EDGE_DATA_MODE"] = "sample"
+os.environ["TENNIS_EDGE_PERSISTENCE_ENABLED"] = "false"
 
 from tennis_edge.config import get_settings
 

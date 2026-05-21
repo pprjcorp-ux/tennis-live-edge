@@ -15,6 +15,7 @@ from tennis_edge.domain import (
     CursorStatus,
     DataQualitySnapshot,
     ExecutionOrder,
+    ExecutionVenue,
     FeatureVector,
     Match,
     MatchAnalysis,
@@ -23,6 +24,7 @@ from tennis_edge.domain import (
     OrderStatus,
     PaperPerformance,
     PaperSettlement,
+    PaperSettleRequest,
     Player,
     Prediction,
     Provider,
@@ -401,6 +403,126 @@ class PersistentStore:
                     ),
                 )
 
+    def orders(self) -> list[ExecutionOrder]:
+        if not self.enabled:
+            return []
+        with self._connect() as conn:
+            if conn is None:
+                return []
+            with conn.cursor() as cur:
+                rows = cur.execute(
+                    """
+                    SELECT
+                      po.external_order_ref, po.external_signal_id, po.match_id, po.player_id,
+                      p.name AS player_name, po.venue, po.customer_order_ref,
+                      po.requested_odds, po.accepted_odds, po.stake_fraction,
+                      po.stake_amount, po.matched_stake, po.average_price,
+                      po.risk_snapshot, po.rejection_reason, po.settlement_status,
+                      po.pnl, po.clv, po.status, po.audit, po.created_at
+                    FROM paper_orders po
+                    LEFT JOIN players p ON p.id = po.player_id
+                    ORDER BY po.created_at DESC
+                    LIMIT 500
+                    """
+                ).fetchall()
+        orders: list[ExecutionOrder] = []
+        for row in rows:
+            external_ref = row["external_order_ref"] or f"paper_{row['match_id']}_{row['player_id']}"
+            orders.append(
+                ExecutionOrder(
+                    id=external_ref,
+                    signal_id=row["external_signal_id"] or "",
+                    match_id=row["match_id"] or "",
+                    player_id=row["player_id"] or "",
+                    player_name=row["player_name"] or row["player_id"] or "unknown",
+                    venue=ExecutionVenue(row["venue"] or ExecutionVenue.BETFAIR.value),
+                    status=OrderStatus(row["status"]),
+                    requested_odds=float(row["requested_odds"]),
+                    accepted_odds=float(row["accepted_odds"]) if row["accepted_odds"] is not None else None,
+                    stake_fraction=float(row["stake_fraction"]),
+                    stake_amount=float(row["stake_amount"]),
+                    matched_stake=float(row["matched_stake"] or 0),
+                    average_price=float(row["average_price"]) if row["average_price"] is not None else None,
+                    customer_order_ref=row["customer_order_ref"],
+                    rejection_reason=row["rejection_reason"],
+                    settlement_status=row["settlement_status"],
+                    pnl=float(row["pnl"]) if row["pnl"] is not None else None,
+                    clv=float(row["clv"]) if row["clv"] is not None else None,
+                    risk_snapshot=row["risk_snapshot"] or {},
+                    audit=row["audit"] or [],
+                    created_at=row["created_at"],
+                    updated_at=row["created_at"],
+                )
+            )
+        return orders
+
+    def cancel_order(self, order_id: str) -> OrderStatus | None:
+        if not self.enabled:
+            return None
+        with self._connect() as conn:
+            if conn is None:
+                return None
+            with conn.cursor() as cur:
+                row = cur.execute(
+                    """
+                    UPDATE paper_orders
+                    SET status = %s,
+                        audit = audit || %s::jsonb
+                    WHERE external_order_ref = %s
+                      AND status IN ('paper', 'pending', 'submitted', 'partially_matched')
+                    RETURNING status
+                    """,
+                    (
+                        OrderStatus.CANCELLED.value,
+                        _json(["Persisted paper order cancelled by admin request."]),
+                        order_id,
+                    ),
+                ).fetchone()
+        if not row:
+            return None
+        return OrderStatus(row["status"])
+
+    def settle_paper_order(self, request: PaperSettleRequest) -> PaperSettlement | None:
+        if not self.enabled:
+            return None
+        with self._connect() as conn:
+            if conn is None:
+                return None
+            with conn.cursor() as cur:
+                row = cur.execute(
+                    """
+                    SELECT external_order_ref, requested_odds, average_price, matched_stake, stake_amount
+                    FROM paper_orders
+                    WHERE external_order_ref = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (request.order_id,),
+                ).fetchone()
+        if not row:
+            return None
+        matched = float(row["matched_stake"] or row["stake_amount"] or 0)
+        average_price = float(row["average_price"] or row["requested_odds"])
+        gross = matched * (average_price - 1) if request.result_win else -matched
+        commission = max(0.0, gross) * 0.02
+        net = gross - commission
+        clv = (1 / request.closing_odds) - (1 / average_price)
+        settlement = PaperSettlement(
+            order_id=request.order_id,
+            status=OrderStatus.SETTLED,
+            result_win=request.result_win,
+            requested_odds=float(row["requested_odds"]),
+            average_price=average_price,
+            matched_stake=matched,
+            gross_pnl=round(gross, 2),
+            commission=round(commission, 2),
+            net_pnl=round(net, 2),
+            closing_odds=request.closing_odds,
+            clv=round(clv, 6),
+        )
+        self.save_settlement(settlement)
+        return settlement
+
     def save_settlement(self, settlement: PaperSettlement) -> None:
         if not self.enabled:
             return
@@ -603,6 +725,31 @@ class PersistentStore:
                         _now(),
                     ),
                 )
+
+    def get_backtest(self, run_id: str) -> BacktestMetrics | None:
+        if not self.enabled:
+            return None
+        with self._connect() as conn:
+            if conn is None:
+                return None
+            with conn.cursor() as cur:
+                if run_id == "latest":
+                    row = cur.execute(
+                        """
+                        SELECT metrics
+                        FROM backtests
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """
+                    ).fetchone()
+                else:
+                    row = cur.execute(
+                        "SELECT metrics FROM backtests WHERE id = %s",
+                        (run_id,),
+                    ).fetchone()
+        if not row:
+            return None
+        return BacktestMetrics(**row["metrics"])
 
     def _upsert_player(self, cur: Any, player: Player) -> None:
         cur.execute(

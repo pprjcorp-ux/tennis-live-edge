@@ -48,6 +48,21 @@ class CoverageDecision:
     reason: str
 
 
+def normalized_score_primary(settings: Settings) -> str:
+    return settings.score_primary.strip().lower().replace("-", "_")
+
+
+def routed_score_provider(settings: Settings) -> Provider:
+    score_primary = normalized_score_primary(settings)
+    if (
+        settings.runtime_profile == "enterprise_roi_clv"
+        and settings.enterprise_feeds_enabled
+        and score_primary in {"sportradar", "sportradar_tennis", "sr"}
+    ):
+        return Provider.SPORTRADAR
+    return Provider.API_TENNIS
+
+
 def estimated_monthly_spend(settings: Settings) -> float:
     if settings.runtime_profile == "lean_atp":
         return round(sum(LEAN_PROVIDER_MONTHLY_USD.values()), 2)
@@ -247,7 +262,11 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
     ]
 
 
-def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> DailyCostReport:
+def daily_cost_report(
+    settings: Settings,
+    analyses: list[MatchAnalysis],
+    score_provider: Provider | None = None,
+) -> DailyCostReport:
     skipped = sum(1 for analysis in analyses if not coverage_decision(analysis.match, settings).eligible)
     signals = [signal for analysis in analyses for signal in analysis.signals]
     entry_signals = [signal for signal in signals if signal.status == SignalStatus.ENTRY]
@@ -261,13 +280,15 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
         if settings.runtime_profile == "enterprise_roi_clv"
         else LEAN_PROVIDER_MONTHLY_USD
     )
+    routed_provider = score_provider or routed_score_provider(settings)
+    score_quota_limit = 200000 if routed_provider == Provider.API_TENNIS else None
     usages = [
         ProviderCostUsage(
-            provider=Provider.API_TENNIS,
+            provider=routed_provider,
             api_calls=max(1, len(analyses)),
             quota_used=max(1, len(analyses)),
-            quota_limit=200000,
-            estimated_daily_cost_usd=round(price_map[Provider.API_TENNIS] / 30, 2),
+            quota_limit=score_quota_limit,
+            estimated_daily_cost_usd=round(price_map[routed_provider] / 30, 2),
         ),
         ProviderCostUsage(
             provider=Provider.ODDS_API_IO,
@@ -288,13 +309,6 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
     if settings.runtime_profile == "enterprise_roi_clv":
         usages.extend(
             [
-                ProviderCostUsage(
-                    provider=Provider.SPORTRADAR,
-                    api_calls=max(1, len(analyses)),
-                    quota_used=max(1, len(analyses)),
-                    quota_limit=None,
-                    estimated_daily_cost_usd=round(price_map[Provider.SPORTRADAR] / 30, 2),
-                ),
                 ProviderCostUsage(
                     provider=Provider.BETRADAR_UOF,
                     api_calls=max(1, live_matches),

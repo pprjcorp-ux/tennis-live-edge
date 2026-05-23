@@ -63,7 +63,7 @@ predictions, signals, provider cursors, provider latency, and paper orders when
 Use `.env.example` as the contract. The important budget defaults are:
 
 - `TENNIS_EDGE_RUNTIME_PROFILE=lean_atp`
-- `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women`
+- `TENNIS_EDGE_COVERAGE=atp_main,grand_slam_men,grand_slam_women` (also the built-in default when `lean_atp` is used without an explicit coverage override)
 - `TENNIS_EDGE_MONTHLY_BUDGET_USD=500`
 - `TENNIS_EDGE_PERSISTENCE_ENABLED=true`
 - `TENNIS_EDGE_MAX_ODDS_STALENESS_MS=2500`

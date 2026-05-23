@@ -54,6 +54,7 @@ predictions, signals, provider cursors, provider latency, and paper orders when
 - [Budget profile](docs/budget-profile.md)
 - [Enterprise profile](docs/enterprise-profile.md)
 - [Execution safety](docs/execution-safety.md)
+- [Strategy Learning Lab](docs/strategy-learning-lab.md)
 - [Provider access runbook](docs/provider-access-runbook.md)
 - [OpenClaw Autopilot](docs/openclaw-autopilot.md)
 - [Cloudflare private access](infra/cloudflare/README.md)

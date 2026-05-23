@@ -124,6 +124,9 @@ def test_v1_replay_and_backtest() -> None:
     assert replay.json()["events_replayed"] >= 1
     assert backtest.status_code == 200
     assert "brier_score" in backtest.json()
+    assert backtest.json()["strategy_id"] == "value_edge"
+    assert backtest.json()["stake_policy"] == "fractional_kelly"
+    assert "strategy_breakdown" in backtest.json()
     assert calibration.status_code == 200
     assert calibration.json()["buckets"]
 

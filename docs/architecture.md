@@ -26,6 +26,8 @@ decide whether the system behaves as budget or enterprise.
 6. Risk gates allow, monitor, block, or abstain.
 7. Paper execution records order decisions, fills, settlement, CLV, ROI, and
    calibration buckets.
+8. Strategy Learning Lab backtests champion/challenger strategy candidates with
+   paper bankroll metrics before any promotion review.
 
 ## Local Verification
 

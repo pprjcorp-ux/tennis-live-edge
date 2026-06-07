@@ -147,6 +147,42 @@ def test_agent_briefing_prefers_persisted_latest_run_over_process_memory() -> No
     assert briefing.latest_run.id == "agent_persisted_latest"
 
 
+def test_live_agent_runs_do_not_use_process_memory_when_persisted_missing() -> None:
+    AGENT_RUNS.clear()
+    memory_run = AgentRun(
+        id="agent_live_memory_only",
+        run_type=AgentRunType.AUTOPILOT_EVALUATE,
+        source="openclaw",
+        summary="Memory-only run must not become live audit truth.",
+    )
+    AGENT_RUNS.append(memory_run)
+    repo = AnalysisRepository(Settings(data_mode="live", database_url=None))
+    store = AgentStoreStub(repo.store)
+    store.persisted_runs = []
+    repo.store = store
+
+    assert asyncio.run(repo.agent_runs()) == []
+
+
+def test_live_agent_briefing_does_not_use_memory_latest_run_when_persisted_missing() -> None:
+    AGENT_RUNS.clear()
+    memory_run = AgentRun(
+        id="agent_live_memory_latest",
+        run_type=AgentRunType.AUTOPILOT_EVALUATE,
+        source="openclaw",
+        summary="Memory latest run must not appear in live briefing.",
+    )
+    AGENT_RUNS.append(memory_run)
+    repo = AnalysisRepository(Settings(data_mode="live", database_url=None))
+    store = AgentStoreStub(repo.store)
+    store.persisted_runs = []
+    repo.store = store
+
+    briefing = asyncio.run(repo.agent_briefing())
+
+    assert briefing.latest_run is None
+
+
 def test_agent_ops_uses_persisted_orders_after_restart() -> None:
     ORDERS.clear()
     AGENT_RUNS.clear()

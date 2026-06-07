@@ -252,7 +252,7 @@ class AnalysisRepository:
         order_snapshot = await self.orders()
         bankroll = await self.bankroll(order_snapshot)
         persisted_runs = self.store.agent_runs()
-        latest_run = persisted_runs[0] if persisted_runs else next(iter(agent_runs()), None)
+        latest_run = persisted_runs[0] if persisted_runs else self._sample_latest_agent_run()
         return build_agent_briefing(
             self.settings,
             analyses=analyses,
@@ -320,8 +320,9 @@ class AnalysisRepository:
 
     async def agent_runs(self) -> list[AgentRun]:
         merged = {run.id: run for run in self.store.agent_runs()}
-        for run in agent_runs():
-            merged.setdefault(run.id, run)
+        if self.settings.data_mode == "sample":
+            for run in agent_runs():
+                merged.setdefault(run.id, run)
         return sorted(
             merged.values(),
             key=lambda run: (
@@ -330,6 +331,11 @@ class AnalysisRepository:
             ),
             reverse=True,
         )
+
+    def _sample_latest_agent_run(self) -> AgentRun | None:
+        if self.settings.data_mode != "sample":
+            return None
+        return next(iter(agent_runs()), None)
 
     async def settle_paper(self, request: PaperSettleRequest) -> PaperSettlement:
         persisted = self.store.settle_paper_order(request)

@@ -20,6 +20,7 @@ FastAPI backend.
 ## Commands
 
 ```bash
+npm run api:ingest:live-budget
 npm run api:ingest
 printf '{"event_id":"smoke-event","seq":1,"timestamp":"2026-06-07T20:00:00Z","data":{"bookmaker":"SmokeBook","market":"h2h","selections":[{"player_id":"p1","odds":1.8},{"player_id":"p2","odds":2.1}]}}' | TENNIS_EDGE_DATA_MODE=sample TENNIS_EDGE_PERSISTENCE_ENABLED=false npm run api:ingest:odds-message
 npm run api:ingest:odds-stream -- --max-messages 25 --timeout-seconds 30
@@ -32,6 +33,9 @@ printf "%s" "$ADMIN_API_TOKEN" | node openclaw/skills/tennis-edge-ops/scripts/te
 
 The `api:ingest` command runs one provider ingestion cycle and prints a JSON
 summary with source, match count, raw payload count, signal count, and timestamp.
+The `api:ingest:live-budget` command is the preferred cron entrypoint because
+it combines score snapshot, odds websocket ingestion, and execution safety state
+in one JSON report.
 The `api:ingest:odds-message` command reads one Odds-API.io websocket-style JSON
 message from stdin, persists raw payload/cursor/latency when Postgres is
 enabled, attempts deterministic normalized `odds_ticks` storage for resolved

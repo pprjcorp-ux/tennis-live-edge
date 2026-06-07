@@ -39,14 +39,18 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def _run() -> None:
-    args = _parse_args()
-    settings = get_settings()
-    repo = AnalysisRepository(settings)
-
+async def run_odds_stream_ingestion(
+    repo: AnalysisRepository,
+    *,
+    stream: str = "tennis:moneyline",
+    max_messages: int = 25,
+    timeout_seconds: float = 30,
+    force: bool = False,
+) -> dict[str, object]:
+    settings = repo.settings
     summary = {
         "provider": Provider.ODDS_API_IO.value,
-        "stream": args.stream,
+        "stream": stream,
         "connected": False,
         "resync_required": False,
         "start_last_seq": None,
@@ -61,33 +65,31 @@ async def _run() -> None:
 
     if settings.data_mode == "sample" or not settings.odds_api_io_key:
         summary["reason"] = "ODDS_API_IO_KEY is missing or data mode is sample; websocket not opened."
-        print(json.dumps(summary))
-        return
+        return summary
 
     cursor = next(
         (
             item
             for item in await repo.provider_cursors()
-            if item.provider == Provider.ODDS_API_IO and item.stream == args.stream
+            if item.provider == Provider.ODDS_API_IO and item.stream == stream
         ),
         None,
     )
     if cursor is not None:
         summary["resync_required"] = cursor.resync_required
         summary["start_last_seq"] = cursor.last_seq
-        if cursor.resync_required and not args.force:
+        if cursor.resync_required and not force:
             summary["reason"] = "Persisted cursor requires REST resync before websocket consumption."
-            print(json.dumps(summary))
-            return
+            return summary
 
     try:
-        async with asyncio.timeout(args.timeout_seconds):
+        async with asyncio.timeout(timeout_seconds):
             async for payload in repo.odds_api_io.stream_live_messages(
-                stream=args.stream,
+                stream=stream,
                 last_seq=summary["start_last_seq"],
             ):
                 result = await repo.ingest_odds_api_message(
-                    OddsMessageIngestionRequest(payload=payload, stream=args.stream)
+                    OddsMessageIngestionRequest(payload=payload, stream=stream)
                 )
                 summary["connected"] = True
                 summary["messages"] += 1
@@ -95,11 +97,24 @@ async def _run() -> None:
                 summary["raw_payloads_saved"] += result.raw_payloads_saved
                 summary["normalized_odds_saved"] += result.normalized_odds_saved
                 summary["resync_required"] = result.resync_required
-                if summary["messages"] >= max(1, args.max_messages):
+                if summary["messages"] >= max(1, max_messages):
                     break
     except TimeoutError:
         summary["timed_out"] = True
         summary["reason"] = "Timed out while waiting for websocket messages."
+    return summary
+
+
+async def _run() -> None:
+    args = _parse_args()
+    repo = AnalysisRepository(get_settings())
+    summary = await run_odds_stream_ingestion(
+        repo,
+        stream=args.stream,
+        max_messages=args.max_messages,
+        timeout_seconds=args.timeout_seconds,
+        force=args.force,
+    )
 
     print(json.dumps(summary))
 

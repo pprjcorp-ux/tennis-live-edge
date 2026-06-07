@@ -8,10 +8,10 @@ Ingestion every 5 minutes while the system is active:
 
 ```bash
 openclaw cron add \
-  --name tennis-edge-live-ingestion \
+  --name tennis-edge-live-budget-cycle \
   --every 5m \
   --model gpt-5.4-mini \
-  --message "Use the tennis-edge-ops skill. Run npm run api:ingest from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report source, matches, raw_payloads_saved, and whether provider keys are missing; do not create orders from this cron." \
+  --message "Use the tennis-edge-ops skill. Run npm run api:ingest:live-budget from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report score_ingestion, odds_ingestion, and safety state; do not create orders from this cron." \
   --timeout-seconds 45
 ```
 

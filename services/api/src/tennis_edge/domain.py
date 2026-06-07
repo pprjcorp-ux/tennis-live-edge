@@ -577,6 +577,7 @@ class PaperSettleRequest(BaseModel):
 class PaperPerformance(BaseModel):
     orders: int
     settled_orders: int
+    positive_clv_signals: int = 0
     wins: int
     losses: int
     open_orders: int

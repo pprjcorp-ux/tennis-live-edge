@@ -397,6 +397,7 @@ export type PaperSettlement = {
 export type PaperPerformance = {
   orders: number;
   settled_orders: number;
+  positive_clv_signals: number;
   wins: number;
   losses: number;
   open_orders: number;

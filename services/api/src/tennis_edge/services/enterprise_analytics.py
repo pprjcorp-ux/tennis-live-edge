@@ -287,6 +287,9 @@ def paper_performance(settings: Settings) -> PaperPerformance:
     return PaperPerformance(
         orders=len(orders),
         settled_orders=len(settled),
+        positive_clv_signals=sum(
+            1 for order in settled if order.clv is not None and order.clv > 0
+        ),
         wins=wins,
         losses=losses,
         open_orders=open_orders,

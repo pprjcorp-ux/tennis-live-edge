@@ -61,6 +61,41 @@ def test_daily_metrics_include_persisted_paper_performance() -> None:
     assert "Paper metrics loaded" in metrics.note
 
 
+def test_daily_cost_report_uses_persisted_positive_clv_signals() -> None:
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def paper_performance(self):
+            return PaperPerformance(
+                orders=5,
+                settled_orders=4,
+                wins=3,
+                losses=1,
+                open_orders=1,
+                roi=0.11,
+                clv=0.018,
+                realized_pnl=42,
+                max_drawdown=0,
+                calibration_error=0.02,
+                readiness_status="collecting",
+                readiness_reasons=["collecting"],
+                segments=[],
+                positive_clv_signals=2,
+            )
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    repo.store = StoreStub(repo.store)
+
+    report = asyncio.run(repo.daily_cost_report(date.today()))
+
+    assert report.cost_per_positive_clv_signal_usd == 7.17
+    assert "positive-CLV" in report.note
+
+
 def test_replay_prefers_persisted_raw_payloads_over_sample_payloads() -> None:
     persisted_payloads = sample_raw_payloads("match_atp_002")[:1]
 

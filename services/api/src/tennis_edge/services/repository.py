@@ -207,7 +207,11 @@ class AnalysisRepository:
         return cost_profile(self.settings)
 
     async def daily_cost_report(self, target_date: date) -> DailyCostReport:
-        return daily_cost_report(self.settings, await self.analyses_for_date(target_date))
+        return daily_cost_report(
+            self.settings,
+            await self.analyses_for_date(target_date),
+            await self.paper_performance(),
+        )
 
     async def data_quality(self) -> list[DataQualitySnapshot]:
         persisted = self.store.data_quality()
@@ -252,10 +256,9 @@ class AnalysisRepository:
             cost_report=await self.daily_cost_report(date.today()),
             orders=order_snapshot,
         )
-        if briefing.latest_run is None:
-            persisted_runs = self.store.agent_runs()
-            if persisted_runs:
-                return briefing.model_copy(update={"latest_run": persisted_runs[0]})
+        persisted_runs = self.store.agent_runs()
+        if persisted_runs:
+            return briefing.model_copy(update={"latest_run": persisted_runs[0]})
         return briefing
 
     async def agent_anomalies(self) -> list[AgentAnomaly]:
@@ -345,7 +348,8 @@ class AnalysisRepository:
 
     async def orders(self) -> list[ExecutionOrder]:
         merged = {order.id: order for order in self.store.orders()}
-        merged.update({order.id: order for order in ORDERS.values()})
+        for order in ORDERS.values():
+            merged.setdefault(order.id, order)
         return sorted(merged.values(), key=lambda order: order.created_at, reverse=True)
 
     async def create_paper_order(self, request: OrderRequest) -> ExecutionOrder:

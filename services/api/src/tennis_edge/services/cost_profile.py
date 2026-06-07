@@ -9,6 +9,7 @@ from tennis_edge.domain import (
     DailyCostReport,
     Match,
     MatchAnalysis,
+    PaperPerformance,
     Provider,
     ProviderCostUsage,
     ProviderHealth,
@@ -247,7 +248,11 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
     ]
 
 
-def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> DailyCostReport:
+def daily_cost_report(
+    settings: Settings,
+    analyses: list[MatchAnalysis],
+    paper_performance: PaperPerformance | None = None,
+) -> DailyCostReport:
     skipped = sum(1 for analysis in analyses if not coverage_decision(analysis.match, settings).eligible)
     signals = [signal for analysis in analyses for signal in analysis.signals]
     entry_signals = [signal for signal in signals if signal.status == SignalStatus.ENTRY]
@@ -255,6 +260,7 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
     daily = round(monthly / 30, 2) if monthly else 0
     live_matches = sum(1 for analysis in analyses if analysis.match.state.status == "live")
     watchlist = sum(1 for analysis in analyses if should_escalate_polling(analysis))
+    positive_clv_signals = paper_performance.positive_clv_signals if paper_performance else 0
 
     price_map = (
         ENTERPRISE_PROVIDER_MONTHLY_USD
@@ -323,7 +329,13 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
         matches_skipped_by_coverage=skipped,
         signals_generated=len(entry_signals),
         cost_per_signal_usd=round(daily / len(entry_signals), 2) if entry_signals else None,
-        cost_per_positive_clv_signal_usd=None,
+        cost_per_positive_clv_signal_usd=round(daily / positive_clv_signals, 2)
+        if positive_clv_signals
+        else None,
         watchlist_escalations=watchlist,
-        note="Positive-CLV cost stays null until closing-line results are imported.",
+        note=(
+            f"Cost per positive-CLV signal uses {positive_clv_signals} settled paper signals."
+            if positive_clv_signals
+            else "Positive-CLV cost stays null until closing-line results are imported."
+        ),
     )

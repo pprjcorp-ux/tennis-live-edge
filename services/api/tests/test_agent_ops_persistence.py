@@ -75,6 +75,32 @@ def test_agent_runs_prefers_persisted_runs_after_restart() -> None:
     assert asyncio.run(repo.agent_runs()) == [run]
 
 
+def test_agent_briefing_prefers_persisted_latest_run_over_process_memory() -> None:
+    AGENT_RUNS.clear()
+    stale_run = AgentRun(
+        id="agent_stale_memory",
+        run_type=AgentRunType.AUTOPILOT_EVALUATE,
+        source="openclaw",
+        summary="Stale process run.",
+    )
+    persisted_run = AgentRun(
+        id="agent_persisted_latest",
+        run_type=AgentRunType.AUTOPILOT_EVALUATE,
+        source="openclaw",
+        summary="Persisted latest run.",
+    )
+    AGENT_RUNS.append(stale_run)
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    store = AgentStoreStub(repo.store)
+    store.persisted_runs = [persisted_run]
+    repo.store = store
+
+    briefing = asyncio.run(repo.agent_briefing())
+
+    assert briefing.latest_run is not None
+    assert briefing.latest_run.id == "agent_persisted_latest"
+
+
 def test_agent_ops_uses_persisted_orders_after_restart() -> None:
     ORDERS.clear()
     AGENT_RUNS.clear()
@@ -122,3 +148,44 @@ def test_agent_ops_uses_persisted_orders_after_restart() -> None:
     assert result.paper_orders_created == 0
     assert result.paper_orders_skipped == 1
     assert store.saved_orders == []
+
+
+def test_orders_prefers_persisted_order_status_over_process_memory() -> None:
+    ORDERS.clear()
+    AGENT_RUNS.clear()
+    repo = AnalysisRepository(Settings(data_mode="sample", bankroll_starting_balance=10000))
+    persisted_order = ExecutionOrder(
+        id="ord_conflict",
+        signal_id="sig_conflict",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.SETTLED,
+        requested_odds=1.85,
+        accepted_odds=1.85,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=1.85,
+        pnl=82,
+        clv=0.014,
+    )
+    ORDERS[persisted_order.id] = persisted_order.model_copy(
+        update={
+            "status": OrderStatus.PAPER,
+            "matched_stake": 40,
+            "pnl": None,
+            "clv": None,
+        }
+    )
+    store = AgentStoreStub(repo.store)
+    store.persisted_orders = [persisted_order]
+    repo.store = store
+
+    orders = asyncio.run(repo.orders())
+    bankroll = asyncio.run(repo.bankroll(orders))
+
+    assert orders[0].status == OrderStatus.SETTLED
+    assert orders[0].pnl == 82
+    assert bankroll.open_exposure == 0

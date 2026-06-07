@@ -837,6 +837,7 @@ class PersistentStore:
                     SELECT
                       count(*)::int AS orders,
                       count(*) FILTER (WHERE status = 'settled')::int AS settled_orders,
+                      count(*) FILTER (WHERE status = 'settled' AND coalesce(clv, 0) > 0)::int AS positive_clv_signals,
                       count(*) FILTER (WHERE status = 'settled' AND coalesce(pnl, 0) > 0)::int AS wins,
                       count(*) FILTER (WHERE status = 'settled' AND coalesce(pnl, 0) <= 0)::int AS losses,
                       count(*) FILTER (WHERE status = ANY(%s))::int AS open_orders,
@@ -863,6 +864,7 @@ class PersistentStore:
         return PaperPerformance(
             orders=int(row["orders"] or 0),
             settled_orders=settled,
+            positive_clv_signals=int(row["positive_clv_signals"] or 0),
             wins=int(row["wins"] or 0),
             losses=int(row["losses"] or 0),
             open_orders=int(row["open_orders"] or 0),

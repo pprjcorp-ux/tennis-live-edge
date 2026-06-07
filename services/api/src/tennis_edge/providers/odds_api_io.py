@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
-from tennis_edge.domain import OddsQuote
+from tennis_edge.domain import OddsQuote, ProviderCursor
 from tennis_edge.services.provider_cursor import ingest_odds_api_sequence
 
 
@@ -49,8 +49,12 @@ class OddsApiIoClient:
             async for message in websocket:
                 yield self.parse_message(json.loads(message))
 
-    def parse_message(self, payload: dict[str, Any]) -> list[OddsQuote]:
-        ingest_odds_api_sequence(payload)
+    def parse_message(
+        self,
+        payload: dict[str, Any],
+        current_cursor: ProviderCursor | None = None,
+    ) -> list[OddsQuote]:
+        ingest_odds_api_sequence(payload, current_cursor=current_cursor)
         rows = payload.get("odds") or payload.get("data") or payload.get("events") or []
         if isinstance(rows, dict):
             rows = [rows]

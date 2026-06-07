@@ -1,5 +1,5 @@
 from tennis_edge.config import Settings
-from tennis_edge.domain import CursorStatus, Provider
+from tennis_edge.domain import CursorStatus, Provider, ProviderCursor
 from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.sample_data import sample_matches
 from tennis_edge.services.enterprise_analytics import model_registry
@@ -53,6 +53,30 @@ def test_live_default_odds_cursor_requires_resync_until_real_sequence_arrives() 
     assert odds_cursor.status == CursorStatus.RESYNC_REQUIRED
     assert odds_cursor.resync_required is True
     assert odds_cursor.last_seq is None
+
+
+def test_odds_api_sequence_detects_gap_from_persisted_cursor_after_restart() -> None:
+    CURSORS.clear()
+    persisted_cursor = ProviderCursor(
+        provider=Provider.ODDS_API_IO,
+        stream="tennis:moneyline",
+        last_seq=40,
+        expected_next_seq=41,
+        status=CursorStatus.HEALTHY,
+        gap_count=0,
+        resync_required=False,
+        note="Persisted cursor before process restart.",
+    )
+
+    OddsApiIoClient(api_key="key", data_mode="live").parse_message(
+        {"type": "updated", "seq": 42},
+        current_cursor=persisted_cursor,
+    )
+
+    stored = CURSORS[(Provider.ODDS_API_IO, "tennis:moneyline")]
+    assert stored.status == CursorStatus.GAP_DETECTED
+    assert stored.expected_next_seq == 41
+    assert stored.resync_required is True
 
 
 def test_markov_engine_handles_game_set_and_match_states() -> None:

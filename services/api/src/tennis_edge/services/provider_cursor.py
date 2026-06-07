@@ -71,10 +71,11 @@ def ingest_odds_api_sequence(
     payload: dict[str, Any],
     *,
     stream: str = "tennis:moneyline",
+    current_cursor: ProviderCursor | None = None,
 ) -> ProviderCursor:
     """Track Odds-API.io seq/lastSeq semantics without losing gap state."""
     key = cursor_key(Provider.ODDS_API_IO, stream)
-    current = CURSORS.get(key)
+    current = CURSORS.get(key) or current_cursor
     seq = payload.get("seq")
     message_type = str(payload.get("type", "updated"))
     now = _now()

@@ -28,7 +28,6 @@ from tennis_edge.services.backtest import evaluate_promotion
 
 
 ORDERS: dict[str, ExecutionOrder] = {}
-PROMOTION_DECISIONS: list[ModelPromotionDecision] = []
 KILL_SWITCH = {"enabled": False, "reason": "not set"}
 
 OPEN_ORDER_STATUSES = {
@@ -385,5 +384,4 @@ def promote_from_learning(request: LearningPromotionRequest) -> ModelPromotionDe
         reasons=reasons,
         metrics=metrics,
     )
-    PROMOTION_DECISIONS.append(decision)
     return decision

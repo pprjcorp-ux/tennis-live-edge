@@ -256,8 +256,8 @@ def settle_paper_order(request: PaperSettleRequest) -> PaperSettlement:
     return settlement
 
 
-def paper_performance(settings: Settings) -> PaperPerformance:
-    orders = list(ORDERS.values())
+def paper_performance(settings: Settings, orders: list[ExecutionOrder] | None = None) -> PaperPerformance:
+    orders = list(orders) if orders is not None else list(ORDERS.values())
     settled = [order for order in orders if order.status == OrderStatus.SETTLED and order.pnl is not None]
     wins = sum(1 for order in settled if (order.pnl or 0) > 0)
     losses = sum(1 for order in settled if (order.pnl or 0) <= 0)

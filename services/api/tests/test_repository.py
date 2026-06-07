@@ -2,10 +2,12 @@ import asyncio
 from datetime import date
 
 from tennis_edge.config import Settings
-from tennis_edge.domain import CanonicalEntityConflict, Confidence, PaperPerformance, Provider
+from tennis_edge.domain import CanonicalEntityConflict, Confidence, ExecutionOrder, PaperPerformance, Provider
+from tennis_edge.domain import ExecutionVenue, OrderStatus
 from tennis_edge.domain import LearningPromotionRequest
 from tennis_edge.domain import ReplayRunRequest
 from tennis_edge.sample_data import sample_raw_payloads
+from tennis_edge.services.execution_engine import ORDERS
 from tennis_edge.services.repository import AnalysisRepository
 
 
@@ -60,6 +62,51 @@ def test_daily_metrics_include_persisted_paper_performance() -> None:
     assert metrics.clv == 0.0125
     assert metrics.brier_score == 0.031
     assert "Paper metrics loaded" in metrics.note
+
+
+def test_paper_performance_uses_persisted_order_snapshot_when_aggregate_missing() -> None:
+    ORDERS.clear()
+    persisted_order = ExecutionOrder(
+        id="ord_settled_persisted",
+        signal_id="sig_persisted",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.SETTLED,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=2.0,
+        pnl=96,
+        clv=0.02,
+    )
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def paper_performance(self):
+            return None
+
+        def orders(self):
+            return [persisted_order]
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    repo.store = StoreStub(repo.store)
+
+    performance = asyncio.run(repo.paper_performance())
+
+    assert performance.orders == 1
+    assert performance.settled_orders == 1
+    assert performance.positive_clv_signals == 1
+    assert performance.roi == 0.96
+    assert performance.realized_pnl == 96
 
 
 def test_daily_cost_report_uses_persisted_positive_clv_signals() -> None:

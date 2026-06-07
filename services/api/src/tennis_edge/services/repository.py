@@ -239,7 +239,7 @@ class AnalysisRepository:
 
     async def paper_performance(self) -> PaperPerformance:
         persisted = self.store.paper_performance()
-        return persisted or paper_performance(self.settings)
+        return persisted or paper_performance(self.settings, await self.orders())
 
     async def agent_briefing(self) -> AgentBriefing:
         analyses = await self.analyses_for_date(date.today())

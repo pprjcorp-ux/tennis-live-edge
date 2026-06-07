@@ -25,6 +25,7 @@ import {
   createPaperOrder,
   getAgentAnomalies,
   getAgentBriefing,
+  getAgentPreflightSafe,
   getAgentRuns,
   getCalibrationReport,
   getCostProfile,
@@ -54,6 +55,7 @@ import type {
   AgentAnomaly,
   AgentAutopilotResult,
   AgentBriefing,
+  AgentPreflight,
   AgentRun,
   BacktestMetrics,
   BankrollSnapshot,
@@ -99,6 +101,14 @@ function statusClass(status: Signal["status"]) {
   return "status statusMuted";
 }
 
+function preflightStatusClass(
+  status: AgentPreflight["status"] | AgentPreflight["checks"][number]["status"]
+) {
+  if (status === "ready" || status === "pass") return "status statusEntry";
+  if (status === "degraded" || status === "warn") return "status statusMonitor";
+  return "status statusBlocked";
+}
+
 function playerProbability(analysis: MatchAnalysis, playerId: string) {
   return playerId === analysis.match.player1.id
     ? analysis.prediction.p1_win_prob
@@ -121,6 +131,7 @@ export default function Page() {
   const [calibration, setCalibration] = useState<CalibrationReport | null>(null);
   const [paperPerformance, setPaperPerformance] = useState<PaperPerformance | null>(null);
   const [agentBriefing, setAgentBriefing] = useState<AgentBriefing | null>(null);
+  const [agentPreflight, setAgentPreflight] = useState<AgentPreflight | null>(null);
   const [agentAnomalies, setAgentAnomalies] = useState<AgentAnomaly[]>([]);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [autopilotResult, setAutopilotResult] = useState<AgentAutopilotResult | null>(null);
@@ -163,6 +174,7 @@ export default function Page() {
         nextChampionModel,
         nextPaperPerformance,
         nextAgentBriefing,
+        nextAgentPreflight,
         nextAgentAnomalies,
         nextAgentRuns,
         nextEntityConflicts
@@ -173,6 +185,7 @@ export default function Page() {
         getChampionModel(),
         getPaperPerformance(),
         getAgentBriefing(),
+        getAgentPreflightSafe(),
         getAgentAnomalies(),
         getAgentRuns(),
         getEntityConflicts()
@@ -192,6 +205,7 @@ export default function Page() {
       setChampionModel(nextChampionModel);
       setPaperPerformance(nextPaperPerformance);
       setAgentBriefing(nextAgentBriefing);
+      setAgentPreflight(nextAgentPreflight);
       setAgentAnomalies(nextAgentAnomalies);
       setAgentRuns(nextAgentRuns);
       setEntityConflicts(nextEntityConflicts);
@@ -284,12 +298,20 @@ export default function Page() {
         notes: "dashboard manual openclaw autopilot"
       });
       setAutopilotResult(result);
-      const [nextOrders, nextBankroll, nextPaperPerformance, nextBriefing, nextRuns, nextAnomalies] =
-        await Promise.all([
+      const [
+        nextOrders,
+        nextBankroll,
+        nextPaperPerformance,
+        nextBriefing,
+        nextPreflight,
+        nextRuns,
+        nextAnomalies
+      ] = await Promise.all([
           getOrders(),
           getBankroll(),
           getPaperPerformance(),
           getAgentBriefing(),
+          getAgentPreflightSafe(),
           getAgentRuns(),
           getAgentAnomalies()
         ]);
@@ -297,6 +319,7 @@ export default function Page() {
       setBankroll(nextBankroll);
       setPaperPerformance(nextPaperPerformance);
       setAgentBriefing(nextBriefing);
+      setAgentPreflight(nextPreflight);
       setAgentRuns(nextRuns);
       setAgentAnomalies(nextAnomalies);
     } catch (err) {
@@ -610,6 +633,7 @@ export default function Page() {
               <div className="agentStats">
                 {[
                   ["Status", agentBriefing?.autopilot_enabled ? "enabled" : "disabled"],
+                  ["Preflight", agentPreflight?.status ?? "unknown"],
                   ["Channel", agentBriefing?.channel ?? "dashboard,telegram"],
                   ["Triage", agentBriefing?.triage_model ?? "gpt-5.4-mini"],
                   ["Critical", agentBriefing?.critical_model ?? "gpt-5.5"],
@@ -638,6 +662,17 @@ export default function Page() {
                     Telegram allowlist only
                   </span>
                 </div>
+              </div>
+              <div className="preflightRows">
+                {agentPreflight?.checks.map((check) => (
+                  <div className="preflightRow" key={check.name}>
+                    <div>
+                      <strong>{check.name.replaceAll("_", " ")}</strong>
+                      <span>{check.detail ? `${check.summary} ${check.detail}` : check.summary}</span>
+                    </div>
+                    <span className={preflightStatusClass(check.status)}>{check.status}</span>
+                  </div>
+                )) ?? <p className="empty">Preflight operacional aguardando API local.</p>}
               </div>
               <div className="agentAllowed">
                 {agentBriefing?.allowed_actions.map((action) => (

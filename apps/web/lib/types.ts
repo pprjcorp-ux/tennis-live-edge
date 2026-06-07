@@ -443,6 +443,19 @@ export type AgentRun = {
   created_at: string;
 };
 
+export type AgentPreflightCheck = {
+  name: string;
+  status: "pass" | "warn" | "fail";
+  summary: string;
+  detail: string | null;
+};
+
+export type AgentPreflight = {
+  status: "ready" | "degraded" | "blocked";
+  checks: AgentPreflightCheck[];
+  generated_at: string;
+};
+
 export type AgentAnomaly = {
   id: string;
   severity: "info" | "warning" | "critical";

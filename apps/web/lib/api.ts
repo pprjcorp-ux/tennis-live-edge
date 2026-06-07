@@ -3,6 +3,7 @@ import type {
   AgentAutopilotRequest,
   AgentAutopilotResult,
   AgentBriefing,
+  AgentPreflight,
   AgentRun,
   BacktestMetrics,
   BankrollSnapshot,
@@ -96,6 +97,30 @@ export function getAgentAnomalies(): Promise<AgentAnomaly[]> {
 
 export function getAgentRuns(): Promise<AgentRun[]> {
   return getJson<AgentRun[]>("/api/v1/agent/runs");
+}
+
+export function getAgentPreflight(): Promise<AgentPreflight> {
+  return getJson<AgentPreflight>("/api/v1/agent/preflight");
+}
+
+export async function getAgentPreflightSafe(): Promise<AgentPreflight> {
+  try {
+    return await getAgentPreflight();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Unknown preflight error";
+    return {
+      status: "blocked",
+      generated_at: new Date().toISOString(),
+      checks: [
+        {
+          name: "agent_preflight_api",
+          status: "fail",
+          summary: "Agent Ops preflight could not be loaded; autonomous actions are blocked.",
+          detail
+        }
+      ]
+    };
+  }
 }
 
 export function getEntityConflicts(): Promise<CanonicalEntityConflict[]> {

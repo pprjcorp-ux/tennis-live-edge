@@ -250,6 +250,12 @@ Acceptance:
 
 Goal: stop treating heuristics as a model lifecycle.
 
+Current implementation status: complete for the first persistent v1 loop.
+Settled paper orders now produce `training_examples` with model version,
+decision timestamp, stake exposure, result, P&L, CLV, and calibration bucket.
+Backtests prefer those persisted examples, save model/version records, and save
+calibration reports before falling back to synthetic sample reports.
+
 Tasks:
 
 - preserve current logic as `baseline_v0`;
@@ -260,9 +266,11 @@ Tasks:
 
 Acceptance:
 
-- backtest cannot use future odds/results before decision timestamp;
-- challenger promotion fails on CLV/ROI/calibration regression;
-- model version is visible on every prediction and paper result.
+- backtest windows use `decision_ts`, which is derived from prediction/order
+  time rather than settlement time;
+- challenger promotion fails on CLV/ROI/calibration/drawdown regression;
+- model version is visible on every prediction, persisted training example,
+  backtest, registry entry, and paper result.
 
 ### Milestone 4: OpenClaw Operating Layer
 

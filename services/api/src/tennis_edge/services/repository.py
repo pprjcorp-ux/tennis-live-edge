@@ -215,13 +215,16 @@ class AnalysisRepository:
         return persisted or default_provider_cursors(self.settings)
 
     async def model_registry(self) -> list[ModelRegistryEntry]:
-        return model_registry(self.settings)
+        persisted = self.store.model_registry()
+        return persisted or model_registry(self.settings)
 
     async def champion_model(self) -> ModelRegistryEntry:
-        return champion_model(self.settings)
+        persisted = self.store.champion_model()
+        return persisted or champion_model(self.settings)
 
     async def calibration_report(self, run_id: str) -> CalibrationReport:
-        return calibration_report(run_id)
+        persisted = self.store.calibration_report(run_id)
+        return persisted or calibration_report(run_id)
 
     async def entity_conflicts(self) -> list[CanonicalEntityConflict]:
         return entity_conflicts()

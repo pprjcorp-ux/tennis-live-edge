@@ -374,9 +374,12 @@ CREATE TABLE IF NOT EXISTS training_examples (
   result_win BOOLEAN,
   pnl NUMERIC(14, 2),
   clv NUMERIC(8, 6),
+  stake_amount NUMERIC(14, 2) NOT NULL DEFAULT 1,
   calibration_bucket TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE IF EXISTS training_examples ADD COLUMN IF NOT EXISTS stake_amount NUMERIC(14, 2) NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS calibration_reports (
   run_id TEXT PRIMARY KEY,

@@ -31,6 +31,12 @@ decide whether the system behaves as budget or enterprise.
 10. Paper execution records order decisions, deterministic fills, closing-line
    snapshots, settlement, CLV, ROI, segmented performance, and calibration
    buckets.
+11. Settled paper orders become `training_examples` keyed by model version and
+    decision timestamp.
+12. Model Lab backtests read persisted training examples first, compute
+    walk-forward ROI, CLV, Brier, log loss, calibration error, and drawdown,
+    then save model registry and calibration reports. Synthetic backtests remain
+    only as a sample/dev fallback when no persisted examples exist.
 
 ## Local Verification
 

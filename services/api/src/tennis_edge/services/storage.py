@@ -11,6 +11,8 @@ from tennis_edge.config import Settings
 from tennis_edge.domain import (
     BacktestMetrics,
     BacktestRunRequest,
+    CalibrationBucket,
+    CalibrationReport,
     Confidence,
     CursorStatus,
     DataQualitySnapshot,
@@ -21,6 +23,7 @@ from tennis_edge.domain import (
     MatchAnalysis,
     MatchFreshness,
     MatchState,
+    ModelRegistryEntry,
     OddsQuote,
     OrderStatus,
     PaperPerformance,
@@ -35,8 +38,12 @@ from tennis_edge.domain import (
     RawProviderPayload,
     Signal,
     SignalStatus,
+    TrainingExample,
 )
-from tennis_edge.services.backtest import evaluate_promotion
+from tennis_edge.services.model_lab import (
+    calibration_from_training_examples,
+    walk_forward_from_training_examples,
+)
 from tennis_edge.services.cost_profile import (
     cost_profile,
     provider_health_for,
@@ -768,45 +775,69 @@ class PersistentStore:
             segments=self._paper_performance_segments(),
         )
 
-    def backtest_metrics(self, request: BacktestRunRequest | None = None) -> BacktestMetrics | None:
+    def training_examples(
+        self, request: BacktestRunRequest | None = None
+    ) -> list[TrainingExample]:
         if not self.enabled:
-            return None
+            return []
         request = request or BacktestRunRequest()
         with self._connect() as conn:
             if conn is None:
-                return None
+                return []
             with conn.cursor() as cur:
-                row = cur.execute(
+                rows = cur.execute(
                     """
                     SELECT
-                      count(DISTINCT s.match_id)::int AS matches,
-                      count(*)::int AS signals,
-                      coalesce(sum(po.pnl), 0)::float AS pnl,
-                      coalesce(sum(coalesce(po.matched_stake, po.stake_amount)), 0)::float AS staked,
-                      avg(po.clv)::float AS clv,
-                      avg(power(s.model_prob - CASE WHEN po.pnl > 0 THEN 1 ELSE 0 END, 2))::float AS brier
-                    FROM paper_orders po
-                    JOIN signals s ON s.id = po.signal_id
-                    WHERE po.status = 'settled'
-                    """
-                ).fetchone()
-        if not row or int(row["signals"] or 0) == 0:
+                      id, match_id, player_id, model_version, feature_snapshot_id,
+                      decision_ts, model_probability, market_probability,
+                      closing_probability, result_win, pnl, clv, stake_amount,
+                      calibration_bucket
+                    FROM training_examples
+                    WHERE model_version = %s
+                      AND result_win IS NOT NULL
+                      AND pnl IS NOT NULL
+                      AND (%s IS NULL OR decision_ts::date >= %s::date)
+                      AND (%s IS NULL OR decision_ts::date <= %s::date)
+                    ORDER BY decision_ts ASC
+                    """,
+                    (
+                        request.model_version,
+                        request.start_date,
+                        request.start_date,
+                        request.end_date,
+                        request.end_date,
+                    ),
+                ).fetchall()
+        examples: list[TrainingExample] = []
+        for row in rows:
+            examples.append(
+                TrainingExample(
+                    id=row["id"],
+                    match_id=row["match_id"],
+                    player_id=row["player_id"],
+                    model_version=row["model_version"],
+                    feature_snapshot_id=str(row["feature_snapshot_id"] or ""),
+                    decision_ts=row["decision_ts"],
+                    model_probability=float(row["model_probability"]),
+                    market_probability=float(row["market_probability"]),
+                    closing_probability=float(row["closing_probability"])
+                    if row["closing_probability"] is not None
+                    else None,
+                    result_win=row["result_win"],
+                    pnl=float(row["pnl"]) if row["pnl"] is not None else None,
+                    clv=float(row["clv"]) if row["clv"] is not None else None,
+                    stake_amount=float(row["stake_amount"] or 1),
+                    calibration_bucket=row["calibration_bucket"],
+                )
+            )
+        return examples
+
+    def backtest_metrics(self, request: BacktestRunRequest | None = None) -> BacktestMetrics | None:
+        request = request or BacktestRunRequest()
+        examples = self.training_examples(request)
+        if not examples:
             return None
-        staked = float(row["staked"] or 0)
-        roi = float(row["pnl"] or 0) / staked if staked else 0
-        metrics = BacktestMetrics(
-            run_id=f"bt_live_{uuid4().hex[:12]}",
-            model_version=request.model_version,
-            matches=int(row["matches"] or 0),
-            signals=int(row["signals"] or 0),
-            roi=round(roi, 4),
-            clv=round(float(row["clv"] or 0), 6),
-            brier_score=round(float(row["brier"] or 0.25), 6),
-            log_loss=0.693,
-            calibration_error=0.05,
-            max_drawdown=max(0, round(-roi, 4)),
-        )
-        return evaluate_promotion(metrics)
+        return walk_forward_from_training_examples(request, examples)
 
     def save_backtest(self, metrics: BacktestMetrics, request: BacktestRunRequest | None = None) -> None:
         if not self.enabled:
@@ -853,6 +884,14 @@ class PersistentStore:
                         _now(),
                     ),
                 )
+                examples = self.training_examples(request)
+                if examples:
+                    report = calibration_from_training_examples(
+                        metrics.run_id,
+                        metrics.model_version,
+                        examples,
+                    )
+                    self._save_calibration_report(cur, report)
 
     def get_backtest(self, run_id: str) -> BacktestMetrics | None:
         if not self.enabled:
@@ -878,6 +917,98 @@ class PersistentStore:
         if not row:
             return None
         return BacktestMetrics(**row["metrics"])
+
+    def calibration_report(self, run_id: str) -> CalibrationReport | None:
+        if not self.enabled:
+            return None
+        with self._connect() as conn:
+            if conn is None:
+                return None
+            with conn.cursor() as cur:
+                row = cur.execute(
+                    """
+                    SELECT run_id, model_version, buckets, brier_score, log_loss,
+                           calibration_error, generated_at
+                    FROM calibration_reports
+                    WHERE run_id = %s
+                    """,
+                    (run_id,),
+                ).fetchone()
+                if row:
+                    return CalibrationReport(
+                        run_id=row["run_id"],
+                        model_version=row["model_version"],
+                        buckets=[CalibrationBucket(**bucket) for bucket in row["buckets"]],
+                        brier_score=float(row["brier_score"]),
+                        log_loss=float(row["log_loss"]),
+                        calibration_error=float(row["calibration_error"]),
+                        generated_at=row["generated_at"],
+                    )
+                backtest_row = cur.execute(
+                    "SELECT model_version_id FROM backtests WHERE id = %s",
+                    (run_id,),
+                ).fetchone()
+        if not backtest_row:
+            return None
+        request = BacktestRunRequest(model_version=backtest_row["model_version_id"])
+        examples = self.training_examples(request)
+        if not examples:
+            return None
+        return calibration_from_training_examples(run_id, request.model_version, examples)
+
+    def model_registry(self) -> list[ModelRegistryEntry] | None:
+        if not self.enabled:
+            return None
+        with self._connect() as conn:
+            if conn is None:
+                return None
+            with conn.cursor() as cur:
+                rows = cur.execute(
+                    """
+                    SELECT id, model_type, training_window, metrics, promoted, created_at
+                    FROM model_versions
+                    ORDER BY promoted DESC, created_at DESC, id ASC
+                    """
+                ).fetchall()
+        if not rows:
+            return None
+        entries: list[ModelRegistryEntry] = []
+        for row in rows:
+            metrics = row["metrics"] or {}
+            if "run_id" not in metrics:
+                continue
+            training_window = row["training_window"] or {}
+            promoted = bool(row["promoted"])
+            model_version = row["id"]
+            if promoted or model_version == self.settings.model_champion_version:
+                role = "champion"
+            elif model_version == "baseline_v0":
+                role = "baseline"
+            else:
+                role = "challenger"
+            entries.append(
+                ModelRegistryEntry(
+                    model_version=model_version,
+                    role=role,
+                    model_type=row["model_type"],
+                    feature_set=str(training_window.get("feature_set") or training_window.get("source") or "persisted"),
+                    training_window=training_window,
+                    metrics=BacktestMetrics(**metrics),
+                    promoted=promoted,
+                    promoted_at=row["created_at"] if promoted else None,
+                    notes=["Loaded from persisted model_versions/backtests."],
+                )
+            )
+        return entries or None
+
+    def champion_model(self) -> ModelRegistryEntry | None:
+        entries = self.model_registry()
+        if not entries:
+            return None
+        return next(
+            (entry for entry in entries if entry.role == "champion"),
+            entries[0],
+        )
 
     def _upsert_player(self, cur: Any, player: Player) -> None:
         cur.execute(
@@ -919,9 +1050,11 @@ class PersistentStore:
             """
             SELECT
               po.external_order_ref, po.match_id, po.player_id,
+              po.stake_amount, po.matched_stake, po.created_at AS order_created_at,
               s.model_prob, s.market_prob,
               ps.model_version_id,
-              ps.feature_snapshot_id
+              ps.feature_snapshot_id,
+              ps.created_at AS prediction_created_at
             FROM paper_orders po
             JOIN signals s ON s.id = po.signal_id
             LEFT JOIN prediction_snapshots ps ON ps.id = s.prediction_snapshot_id
@@ -940,13 +1073,14 @@ class PersistentStore:
             INSERT INTO training_examples (
               id, match_id, player_id, model_version, feature_snapshot_id,
               decision_ts, model_probability, market_probability, closing_probability,
-              result_win, pnl, clv, calibration_bucket, created_at
+              result_win, pnl, clv, stake_amount, calibration_bucket, created_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
               result_win = EXCLUDED.result_win,
               pnl = EXCLUDED.pnl,
-              clv = EXCLUDED.clv
+              clv = EXCLUDED.clv,
+              stake_amount = EXCLUDED.stake_amount
             """,
             (
                 f"train_{row['external_order_ref']}",
@@ -954,15 +1088,43 @@ class PersistentStore:
                 row["player_id"],
                 row["model_version_id"] or self.settings.model_champion_version,
                 row["feature_snapshot_id"],
-                settlement.settled_at,
+                row["prediction_created_at"] or row["order_created_at"],
                 row["model_prob"],
                 row["market_prob"],
                 closing_probability,
                 settlement.result_win,
                 settlement.net_pnl,
                 settlement.clv,
+                row["matched_stake"] or row["stake_amount"] or 1,
                 calibration_bucket,
                 _now(),
+            ),
+        )
+
+    def _save_calibration_report(self, cur: Any, report: CalibrationReport) -> None:
+        cur.execute(
+            """
+            INSERT INTO calibration_reports (
+              run_id, model_version, buckets, brier_score, log_loss,
+              calibration_error, generated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (run_id) DO UPDATE SET
+              model_version = EXCLUDED.model_version,
+              buckets = EXCLUDED.buckets,
+              brier_score = EXCLUDED.brier_score,
+              log_loss = EXCLUDED.log_loss,
+              calibration_error = EXCLUDED.calibration_error,
+              generated_at = EXCLUDED.generated_at
+            """,
+            (
+                report.run_id,
+                report.model_version,
+                _json([bucket.model_dump(mode="json") for bucket in report.buckets]),
+                report.brier_score,
+                report.log_loss,
+                report.calibration_error,
+                report.generated_at,
             ),
         )
 

@@ -503,6 +503,7 @@ class TrainingExample(BaseModel):
     result_win: bool | None = None
     pnl: float | None = None
     clv: float | None = None
+    stake_amount: float = Field(default=1, gt=0)
     calibration_bucket: str
 
 

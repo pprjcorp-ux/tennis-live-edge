@@ -5,7 +5,9 @@ from datetime import datetime
 from datetime import timezone
 
 from tennis_edge.config import Settings
+from tennis_edge.domain import CursorStatus
 from tennis_edge.domain import Provider
+from tennis_edge.domain import ProviderCursor
 from tennis_edge.domain import SignalStatus
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches
@@ -101,6 +103,35 @@ def test_raw_payloads_for_match_maps_persisted_rows_to_domain_payloads() -> None
     assert len(payloads) == 1
     assert payloads[0].provider == Provider.SPORTRADAR
     assert payloads[0].payload["status"] == "live"
+
+
+def test_provider_cursor_seed_does_not_overwrite_persisted_cursor() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.params = []
+
+        def execute(self, query, params):
+            self.params.append(params)
+
+    cursor_stub = CursorStub()
+    existing = ProviderCursor(
+        provider=Provider.ODDS_API_IO,
+        stream="tennis:moneyline",
+        last_seq=40,
+        expected_next_seq=41,
+        status=CursorStatus.HEALTHY,
+        gap_count=0,
+        resync_required=False,
+        note="Persisted healthy cursor.",
+    )
+    store = PersistentStore(Settings(data_mode="live", persistence_enabled=True))
+
+    store._upsert_provider_cursors(cursor_stub, existing_cursors=[existing])
+
+    odds_params = next(params for params in cursor_stub.params if params[0] == "odds_api_io")
+    assert odds_params[2] == 40
+    assert odds_params[4] == "healthy"
+    assert odds_params[6] is False
 
 
 def test_odds_api_io_resync_blocks_live_entry_signals() -> None:

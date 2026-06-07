@@ -134,6 +134,7 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return
+            existing_cursors = self.provider_cursors()
             for analysis in analyses:
                 with conn.cursor() as cur:
                     self._upsert_player(cur, analysis.match.player1)
@@ -149,7 +150,7 @@ class PersistentStore:
                     self._record_latency(cur, Provider.API_TENNIS, "score/live", analysis.match)
                     if analysis.match.odds:
                         self._record_latency(cur, Provider.ODDS_API_IO, "odds/moneyline", analysis.match)
-                    self._upsert_provider_cursors(cur)
+                    self._upsert_provider_cursors(cur, existing_cursors=existing_cursors)
 
     def save_raw_payloads(self, payloads: list[RawProviderPayload]) -> None:
         if not self.enabled or not payloads:
@@ -1630,8 +1631,18 @@ class PersistentStore:
             ),
         )
 
-    def _upsert_provider_cursors(self, cur: Any) -> None:
-        for cursor in default_provider_cursors(self.settings):
+    def _upsert_provider_cursors(
+        self,
+        cur: Any,
+        existing_cursors: list[ProviderCursor] | None = None,
+    ) -> None:
+        merged = {
+            (cursor.provider, cursor.stream): cursor
+            for cursor in default_provider_cursors(self.settings)
+        }
+        for cursor in existing_cursors or []:
+            merged[(cursor.provider, cursor.stream)] = cursor
+        for cursor in sorted(merged.values(), key=lambda item: (item.provider, item.stream)):
             cur.execute(
                 """
                 INSERT INTO provider_cursors (

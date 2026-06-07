@@ -23,6 +23,7 @@ def test_agent_preflight_reports_ready_when_safety_and_gateway_are_healthy() -> 
             data_mode="live",
             admin_api_token="local-admin",
             persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
             api_tennis_key="api-tennis",
             odds_api_io_key="odds-api-io",
             the_odds_api_key="the-odds-api",
@@ -36,6 +37,29 @@ def test_agent_preflight_reports_ready_when_safety_and_gateway_are_healthy() -> 
     assert preflight.status == "ready"
     assert {check.name: check.status for check in preflight.checks}["openclaw_gateway"] == "pass"
     assert {check.name: check.status for check in preflight.checks}["real_execution_hard_block"] == "pass"
+
+
+def test_agent_preflight_blocks_live_mode_when_database_url_is_missing() -> None:
+    preflight = build_agent_preflight(
+        Settings(
+            data_mode="live",
+            admin_api_token="local-admin",
+            persistence_enabled=True,
+            database_url=None,
+            api_tennis_key="api-tennis",
+            odds_api_io_key="odds-api-io",
+            the_odds_api_key="the-odds-api",
+        ),
+        provider_health=[],
+        execution_status=_execution_status(),
+        persistence_last_error=None,
+        gateway_probe=lambda: True,
+    )
+
+    statuses = {check.name: check.status for check in preflight.checks}
+
+    assert preflight.status == "blocked"
+    assert statuses["persistence"] == "fail"
 
 
 def test_agent_preflight_degrades_for_missing_keys_gateway_and_persistence() -> None:

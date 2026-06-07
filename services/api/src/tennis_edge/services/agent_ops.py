@@ -150,24 +150,7 @@ def build_agent_preflight(
             detail=gateway_detail,
         )
     )
-    checks.append(
-        AgentPreflightCheck(
-            name="persistence",
-            status="fail"
-            if settings.persistence_enabled and persistence_last_error
-            else "pass"
-            if settings.persistence_enabled
-            else "warn",
-            summary=(
-                "Persistence enabled and no current store error reported."
-                if settings.persistence_enabled and not persistence_last_error
-                else "Persistence enabled but store reports an error."
-                if settings.persistence_enabled
-                else "Persistence disabled; Agent Ops audit is process-local only."
-            ),
-            detail=persistence_last_error,
-        )
-    )
+    checks.append(_persistence_preflight_check(settings, persistence_last_error))
     missing_provider_keys = _missing_provider_keys(settings, provider_health)
     checks.append(
         AgentPreflightCheck(
@@ -198,6 +181,37 @@ def build_agent_preflight(
     return AgentPreflight(
         status="blocked" if "fail" in statuses else "degraded" if "warn" in statuses else "ready",
         checks=checks,
+    )
+
+
+def _persistence_preflight_check(
+    settings: Settings,
+    persistence_last_error: str | None,
+) -> AgentPreflightCheck:
+    if not settings.persistence_enabled:
+        return AgentPreflightCheck(
+            name="persistence",
+            status="warn",
+            summary="Persistence disabled; Agent Ops audit is process-local only.",
+        )
+    if settings.data_mode != "sample" and not settings.database_url:
+        return AgentPreflightCheck(
+            name="persistence",
+            status="fail",
+            summary="Persistence enabled but DATABASE_URL is missing for live mode.",
+            detail="Live Agent Ops requires durable Postgres storage before protected autopilot actions.",
+        )
+    if persistence_last_error:
+        return AgentPreflightCheck(
+            name="persistence",
+            status="fail",
+            summary="Persistence enabled but store reports an error.",
+            detail=persistence_last_error,
+        )
+    return AgentPreflightCheck(
+        name="persistence",
+        status="pass",
+        summary="Persistence enabled and no current store error reported.",
     )
 
 

@@ -18,10 +18,16 @@ def cursor_key(provider: Provider, stream: str) -> tuple[Provider, str]:
     return (provider, stream)
 
 
-def default_provider_cursors(settings: Settings) -> list[ProviderCursor]:
-    if not CURSORS:
-        odds_cursor_healthy = settings.data_mode == "sample"
-        seed_provider_cursor(
+def default_provider_cursors(
+    settings: Settings,
+    *,
+    use_process_cache: bool = True,
+) -> list[ProviderCursor]:
+    if use_process_cache and CURSORS:
+        return sorted(CURSORS.values(), key=lambda item: (item.provider, item.stream))
+    odds_cursor_healthy = settings.data_mode == "sample"
+    cursors = [
+        _provider_cursor(
             Provider.ODDS_API_IO,
             "tennis:moneyline",
             last_seq=1024 if odds_cursor_healthy else None,
@@ -33,15 +39,40 @@ def default_provider_cursors(settings: Settings) -> list[ProviderCursor]:
                 if odds_cursor_healthy
                 else "Live odds cursor has no trusted seq/lastSeq yet; REST resync or websocket sequence is required."
             ),
-        )
-        seed_provider_cursor(
+        ),
+        _provider_cursor(
             Provider.SPORTRADAR,
             "tennis:score",
             last_seq=None,
             status=CursorStatus.HEALTHY if settings.data_mode == "sample" else CursorStatus.RESYNC_REQUIRED,
             note="Enterprise score cursor waits for Sportradar contract payload validation.",
-        )
-    return sorted(CURSORS.values(), key=lambda item: (item.provider, item.stream))
+        ),
+    ]
+    if use_process_cache:
+        for cursor in cursors:
+            CURSORS[cursor_key(cursor.provider, cursor.stream)] = cursor
+    return sorted(cursors, key=lambda item: (item.provider, item.stream))
+
+
+def _provider_cursor(
+    provider: Provider,
+    stream: str,
+    *,
+    last_seq: int | None,
+    status: CursorStatus,
+    note: str,
+) -> ProviderCursor:
+    return ProviderCursor(
+        provider=provider,
+        stream=stream,
+        last_seq=last_seq,
+        expected_next_seq=last_seq + 1 if last_seq is not None else None,
+        status=status,
+        gap_count=0,
+        resync_required=status == CursorStatus.RESYNC_REQUIRED,
+        last_message_at=_now() if status != CursorStatus.RESYNC_REQUIRED else None,
+        note=note,
+    )
 
 
 def seed_provider_cursor(
@@ -52,15 +83,11 @@ def seed_provider_cursor(
     status: CursorStatus,
     note: str,
 ) -> ProviderCursor:
-    cursor = ProviderCursor(
-        provider=provider,
-        stream=stream,
+    cursor = _provider_cursor(
+        provider,
+        stream,
         last_seq=last_seq,
-        expected_next_seq=last_seq + 1 if last_seq is not None else None,
         status=status,
-        gap_count=0,
-        resync_required=status == CursorStatus.RESYNC_REQUIRED,
-        last_message_at=_now() if status != CursorStatus.RESYNC_REQUIRED else None,
         note=note,
     )
     CURSORS[cursor_key(provider, stream)] = cursor

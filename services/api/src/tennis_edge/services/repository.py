@@ -158,7 +158,7 @@ class AnalysisRepository:
     def _apply_provider_gates(self, signals: list[Signal]) -> list[Signal]:
         if self.settings.data_mode == "sample" or not self.settings.odds_ws_resync_required_blocks_signals:
             return signals
-        cursors = self.store.provider_cursors() or default_provider_cursors(self.settings)
+        cursors = self.store.provider_cursors() or self._fallback_provider_cursors()
         odds_cursor = next(
             (
                 cursor
@@ -219,7 +219,13 @@ class AnalysisRepository:
 
     async def provider_cursors(self) -> list[ProviderCursor]:
         persisted = self.store.provider_cursors()
-        return persisted or default_provider_cursors(self.settings)
+        return persisted or self._fallback_provider_cursors()
+
+    def _fallback_provider_cursors(self) -> list[ProviderCursor]:
+        return default_provider_cursors(
+            self.settings,
+            use_process_cache=self.settings.data_mode == "sample",
+        )
 
     async def model_registry(self) -> list[ModelRegistryEntry]:
         persisted = self.store.model_registry()

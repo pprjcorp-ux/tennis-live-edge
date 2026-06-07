@@ -12,7 +12,7 @@ from tennis_edge.domain import SignalStatus
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches
 from tennis_edge.services.ingestion import LiveIngestionPipeline
-from tennis_edge.services.provider_cursor import CURSORS, ingest_odds_api_sequence
+from tennis_edge.services.provider_cursor import CURSORS, ingest_odds_api_sequence, mark_resynced
 from tennis_edge.services.repository import AnalysisRepository
 from tennis_edge.services.execution_engine import (
     CANCELABLE_ORDER_STATUSES,
@@ -134,6 +134,31 @@ def test_provider_cursor_seed_does_not_overwrite_persisted_cursor() -> None:
     assert odds_params[6] is False
 
 
+def test_provider_cursor_seed_ignores_process_cache_without_existing_cursor() -> None:
+    CURSORS.clear()
+    try:
+        mark_resynced(Provider.ODDS_API_IO, "tennis:moneyline", 88)
+
+        class CursorStub:
+            def __init__(self) -> None:
+                self.params = []
+
+            def execute(self, query, params):
+                self.params.append(params)
+
+        cursor_stub = CursorStub()
+        store = PersistentStore(Settings(data_mode="live", persistence_enabled=True))
+
+        store._upsert_provider_cursors(cursor_stub)
+
+        odds_params = next(params for params in cursor_stub.params if params[0] == "odds_api_io")
+        assert odds_params[2] is None
+        assert odds_params[4] == "resync_required"
+        assert odds_params[6] is True
+    finally:
+        CURSORS.clear()
+
+
 def test_odds_api_io_resync_blocks_live_entry_signals() -> None:
     CURSORS.clear()
     ingest_odds_api_sequence({"type": "resync_required"}, stream="tennis:moneyline")
@@ -156,6 +181,45 @@ def test_odds_api_io_resync_blocks_live_entry_signals() -> None:
     assert entry_or_blocked
     assert all(signal.status != SignalStatus.ENTRY for signal in entry_or_blocked)
     assert repo._apply_provider_gates([]) == []
+
+
+def test_live_provider_cursors_ignore_process_cache_when_persistence_is_missing() -> None:
+    CURSORS.clear()
+    try:
+        mark_resynced(Provider.ODDS_API_IO, "tennis:moneyline", 88)
+        repo = AnalysisRepository(Settings(data_mode="live", persistence_enabled=False))
+
+        cursors = asyncio.run(repo.provider_cursors())
+        odds_cursor = next(cursor for cursor in cursors if cursor.provider == Provider.ODDS_API_IO)
+
+        assert odds_cursor.status == CursorStatus.RESYNC_REQUIRED
+        assert odds_cursor.resync_required is True
+        assert odds_cursor.last_seq is None
+    finally:
+        CURSORS.clear()
+
+
+def test_live_data_quality_ignores_process_cursor_cache_when_persistence_is_missing() -> None:
+    CURSORS.clear()
+    try:
+        mark_resynced(Provider.ODDS_API_IO, "tennis:moneyline", 88)
+        repo = AnalysisRepository(
+            Settings(
+                data_mode="live",
+                persistence_enabled=False,
+                odds_ws_resync_required_blocks_signals=True,
+            )
+        )
+
+        snapshots = asyncio.run(repo.data_quality())
+        odds_snapshot = next(
+            snapshot for snapshot in snapshots if snapshot.provider == Provider.ODDS_API_IO
+        )
+
+        assert odds_snapshot.sequence_health == 0.35
+        assert odds_snapshot.blocked_signals == 1
+    finally:
+        CURSORS.clear()
 
 
 def test_the_odds_api_parser_maps_h2h_moneyline_quotes() -> None:

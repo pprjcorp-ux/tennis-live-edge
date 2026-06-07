@@ -1638,7 +1638,10 @@ class PersistentStore:
     ) -> None:
         merged = {
             (cursor.provider, cursor.stream): cursor
-            for cursor in default_provider_cursors(self.settings)
+            for cursor in default_provider_cursors(
+                self.settings,
+                use_process_cache=self.settings.data_mode == "sample",
+            )
         }
         for cursor in existing_cursors or []:
             merged[(cursor.provider, cursor.stream)] = cursor

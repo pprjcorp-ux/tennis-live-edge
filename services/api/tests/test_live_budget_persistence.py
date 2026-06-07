@@ -169,6 +169,13 @@ def test_odds_api_io_resync_blocks_live_entry_signals() -> None:
             odds_ws_resync_required_blocks_signals=True,
         )
     )
+    repo.ingestion = LiveIngestionPipeline(
+        _FakeMatchSource(_live_provider_matches()),
+        _FakeArchiveSource(),
+        _FakeStore(),
+        signal_gate=repo._gate_signals_for_match,
+        archive_augmenter=_same_matches,
+    )
 
     analyses = asyncio.run(repo.analyses_for_date(date.today()))
     entry_or_blocked = [

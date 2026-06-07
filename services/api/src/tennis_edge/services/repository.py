@@ -438,7 +438,9 @@ class AnalysisRepository:
             payloads = self.store.raw_payloads_for_match(candidate)
             if payloads:
                 return payloads
-        return sample_raw_payloads(match_id)
+        if self.settings.data_mode == "sample":
+            return sample_raw_payloads(match_id)
+        return []
 
     @staticmethod
     def _raw_payload_id_candidates(match_id: str, analyses: list[MatchAnalysis]) -> list[str]:

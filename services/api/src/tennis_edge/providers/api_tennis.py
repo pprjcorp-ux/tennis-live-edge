@@ -16,8 +16,10 @@ class ApiTennisClient:
         self.data_mode = data_mode
 
     async def get_today_matches(self, target_date: date) -> list[Match]:
-        if self.data_mode == "sample" or not self.api_key:
+        if self.data_mode == "sample":
             return sample_matches()
+        if not self.api_key:
+            return []
 
         params = {
             "method": "get_fixtures",
@@ -32,8 +34,10 @@ class ApiTennisClient:
         return self._parse_matches(response.json(), default_status="prematch")
 
     async def get_livescore(self) -> list[Match]:
-        if self.data_mode == "sample" or not self.api_key:
+        if self.data_mode == "sample":
             return sample_matches()
+        if not self.api_key:
+            return []
 
         params = {"method": "get_livescore", "APIkey": self.api_key}
         async with httpx.AsyncClient(timeout=10) as client:

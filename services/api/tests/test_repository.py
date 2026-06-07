@@ -263,3 +263,28 @@ def test_replay_falls_back_to_provider_match_id_for_persisted_raw_payloads() -> 
 
     assert store.requested_match_ids[:2] == ["match_atp_002", "sample-api-tennis-002"]
     assert replay.events_replayed == len(persisted_payloads)
+
+
+def test_live_replay_without_persisted_payloads_does_not_use_sample_payloads() -> None:
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.requested_match_ids = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def raw_payloads_for_match(self, match_id):
+            self.requested_match_ids.append(match_id)
+            return []
+
+    repo = AnalysisRepository(Settings(data_mode="live", persistence_enabled=False))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    replay = asyncio.run(repo.run_replay(ReplayRunRequest(match_id="match_atp_002")))
+
+    assert store.requested_match_ids == ["match_atp_002"]
+    assert replay.events_replayed == 0
+    assert replay.score_ticks == 0
+    assert replay.odds_ticks == 0

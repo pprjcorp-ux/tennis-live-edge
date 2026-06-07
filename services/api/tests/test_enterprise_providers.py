@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date
 
 from tennis_edge.domain import Provider
@@ -98,6 +99,16 @@ def test_api_tennis_parser_uses_provider_payload_not_sample_matches() -> None:
     assert matches[0].state.status == "live"
     assert matches[0].state.p1_games == 4
     assert matches[0].player1.name == "Elena Rybakina"
+
+
+def test_api_tennis_live_without_key_returns_no_synthetic_matches() -> None:
+    client = ApiTennisClient(api_key=None, data_mode="live")
+
+    fixtures = asyncio.run(client.get_today_matches(date.today()))
+    livescore = asyncio.run(client.get_livescore())
+
+    assert fixtures == []
+    assert livescore == []
 
 
 def test_odds_api_io_message_parser_maps_moneyline_quotes() -> None:

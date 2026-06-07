@@ -796,6 +796,16 @@ class CostProfile(BaseModel):
     notes: list[str]
 
 
+class OperationalStateSnapshot(BaseModel):
+    provider_health: list[ProviderHealth]
+    cost_profile: CostProfile
+    data_quality: list[DataQualitySnapshot]
+    provider_cursors: list[ProviderCursor]
+    ingestion_runs: list[IngestionRunRecord]
+    execution_status: ExecutionStatus
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ProviderCostUsage(BaseModel):
     provider: Provider
     api_calls: int = 0

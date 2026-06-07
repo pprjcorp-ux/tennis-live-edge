@@ -19,6 +19,7 @@ import type {
   MatchAnalysis,
   ModelRegistryEntry,
   ModelPromotionDecision,
+  OperationalStateSnapshot,
   PaperPerformance,
   PaperSettlement,
   ProviderCursor,
@@ -74,6 +75,10 @@ export function getDataQuality(): Promise<DataQualitySnapshot[]> {
 
 export function getProviderCursors(): Promise<ProviderCursor[]> {
   return getJson<ProviderCursor[]>("/api/v1/provider-cursors");
+}
+
+export function getOperationalState(): Promise<OperationalStateSnapshot> {
+  return getJson<OperationalStateSnapshot>("/api/v1/operational-state");
 }
 
 export function getModelRegistry(): Promise<ModelRegistryEntry[]> {

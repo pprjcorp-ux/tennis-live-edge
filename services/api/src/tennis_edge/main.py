@@ -34,6 +34,7 @@ from tennis_edge.domain import (
     OddsMessageIngestionRequest,
     OddsMessageIngestionResult,
     OrderRequest,
+    OperationalStateSnapshot,
     PaperPerformance,
     PaperSettlement,
     PaperSettleRequest,
@@ -151,6 +152,13 @@ async def v1_provider_cursors(
     repo: AnalysisRepository = Depends(repository),
 ) -> list[ProviderCursor]:
     return await repo.provider_cursors()
+
+
+@app.get("/api/v1/operational-state", response_model=OperationalStateSnapshot)
+async def v1_operational_state(
+    repo: AnalysisRepository = Depends(repository),
+) -> OperationalStateSnapshot:
+    return await repo.operational_state_snapshot()
 
 
 @app.post("/api/v1/ingestion/run", response_model=IngestionRunResult)

@@ -40,6 +40,7 @@ def test_v1_live_matches_and_provider_health() -> None:
 def test_v1_enterprise_observability_endpoints() -> None:
     data_quality = client.get("/api/v1/data-quality")
     cursors = client.get("/api/v1/provider-cursors")
+    operational_state = client.get("/api/v1/operational-state")
     registry = client.get("/api/v1/models/registry")
     champion = client.get("/api/v1/models/champion")
     conflicts = client.get("/api/v1/entity-resolution/conflicts")
@@ -47,11 +48,15 @@ def test_v1_enterprise_observability_endpoints() -> None:
 
     assert data_quality.status_code == 200
     assert cursors.status_code == 200
+    assert operational_state.status_code == 200
     assert registry.status_code == 200
     assert champion.status_code == 200
     assert conflicts.status_code == 200
     assert paper.status_code == 200
     assert any(item["provider"] == "odds_api_io" for item in cursors.json())
+    assert operational_state.json()["cost_profile"]["active_plan"] == "lean_atp"
+    assert operational_state.json()["execution_status"]["can_submit_real_orders"] is False
+    assert "ingestion_runs" in operational_state.json()
     assert champion.json()["model_version"] == "baseline_v0"
 
 

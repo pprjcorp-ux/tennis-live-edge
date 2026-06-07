@@ -74,6 +74,14 @@ def test_operational_state_prefers_persisted_health_inputs() -> None:
     assert service.data_quality() == [quality]
     assert service.ingestion_runs() == [run]
 
+    snapshot = service.snapshot()
+
+    assert snapshot.provider_cursors == [cursor]
+    assert snapshot.data_quality == [quality]
+    assert snapshot.ingestion_runs == [run]
+    assert snapshot.cost_profile.active_plan == "lean_atp"
+    assert snapshot.execution_status.can_submit_real_orders is False
+
 
 def test_operational_state_falls_back_to_safe_runtime_defaults() -> None:
     service = OperationalStateService(Settings(data_mode="live"), StoreStub())

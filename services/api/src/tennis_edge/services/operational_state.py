@@ -10,6 +10,7 @@ from tennis_edge.domain import (
     ExecutionStatus,
     IngestionRunRecord,
     MatchAnalysis,
+    OperationalStateSnapshot,
     PaperPerformance,
     ProviderCursor,
     ProviderHealth,
@@ -62,3 +63,13 @@ class OperationalStateService:
 
     def execution_status(self) -> ExecutionStatus:
         return execution_status(self.settings)
+
+    def snapshot(self) -> OperationalStateSnapshot:
+        return OperationalStateSnapshot(
+            provider_health=self.provider_health(),
+            cost_profile=self.cost_profile(),
+            data_quality=self.data_quality(),
+            provider_cursors=self.provider_cursors(),
+            ingestion_runs=self.ingestion_runs(),
+            execution_status=self.execution_status(),
+        )

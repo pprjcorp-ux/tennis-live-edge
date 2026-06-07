@@ -224,6 +224,16 @@ export type IngestionRunRecord = {
   completed_at: string;
 };
 
+export type OperationalStateSnapshot = {
+  provider_health: ProviderHealth[];
+  cost_profile: CostProfile;
+  data_quality: DataQualitySnapshot[];
+  provider_cursors: ProviderCursor[];
+  ingestion_runs: IngestionRunRecord[];
+  execution_status: ExecutionStatus;
+  generated_at: string;
+};
+
 export type ExecutionStatus = {
   execution_enabled: boolean;
   venue: "betfair";

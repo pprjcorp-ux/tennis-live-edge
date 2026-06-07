@@ -30,12 +30,13 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   );
 
   assert.match(importBlock, /getAgentPreflightSafe/);
-  assert.match(importBlock, /getIngestionRuns/);
+  assert.match(importBlock, /getOperationalState/);
   assert.doesNotMatch(importBlock, /getAgentPreflight,/);
+  assert.doesNotMatch(importBlock, /getIngestionRuns/);
   assert.match(pageSource, /getAgentPreflightSafe\(\)/);
-  assert.match(pageSource, /getIngestionRuns\(\)/);
+  assert.match(pageSource, /getOperationalState\(\)/);
   assert.match(pageSource, /ingestionRuns=\{ingestionRuns\}/);
-  assert.match(apiSource, /\/api\/v1\/ingestion\/runs/);
+  assert.match(apiSource, /\/api\/v1\/operational-state/);
   assert.match(dataHealthSource, /Ingestion Journal/);
   assert.match(dataHealthSource, /Ultimos ciclos persistidos/);
   assert.match(pageSource, /\["Paper orders", String\(agentBriefing\?\.paper_orders \?\? 0\)\]/);

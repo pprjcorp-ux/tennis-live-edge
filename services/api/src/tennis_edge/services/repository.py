@@ -33,6 +33,7 @@ from tennis_edge.domain import (
     OddsMessageIngestionRequest,
     OddsMessageIngestionResult,
     OrderRequest,
+    OperationalStateSnapshot,
     PaperPerformance,
     PaperSettlement,
     PaperSettleRequest,
@@ -492,6 +493,9 @@ class AnalysisRepository:
 
     async def execution_status(self) -> ExecutionStatus:
         return self.operational_state.execution_status()
+
+    async def operational_state_snapshot(self) -> OperationalStateSnapshot:
+        return self.operational_state.snapshot()
 
     async def bankroll(self, orders: list[ExecutionOrder] | None = None) -> BankrollSnapshot:
         return bankroll_snapshot(self.settings, orders if orders is not None else await self.orders())

@@ -28,21 +28,17 @@ import {
   getAgentPreflightSafe,
   getAgentRuns,
   getCalibrationReport,
-  getCostProfile,
   getBankroll,
   getChampionModel,
   getDailyMetrics,
   getDailyCostReport,
-  getDataQuality,
   getEntityConflicts,
   getExecutionStatus,
-  getIngestionRuns,
   getLiveSignals,
   getModelRegistry,
+  getOperationalState,
   getOrders,
   getPaperPerformance,
-  getProviderCursors,
-  getProviderHealth,
   getTodayMatches,
   promoteFromLearning,
   runAgentAutopilot,
@@ -160,20 +156,14 @@ export default function Page() {
   async function load() {
     setError(null);
     try {
-      const [nextMatches, nextMetrics, nextHealth, nextSignals] = await Promise.all([
+      const [nextMatches, nextMetrics, nextOperational, nextSignals, nextCostReport] = await Promise.all([
         getTodayMatches(),
         getDailyMetrics(),
-        getProviderHealth(),
-        getLiveSignals()
-      ]);
-      const [nextCostProfile, nextCostReport] = await Promise.all([
-        getCostProfile(),
+        getOperationalState(),
+        getLiveSignals(),
         getDailyCostReport()
       ]);
       const [
-        nextDataQuality,
-        nextIngestionRuns,
-        nextProviderCursors,
         nextModelRegistry,
         nextChampionModel,
         nextPaperPerformance,
@@ -183,9 +173,6 @@ export default function Page() {
         nextAgentRuns,
         nextEntityConflicts
       ] = await Promise.all([
-        getDataQuality(),
-        getIngestionRuns(),
-        getProviderCursors(),
         getModelRegistry(),
         getChampionModel(),
         getPaperPerformance(),
@@ -195,18 +182,17 @@ export default function Page() {
         getAgentRuns(),
         getEntityConflicts()
       ]);
-      const [nextExecutionStatus, nextBankroll, nextOrders] = await Promise.all([
-        getExecutionStatus(),
+      const [nextBankroll, nextOrders] = await Promise.all([
         getBankroll(),
         getOrders()
       ]);
       setMatches(nextMatches);
       setMetrics(nextMetrics);
-      setCostProfile(nextCostProfile);
+      setCostProfile(nextOperational.cost_profile);
       setCostReport(nextCostReport);
-      setDataQuality(nextDataQuality);
-      setIngestionRuns(nextIngestionRuns);
-      setProviderCursors(nextProviderCursors);
+      setDataQuality(nextOperational.data_quality);
+      setIngestionRuns(nextOperational.ingestion_runs);
+      setProviderCursors(nextOperational.provider_cursors);
       setModelRegistry(nextModelRegistry);
       setChampionModel(nextChampionModel);
       setPaperPerformance(nextPaperPerformance);
@@ -215,10 +201,10 @@ export default function Page() {
       setAgentAnomalies(nextAgentAnomalies);
       setAgentRuns(nextAgentRuns);
       setEntityConflicts(nextEntityConflicts);
-      setExecutionStatus(nextExecutionStatus);
+      setExecutionStatus(nextOperational.execution_status);
       setBankroll(nextBankroll);
       setOrders(nextOrders);
-      setHealth(nextHealth);
+      setHealth(nextOperational.provider_health);
       setSignals(nextSignals);
       setSelectedMatchId((current) => current ?? nextMatches[0]?.match.id ?? null);
       setUpdatedAt(new Date());

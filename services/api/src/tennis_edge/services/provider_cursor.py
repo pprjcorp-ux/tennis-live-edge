@@ -20,12 +20,19 @@ def cursor_key(provider: Provider, stream: str) -> tuple[Provider, str]:
 
 def default_provider_cursors(settings: Settings) -> list[ProviderCursor]:
     if not CURSORS:
+        odds_cursor_healthy = settings.data_mode == "sample"
         seed_provider_cursor(
             Provider.ODDS_API_IO,
             "tennis:moneyline",
-            last_seq=1024,
-            status=CursorStatus.HEALTHY,
-            note="Sample cursor. Live mode persists Odds-API.io seq/lastSeq for replay and resync.",
+            last_seq=1024 if odds_cursor_healthy else None,
+            status=CursorStatus.HEALTHY
+            if odds_cursor_healthy
+            else CursorStatus.RESYNC_REQUIRED,
+            note=(
+                "Sample cursor. Live mode persists Odds-API.io seq/lastSeq for replay and resync."
+                if odds_cursor_healthy
+                else "Live odds cursor has no trusted seq/lastSeq yet; REST resync or websocket sequence is required."
+            ),
         )
         seed_provider_cursor(
             Provider.SPORTRADAR,

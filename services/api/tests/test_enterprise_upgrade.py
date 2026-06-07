@@ -4,7 +4,12 @@ from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.sample_data import sample_matches
 from tennis_edge.services.enterprise_analytics import model_registry
 from tennis_edge.services.execution_engine import execution_status
-from tennis_edge.services.provider_cursor import CURSORS, ingest_odds_api_sequence, mark_resynced
+from tennis_edge.services.provider_cursor import (
+    CURSORS,
+    default_provider_cursors,
+    ingest_odds_api_sequence,
+    mark_resynced,
+)
 from tennis_edge.services.tennis_markov import (
     game_win_probability,
     match_win_probability,
@@ -37,6 +42,17 @@ def test_odds_api_resync_required_message_is_tracked() -> None:
     stored = CURSORS[(Provider.ODDS_API_IO, "tennis:moneyline")]
     assert stored.status == CursorStatus.RESYNC_REQUIRED
     assert stored.resync_required is True
+
+
+def test_live_default_odds_cursor_requires_resync_until_real_sequence_arrives() -> None:
+    CURSORS.clear()
+
+    cursors = default_provider_cursors(Settings(data_mode="live", odds_api_io_key=None))
+    odds_cursor = next(cursor for cursor in cursors if cursor.provider == Provider.ODDS_API_IO)
+
+    assert odds_cursor.status == CursorStatus.RESYNC_REQUIRED
+    assert odds_cursor.resync_required is True
+    assert odds_cursor.last_seq is None
 
 
 def test_markov_engine_handles_game_set_and_match_states() -> None:

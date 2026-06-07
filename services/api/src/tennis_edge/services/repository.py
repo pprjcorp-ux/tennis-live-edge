@@ -427,6 +427,7 @@ class AnalysisRepository:
 
     async def daily_metrics(self, target_date: date) -> DailyMetrics:
         analyses = await self.analyses_for_date(target_date)
+        paper = await self.paper_performance()
         all_signals = [signal for analysis in analyses for signal in analysis.signals]
         entries = [signal for signal in all_signals if signal.status == SignalStatus.ENTRY]
         positive_edges = [signal.edge for signal in all_signals if signal.edge > 0]
@@ -450,5 +451,12 @@ class AnalysisRepository:
             )
             if confidence_values
             else 0,
-            note="Paper metrics ficam nulos ate existirem sinais liquidados e closing lines.",
+            paper_roi=paper.roi,
+            clv=paper.clv,
+            brier_score=paper.calibration_error,
+            note=(
+                "Paper metrics loaded from persisted paper performance."
+                if paper.settled_orders
+                else "Paper metrics ficam nulos ate existirem sinais liquidados e closing lines."
+            ),
         )

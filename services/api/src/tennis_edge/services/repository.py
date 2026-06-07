@@ -401,11 +401,10 @@ class AnalysisRepository:
             for signal in analysis.signals
             if signal.status == SignalStatus.ENTRY
         )
-        result = self.replay_engine.summarize(
-            request.match_id,
-            sample_raw_payloads(request.match_id),
-            signals=signal_count,
+        payloads = self.store.raw_payloads_for_match(request.match_id) or sample_raw_payloads(
+            request.match_id
         )
+        result = self.replay_engine.summarize(request.match_id, payloads, signals=signal_count)
         REPLAYS[result.run_id] = result
         return result
 

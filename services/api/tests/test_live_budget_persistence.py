@@ -1,7 +1,11 @@
 import asyncio
+from contextlib import contextmanager
 from datetime import date
+from datetime import datetime
+from datetime import timezone
 
 from tennis_edge.config import Settings
+from tennis_edge.domain import Provider
 from tennis_edge.domain import SignalStatus
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches
@@ -36,6 +40,67 @@ def test_persisted_order_status_contract_matches_execution_engine() -> None:
     assert PERSISTED_CANCELABLE_ORDER_STATUSES == tuple(
         status.value for status in CANCELABLE_ORDER_STATUSES
     )
+
+
+def test_raw_payloads_for_match_maps_persisted_rows_to_domain_payloads() -> None:
+    source_ts = datetime(2026, 6, 7, 12, tzinfo=timezone.utc)
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params):
+            self.params = params
+            return self
+
+        def fetchall(self):
+            return [
+                {
+                    "id": "raw_1",
+                    "provider": "sportradar",
+                    "payload_type": "score",
+                    "source_event_id": "match_1",
+                    "source_ts": source_ts,
+                    "ingested_at": source_ts,
+                    "checksum": "checksum_1",
+                    "payload": {"match_id": "match_1", "status": "live"},
+                }
+            ]
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield self.conn
+
+    store = StoreStub()
+
+    payloads = store.raw_payloads_for_match("match_1")
+
+    assert store.conn.cursor_stub.params == ("match_1",)
+    assert len(payloads) == 1
+    assert payloads[0].provider == Provider.SPORTRADAR
+    assert payloads[0].payload["status"] == "live"
 
 
 def test_odds_api_io_resync_blocks_live_entry_signals() -> None:

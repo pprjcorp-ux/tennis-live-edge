@@ -181,6 +181,37 @@ class PersistentStore:
                         ),
                     )
 
+    def raw_payloads_for_match(self, match_id: str) -> list[RawProviderPayload]:
+        if not self.enabled:
+            return []
+        with self._connect() as conn:
+            if conn is None:
+                return []
+            with conn.cursor() as cur:
+                rows = cur.execute(
+                    """
+                    SELECT id, provider, payload_type, source_event_id, source_ts,
+                           ingested_at, checksum, payload
+                    FROM raw_provider_payloads
+                    WHERE source_event_id = %s
+                    ORDER BY source_ts ASC, ingested_at ASC
+                    """,
+                    (match_id,),
+                ).fetchall()
+        return [
+            RawProviderPayload(
+                id=row["id"],
+                provider=Provider(row["provider"]),
+                payload_type=row["payload_type"],
+                source_event_id=row["source_event_id"],
+                source_ts=row["source_ts"],
+                ingested_at=row["ingested_at"],
+                checksum=row["checksum"],
+                payload=row["payload"],
+            )
+            for row in rows
+        ]
+
     def latest_analyses(self, target_date: date) -> list[MatchAnalysis]:
         if not self.enabled:
             return []

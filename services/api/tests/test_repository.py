@@ -3,6 +3,8 @@ from datetime import date
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import PaperPerformance
+from tennis_edge.domain import ReplayRunRequest
+from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.repository import AnalysisRepository
 
 
@@ -57,3 +59,29 @@ def test_daily_metrics_include_persisted_paper_performance() -> None:
     assert metrics.clv == 0.0125
     assert metrics.brier_score == 0.031
     assert "Paper metrics loaded" in metrics.note
+
+
+def test_replay_prefers_persisted_raw_payloads_over_sample_payloads() -> None:
+    persisted_payloads = sample_raw_payloads("match_atp_002")[:1]
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.requested_match_id = None
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def raw_payloads_for_match(self, match_id):
+            self.requested_match_id = match_id
+            return persisted_payloads
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    replay = asyncio.run(repo.run_replay(ReplayRunRequest(match_id="match_atp_002")))
+
+    assert store.requested_match_id == "match_atp_002"
+    assert replay.events_replayed == len(persisted_payloads)
+    assert replay.odds_ticks == 0

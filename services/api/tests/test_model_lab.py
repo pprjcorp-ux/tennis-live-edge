@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 import asyncio
 
+import pytest
+
 from tennis_edge.domain import BacktestRunRequest, OrderStatus, PaperSettlement, TrainingExample
 from tennis_edge.config import Settings
 from tennis_edge.services.repository import AnalysisRepository
@@ -242,4 +244,28 @@ def test_repository_latest_backtest_prefers_persisted_store_over_memory_cache() 
     repo.store = StoreStub()
 
     assert asyncio.run(repo.get_backtest("latest")) == persisted_metrics
+    BACKTESTS.clear()
+
+
+def test_live_backtest_lookup_does_not_use_process_memory_cache() -> None:
+    BACKTESTS.clear()
+    cached_metrics = walk_forward_from_training_examples(
+        BacktestRunRequest(model_version="baseline_v0"),
+        [
+            _example(1, 0.52, False, -0.5, -0.01, model_version="baseline_v0"),
+        ],
+    )
+    BACKTESTS[cached_metrics.run_id] = cached_metrics
+
+    class StoreStub:
+        def get_backtest(self, run_id):
+            assert run_id == cached_metrics.run_id
+            return None
+
+    repo = AnalysisRepository(Settings(data_mode="live", database_url=None))
+    repo.store = StoreStub()
+
+    with pytest.raises(KeyError):
+        asyncio.run(repo.get_backtest(cached_metrics.run_id))
+
     BACKTESTS.clear()

@@ -442,17 +442,19 @@ class AnalysisRepository:
     async def run_backtest(self, request: BacktestRunRequest | None = None) -> BacktestMetrics:
         metrics = self.store.backtest_metrics(request) or run_walk_forward_backtest(request)
         self.store.save_backtest(metrics, request)
-        BACKTESTS[metrics.run_id] = metrics
+        if self.settings.data_mode == "sample":
+            BACKTESTS[metrics.run_id] = metrics
         return metrics
 
     async def get_backtest(self, run_id: str) -> BacktestMetrics:
         persisted = self.store.get_backtest(run_id)
         if persisted is not None:
             return persisted
-        if run_id == "latest" and BACKTESTS:
-            return list(BACKTESTS.values())[-1]
-        if run_id in BACKTESTS:
-            return BACKTESTS[run_id]
+        if self.settings.data_mode == "sample":
+            if run_id == "latest" and BACKTESTS:
+                return list(BACKTESTS.values())[-1]
+            if run_id in BACKTESTS:
+                return BACKTESTS[run_id]
         raise KeyError(run_id)
 
     async def daily_metrics(self, target_date: date) -> DailyMetrics:

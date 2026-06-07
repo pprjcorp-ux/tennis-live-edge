@@ -28,6 +28,7 @@ from tennis_edge.domain import (
     IngestionRunResult,
     KillSwitchRequest,
     LearningPromotionRequest,
+    LiveDashboardSnapshot,
     MatchAnalysis,
     ModelRegistryEntry,
     ModelPromotionDecision,
@@ -99,6 +100,13 @@ async def v1_live_matches(
     repo: AnalysisRepository = Depends(repository),
 ) -> list[MatchAnalysis]:
     return await repo.analyses_for_date(date.today())
+
+
+@app.get("/api/v1/dashboard/live-state", response_model=LiveDashboardSnapshot)
+async def v1_dashboard_live_state(
+    repo: AnalysisRepository = Depends(repository),
+) -> LiveDashboardSnapshot:
+    return await repo.live_dashboard_snapshot(date.today())
 
 
 @app.get("/api/v1/matches/{match_id}", response_model=MatchAnalysis)

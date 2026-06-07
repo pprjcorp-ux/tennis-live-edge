@@ -16,6 +16,7 @@ import type {
   ExecutionOrder,
   ExecutionStatus,
   IngestionRunRecord,
+  LiveDashboardSnapshot,
   MatchAnalysis,
   ModelRegistryEntry,
   ModelPromotionDecision,
@@ -43,6 +44,10 @@ async function getJson<T>(path: string): Promise<T> {
 
 export function getTodayMatches(): Promise<MatchAnalysis[]> {
   return getJson<MatchAnalysis[]>("/api/v1/live/matches");
+}
+
+export function getLiveDashboard(): Promise<LiveDashboardSnapshot> {
+  return getJson<LiveDashboardSnapshot>("/api/v1/dashboard/live-state");
 }
 
 export function getDailyMetrics(): Promise<DailyMetrics> {

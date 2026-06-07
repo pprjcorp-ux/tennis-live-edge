@@ -22,15 +22,20 @@ ADMIN_HEADERS = {"x-admin-token": "test-admin-token"}
 
 def test_v1_live_matches_and_provider_health() -> None:
     matches = client.get("/api/v1/live/matches")
+    dashboard = client.get("/api/v1/dashboard/live-state")
     health = client.get("/api/v1/provider-health")
     cost_profile = client.get("/api/v1/cost-profile")
     cost_report = client.get("/api/v1/cost-report/daily")
 
     assert matches.status_code == 200
+    assert dashboard.status_code == 200
     assert health.status_code == 200
     assert cost_profile.status_code == 200
     assert cost_report.status_code == 200
     assert len(matches.json()) >= 1
+    assert len(dashboard.json()["matches"]) == dashboard.json()["metrics"]["matches"]
+    assert "operational_state" in dashboard.json()
+    assert dashboard.json()["operational_state"]["execution_status"]["can_submit_real_orders"] is False
     assert {item["provider"] for item in health.json()} >= {"sportradar", "txodds"}
     assert all("cost_tier" in item for item in health.json())
     assert cost_profile.json()["active_plan"] == "lean_atp"

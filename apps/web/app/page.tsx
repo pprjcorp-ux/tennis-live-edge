@@ -30,15 +30,12 @@ import {
   getCalibrationReport,
   getBankroll,
   getChampionModel,
-  getDailyMetrics,
   getEntityConflicts,
   getExecutionStatus,
-  getLiveSignals,
+  getLiveDashboard,
   getModelRegistry,
-  getOperationalState,
   getOrders,
   getPaperPerformance,
-  getTodayMatches,
   promoteFromLearning,
   runAgentAutopilot,
   runBacktest,
@@ -155,13 +152,8 @@ export default function Page() {
   async function load() {
     setError(null);
     try {
-      const [nextMatches, nextMetrics, nextOperational, nextSignals] = await Promise.all([
-        getTodayMatches(),
-        getDailyMetrics(),
-        getOperationalState(),
-        getLiveSignals()
-      ]);
       const [
+        nextDashboard,
         nextModelRegistry,
         nextChampionModel,
         nextPaperPerformance,
@@ -169,8 +161,11 @@ export default function Page() {
         nextAgentPreflight,
         nextAgentAnomalies,
         nextAgentRuns,
-        nextEntityConflicts
+        nextEntityConflicts,
+        nextBankroll,
+        nextOrders
       ] = await Promise.all([
+        getLiveDashboard(),
         getModelRegistry(),
         getChampionModel(),
         getPaperPerformance(),
@@ -178,14 +173,13 @@ export default function Page() {
         getAgentPreflightSafe(),
         getAgentAnomalies(),
         getAgentRuns(),
-        getEntityConflicts()
-      ]);
-      const [nextBankroll, nextOrders] = await Promise.all([
+        getEntityConflicts(),
         getBankroll(),
         getOrders()
       ]);
-      setMatches(nextMatches);
-      setMetrics(nextMetrics);
+      const nextOperational = nextDashboard.operational_state;
+      setMatches(nextDashboard.matches);
+      setMetrics(nextDashboard.metrics);
       setCostProfile(nextOperational.cost_profile);
       setCostReport(nextOperational.daily_cost_report);
       setDataQuality(nextOperational.data_quality);
@@ -203,8 +197,8 @@ export default function Page() {
       setBankroll(nextBankroll);
       setOrders(nextOrders);
       setHealth(nextOperational.provider_health);
-      setSignals(nextSignals);
-      setSelectedMatchId((current) => current ?? nextMatches[0]?.match.id ?? null);
+      setSignals(nextDashboard.signals);
+      setSelectedMatchId((current) => current ?? nextDashboard.matches[0]?.match.id ?? null);
       setUpdatedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar API");

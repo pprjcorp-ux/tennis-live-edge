@@ -27,6 +27,7 @@ from tennis_edge.domain import (
     IngestionRunResult,
     KillSwitchRequest,
     LearningPromotionRequest,
+    LiveDashboardSnapshot,
     MatchAnalysis,
     ModelRegistryEntry,
     ModelPromotionDecision,
@@ -203,8 +204,7 @@ class AnalysisRepository:
 
     async def live_signals(self, target_date: date) -> list[Signal]:
         analyses = await self.analyses_for_date(target_date)
-        signals = [signal for analysis in analyses for signal in analysis.signals]
-        return sorted(signals, key=lambda signal: signal.edge, reverse=True)
+        return self._sorted_signals_for(analyses)
 
     async def run_ingestion(
         self,
@@ -497,12 +497,16 @@ class AnalysisRepository:
     async def operational_state_snapshot(self, target_date: date) -> OperationalStateSnapshot:
         analyses = await self.analyses_for_date(target_date)
         performance = await self.paper_performance()
-        return self.operational_state.snapshot(
-            cost_report=self.operational_state.daily_cost_report(
-                target_date,
-                analyses,
-                performance,
-            )
+        return self._operational_state_for(target_date, analyses, performance)
+
+    async def live_dashboard_snapshot(self, target_date: date) -> LiveDashboardSnapshot:
+        analyses = await self.analyses_for_date(target_date)
+        performance = await self.paper_performance()
+        return LiveDashboardSnapshot(
+            matches=analyses,
+            metrics=self._daily_metrics_for(analyses, performance),
+            signals=self._sorted_signals_for(analyses),
+            operational_state=self._operational_state_for(target_date, analyses, performance),
         )
 
     async def bankroll(self, orders: list[ExecutionOrder] | None = None) -> BankrollSnapshot:
@@ -629,6 +633,13 @@ class AnalysisRepository:
     async def daily_metrics(self, target_date: date) -> DailyMetrics:
         analyses = await self.analyses_for_date(target_date)
         paper = await self.paper_performance()
+        return self._daily_metrics_for(analyses, paper)
+
+    def _daily_metrics_for(
+        self,
+        analyses: list[MatchAnalysis],
+        paper: PaperPerformance,
+    ) -> DailyMetrics:
         all_signals = [signal for analysis in analyses for signal in analysis.signals]
         entries = [signal for signal in all_signals if signal.status == SignalStatus.ENTRY]
         positive_edges = [signal.edge for signal in all_signals if signal.edge > 0]
@@ -660,4 +671,23 @@ class AnalysisRepository:
                 if paper.settled_orders
                 else "Paper metrics ficam nulos ate existirem sinais liquidados e closing lines."
             ),
+        )
+
+    @staticmethod
+    def _sorted_signals_for(analyses: list[MatchAnalysis]) -> list[Signal]:
+        signals = [signal for analysis in analyses for signal in analysis.signals]
+        return sorted(signals, key=lambda signal: signal.edge, reverse=True)
+
+    def _operational_state_for(
+        self,
+        target_date: date,
+        analyses: list[MatchAnalysis],
+        performance: PaperPerformance,
+    ) -> OperationalStateSnapshot:
+        return self.operational_state.snapshot(
+            cost_report=self.operational_state.daily_cost_report(
+                target_date,
+                analyses,
+                performance,
+            )
         )

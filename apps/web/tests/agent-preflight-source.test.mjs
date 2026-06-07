@@ -30,15 +30,23 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   );
 
   assert.match(importBlock, /getAgentPreflightSafe/);
-  assert.match(importBlock, /getOperationalState/);
+  assert.match(importBlock, /getLiveDashboard/);
   assert.doesNotMatch(importBlock, /getAgentPreflight,/);
   assert.doesNotMatch(importBlock, /getIngestionRuns/);
   assert.doesNotMatch(importBlock, /getDailyCostReport/);
+  assert.doesNotMatch(importBlock, /getDailyMetrics/);
+  assert.doesNotMatch(importBlock, /getLiveSignals/);
+  assert.doesNotMatch(importBlock, /getOperationalState/);
+  assert.doesNotMatch(importBlock, /getTodayMatches/);
   assert.match(pageSource, /getAgentPreflightSafe\(\)/);
-  assert.match(pageSource, /getOperationalState\(\)/);
+  assert.match(pageSource, /getLiveDashboard\(\)/);
+  assert.match(pageSource, /nextDashboard\.operational_state/);
+  assert.match(pageSource, /nextDashboard\.matches/);
+  assert.match(pageSource, /nextDashboard\.metrics/);
+  assert.match(pageSource, /nextDashboard\.signals/);
   assert.match(pageSource, /nextOperational\.daily_cost_report/);
   assert.match(pageSource, /ingestionRuns=\{ingestionRuns\}/);
-  assert.match(apiSource, /\/api\/v1\/operational-state/);
+  assert.match(apiSource, /\/api\/v1\/dashboard\/live-state/);
   assert.match(dataHealthSource, /Ingestion Journal/);
   assert.match(dataHealthSource, /Ultimos ciclos persistidos/);
   assert.match(pageSource, /\["Paper orders", String\(agentBriefing\?\.paper_orders \?\? 0\)\]/);

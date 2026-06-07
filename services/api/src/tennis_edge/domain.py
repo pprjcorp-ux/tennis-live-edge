@@ -862,3 +862,11 @@ class DailyMetrics(BaseModel):
     clv: float | None = None
     brier_score: float | None = None
     note: str
+
+
+class LiveDashboardSnapshot(BaseModel):
+    matches: list[MatchAnalysis]
+    metrics: DailyMetrics
+    signals: list[Signal]
+    operational_state: OperationalStateSnapshot
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

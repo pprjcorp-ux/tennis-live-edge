@@ -235,6 +235,14 @@ export type OperationalStateSnapshot = {
   generated_at: string;
 };
 
+export type LiveDashboardSnapshot = {
+  matches: MatchAnalysis[];
+  metrics: DailyMetrics;
+  signals: Signal[];
+  operational_state: OperationalStateSnapshot;
+  generated_at: string;
+};
+
 export type ExecutionStatus = {
   execution_enabled: boolean;
   venue: "betfair";

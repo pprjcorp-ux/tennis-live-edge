@@ -41,6 +41,11 @@ Run `npm run openclaw:preflight` before cron/autopilot execution. It checks:
 - budget provider key readiness;
 - `REAL_EXECUTION_HARD_BLOCK` and `can_submit_real_orders=false`.
 
+`npm run openclaw:autopilot` also performs this preflight internally and aborts
+before protected actions when the preflight status is `blocked`. A `degraded`
+status is allowed for paper mode, for example when live provider keys are still
+missing but persistence and safety gates are healthy.
+
 ## Model Routing
 
 - Routine triage: `OPENCLAW_TRIAGE_MODEL=gpt-5.4-mini`

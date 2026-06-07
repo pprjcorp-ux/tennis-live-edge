@@ -32,6 +32,8 @@ The `autopilot` command creates paper orders only through
 The `preflight` command should run before cron/autopilot jobs; it checks API
 reachability, local gateway reachability, persistence, provider key readiness,
 and the real-execution hard block.
+The `autopilot` command also runs preflight internally and aborts before calling
+protected backend actions when the preflight status is `blocked`.
 
 Use the repo npm wrapper for autopilot so the token is passed through stdin and
 is not read by the skill from `.env` or process environment.

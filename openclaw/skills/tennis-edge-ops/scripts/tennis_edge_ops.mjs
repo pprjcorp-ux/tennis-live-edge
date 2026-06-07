@@ -74,6 +74,12 @@ async function preflight() {
 }
 
 async function autopilot() {
+  const preflightData = await request("/api/v1/agent/preflight");
+  if (preflightData.status === "blocked") {
+    throw new Error(
+      `OpenClaw preflight blocked autopilot: ${summarizeFailedChecks(preflightData.checks)}`
+    );
+  }
   const data = await request("/api/v1/agent/autopilot/evaluate", {
     method: "POST",
     headers: await adminHeaders(),
@@ -93,6 +99,14 @@ async function autopilot() {
     real_execution_blocked: data.real_execution_blocked,
     actions: data.run.actions
   });
+}
+
+function summarizeFailedChecks(checks = []) {
+  const failed = checks.filter((check) => check.status === "fail");
+  if (!failed.length) {
+    return "status=blocked";
+  }
+  return failed.map((check) => `${check.name}: ${check.summary}`).join("; ");
 }
 
 const commands = { briefing, anomalies, runs, preflight, autopilot };

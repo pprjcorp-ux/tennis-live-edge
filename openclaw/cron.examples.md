@@ -16,6 +16,17 @@ openclaw cron add \
   --timeout-seconds 60
 ```
 
+Preflight every 15 minutes while the system is active:
+
+```bash
+openclaw cron add \
+  --name tennis-edge-preflight \
+  --every 15m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm run openclaw:preflight from /Users/ppfahd/Workspace/projects/tennis-live-edge. If status is blocked, report the failed checks and do not run autopilot." \
+  --timeout-seconds 45
+```
+
 Live anomaly scan every 15 minutes:
 
 ```bash
@@ -35,7 +46,7 @@ openclaw cron add \
   --name tennis-edge-paper-autopilot \
   --every 5m \
   --model gpt-5.4-mini \
-  --message "Use the tennis-edge-ops skill. Run npm run openclaw:autopilot from /Users/ppfahd/Workspace/projects/tennis-live-edge. Create paper orders only through the backend; never request real execution." \
+  --message "Use the tennis-edge-ops skill. Run npm run openclaw:autopilot from /Users/ppfahd/Workspace/projects/tennis-live-edge. The command must obey preflight and create paper orders only through the backend; never request real execution." \
   --timeout-seconds 60
 ```
 

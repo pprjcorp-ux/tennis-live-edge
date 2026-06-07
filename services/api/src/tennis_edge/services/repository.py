@@ -31,6 +31,7 @@ from tennis_edge.domain import (
     PaperSettleRequest,
     ProviderCursor,
     ProviderHealth,
+    RawProviderPayload,
     ReplayRunRequest,
     ReplayRunResult,
     Signal,
@@ -401,12 +402,29 @@ class AnalysisRepository:
             for signal in analysis.signals
             if signal.status == SignalStatus.ENTRY
         )
-        payloads = self.store.raw_payloads_for_match(request.match_id) or sample_raw_payloads(
-            request.match_id
-        )
+        payloads = self._raw_payloads_for_replay(request.match_id, analyses)
         result = self.replay_engine.summarize(request.match_id, payloads, signals=signal_count)
         REPLAYS[result.run_id] = result
         return result
+
+    def _raw_payloads_for_replay(
+        self,
+        match_id: str,
+        analyses: list[MatchAnalysis],
+    ) -> list[RawProviderPayload]:
+        for candidate in self._raw_payload_id_candidates(match_id, analyses):
+            payloads = self.store.raw_payloads_for_match(candidate)
+            if payloads:
+                return payloads
+        return sample_raw_payloads(match_id)
+
+    @staticmethod
+    def _raw_payload_id_candidates(match_id: str, analyses: list[MatchAnalysis]) -> list[str]:
+        candidates = [match_id]
+        match = next((analysis.match for analysis in analyses if analysis.match.id == match_id), None)
+        if match is not None:
+            candidates.extend([match.provider_match_id, *match.provider_ids.values()])
+        return list(dict.fromkeys(candidate for candidate in candidates if candidate))
 
     async def run_backtest(self, request: BacktestRunRequest | None = None) -> BacktestMetrics:
         metrics = self.store.backtest_metrics(request) or run_walk_forward_backtest(request)

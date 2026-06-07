@@ -245,7 +245,9 @@ class AnalysisRepository:
         analyses = await self.analyses_for_date(date.today())
         order_snapshot = await self.orders()
         bankroll = await self.bankroll(order_snapshot)
-        briefing = build_agent_briefing(
+        persisted_runs = self.store.agent_runs()
+        latest_run = persisted_runs[0] if persisted_runs else next(iter(agent_runs()), None)
+        return build_agent_briefing(
             self.settings,
             analyses=analyses,
             provider_health=await self.provider_health(),
@@ -256,11 +258,8 @@ class AnalysisRepository:
             bankroll=bankroll,
             cost_report=await self.daily_cost_report(date.today()),
             orders=order_snapshot,
+            latest_run=latest_run,
         )
-        persisted_runs = self.store.agent_runs()
-        if persisted_runs:
-            return briefing.model_copy(update={"latest_run": persisted_runs[0]})
-        return briefing
 
     async def agent_anomalies(self) -> list[AgentAnomaly]:
         analyses = await self.analyses_for_date(date.today())

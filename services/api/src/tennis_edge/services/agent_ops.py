@@ -401,6 +401,7 @@ def build_agent_briefing(
     bankroll: BankrollSnapshot,
     cost_report: DailyCostReport,
     orders: Iterable[ExecutionOrder] | None = None,
+    latest_run: AgentRun | None = None,
 ) -> AgentBriefing:
     order_snapshot = _order_snapshot(orders)
     entries = _entry_signals(analyses)
@@ -416,8 +417,6 @@ def build_agent_briefing(
         cost_report=cost_report,
     )
     critical_count = sum(1 for anomaly in anomalies if anomaly.severity == "critical")
-    latest_run = AGENT_RUNS[0] if AGENT_RUNS else None
-
     next_actions = [
         "Criar paper orders somente para sinais Entrada gerados pelo backend.",
         "Enviar briefing diario e alertas live via Dashboard/Telegram allowlist.",

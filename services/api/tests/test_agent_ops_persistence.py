@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
@@ -124,12 +124,14 @@ def test_agent_briefing_prefers_persisted_latest_run_over_process_memory() -> No
         run_type=AgentRunType.AUTOPILOT_EVALUATE,
         source="openclaw",
         summary="Stale process run.",
+        created_at=datetime.now(timezone.utc) + timedelta(minutes=5),
     )
     persisted_run = AgentRun(
         id="agent_persisted_latest",
         run_type=AgentRunType.AUTOPILOT_EVALUATE,
         source="openclaw",
         summary="Persisted latest run.",
+        created_at=datetime.now(timezone.utc),
     )
     AGENT_RUNS.append(stale_run)
     repo = AnalysisRepository(Settings(data_mode="sample"))

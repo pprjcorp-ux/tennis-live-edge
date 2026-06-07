@@ -156,12 +156,13 @@ class PersistentStore:
                         self._record_latency(cur, Provider.ODDS_API_IO, "odds/moneyline", analysis.match)
                     self._upsert_provider_cursors(cur, existing_cursors=existing_cursors)
 
-    def save_raw_payloads(self, payloads: list[RawProviderPayload]) -> None:
+    def save_raw_payloads(self, payloads: list[RawProviderPayload]) -> int:
         if not self.enabled or not payloads:
-            return
+            return 0
+        inserted = 0
         with self._connect() as conn:
             if conn is None:
-                return
+                return 0
             with conn.cursor() as cur:
                 for payload in payloads:
                     cur.execute(
@@ -187,6 +188,41 @@ class PersistentStore:
                             payload.checksum,
                         ),
                     )
+                    inserted += max(0, cur.rowcount)
+        return inserted
+
+    def save_provider_cursor(self, cursor: ProviderCursor) -> bool:
+        if not self.enabled:
+            return False
+        with self._connect() as conn:
+            if conn is None:
+                return False
+            with conn.cursor() as cur:
+                self._upsert_one_provider_cursor(cur, cursor)
+        return True
+
+    def record_provider_latency(
+        self,
+        provider: Provider,
+        feed: str,
+        *,
+        latest_source_ts: datetime,
+        latest_ingested_at: datetime,
+    ) -> bool:
+        if not self.enabled:
+            return False
+        with self._connect() as conn:
+            if conn is None:
+                return False
+            with conn.cursor() as cur:
+                self._insert_provider_latency(
+                    cur,
+                    provider,
+                    feed,
+                    latest_source_ts=latest_source_ts,
+                    latest_ingested_at=latest_ingested_at,
+                )
+        return True
 
     def raw_payloads_for_match(self, match_id: str) -> list[RawProviderPayload]:
         if not self.enabled:
@@ -1616,7 +1652,24 @@ class PersistentStore:
         else:
             latest_source = _now()
             latest_ingested = _now()
-        latency_ms = max(0, int((latest_ingested - latest_source).total_seconds() * 1000))
+        self._insert_provider_latency(
+            cur,
+            provider,
+            feed,
+            latest_source_ts=latest_source,
+            latest_ingested_at=latest_ingested,
+        )
+
+    def _insert_provider_latency(
+        self,
+        cur: Any,
+        provider: Provider,
+        feed: str,
+        *,
+        latest_source_ts: datetime,
+        latest_ingested_at: datetime,
+    ) -> None:
+        latency_ms = max(0, int((latest_ingested_at - latest_source_ts).total_seconds() * 1000))
         cur.execute(
             """
             INSERT INTO provider_latency (
@@ -1627,10 +1680,44 @@ class PersistentStore:
             (
                 provider.value,
                 feed,
-                latest_source,
-                latest_ingested,
+                latest_source_ts,
+                latest_ingested_at,
                 latency_ms,
                 latency_ms <= self.settings.max_odds_staleness_ms,
+                _now(),
+            ),
+        )
+
+    def _upsert_one_provider_cursor(self, cur: Any, cursor: ProviderCursor) -> None:
+        cur.execute(
+            """
+            INSERT INTO provider_cursors (
+              provider, stream, last_seq, expected_next_seq, status, gap_count,
+              resync_required, last_message_at, last_resync_at, note, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (provider, stream) DO UPDATE SET
+              last_seq = EXCLUDED.last_seq,
+              expected_next_seq = EXCLUDED.expected_next_seq,
+              status = EXCLUDED.status,
+              gap_count = EXCLUDED.gap_count,
+              resync_required = EXCLUDED.resync_required,
+              last_message_at = EXCLUDED.last_message_at,
+              last_resync_at = EXCLUDED.last_resync_at,
+              note = EXCLUDED.note,
+              updated_at = EXCLUDED.updated_at
+            """,
+            (
+                cursor.provider.value,
+                cursor.stream,
+                cursor.last_seq,
+                cursor.expected_next_seq,
+                cursor.status.value,
+                cursor.gap_count,
+                cursor.resync_required,
+                cursor.last_message_at,
+                cursor.last_resync_at,
+                cursor.note,
                 _now(),
             ),
         )
@@ -1650,38 +1737,7 @@ class PersistentStore:
         for cursor in existing_cursors or []:
             merged[(cursor.provider, cursor.stream)] = cursor
         for cursor in sorted(merged.values(), key=lambda item: (item.provider, item.stream)):
-            cur.execute(
-                """
-                INSERT INTO provider_cursors (
-                  provider, stream, last_seq, expected_next_seq, status, gap_count,
-                  resync_required, last_message_at, last_resync_at, note, updated_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (provider, stream) DO UPDATE SET
-                  last_seq = EXCLUDED.last_seq,
-                  expected_next_seq = EXCLUDED.expected_next_seq,
-                  status = EXCLUDED.status,
-                  gap_count = EXCLUDED.gap_count,
-                  resync_required = EXCLUDED.resync_required,
-                  last_message_at = EXCLUDED.last_message_at,
-                  last_resync_at = EXCLUDED.last_resync_at,
-                  note = EXCLUDED.note,
-                  updated_at = EXCLUDED.updated_at
-                """,
-                (
-                    cursor.provider.value,
-                    cursor.stream,
-                    cursor.last_seq,
-                    cursor.expected_next_seq,
-                    cursor.status.value,
-                    cursor.gap_count,
-                    cursor.resync_required,
-                    cursor.last_message_at,
-                    cursor.last_resync_at,
-                    cursor.note,
-                    _now(),
-                ),
-            )
+            self._upsert_one_provider_cursor(cur, cursor)
 
     def _match_from_row(self, row: dict[str, Any], odds: list[OddsQuote]) -> Match:
         p1 = Player(

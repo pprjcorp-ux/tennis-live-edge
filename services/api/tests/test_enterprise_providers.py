@@ -118,19 +118,48 @@ def test_api_tennis_live_without_key_returns_no_synthetic_matches() -> None:
 
 def test_odds_api_io_message_parser_maps_moneyline_quotes() -> None:
     client = OddsApiIoClient(api_key="key", data_mode="live")
-    quotes = client.parse_message(
-        {
-            "data": {
-                "bookmaker": "SharpBook",
-                "market": "h2h",
-                "timestamp": "2026-05-10T12:00:00Z",
-                "selections": [
-                    {"player_id": "p1", "odds": 1.8},
-                    {"player_id": "p2", "odds": 2.1},
-                ],
-            }
-        }
-    )
+    payload = {
+        "event_id": "event-1",
+        "seq": 1,
+        "data": {
+            "bookmaker": "SharpBook",
+            "market": "h2h",
+            "timestamp": "2026-05-10T12:00:00Z",
+            "selections": [
+                {"player_id": "p1", "odds": 1.8},
+                {"player_id": "p2", "odds": 2.1},
+            ],
+        },
+    }
+
+    quotes = client.parse_message(payload)
+    raw_payload = client.raw_payload_from_message(payload)
 
     assert [quote.player_id for quote in quotes] == ["p1", "p2"]
     assert {quote.market for quote in quotes} == {"ML"}
+    assert raw_payload.provider == Provider.ODDS_API_IO
+    assert raw_payload.payload_type == "odds"
+    assert raw_payload.source_event_id == "event-1"
+    assert raw_payload.source_ts.isoformat() == "2026-05-10T12:00:00+00:00"
+    assert raw_payload.payload["stream"] == "tennis:moneyline"
+
+
+def test_odds_api_io_ingest_message_returns_quotes_and_cursor_for_custom_stream() -> None:
+    client = OddsApiIoClient(api_key="key", data_mode="live")
+    quotes, cursor = client.ingest_message(
+        {
+            "seq": 7,
+            "odds": [
+                {
+                    "bookmaker": "SharpBook",
+                    "market": "moneyline",
+                    "selections": {"p1": 1.8, "p2": 2.1},
+                }
+            ],
+        },
+        stream="tennis:live:ml",
+    )
+
+    assert len(quotes) == 2
+    assert cursor.stream == "tennis:live:ml"
+    assert cursor.last_seq == 7

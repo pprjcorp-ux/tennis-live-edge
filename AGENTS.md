@@ -72,6 +72,8 @@ Run from the repo root:
 docker compose up -d
 docker compose exec -T postgres psql -U tennis -d tennis_edge < infra/schema.sql
 npm run api:test
+npm run api:ingest
+printf '{"event_id":"smoke-event","seq":1,"timestamp":"2026-06-07T20:00:00Z","data":{"bookmaker":"SmokeBook","market":"h2h","selections":[{"player_id":"p1","odds":1.8},{"player_id":"p2","odds":2.1}]}}' | TENNIS_EDGE_DATA_MODE=sample TENNIS_EDGE_PERSISTENCE_ENABLED=false npm run api:ingest:odds-message
 npm --prefix apps/web run build
 python3 scripts/check_private_runtime.py
 ```

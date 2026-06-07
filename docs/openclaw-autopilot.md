@@ -8,6 +8,7 @@ valid `Entrada` signal, and summarizes anomalies/results.
 
 ```bash
 npm run api:ingest
+printf '{"event_id":"smoke-event","seq":1,"timestamp":"2026-06-07T20:00:00Z","data":{"bookmaker":"SmokeBook","market":"h2h","selections":[{"player_id":"p1","odds":1.8},{"player_id":"p2","odds":2.1}]}}' | TENNIS_EDGE_DATA_MODE=sample TENNIS_EDGE_PERSISTENCE_ENABLED=false npm run api:ingest:odds-message
 npm run openclaw:briefing
 npm run openclaw:anomalies
 npm run openclaw:runs
@@ -30,6 +31,12 @@ falls back to in-memory runs only in sample/dev mode. Each run stores:
 
 Critical-route runs are shown first in the audit view so severe anomaly or
 real-execution-readiness reviews are not buried by routine polling.
+
+Odds-API.io websocket smoke/replay can use
+`POST /api/v1/ingestion/odds-api-io/message` or the
+`api:ingest:odds-message` stdin wrapper. That path persists the raw provider
+payload, updates the provider cursor, records latency, and reports whether
+`resync_required` should block signals.
 
 ## Preflight
 

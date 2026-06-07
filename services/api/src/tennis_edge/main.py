@@ -30,6 +30,8 @@ from tennis_edge.domain import (
     MatchAnalysis,
     ModelRegistryEntry,
     ModelPromotionDecision,
+    OddsMessageIngestionRequest,
+    OddsMessageIngestionResult,
     OrderRequest,
     PaperPerformance,
     PaperSettlement,
@@ -155,6 +157,15 @@ async def v1_run_ingestion(
     repo: AnalysisRepository = Depends(repository),
 ) -> IngestionRunResult:
     return await repo.run_ingestion(request)
+
+
+@app.post("/api/v1/ingestion/odds-api-io/message", response_model=OddsMessageIngestionResult)
+async def v1_ingest_odds_api_io_message(
+    request: OddsMessageIngestionRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> OddsMessageIngestionResult:
+    return await repo.ingest_odds_api_message(request)
 
 
 @app.get("/api/v1/models/registry", response_model=list[ModelRegistryEntry])

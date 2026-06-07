@@ -27,6 +27,8 @@ from tennis_edge.domain import (
     MatchAnalysis,
     ModelRegistryEntry,
     ModelPromotionDecision,
+    OddsMessageIngestionRequest,
+    OddsMessageIngestionResult,
     OrderRequest,
     PaperPerformance,
     PaperSettlement,
@@ -49,6 +51,7 @@ from tennis_edge.services.agent_ops import (
     run_agent_autopilot,
 )
 from tennis_edge.providers.api_tennis import ApiTennisClient
+from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.backtest import run_walk_forward_backtest
@@ -92,6 +95,7 @@ class AnalysisRepository:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.api_tennis = ApiTennisClient(settings.api_tennis_key, settings.data_mode)
+        self.odds_api_io = OddsApiIoClient(settings.odds_api_io_key, settings.data_mode)
         self.the_odds_api = TheOddsApiClient(settings.the_odds_api_key, settings.data_mode)
         self.replay_engine = ReplayEngine()
         self.store = PersistentStore(settings)
@@ -215,6 +219,46 @@ class AnalysisRepository:
             signals_generated=len(signals),
             entry_signals=sum(1 for signal in signals if signal.status == SignalStatus.ENTRY),
             generated_at=snapshot.generated_at,
+        )
+
+    async def ingest_odds_api_message(
+        self,
+        request: OddsMessageIngestionRequest,
+    ) -> OddsMessageIngestionResult:
+        persisted_cursor = self._persisted_cursor_for(Provider.ODDS_API_IO, request.stream)
+        raw_payload = self.odds_api_io.raw_payload_from_message(request.payload, stream=request.stream)
+        quotes, cursor = self.odds_api_io.ingest_message(
+            request.payload,
+            current_cursor=persisted_cursor,
+            stream=request.stream,
+        )
+        raw_payloads_saved = self.store.save_raw_payloads([raw_payload])
+        cursor_saved = self.store.save_provider_cursor(cursor)
+        latency_saved = self.store.record_provider_latency(
+            Provider.ODDS_API_IO,
+            f"odds/{request.stream}",
+            latest_source_ts=raw_payload.source_ts,
+            latest_ingested_at=raw_payload.ingested_at,
+        )
+        return OddsMessageIngestionResult(
+            stream=request.stream,
+            cursor=cursor,
+            quotes=len(quotes),
+            raw_payloads_saved=raw_payloads_saved,
+            persisted=bool(raw_payloads_saved) or cursor_saved or latency_saved,
+            resync_required=cursor.resync_required,
+            source_event_id=raw_payload.source_event_id,
+            source_ts=raw_payload.source_ts,
+        )
+
+    def _persisted_cursor_for(self, provider: Provider, stream: str) -> ProviderCursor | None:
+        return next(
+            (
+                cursor
+                for cursor in self.store.provider_cursors()
+                if cursor.provider == provider and cursor.stream == stream
+            ),
+            None,
         )
 
     async def match_detail(self, match_id: str, target_date: date) -> MatchAnalysis | None:

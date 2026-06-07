@@ -6,6 +6,7 @@ from datetime import timezone
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import CursorStatus
+from tennis_edge.domain import OddsMessageIngestionRequest
 from tennis_edge.domain import Provider
 from tennis_edge.domain import ProviderCursor
 from tennis_edge.domain import ProviderMatchPayload
@@ -204,6 +205,80 @@ def test_provider_cursor_seed_ignores_process_cache_without_existing_cursor() ->
         assert odds_params[6] is True
     finally:
         CURSORS.clear()
+
+
+def test_repository_ingests_odds_api_message_with_persisted_cursor() -> None:
+    class StoreStub:
+        def __init__(self) -> None:
+            self.cursor = ProviderCursor(
+                provider=Provider.ODDS_API_IO,
+                stream="tennis:moneyline",
+                last_seq=40,
+                expected_next_seq=41,
+                status=CursorStatus.HEALTHY,
+                gap_count=0,
+                resync_required=False,
+                note="Persisted before restart.",
+            )
+            self.saved_payloads = []
+            self.saved_cursor = None
+            self.saved_latency = None
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        def provider_cursors(self):
+            return [self.cursor]
+
+        def save_raw_payloads(self, payloads):
+            self.saved_payloads = payloads
+            return len(payloads)
+
+        def save_provider_cursor(self, cursor):
+            self.saved_cursor = cursor
+            return True
+
+        def record_provider_latency(self, provider, feed, *, latest_source_ts, latest_ingested_at):
+            self.saved_latency = (provider, feed, latest_source_ts, latest_ingested_at)
+            return True
+
+    CURSORS.clear()
+    repo = AnalysisRepository(Settings(data_mode="live", persistence_enabled=False))
+    store = StoreStub()
+    repo.store = store
+
+    result = asyncio.run(
+        repo.ingest_odds_api_message(
+            OddsMessageIngestionRequest(
+                payload={
+                    "event_id": "event-1",
+                    "seq": 41,
+                    "timestamp": "2026-06-07T20:00:00Z",
+                    "data": {
+                        "bookmaker": "SharpBook",
+                        "market": "ML",
+                        "selections": [
+                            {"player_id": "p1", "odds": 1.9},
+                            {"player_id": "p2", "odds": 1.95},
+                        ],
+                    },
+                }
+            )
+        )
+    )
+
+    assert result.persisted is True
+    assert result.raw_payloads_saved == 1
+    assert result.quotes == 2
+    assert result.cursor.status == CursorStatus.HEALTHY
+    assert result.cursor.last_seq == 41
+    assert result.resync_required is False
+    assert store.saved_payloads[0].provider == Provider.ODDS_API_IO
+    assert store.saved_payloads[0].source_event_id == "event-1"
+    assert store.saved_cursor == result.cursor
+    assert store.saved_latency[0] == Provider.ODDS_API_IO
+    assert store.saved_latency[1] == "odds/tennis:moneyline"
 
 
 def test_odds_api_io_resync_blocks_live_entry_signals() -> None:

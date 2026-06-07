@@ -13,6 +13,7 @@ get_settings.cache_clear()
 from tennis_edge.main import app
 from tennis_edge.services.agent_ops import AGENT_RUNS
 from tennis_edge.services.execution_engine import ORDERS
+from tennis_edge.services.provider_cursor import CURSORS
 
 
 client = TestClient(app)
@@ -64,6 +65,40 @@ def test_v1_ingestion_run_requires_token_and_returns_operational_summary() -> No
     assert response.json()["matches"] >= 1
     assert response.json()["raw_payloads_saved"] >= 1
     assert "signals_generated" in response.json()
+
+
+def test_v1_odds_api_io_message_ingestion_requires_token_and_tracks_cursor() -> None:
+    CURSORS.clear()
+    payload = {
+        "payload": {
+            "event_id": "event-1",
+            "seq": 1,
+            "timestamp": "2026-06-07T20:00:00Z",
+            "data": {
+                "bookmaker": "SharpBook",
+                "market": "h2h",
+                "selections": [
+                    {"player_id": "p1", "odds": 1.8},
+                    {"player_id": "p2", "odds": 2.1},
+                ],
+            },
+        }
+    }
+
+    unauthorized = client.post("/api/v1/ingestion/odds-api-io/message", json=payload)
+    response = client.post(
+        "/api/v1/ingestion/odds-api-io/message",
+        headers=ADMIN_HEADERS,
+        json=payload,
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["quotes"] == 2
+    assert response.json()["raw_payloads_saved"] == 0
+    assert response.json()["persisted"] is False
+    assert response.json()["cursor"]["last_seq"] == 1
+    assert response.json()["resync_required"] is False
 
 
 def test_v1_agent_ops_endpoints_expose_openclaw_router() -> None:

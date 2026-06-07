@@ -705,6 +705,24 @@ class IngestionRunResult(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class OddsMessageIngestionRequest(BaseModel):
+    payload: dict[str, Any]
+    stream: str = "tennis:moneyline"
+
+
+class OddsMessageIngestionResult(BaseModel):
+    provider: Provider = Provider.ODDS_API_IO
+    stream: str
+    cursor: ProviderCursor
+    quotes: int
+    raw_payloads_saved: int
+    persisted: bool
+    resync_required: bool
+    source_event_id: str
+    source_ts: datetime
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class AgentAutopilotRequest(BaseModel):
     source: Literal["dashboard", "telegram", "cron", "openclaw", "system"] = "dashboard"
     create_paper_orders: bool = True

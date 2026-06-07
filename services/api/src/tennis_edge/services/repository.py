@@ -494,8 +494,16 @@ class AnalysisRepository:
     async def execution_status(self) -> ExecutionStatus:
         return self.operational_state.execution_status()
 
-    async def operational_state_snapshot(self) -> OperationalStateSnapshot:
-        return self.operational_state.snapshot()
+    async def operational_state_snapshot(self, target_date: date) -> OperationalStateSnapshot:
+        analyses = await self.analyses_for_date(target_date)
+        performance = await self.paper_performance()
+        return self.operational_state.snapshot(
+            cost_report=self.operational_state.daily_cost_report(
+                target_date,
+                analyses,
+                performance,
+            )
+        )
 
     async def bankroll(self, orders: list[ExecutionOrder] | None = None) -> BankrollSnapshot:
         return bankroll_snapshot(self.settings, orders if orders is not None else await self.orders())

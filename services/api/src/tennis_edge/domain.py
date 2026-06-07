@@ -796,16 +796,6 @@ class CostProfile(BaseModel):
     notes: list[str]
 
 
-class OperationalStateSnapshot(BaseModel):
-    provider_health: list[ProviderHealth]
-    cost_profile: CostProfile
-    data_quality: list[DataQualitySnapshot]
-    provider_cursors: list[ProviderCursor]
-    ingestion_runs: list[IngestionRunRecord]
-    execution_status: ExecutionStatus
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
 class ProviderCostUsage(BaseModel):
     provider: Provider
     api_calls: int = 0
@@ -828,6 +818,17 @@ class DailyCostReport(BaseModel):
     cost_per_positive_clv_signal_usd: float | None = None
     watchlist_escalations: int = 0
     note: str
+
+
+class OperationalStateSnapshot(BaseModel):
+    provider_health: list[ProviderHealth]
+    cost_profile: CostProfile
+    daily_cost_report: DailyCostReport
+    data_quality: list[DataQualitySnapshot]
+    provider_cursors: list[ProviderCursor]
+    ingestion_runs: list[IngestionRunRecord]
+    execution_status: ExecutionStatus
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class MatchFreshness(BaseModel):

@@ -55,6 +55,8 @@ def test_v1_enterprise_observability_endpoints() -> None:
     assert paper.status_code == 200
     assert any(item["provider"] == "odds_api_io" for item in cursors.json())
     assert operational_state.json()["cost_profile"]["active_plan"] == "lean_atp"
+    assert operational_state.json()["daily_cost_report"]["active_plan"] == "lean_atp"
+    assert operational_state.json()["daily_cost_report"]["estimated_monthly_spend_usd"] <= 500
     assert operational_state.json()["execution_status"]["can_submit_real_orders"] is False
     assert "ingestion_runs" in operational_state.json()
     assert champion.json()["model_version"] == "baseline_v0"

@@ -31,7 +31,6 @@ import {
   getBankroll,
   getChampionModel,
   getDailyMetrics,
-  getDailyCostReport,
   getEntityConflicts,
   getExecutionStatus,
   getLiveSignals,
@@ -156,12 +155,11 @@ export default function Page() {
   async function load() {
     setError(null);
     try {
-      const [nextMatches, nextMetrics, nextOperational, nextSignals, nextCostReport] = await Promise.all([
+      const [nextMatches, nextMetrics, nextOperational, nextSignals] = await Promise.all([
         getTodayMatches(),
         getDailyMetrics(),
         getOperationalState(),
-        getLiveSignals(),
-        getDailyCostReport()
+        getLiveSignals()
       ]);
       const [
         nextModelRegistry,
@@ -189,7 +187,7 @@ export default function Page() {
       setMatches(nextMatches);
       setMetrics(nextMetrics);
       setCostProfile(nextOperational.cost_profile);
-      setCostReport(nextCostReport);
+      setCostReport(nextOperational.daily_cost_report);
       setDataQuality(nextOperational.data_quality);
       setIngestionRuns(nextOperational.ingestion_runs);
       setProviderCursors(nextOperational.provider_cursors);

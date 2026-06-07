@@ -33,8 +33,10 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(importBlock, /getOperationalState/);
   assert.doesNotMatch(importBlock, /getAgentPreflight,/);
   assert.doesNotMatch(importBlock, /getIngestionRuns/);
+  assert.doesNotMatch(importBlock, /getDailyCostReport/);
   assert.match(pageSource, /getAgentPreflightSafe\(\)/);
   assert.match(pageSource, /getOperationalState\(\)/);
+  assert.match(pageSource, /nextOperational\.daily_cost_report/);
   assert.match(pageSource, /ingestionRuns=\{ingestionRuns\}/);
   assert.match(apiSource, /\/api\/v1\/operational-state/);
   assert.match(dataHealthSource, /Ingestion Journal/);

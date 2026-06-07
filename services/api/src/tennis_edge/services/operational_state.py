@@ -64,10 +64,11 @@ class OperationalStateService:
     def execution_status(self) -> ExecutionStatus:
         return execution_status(self.settings)
 
-    def snapshot(self) -> OperationalStateSnapshot:
+    def snapshot(self, *, cost_report: DailyCostReport) -> OperationalStateSnapshot:
         return OperationalStateSnapshot(
             provider_health=self.provider_health(),
             cost_profile=self.cost_profile(),
+            daily_cost_report=cost_report,
             data_quality=self.data_quality(),
             provider_cursors=self.provider_cursors(),
             ingestion_runs=self.ingestion_runs(),

@@ -227,6 +227,7 @@ export type IngestionRunRecord = {
 export type OperationalStateSnapshot = {
   provider_health: ProviderHealth[];
   cost_profile: CostProfile;
+  daily_cost_report: DailyCostReport;
   data_quality: DataQualitySnapshot[];
   provider_cursors: ProviderCursor[];
   ingestion_runs: IngestionRunRecord[];

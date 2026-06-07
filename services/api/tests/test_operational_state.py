@@ -5,6 +5,7 @@ from tennis_edge.domain import (
     CursorStatus,
     DataQualitySnapshot,
     IngestionRunRecord,
+    PaperPerformance,
     Provider,
     ProviderCursor,
 )
@@ -69,17 +70,36 @@ def test_operational_state_prefers_persisted_health_inputs() -> None:
         Settings(data_mode="live"),
         StoreStub(cursors=[cursor], data_quality=[quality], ingestion_runs=[run]),
     )
+    cost_report = service.daily_cost_report(
+        generated_at.date(),
+        [],
+        PaperPerformance(
+            orders=0,
+            settled_orders=0,
+            wins=0,
+            losses=0,
+            open_orders=0,
+            roi=None,
+            clv=None,
+            realized_pnl=0,
+            max_drawdown=0,
+            calibration_error=None,
+            readiness_status="collecting",
+            readiness_reasons=["test"],
+        ),
+    )
 
     assert service.provider_cursors() == [cursor]
     assert service.data_quality() == [quality]
     assert service.ingestion_runs() == [run]
 
-    snapshot = service.snapshot()
+    snapshot = service.snapshot(cost_report=cost_report)
 
     assert snapshot.provider_cursors == [cursor]
     assert snapshot.data_quality == [quality]
     assert snapshot.ingestion_runs == [run]
     assert snapshot.cost_profile.active_plan == "lean_atp"
+    assert snapshot.daily_cost_report.active_plan == "lean_atp"
     assert snapshot.execution_status.can_submit_real_orders is False
 
 

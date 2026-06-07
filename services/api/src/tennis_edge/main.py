@@ -158,7 +158,7 @@ async def v1_provider_cursors(
 async def v1_operational_state(
     repo: AnalysisRepository = Depends(repository),
 ) -> OperationalStateSnapshot:
-    return await repo.operational_state_snapshot()
+    return await repo.operational_state_snapshot(date.today())
 
 
 @app.post("/api/v1/ingestion/run", response_model=IngestionRunResult)

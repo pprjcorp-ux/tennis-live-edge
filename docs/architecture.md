@@ -37,6 +37,9 @@ decide whether the system behaves as budget or enterprise.
     walk-forward ROI, CLV, Brier, log loss, calibration error, and drawdown,
     then save model registry and calibration reports. Synthetic backtests remain
     only as a sample/dev fallback when no persisted examples exist.
+13. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
+    paper orders are persisted so restart recovery includes the operational
+    audit trail.
 
 ## Local Verification
 

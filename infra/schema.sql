@@ -400,6 +400,16 @@ CREATE TABLE IF NOT EXISTS execution_audit_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  run_type TEXT NOT NULL,
+  source TEXT NOT NULL,
+  model_routes JSONB NOT NULL DEFAULT '[]',
+  actions JSONB NOT NULL DEFAULT '[]',
+  summary TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS backtests (
   id TEXT PRIMARY KEY,
   model_version_id TEXT NOT NULL REFERENCES model_versions(id),

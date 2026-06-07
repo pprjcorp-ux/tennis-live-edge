@@ -11,6 +11,7 @@ from tennis_edge.config import Settings
 from tennis_edge.domain import (
     BacktestMetrics,
     BacktestRunRequest,
+    AgentRun,
     CalibrationBucket,
     CalibrationReport,
     Confidence,
@@ -532,6 +533,67 @@ class PersistentStore:
                 ).fetchone()
                 if order_row and order.matched_stake > 0 and order.average_price:
                     self._insert_paper_fill(cur, int(order_row["id"]), order)
+
+    def save_agent_run(self, run: AgentRun) -> None:
+        if not self.enabled:
+            return
+        with self._connect() as conn:
+            if conn is None:
+                return
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO agent_runs (
+                      id, run_type, source, model_routes, actions, summary, created_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                      run_type = EXCLUDED.run_type,
+                      source = EXCLUDED.source,
+                      model_routes = EXCLUDED.model_routes,
+                      actions = EXCLUDED.actions,
+                      summary = EXCLUDED.summary,
+                      created_at = EXCLUDED.created_at
+                    """,
+                    (
+                        run.id,
+                        run.run_type.value,
+                        run.source,
+                        _json([route.model_dump(mode="json") for route in run.model_routes]),
+                        _json([action.model_dump(mode="json") for action in run.actions]),
+                        run.summary,
+                        run.created_at,
+                    ),
+                )
+
+    def agent_runs(self, limit: int = 50) -> list[AgentRun]:
+        if not self.enabled:
+            return []
+        with self._connect() as conn:
+            if conn is None:
+                return []
+            with conn.cursor() as cur:
+                rows = cur.execute(
+                    """
+                    SELECT id, run_type, source, model_routes, actions, summary, created_at
+                    FROM agent_runs
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                ).fetchall()
+        return [
+            AgentRun(
+                id=row["id"],
+                run_type=row["run_type"],
+                source=row["source"],
+                model_routes=row["model_routes"] or [],
+                actions=row["actions"] or [],
+                summary=row["summary"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
 
     def orders(self) -> list[ExecutionOrder]:
         if not self.enabled:

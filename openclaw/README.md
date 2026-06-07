@@ -39,6 +39,13 @@ backend-approved `Entrada` signals. Real execution remains blocked by
 Cron creation examples are in `openclaw/cron.examples.md`; create them only
 after Telegram pairing/allowlist and local admin secrets are configured.
 
+## Persistent Audit
+
+When Postgres persistence is enabled, OpenClaw autopilot writes every run to the
+backend `agent_runs` table and persists each created paper order. `npm run
+openclaw:runs` should therefore keep showing the last operational runs after an
+API restart. In sample/dev mode, the endpoint falls back to process memory.
+
 ## Model Router Defaults
 
 - Routine triage and reports: `OPENCLAW_TRIAGE_MODEL=gpt-5.4-mini`

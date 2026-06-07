@@ -276,6 +276,11 @@ Acceptance:
 
 Goal: add autonomy without weakening safety.
 
+Current implementation status: first persistence slice complete. Agent Ops now
+persists autopilot run logs, model routes, action summaries, and paper orders
+created by OpenClaw through backend gates. The OpenClaw commands still use
+Dashboard/API channels only and real execution remains blocked.
+
 Tasks:
 
 - install/copy the Tennis Edge skill into the OpenClaw runtime;

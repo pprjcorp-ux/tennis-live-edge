@@ -16,6 +16,19 @@ ADMIN_API_TOKEN=... npm run openclaw:autopilot
 The skill lives in `openclaw/skills/tennis-edge-ops`. Copy it into
 `~/.openclaw/skills/tennis-edge-ops` for the OpenClaw runtime to discover it.
 
+## Audit Trail
+
+`/api/v1/agent/runs` reads persisted `agent_runs` when Postgres is enabled and
+falls back to in-memory runs only in sample/dev mode. Each run stores:
+
+- source (`dashboard`, `telegram`, `cron`, `openclaw`, or `system`);
+- model routes and estimated cost;
+- actions taken, skipped, blocked, or failed;
+- paper orders created through backend gates.
+
+Critical-route runs are shown first in the audit view so severe anomaly or
+real-execution-readiness reviews are not buried by routine polling.
+
 ## Model Routing
 
 - Routine triage: `OPENCLAW_TRIAGE_MODEL=gpt-5.4-mini`

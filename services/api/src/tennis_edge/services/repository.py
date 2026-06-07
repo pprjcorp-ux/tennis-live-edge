@@ -235,7 +235,7 @@ class AnalysisRepository:
 
     async def agent_briefing(self) -> AgentBriefing:
         analyses = await self.analyses_for_date(date.today())
-        return build_agent_briefing(
+        briefing = build_agent_briefing(
             self.settings,
             analyses=analyses,
             provider_health=await self.provider_health(),
@@ -246,6 +246,11 @@ class AnalysisRepository:
             bankroll=await self.bankroll(),
             cost_report=await self.daily_cost_report(date.today()),
         )
+        if briefing.latest_run is None:
+            persisted_runs = self.store.agent_runs()
+            if persisted_runs:
+                return briefing.model_copy(update={"latest_run": persisted_runs[0]})
+        return briefing
 
     async def agent_anomalies(self) -> list[AgentAnomaly]:
         analyses = await self.analyses_for_date(date.today())
@@ -276,10 +281,28 @@ class AnalysisRepository:
             bankroll=await self.bankroll(),
             cost_report=await self.daily_cost_report(date.today()),
         )
-        return run_agent_autopilot(self.settings, analyses, request, anomalies)
+        result = run_agent_autopilot(self.settings, analyses, request, anomalies)
+        for action in result.run.actions:
+            if action.type != "paper_order" or action.status.value != "executed" or not action.target_id:
+                continue
+            order = ORDERS.get(action.target_id)
+            if order is not None:
+                self.store.save_order(order)
+        self.store.save_agent_run(result.run)
+        return result
 
     async def agent_runs(self) -> list[AgentRun]:
-        return agent_runs()
+        merged = {run.id: run for run in self.store.agent_runs()}
+        for run in agent_runs():
+            merged.setdefault(run.id, run)
+        return sorted(
+            merged.values(),
+            key=lambda run: (
+                any(route.model == self.settings.openclaw_critical_model for route in run.model_routes),
+                run.created_at,
+            ),
+            reverse=True,
+        )
 
     async def settle_paper(self, request: PaperSettleRequest) -> PaperSettlement:
         try:

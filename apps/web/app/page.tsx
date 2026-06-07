@@ -548,6 +548,17 @@ export default function Page() {
                   <span key={reason}>{reason}</span>
                 ))}
               </div>
+              <div className="segmentTable">
+                {(paperPerformance?.segments ?? []).slice(0, 12).map((segment) => (
+                  <div className="segmentRow" key={`${segment.segment_type}-${segment.segment}`}>
+                    <span>{segment.segment_type}</span>
+                    <strong>{segment.segment}</strong>
+                    <span>{segment.settled_orders} settled</span>
+                    <span>ROI {segment.roi === null ? "-" : pct(segment.roi)}</span>
+                    <span>CLV {segment.clv === null ? "-" : pct(segment.clv)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="panel">
               <div className="panelHeader">

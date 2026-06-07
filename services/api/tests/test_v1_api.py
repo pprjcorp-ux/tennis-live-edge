@@ -215,6 +215,12 @@ def test_paper_settlement_requires_token_and_updates_performance() -> None:
     assert settlement.status_code == 200
     assert settlement.json()["status"] == "settled"
     assert performance.json()["settled_orders"] >= 1
+    assert performance.json()["segments"]
+    assert {segment["segment_type"] for segment in performance.json()["segments"]} >= {
+        "model",
+        "odds_bucket",
+        "provider",
+    }
 
 
 def test_unknown_backtest_returns_404() -> None:

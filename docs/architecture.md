@@ -28,8 +28,9 @@ decide whether the system behaves as budget or enterprise.
 8. Risk gates allow, monitor, block, or abstain.
 9. Postgres/Timescale serves persisted canonical matches, freshness metadata,
    predictions, and signals when upstream providers are down.
-10. Paper execution records order decisions, fills, settlement, CLV, ROI, and
-   calibration buckets.
+10. Paper execution records order decisions, deterministic fills, closing-line
+   snapshots, settlement, CLV, ROI, segmented performance, and calibration
+   buckets.
 
 ## Local Verification
 

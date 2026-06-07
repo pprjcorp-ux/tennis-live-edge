@@ -835,6 +835,28 @@ h2 {
   padding: 16px;
 }
 
+.segmentTable {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.segmentRow {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr 0.9fr 0.9fr 0.9fr;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+  font-size: 12px;
+}
+
+.segmentRow span {
+  color: var(--app-muted);
+}
+
 .detailGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

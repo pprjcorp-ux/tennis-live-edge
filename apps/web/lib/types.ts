@@ -407,6 +407,14 @@ export type PaperPerformance = {
   calibration_error: number | null;
   readiness_status: "collecting" | "review_ready";
   readiness_reasons: string[];
+  segments: Array<{
+    segment_type: "model" | "odds_bucket" | "surface" | "tour" | "provider";
+    segment: string;
+    settled_orders: number;
+    roi: number | null;
+    clv: number | null;
+    realized_pnl: number;
+  }>;
 };
 
 export type AgentModelRoute = {

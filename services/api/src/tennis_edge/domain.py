@@ -586,6 +586,16 @@ class PaperPerformance(BaseModel):
     calibration_error: float | None
     readiness_status: Literal["collecting", "review_ready"]
     readiness_reasons: list[str]
+    segments: list["PaperPerformanceSegment"] = Field(default_factory=list)
+
+
+class PaperPerformanceSegment(BaseModel):
+    segment_type: Literal["model", "odds_bucket", "surface", "tour", "provider"]
+    segment: str
+    settled_orders: int
+    roi: float | None
+    clv: float | None
+    realized_pnl: float
 
 
 class AgentActionStatus(StrEnum):

@@ -246,6 +246,8 @@ async def v1_create_paper_order(
         return await repo.create_paper_order(request)
     except KeyError:
         raise HTTPException(status_code=404, detail="Signal not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @app.post("/api/v1/orders/submit", response_model=ExecutionOrder)

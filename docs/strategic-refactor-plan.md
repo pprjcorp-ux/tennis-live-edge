@@ -227,6 +227,11 @@ Acceptance:
 
 Goal: make paper results realistic enough to evaluate edge.
 
+Current implementation status: baseline complete for v2. Paper orders now
+require `Entrada`, deterministic fills are persisted, closing-line snapshots are
+recorded at settlement, and paper performance reports ROI/CLV by model, odds
+bucket, surface, tour, and provider when enough settled orders exist.
+
 Tasks:
 
 - implement deterministic paper fill policy with queue/slippage/commission;

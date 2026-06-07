@@ -216,6 +216,8 @@ def create_order(
     real: bool,
 ) -> ExecutionOrder:
     analysis, signal = find_signal(analyses, request.signal_id)
+    if not real and signal.status != SignalStatus.ENTRY:
+        raise ValueError(f"Signal status is {signal.status}; paper orders require Entrada.")
     order_id = f"ord_{uuid4().hex[:12]}"
     requested_odds = request.requested_odds or signal.best_odds
     bankroll_amount = request.bankroll_amount or settings.bankroll_starting_balance
@@ -295,6 +297,10 @@ def create_order(
         rejection_reason=rejection_reason,
         risk_snapshot={
             "stage": _execution_stage(settings),
+            "model_version": analysis.prediction.model_version,
+            "surface": analysis.match.surface.value,
+            "tour": analysis.match.tour.value,
+            "competition_level": analysis.match.competition_level.value,
             "risk_reasons": risk_reasons,
             "bankroll_amount": bankroll_amount,
             "stake_cap": stage_stake_cap(settings),

@@ -14,6 +14,7 @@ from tennis_edge.domain import (
     ModelRegistryEntry,
     OrderStatus,
     PaperPerformance,
+    PaperPerformanceSegment,
     PaperSettlement,
     PaperSettleRequest,
     Provider,
@@ -263,6 +264,17 @@ def paper_performance(settings: Settings) -> PaperPerformance:
     staked = sum(order.matched_stake or order.stake_amount for order in settled)
     pnl = round(sum(order.pnl or 0 for order in settled), 2)
     clv_values = [order.clv for order in settled if order.clv is not None]
+    model_segments: dict[str, list] = {}
+    odds_segments: dict[str, list] = {}
+    provider_segments: dict[str, list] = {}
+    for order in settled:
+        model = str(order.risk_snapshot.get("model_version") or "unknown")
+        odds = order.average_price or order.accepted_odds or order.requested_odds
+        odds_bucket = f"{int(odds * 2) / 2:.1f}-{(int(odds * 2) / 2) + 0.5:.1f}"
+        provider = order.venue.value
+        model_segments.setdefault(model, []).append(order)
+        odds_segments.setdefault(odds_bucket, []).append(order)
+        provider_segments.setdefault(provider, []).append(order)
     open_orders = sum(1 for order in orders if order.status in OPEN_ORDER_STATUSES or order.status == OrderStatus.PAPER)
     readiness_reasons: list[str] = []
     if len(settled) < settings.min_paper_signals_for_real_review:
@@ -285,7 +297,33 @@ def paper_performance(settings: Settings) -> PaperPerformance:
         calibration_error=None,
         readiness_status="review_ready" if len(settled) >= settings.min_paper_signals_for_real_review else "collecting",
         readiness_reasons=readiness_reasons,
+        segments=[
+            *_segments_from_orders("model", model_segments),
+            *_segments_from_orders("odds_bucket", odds_segments),
+            *_segments_from_orders("provider", provider_segments),
+        ],
     )
+
+
+def _segments_from_orders(
+    segment_type: str, grouped: dict[str, list]
+) -> list[PaperPerformanceSegment]:
+    segments: list[PaperPerformanceSegment] = []
+    for name, orders in sorted(grouped.items()):
+        pnl = round(sum(order.pnl or 0 for order in orders), 2)
+        staked = sum(order.matched_stake or order.stake_amount for order in orders)
+        clv_values = [order.clv for order in orders if order.clv is not None]
+        segments.append(
+            PaperPerformanceSegment(
+                segment_type=segment_type,  # type: ignore[arg-type]
+                segment=name,
+                settled_orders=len(orders),
+                roi=round(pnl / staked, 4) if staked else None,
+                clv=round(sum(clv_values) / len(clv_values), 6) if clv_values else None,
+                realized_pnl=pnl,
+            )
+        )
+    return segments
 
 
 def feature_snapshot_id() -> str:

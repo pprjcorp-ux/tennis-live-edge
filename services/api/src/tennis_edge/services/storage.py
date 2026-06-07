@@ -24,6 +24,7 @@ from tennis_edge.domain import (
     OddsQuote,
     OrderStatus,
     PaperPerformance,
+    PaperPerformanceSegment,
     PaperSettlement,
     PaperSettleRequest,
     Player,
@@ -476,7 +477,7 @@ class PersistentStore:
                 ).fetchone()
                 if not signal_row:
                     return
-                cur.execute(
+                order_row = cur.execute(
                     """
                     INSERT INTO paper_orders (
                       signal_id, external_order_ref, external_signal_id, match_id, player_id,
@@ -496,6 +497,7 @@ class PersistentStore:
                       clv = EXCLUDED.clv,
                       status = EXCLUDED.status,
                       audit = EXCLUDED.audit
+                    RETURNING id
                     """,
                     (
                         signal_row["id"],
@@ -520,7 +522,9 @@ class PersistentStore:
                         _json(order.audit),
                         order.created_at,
                     ),
-                )
+                ).fetchone()
+                if order_row and order.matched_stake > 0 and order.average_price:
+                    self._insert_paper_fill(cur, int(order_row["id"]), order)
 
     def orders(self) -> list[ExecutionOrder]:
         if not self.enabled:
@@ -610,7 +614,8 @@ class PersistentStore:
             with conn.cursor() as cur:
                 row = cur.execute(
                     """
-                    SELECT external_order_ref, requested_odds, average_price, matched_stake, stake_amount
+                    SELECT external_order_ref, match_id, player_id, requested_odds, average_price,
+                           matched_stake, stake_amount
                     FROM paper_orders
                     WHERE external_order_ref = %s
                     ORDER BY created_at DESC
@@ -662,6 +667,7 @@ class PersistentStore:
                 if not row:
                     return
                 paper_order_id = row["id"]
+                self._insert_closing_line_snapshot(cur, paper_order_id, settlement)
                 cur.execute(
                     """
                     INSERT INTO paper_settlements (
@@ -693,7 +699,8 @@ class PersistentStore:
                         pnl = %s,
                         clv = %s,
                         matched_stake = %s,
-                        average_price = %s
+                        average_price = %s,
+                        audit = audit || %s::jsonb
                     WHERE id = %s
                     """,
                     (
@@ -703,6 +710,7 @@ class PersistentStore:
                         settlement.clv,
                         settlement.matched_stake,
                         settlement.average_price,
+                        _json(["Paper order settled with closing-line CLV."]),
                         paper_order_id,
                     ),
                 )
@@ -757,6 +765,7 @@ class PersistentStore:
             if settled >= self.settings.min_paper_signals_for_real_review
             else "collecting",
             readiness_reasons=readiness_reasons,
+            segments=self._paper_performance_segments(),
         )
 
     def backtest_metrics(self, request: BacktestRunRequest | None = None) -> BacktestMetrics | None:
@@ -956,6 +965,134 @@ class PersistentStore:
                 _now(),
             ),
         )
+
+    def _insert_paper_fill(self, cur: Any, paper_order_id: int, order: ExecutionOrder) -> None:
+        available_odds = order.average_price or order.accepted_odds or order.requested_odds
+        unmatched = round(max(0, order.stake_amount - order.matched_stake), 2)
+        slippage = round(order.requested_odds - available_odds, 4)
+        cur.execute(
+            """
+            INSERT INTO paper_fills (
+              paper_order_id, status, requested_odds, available_odds,
+              matched_stake, average_price, unmatched_stake, slippage,
+              commission_rate, event_ts
+            )
+            SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            WHERE NOT EXISTS (
+              SELECT 1 FROM paper_fills WHERE paper_order_id = %s
+            )
+            """,
+            (
+                paper_order_id,
+                order.status.value,
+                order.requested_odds,
+                available_odds,
+                order.matched_stake,
+                available_odds,
+                unmatched,
+                slippage,
+                0.02,
+                order.created_at,
+                paper_order_id,
+            ),
+        )
+
+    def _insert_closing_line_snapshot(
+        self, cur: Any, paper_order_id: int, settlement: PaperSettlement
+    ) -> None:
+        row = cur.execute(
+            """
+            SELECT match_id, player_id
+            FROM paper_orders
+            WHERE id = %s
+            """,
+            (paper_order_id,),
+        ).fetchone()
+        if not row or not row["match_id"] or not row["player_id"]:
+            return
+        cur.execute(
+            """
+            INSERT INTO closing_line_snapshots (
+              match_id, player_id, bookmaker, closing_decimal_odds,
+              no_vig_probability, source_ts, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                row["match_id"],
+                row["player_id"],
+                "closing_proxy",
+                settlement.closing_odds,
+                round(1 / settlement.closing_odds, 6),
+                settlement.settled_at,
+                _now(),
+            ),
+        )
+
+    def _paper_performance_segments(self) -> list[PaperPerformanceSegment]:
+        if not self.enabled:
+            return []
+        with self._connect() as conn:
+            if conn is None:
+                return []
+            with conn.cursor() as cur:
+                rows = cur.execute(
+                    """
+                    WITH settled AS (
+                      SELECT
+                        po.id,
+                        po.pnl::float AS pnl,
+                        po.clv::float AS clv,
+                        coalesce(po.matched_stake, po.stake_amount)::float AS staked,
+                        coalesce(po.average_price, po.accepted_odds, po.requested_odds)::float AS odds,
+                        po.venue,
+                        m.surface,
+                        m.tour,
+                        ps.model_version_id AS model_version
+                      FROM paper_orders po
+                      JOIN signals s ON s.id = po.signal_id
+                      LEFT JOIN prediction_snapshots ps ON ps.id = s.prediction_snapshot_id
+                      LEFT JOIN matches m ON m.id = po.match_id
+                      WHERE po.status = 'settled'
+                    ),
+                    segmented AS (
+                      SELECT 'model' AS segment_type, coalesce(model_version, 'unknown') AS segment, * FROM settled
+                      UNION ALL
+                      SELECT 'odds_bucket', concat(floor(odds * 2) / 2, '-', floor(odds * 2) / 2 + 0.5), * FROM settled
+                      UNION ALL
+                      SELECT 'surface', coalesce(surface, 'unknown'), * FROM settled
+                      UNION ALL
+                      SELECT 'tour', coalesce(tour, 'unknown'), * FROM settled
+                      UNION ALL
+                      SELECT 'provider', coalesce(venue, 'unknown'), * FROM settled
+                    )
+                    SELECT
+                      segment_type,
+                      segment,
+                      count(*)::int AS settled_orders,
+                      coalesce(sum(pnl), 0)::float AS realized_pnl,
+                      coalesce(sum(staked), 0)::float AS staked,
+                      avg(clv)::float AS clv
+                    FROM segmented
+                    GROUP BY segment_type, segment
+                    ORDER BY segment_type, segment
+                    """
+                ).fetchall()
+        segments: list[PaperPerformanceSegment] = []
+        for row in rows:
+            staked = float(row["staked"] or 0)
+            pnl = float(row["realized_pnl"] or 0)
+            segments.append(
+                PaperPerformanceSegment(
+                    segment_type=row["segment_type"],
+                    segment=str(row["segment"]),
+                    settled_orders=int(row["settled_orders"] or 0),
+                    roi=round(pnl / staked, 4) if staked else None,
+                    clv=round(float(row["clv"]), 6) if row["clv"] is not None else None,
+                    realized_pnl=round(pnl, 2),
+                )
+            )
+        return segments
 
     def _upsert_match(self, cur: Any, match: Match) -> None:
         cur.execute(

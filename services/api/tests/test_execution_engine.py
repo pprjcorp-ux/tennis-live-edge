@@ -1,6 +1,8 @@
 import asyncio
 from datetime import date
 
+import pytest
+
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
     ExecutionStage,
@@ -84,6 +86,23 @@ def test_paper_order_records_audit_without_real_submission() -> None:
     assert order.external_order_id is None
     assert order.customer_order_ref is not None
     assert "No browser automation" in " ".join(order.audit)
+    assert order.risk_snapshot["model_version"] in {"prematch_ensemble_v1", "live_markov_v1"}
+    assert order.risk_snapshot["paper_fill"]["matched_stake"] == order.matched_stake
+
+
+def test_paper_order_rejects_non_entry_signal() -> None:
+    settings = _settings()
+    repo = AnalysisRepository(settings)
+    analyses = asyncio.run(repo.analyses_for_date(date.today()))
+    non_entry = next(
+        signal
+        for analysis in analyses
+        for signal in analysis.signals
+        if signal.status != SignalStatus.ENTRY
+    )
+
+    with pytest.raises(ValueError, match="paper orders require Entrada"):
+        create_order(settings, analyses, request=OrderRequest(signal_id=non_entry.id), real=False)
 
 
 def test_real_order_is_blocked_until_all_execution_gates_pass() -> None:

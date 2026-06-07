@@ -16,6 +16,7 @@ from tennis_edge.domain import (
     CalibrationReport,
     Confidence,
     CursorStatus,
+    CanonicalEntityConflict,
     DataQualitySnapshot,
     ExecutionOrder,
     ExecutionVenue,
@@ -503,6 +504,38 @@ class PersistentStore:
                     "Signals should abstain when odds are incomplete, stale or resync_required.",
                 ],
             )
+        ]
+
+    def entity_conflicts(self) -> list[CanonicalEntityConflict]:
+        if not self.enabled:
+            return []
+        with self._connect() as conn:
+            if conn is None:
+                return []
+            with conn.cursor() as cur:
+                rows = cur.execute(
+                    """
+                    SELECT id, entity_type, provider, canonical_id, candidate_id,
+                           confidence, similarity, reason, source_payload_ids, created_at
+                    FROM canonical_entity_conflicts
+                    WHERE resolved_at IS NULL
+                    ORDER BY created_at DESC, id ASC
+                    """
+                ).fetchall()
+        return [
+            CanonicalEntityConflict(
+                id=row["id"],
+                entity_type=row["entity_type"],
+                provider=Provider(row["provider"]),
+                canonical_id=row["canonical_id"],
+                candidate_id=row["candidate_id"],
+                confidence=Confidence(row["confidence"]),
+                similarity=float(row["similarity"]),
+                reason=row["reason"],
+                source_payload_ids=row["source_payload_ids"] or [],
+                created_at=row["created_at"],
+            )
+            for row in rows
         ]
 
     def save_order(self, order: ExecutionOrder) -> None:

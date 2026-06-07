@@ -2,7 +2,7 @@ import asyncio
 from datetime import date
 
 from tennis_edge.config import Settings
-from tennis_edge.domain import PaperPerformance
+from tennis_edge.domain import CanonicalEntityConflict, Confidence, PaperPerformance, Provider
 from tennis_edge.domain import ReplayRunRequest
 from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.repository import AnalysisRepository
@@ -94,6 +94,40 @@ def test_daily_cost_report_uses_persisted_positive_clv_signals() -> None:
 
     assert report.cost_per_positive_clv_signal_usd == 7.17
     assert "positive-CLV" in report.note
+
+
+def test_entity_conflicts_prefers_persisted_store_over_sample_conflicts() -> None:
+    persisted_conflicts = [
+        CanonicalEntityConflict(
+            id="conf_persisted_market_alias",
+            entity_type="market",
+            provider=Provider.ODDS_API_IO,
+            canonical_id="match_atp_001",
+            candidate_id="odds-live-market-123",
+            confidence=Confidence.HIGH,
+            similarity=0.94,
+            reason="Persisted provider conflict from canonical review queue.",
+            source_payload_ids=["raw_payload_1"],
+        )
+    ]
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def entity_conflicts(self):
+            return persisted_conflicts
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    repo.store = StoreStub(repo.store)
+
+    conflicts = asyncio.run(repo.entity_conflicts())
+
+    assert conflicts == persisted_conflicts
+    assert conflicts[0].id == "conf_persisted_market_alias"
 
 
 def test_replay_prefers_persisted_raw_payloads_over_sample_payloads() -> None:

@@ -234,7 +234,8 @@ class AnalysisRepository:
         return persisted or calibration_report(run_id)
 
     async def entity_conflicts(self) -> list[CanonicalEntityConflict]:
-        return entity_conflicts()
+        persisted = self.store.entity_conflicts()
+        return persisted or entity_conflicts()
 
     async def paper_performance(self) -> PaperPerformance:
         persisted = self.store.paper_performance()

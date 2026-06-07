@@ -237,6 +237,8 @@ class AnalysisRepository:
 
     async def agent_briefing(self) -> AgentBriefing:
         analyses = await self.analyses_for_date(date.today())
+        order_snapshot = await self.orders()
+        bankroll = await self.bankroll(order_snapshot)
         briefing = build_agent_briefing(
             self.settings,
             analyses=analyses,
@@ -245,8 +247,9 @@ class AnalysisRepository:
             data_quality=await self.data_quality(),
             execution_status=await self.execution_status(),
             paper_performance=await self.paper_performance(),
-            bankroll=await self.bankroll(),
+            bankroll=bankroll,
             cost_report=await self.daily_cost_report(date.today()),
+            orders=order_snapshot,
         )
         if briefing.latest_run is None:
             persisted_runs = self.store.agent_runs()
@@ -280,6 +283,8 @@ class AnalysisRepository:
         self, request: AgentAutopilotRequest
     ) -> AgentAutopilotResult:
         analyses = await self.analyses_for_date(date.today())
+        order_snapshot = await self.orders()
+        bankroll = await self.bankroll(order_snapshot)
         anomalies = detect_anomalies(
             self.settings,
             analyses=analyses,
@@ -288,10 +293,16 @@ class AnalysisRepository:
             data_quality=await self.data_quality(),
             execution_status=await self.execution_status(),
             paper_performance=await self.paper_performance(),
-            bankroll=await self.bankroll(),
+            bankroll=bankroll,
             cost_report=await self.daily_cost_report(date.today()),
         )
-        result = run_agent_autopilot(self.settings, analyses, request, anomalies)
+        result = run_agent_autopilot(
+            self.settings,
+            analyses,
+            request,
+            anomalies,
+            orders=order_snapshot,
+        )
         for action in result.run.actions:
             if action.type != "paper_order" or action.status.value != "executed" or not action.target_id:
                 continue
@@ -328,8 +339,8 @@ class AnalysisRepository:
     async def execution_status(self) -> ExecutionStatus:
         return execution_status(self.settings)
 
-    async def bankroll(self) -> BankrollSnapshot:
-        return bankroll_snapshot(self.settings)
+    async def bankroll(self, orders: list[ExecutionOrder] | None = None) -> BankrollSnapshot:
+        return bankroll_snapshot(self.settings, orders if orders is not None else await self.orders())
 
     async def orders(self) -> list[ExecutionOrder]:
         merged = {order.id: order for order in self.store.orders()}
@@ -337,21 +348,25 @@ class AnalysisRepository:
         return sorted(merged.values(), key=lambda order: order.created_at, reverse=True)
 
     async def create_paper_order(self, request: OrderRequest) -> ExecutionOrder:
+        order_snapshot = await self.orders()
         order = create_order(
             self.settings,
             await self.analyses_for_date(date.today()),
             request,
             real=False,
+            orders=order_snapshot,
         )
         self.store.save_order(order)
         return order
 
     async def submit_order(self, request: OrderRequest) -> ExecutionOrder:
+        order_snapshot = await self.orders()
         order = create_order(
             self.settings,
             await self.analyses_for_date(date.today()),
             request,
             real=True,
+            orders=order_snapshot,
         )
         self.store.save_order(order)
         return order

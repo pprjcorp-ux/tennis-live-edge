@@ -5,7 +5,9 @@ import pytest
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
+    ExecutionOrder,
     ExecutionStage,
+    ExecutionVenue,
     KillSwitchRequest,
     LearningPromotionRequest,
     OrderRequest,
@@ -88,6 +90,36 @@ def test_paper_order_records_audit_without_real_submission() -> None:
     assert "No browser automation" in " ".join(order.audit)
     assert order.risk_snapshot["model_version"] in {"prematch_ensemble_v1", "live_markov_v1"}
     assert order.risk_snapshot["paper_fill"]["matched_stake"] == order.matched_stake
+
+
+def test_order_risk_uses_persisted_open_exposure_snapshot() -> None:
+    settings = _settings(bankroll_starting_balance=10000)
+    analyses, _, signal = _entry_signal_context(settings)
+    persisted_order = ExecutionOrder(
+        id="ord_persisted_exposure",
+        signal_id="sig_previous",
+        match_id=signal.match_id,
+        player_id=signal.player_id,
+        player_name=signal.player_name,
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.PAPER,
+        requested_odds=signal.best_odds,
+        accepted_odds=signal.best_odds,
+        stake_fraction=0.0295,
+        stake_amount=295,
+        matched_stake=200,
+        average_price=signal.best_odds,
+    )
+
+    order = create_order(
+        settings,
+        analyses,
+        request=OrderRequest(signal_id=signal.id),
+        real=False,
+        orders=[persisted_order],
+    )
+
+    assert "Open exposure cap would be exceeded." in order.risk_snapshot["risk_reasons"]
 
 
 def test_paper_order_rejects_non_entry_signal() -> None:

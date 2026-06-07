@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 import socket
 from uuid import uuid4
@@ -20,6 +20,7 @@ from tennis_edge.domain import (
     DailyCostReport,
     DataQualitySnapshot,
     ExecutionStatus,
+    ExecutionOrder,
     MatchAnalysis,
     OrderRequest,
     OrderStatus,
@@ -56,10 +57,14 @@ def _entry_signals(analyses: list[MatchAnalysis]) -> list[Signal]:
     )
 
 
-def _open_order_count() -> int:
+def _order_snapshot(orders: Iterable[ExecutionOrder] | None = None) -> list[ExecutionOrder]:
+    return list(orders) if orders is not None else list(ORDERS.values())
+
+
+def _open_order_count(orders: Iterable[ExecutionOrder] | None = None) -> int:
     return sum(
         1
-        for order in ORDERS.values()
+        for order in _order_snapshot(orders)
         if order.status
         in {
             OrderStatus.PAPER,
@@ -395,7 +400,9 @@ def build_agent_briefing(
     paper_performance: PaperPerformance,
     bankroll: BankrollSnapshot,
     cost_report: DailyCostReport,
+    orders: Iterable[ExecutionOrder] | None = None,
 ) -> AgentBriefing:
+    order_snapshot = _order_snapshot(orders)
     entries = _entry_signals(analyses)
     anomalies = detect_anomalies(
         settings,
@@ -436,8 +443,8 @@ def build_agent_briefing(
         daily_model_budget_usd=settings.openclaw_daily_model_budget_usd,
         live_matches=sum(1 for analysis in analyses if analysis.match.state.status == "live"),
         entry_signals=len(entries),
-        paper_orders=sum(1 for order in ORDERS.values() if order.status == OrderStatus.PAPER),
-        open_orders=_open_order_count(),
+        paper_orders=sum(1 for order in order_snapshot if order.status == OrderStatus.PAPER),
+        open_orders=_open_order_count(order_snapshot),
         provider_alerts=len(anomalies),
         readiness_status=paper_performance.readiness_status,
         summary=(
@@ -449,8 +456,11 @@ def build_agent_briefing(
     )
 
 
-def _existing_order_for_signal(signal_id: str) -> bool:
-    return any(order.signal_id == signal_id for order in ORDERS.values())
+def _existing_order_for_signal(
+    signal_id: str,
+    orders: Iterable[ExecutionOrder] | None = None,
+) -> bool:
+    return any(order.signal_id == signal_id for order in _order_snapshot(orders))
 
 
 def run_agent_autopilot(
@@ -458,7 +468,9 @@ def run_agent_autopilot(
     analyses: list[MatchAnalysis],
     request: AgentAutopilotRequest,
     anomalies: list[AgentAnomaly],
+    orders: Iterable[ExecutionOrder] | None = None,
 ) -> AgentAutopilotResult:
+    order_snapshot = _order_snapshot(orders)
     actions: list[AgentAction] = []
     paper_orders_created = 0
     paper_orders_skipped = 0
@@ -478,7 +490,7 @@ def run_agent_autopilot(
         )
     elif request.create_paper_orders:
         for signal in _entry_signals(analyses)[: request.max_paper_orders]:
-            if _existing_order_for_signal(signal.id):
+            if _existing_order_for_signal(signal.id, order_snapshot):
                 paper_orders_skipped += 1
                 actions.append(
                     AgentAction(
@@ -499,7 +511,9 @@ def run_agent_autopilot(
                         notes=request.notes or "openclaw autopilot paper order",
                     ),
                     real=False,
+                    orders=order_snapshot,
                 )
+                order_snapshot.append(order)
                 paper_orders_created += 1
                 actions.append(
                     AgentAction(

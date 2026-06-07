@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -31,9 +32,11 @@ PROMOTION_DECISIONS: list[ModelPromotionDecision] = []
 KILL_SWITCH = {"enabled": False, "reason": "not set"}
 
 OPEN_ORDER_STATUSES = {
+    OrderStatus.PAPER,
     OrderStatus.PENDING,
     OrderStatus.SUBMITTED,
     OrderStatus.PARTIALLY_MATCHED,
+    OrderStatus.MATCHED,
 }
 
 
@@ -101,12 +104,20 @@ def execution_status(settings: Settings) -> ExecutionStatus:
     )
 
 
-def bankroll_snapshot(settings: Settings) -> BankrollSnapshot:
+def _order_snapshot(orders: Iterable[ExecutionOrder] | None = None) -> list[ExecutionOrder]:
+    return list(orders) if orders is not None else list(ORDERS.values())
+
+
+def bankroll_snapshot(
+    settings: Settings,
+    orders: Iterable[ExecutionOrder] | None = None,
+) -> BankrollSnapshot:
+    order_snapshot = _order_snapshot(orders)
     bankroll = settings.bankroll_starting_balance
     open_exposure = sum(
-        order.stake_amount for order in ORDERS.values() if order.status in OPEN_ORDER_STATUSES
+        order.stake_amount for order in order_snapshot if order.status in OPEN_ORDER_STATUSES
     )
-    realized = sum(order.pnl or 0 for order in ORDERS.values() if order.pnl is not None)
+    realized = sum(order.pnl or 0 for order in order_snapshot if order.pnl is not None)
     return BankrollSnapshot(
         base_currency=settings.bankroll_base_currency,
         bankroll_amount=round(bankroll + realized, 2),
@@ -115,7 +126,7 @@ def bankroll_snapshot(settings: Settings) -> BankrollSnapshot:
         realized_pnl=round(realized, 2),
         daily_pnl=round(realized, 2),
         weekly_drawdown=0 if realized >= 0 else abs(realized) / bankroll,
-        clv=_average_clv(),
+        clv=_average_clv(order_snapshot),
         execution_stage=_execution_stage(settings),
         max_order_stake_fraction=stage_stake_cap(settings),
         daily_loss_limit_fraction=settings.daily_loss_limit_fraction,
@@ -132,8 +143,8 @@ def stage_stake_cap(settings: Settings) -> float:
     return min(settings.max_order_stake_fraction, 0.015)
 
 
-def _average_clv() -> float | None:
-    values = [order.clv for order in ORDERS.values() if order.clv is not None]
+def _average_clv(orders: Iterable[ExecutionOrder] | None = None) -> float | None:
+    values = [order.clv for order in _order_snapshot(orders) if order.clv is not None]
     if not values:
         return None
     return round(sum(values) / len(values), 4)
@@ -185,6 +196,7 @@ def order_risk_reasons(
     analysis: MatchAnalysis,
     signal: Signal,
     stake_amount: float,
+    orders: Iterable[ExecutionOrder] | None = None,
 ) -> list[str]:
     reasons: list[str] = []
     if signal.status != SignalStatus.ENTRY:
@@ -194,7 +206,7 @@ def order_risk_reasons(
     if analysis.match.state.status == "live" and not analysis.match.state.point_score:
         reasons.append("Live score state is incomplete.")
 
-    bankroll = bankroll_snapshot(settings)
+    bankroll = bankroll_snapshot(settings, orders)
     if stake_amount > bankroll.bankroll_amount * stage_stake_cap(settings):
         reasons.append("Stake exceeds stage cap.")
     if stake_amount <= 0:
@@ -214,6 +226,7 @@ def create_order(
     request: OrderRequest,
     *,
     real: bool,
+    orders: Iterable[ExecutionOrder] | None = None,
 ) -> ExecutionOrder:
     analysis, signal = find_signal(analyses, request.signal_id)
     if not real and signal.status != SignalStatus.ENTRY:
@@ -223,7 +236,7 @@ def create_order(
     bankroll_amount = request.bankroll_amount or settings.bankroll_starting_balance
     stake_fraction = min(signal.stake_fraction, stage_stake_cap(settings))
     stake_amount = round(bankroll_amount * stake_fraction, 2)
-    risk_reasons = order_risk_reasons(settings, analysis, signal, stake_amount)
+    risk_reasons = order_risk_reasons(settings, analysis, signal, stake_amount, orders)
     status = OrderStatus.PAPER if not real else OrderStatus.SUBMITTED
     audit = [
         "Order created from deterministic signal gate.",

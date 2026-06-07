@@ -6,6 +6,7 @@ from datetime import timezone
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import CursorStatus
+from tennis_edge.domain import IngestionRunRecord
 from tennis_edge.domain import OddsMessageIngestionRequest
 from tennis_edge.domain import Provider
 from tennis_edge.domain import ProviderCursor
@@ -152,6 +153,80 @@ def test_latest_analyses_score_tick_lateral_selects_timestamps() -> None:
     assert store.latest_analyses(date.today()) == []
     query = store.conn.cursor_stub.queries[0]
     assert "SELECT raw_state, source_ts, ingested_at" in query
+
+
+def test_ingestion_run_journal_creates_schema_and_maps_rows() -> None:
+    started_at = datetime(2026, 6, 7, 20, tzinfo=timezone.utc)
+    completed_at = datetime(2026, 6, 7, 20, 1, tzinfo=timezone.utc)
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.queries = []
+            self.params = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.queries.append(query)
+            self.params.append(params)
+            return self
+
+        def fetchall(self):
+            return [
+                {
+                    "id": "ingest_1",
+                    "run_type": "live_budget_cycle",
+                    "source": "cli",
+                    "status": "skipped",
+                    "summary": {"reason": "missing keys"},
+                    "started_at": started_at,
+                    "completed_at": completed_at,
+                }
+            ]
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield self.conn
+
+    store = StoreStub()
+    saved = store.save_ingestion_run(
+        IngestionRunRecord(
+            id="ingest_1",
+            run_type="live_budget_cycle",
+            source="cli",
+            status="skipped",
+            summary={"reason": "missing keys"},
+            started_at=started_at,
+            completed_at=completed_at,
+        )
+    )
+    rows = store.ingestion_runs()
+
+    assert saved is True
+    assert rows[0].id == "ingest_1"
+    assert rows[0].summary["reason"] == "missing keys"
+    assert any("CREATE TABLE IF NOT EXISTS ingestion_runs" in query for query in store.conn.cursor_stub.queries)
+    assert any("INSERT INTO ingestion_runs" in query for query in store.conn.cursor_stub.queries)
 
 
 def test_provider_cursor_seed_does_not_overwrite_persisted_cursor() -> None:

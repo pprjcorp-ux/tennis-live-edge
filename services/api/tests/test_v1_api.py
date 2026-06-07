@@ -67,6 +67,13 @@ def test_v1_ingestion_run_requires_token_and_returns_operational_summary() -> No
     assert "signals_generated" in response.json()
 
 
+def test_v1_ingestion_runs_endpoint_is_available() -> None:
+    response = client.get("/api/v1/ingestion/runs")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_v1_odds_api_io_message_ingestion_requires_token_and_tracks_cursor() -> None:
     CURSORS.clear()
     payload = {

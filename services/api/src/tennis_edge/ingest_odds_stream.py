@@ -65,6 +65,7 @@ async def run_odds_stream_ingestion(
 
     if settings.data_mode == "sample" or not settings.odds_api_io_key:
         summary["reason"] = "ODDS_API_IO_KEY is missing or data mode is sample; websocket not opened."
+        repo.record_ingestion_run("odds_stream", summary, source="cli")
         return summary
 
     cursor = next(
@@ -80,6 +81,7 @@ async def run_odds_stream_ingestion(
         summary["start_last_seq"] = cursor.last_seq
         if cursor.resync_required and not force:
             summary["reason"] = "Persisted cursor requires REST resync before websocket consumption."
+            repo.record_ingestion_run("odds_stream", summary, source="cli")
             return summary
 
     try:
@@ -102,6 +104,7 @@ async def run_odds_stream_ingestion(
     except TimeoutError:
         summary["timed_out"] = True
         summary["reason"] = "Timed out while waiting for websocket messages."
+    repo.record_ingestion_run("odds_stream", summary, source="cli")
     return summary
 
 

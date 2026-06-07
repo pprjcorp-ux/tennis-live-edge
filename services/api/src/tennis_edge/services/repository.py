@@ -1,4 +1,6 @@
-from datetime import date
+from datetime import date, datetime, timezone
+from typing import Literal
+from uuid import uuid4
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
@@ -21,6 +23,7 @@ from tennis_edge.domain import (
     ExecutionOrder,
     ExecutionStatus,
     IngestionRunRequest,
+    IngestionRunRecord,
     IngestionRunResult,
     KillSwitchRequest,
     LearningPromotionRequest,
@@ -208,11 +211,14 @@ class AnalysisRepository:
     async def run_ingestion(
         self,
         request: IngestionRunRequest | None = None,
+        *,
+        source: Literal["api", "cli", "openclaw", "cron", "system"] = "system",
     ) -> IngestionRunResult:
+        started_at = self._now()
         target_date = request.target_date if request and request.target_date else date.today()
         snapshot = await self.ingestion.snapshot_for_date(target_date)
         signals = [signal for analysis in snapshot.analyses for signal in analysis.signals]
-        return IngestionRunResult(
+        result = IngestionRunResult(
             target_date=target_date,
             source=snapshot.source,
             persisted=snapshot.persisted,
@@ -222,6 +228,62 @@ class AnalysisRepository:
             entry_signals=sum(1 for signal in signals if signal.status == SignalStatus.ENTRY),
             generated_at=snapshot.generated_at,
         )
+        self.record_ingestion_run(
+            "score_snapshot",
+            result.model_dump(mode="json"),
+            source=source,
+            started_at=started_at,
+        )
+        return result
+
+    def record_ingestion_run(
+        self,
+        run_type: Literal["score_snapshot", "odds_message", "odds_stream", "live_budget_cycle"],
+        summary: dict,
+        *,
+        source: Literal["api", "cli", "openclaw", "cron", "system"] = "system",
+        started_at: datetime | None = None,
+    ) -> IngestionRunRecord:
+        completed_at = self._now()
+        run = IngestionRunRecord(
+            id=f"ingest_{uuid4().hex[:16]}",
+            run_type=run_type,
+            source=source,
+            status=self._ingestion_status(summary),
+            summary=summary,
+            started_at=started_at or completed_at,
+            completed_at=completed_at,
+        )
+        self.store.save_ingestion_run(run)
+        return run
+
+    async def ingestion_runs(self) -> list[IngestionRunRecord]:
+        return self.store.ingestion_runs()
+
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc).replace(microsecond=0)
+
+    @staticmethod
+    def _ingestion_status(summary: dict) -> Literal["completed", "degraded", "skipped", "failed"]:
+        if summary.get("error"):
+            return "failed"
+        if summary.get("real_execution_hard_block") is False or summary.get("can_submit_real_orders") is True:
+            return "degraded"
+        if summary.get("source") == "provider_live" or summary.get("connected") is True:
+            return "completed"
+        if summary.get("source") == "persisted_fallback" or summary.get("timed_out") is True:
+            return "degraded"
+        if summary.get("resync_required") is True:
+            return "degraded"
+        score = summary.get("score_ingestion")
+        odds = summary.get("odds_ingestion")
+        if isinstance(score, dict) and isinstance(odds, dict):
+            if score.get("source") == "provider_live" or odds.get("connected") is True:
+                return "completed"
+            if score.get("source") == "persisted_fallback" or odds.get("resync_required") is True:
+                return "degraded"
+        return "skipped"
 
     async def ingest_odds_api_message(
         self,

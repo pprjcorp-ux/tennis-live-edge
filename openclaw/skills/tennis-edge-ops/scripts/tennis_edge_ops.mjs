@@ -75,6 +75,11 @@ async function preflight() {
   });
 }
 
+async function ingestionRuns() {
+  const data = await request("/api/v1/ingestion/runs");
+  printJson(data);
+}
+
 async function autopilot() {
   const preflightData = await request("/api/v1/agent/preflight");
   if (preflightData.status === "blocked") {
@@ -152,6 +157,7 @@ const commands = {
   anomalies,
   runs,
   preflight,
+  "ingestion-runs": ingestionRuns,
   autopilot,
   "ingest-live-budget": ingestLiveBudget,
 };

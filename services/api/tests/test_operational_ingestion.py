@@ -48,3 +48,36 @@ def test_live_budget_cycle_reports_score_odds_and_execution_safety() -> None:
     assert result["odds_ingestion"]["connected"] is False
     assert result["can_submit_real_orders"] is False
     assert result["real_execution_hard_block"] is True
+
+
+def test_live_budget_cycle_records_granular_ingestion_runs() -> None:
+    repo = AnalysisRepository(
+        Settings(
+            data_mode="live",
+            api_tennis_key=None,
+            odds_api_io_key=None,
+            persistence_enabled=False,
+        )
+    )
+    recorded = []
+
+    def record_run(run_type, summary, **kwargs):
+        recorded.append((run_type, summary, kwargs))
+
+    repo.record_ingestion_run = record_run
+
+    asyncio.run(
+        run_live_budget_cycle(
+            repo,
+            target_date=date(2026, 6, 7),
+            odds_max_messages=1,
+            odds_timeout_seconds=0.01,
+        )
+    )
+
+    assert [item[0] for item in recorded] == [
+        "score_snapshot",
+        "odds_stream",
+        "live_budget_cycle",
+    ]
+    assert recorded[-1][1]["real_execution_hard_block"] is True

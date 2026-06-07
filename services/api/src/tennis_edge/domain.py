@@ -705,6 +705,21 @@ class IngestionRunResult(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class IngestionRunRecord(BaseModel):
+    id: str
+    run_type: Literal[
+        "score_snapshot",
+        "odds_message",
+        "odds_stream",
+        "live_budget_cycle",
+    ]
+    source: Literal["api", "cli", "openclaw", "cron", "system"] = "system"
+    status: Literal["completed", "degraded", "skipped", "failed"]
+    summary: dict[str, Any] = Field(default_factory=dict)
+    started_at: datetime
+    completed_at: datetime
+
+
 class OddsMessageIngestionRequest(BaseModel):
     payload: dict[str, Any]
     stream: str = "tennis:moneyline"

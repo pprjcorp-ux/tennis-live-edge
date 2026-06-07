@@ -24,6 +24,7 @@ from tennis_edge.domain import (
     ExecutionOrder,
     ExecutionStatus,
     IngestionRunRequest,
+    IngestionRunRecord,
     IngestionRunResult,
     KillSwitchRequest,
     LearningPromotionRequest,
@@ -158,7 +159,14 @@ async def v1_run_ingestion(
     _: None = Depends(require_admin_token),
     repo: AnalysisRepository = Depends(repository),
 ) -> IngestionRunResult:
-    return await repo.run_ingestion(request)
+    return await repo.run_ingestion(request, source="api")
+
+
+@app.get("/api/v1/ingestion/runs", response_model=list[IngestionRunRecord])
+async def v1_ingestion_runs(
+    repo: AnalysisRepository = Depends(repository),
+) -> list[IngestionRunRecord]:
+    return await repo.ingestion_runs()
 
 
 @app.post("/api/v1/ingestion/odds-api-io/message", response_model=OddsMessageIngestionResult)

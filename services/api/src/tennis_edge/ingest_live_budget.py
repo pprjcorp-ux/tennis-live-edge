@@ -54,7 +54,11 @@ async def run_live_budget_cycle(
     odds_timeout_seconds: float = 30,
     force_odds_stream: bool = False,
 ) -> dict[str, object]:
-    score_result = await repo.run_ingestion(IngestionRunRequest(target_date=target_date))
+    started_at = datetime.now(timezone.utc).replace(microsecond=0)
+    score_result = await repo.run_ingestion(
+        IngestionRunRequest(target_date=target_date),
+        source="cli",
+    )
     odds_result = await run_odds_stream_ingestion(
         repo,
         stream=odds_stream,
@@ -63,7 +67,7 @@ async def run_live_budget_cycle(
         force=force_odds_stream,
     )
     execution = await repo.execution_status()
-    return {
+    summary = {
         "profile": repo.settings.runtime_profile,
         "coverage": sorted(repo.settings.coverage_set),
         "target_date": score_result.target_date.isoformat(),
@@ -73,6 +77,13 @@ async def run_live_budget_cycle(
         "real_execution_hard_block": execution.real_execution_hard_block,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+    repo.record_ingestion_run(
+        "live_budget_cycle",
+        summary,
+        source="cli",
+        started_at=started_at,
+    )
+    return summary
 
 
 async def _run() -> None:

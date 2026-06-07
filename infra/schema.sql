@@ -151,6 +151,19 @@ CREATE TABLE IF NOT EXISTS provider_cursors (
   PRIMARY KEY (provider, stream)
 );
 
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+  id TEXT PRIMARY KEY,
+  run_type TEXT NOT NULL,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL,
+  summary JSONB NOT NULL DEFAULT '{}',
+  started_at TIMESTAMPTZ NOT NULL,
+  completed_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ingestion_runs_completed_idx
+  ON ingestion_runs (completed_at DESC);
+
 CREATE TABLE IF NOT EXISTS data_quality_snapshots (
   id TEXT PRIMARY KEY,
   provider TEXT NOT NULL,

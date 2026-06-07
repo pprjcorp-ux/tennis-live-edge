@@ -21,6 +21,7 @@ from tennis_edge.domain import (
     ExecutionOrder,
     ExecutionVenue,
     FeatureVector,
+    IngestionRunRecord,
     Match,
     MatchAnalysis,
     MatchFreshness,
@@ -756,6 +757,78 @@ class PersistentStore:
                         run.created_at,
                     ),
                 )
+
+    def save_ingestion_run(self, run: IngestionRunRecord) -> bool:
+        if not self.enabled:
+            return False
+        with self._connect() as conn:
+            if conn is None:
+                return False
+            try:
+                with conn.cursor() as cur:
+                    self._ensure_ingestion_runs_table(cur)
+                    cur.execute(
+                        """
+                        INSERT INTO ingestion_runs (
+                          id, run_type, source, status, summary, started_at, completed_at
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (id) DO UPDATE SET
+                          run_type = EXCLUDED.run_type,
+                          source = EXCLUDED.source,
+                          status = EXCLUDED.status,
+                          summary = EXCLUDED.summary,
+                          started_at = EXCLUDED.started_at,
+                          completed_at = EXCLUDED.completed_at
+                        """,
+                        (
+                            run.id,
+                            run.run_type,
+                            run.source,
+                            run.status,
+                            _json(run.summary),
+                            run.started_at,
+                            run.completed_at,
+                        ),
+                    )
+            except Exception as exc:  # pragma: no cover - exercised with real DB drift.
+                self.last_error = str(exc)
+                return False
+        return True
+
+    def ingestion_runs(self, limit: int = 50) -> list[IngestionRunRecord]:
+        if not self.enabled:
+            return []
+        with self._connect() as conn:
+            if conn is None:
+                return []
+            try:
+                with conn.cursor() as cur:
+                    self._ensure_ingestion_runs_table(cur)
+                    rows = cur.execute(
+                        """
+                        SELECT id, run_type, source, status, summary, started_at, completed_at
+                        FROM ingestion_runs
+                        ORDER BY completed_at DESC
+                        LIMIT %s
+                        """,
+                        (limit,),
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with real DB drift.
+                self.last_error = str(exc)
+                return []
+        return [
+            IngestionRunRecord(
+                id=row["id"],
+                run_type=row["run_type"],
+                source=row["source"],
+                status=row["status"],
+                summary=row["summary"] or {},
+                started_at=row["started_at"],
+                completed_at=row["completed_at"],
+            )
+            for row in rows
+        ]
 
     def agent_runs(self, limit: int = 50) -> list[AgentRun]:
         if not self.enabled:
@@ -1621,6 +1694,27 @@ class PersistentStore:
             ),
         )
         return max(0, cur.rowcount)
+
+    def _ensure_ingestion_runs_table(self, cur: Any) -> None:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ingestion_runs (
+              id TEXT PRIMARY KEY,
+              run_type TEXT NOT NULL,
+              source TEXT NOT NULL,
+              status TEXT NOT NULL,
+              summary JSONB NOT NULL DEFAULT '{}',
+              started_at TIMESTAMPTZ NOT NULL,
+              completed_at TIMESTAMPTZ NOT NULL
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ingestion_runs_completed_idx
+              ON ingestion_runs (completed_at DESC)
+            """
+        )
 
     def _match_row_for_provider_event(self, cur: Any, source_event_id: str) -> dict[str, Any] | None:
         return cur.execute(

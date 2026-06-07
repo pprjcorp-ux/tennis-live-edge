@@ -128,3 +128,38 @@ test("ingest-live-budget prints consolidated no-key summary without protected ac
   assert.equal(payload.odds_ingestion.connected, false);
   assert.equal(payload.can_submit_real_orders, false);
 });
+
+test("ingestion-runs reads the persisted run journal endpoint", async () => {
+  const { server, apiBase } = await startServer((request, response) => {
+    if (request.url === "/api/v1/ingestion/runs") {
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify([
+          {
+            id: "ingest_1",
+            run_type: "live_budget_cycle",
+            source: "cli",
+            status: "skipped",
+            summary: {},
+            started_at: "2026-06-07T20:00:00Z",
+            completed_at: "2026-06-07T20:00:01Z",
+          },
+        ])
+      );
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["ingestion-runs", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload[0].id, "ingest_1");
+    assert.equal(payload[0].run_type, "live_budget_cycle");
+  } finally {
+    server.close();
+  }
+});

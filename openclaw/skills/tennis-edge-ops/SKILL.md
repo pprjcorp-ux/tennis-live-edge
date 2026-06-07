@@ -28,6 +28,7 @@ npm run api:ingest:odds-stream -- --max-messages 25 --timeout-seconds 30
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs briefing
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
+node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
 printf "%s" "$ADMIN_API_TOKEN" | node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
@@ -39,6 +40,9 @@ it combines score snapshot, odds websocket ingestion, and execution safety state
 in one JSON report.
 The `ingest-live-budget` skill command wraps that npm script and preserves
 machine-readable JSON for Telegram/cron reports.
+Recent ingestion cycles are also journaled in `ingestion_runs` and exposed at
+`GET /api/v1/ingestion/runs` when persistence is enabled; use the
+`ingestion-runs` skill command to print them.
 The `api:ingest:odds-message` command reads one Odds-API.io websocket-style JSON
 message from stdin, persists raw payload/cursor/latency when Postgres is
 enabled, attempts deterministic normalized `odds_ticks` storage for resolved

@@ -27,6 +27,9 @@ API-Tennis snapshot and the Odds-API.io websocket consumer in one process, then
 prints a single JSON summary with safety state.
 OpenClaw can call the same cycle through the `ingest-live-budget` skill command
 when you want all operations routed through `tennis_edge_ops.mjs`.
+Each score snapshot, odds stream, and live-budget cycle is journaled in
+`ingestion_runs` when persistence is enabled; read recent rows with
+`GET /api/v1/ingestion/runs`.
 
 ## Audit Trail
 

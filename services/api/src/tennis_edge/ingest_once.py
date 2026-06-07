@@ -23,7 +23,7 @@ async def _run() -> None:
     args = _parse_args()
     target_date = date.fromisoformat(args.target_date) if args.target_date else None
     repo = AnalysisRepository(get_settings())
-    result = await repo.run_ingestion(IngestionRunRequest(target_date=target_date))
+    result = await repo.run_ingestion(IngestionRunRequest(target_date=target_date), source="cli")
     print(result.model_dump_json())
 
 

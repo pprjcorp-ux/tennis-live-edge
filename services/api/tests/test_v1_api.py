@@ -96,9 +96,29 @@ def test_v1_odds_api_io_message_ingestion_requires_token_and_tracks_cursor() -> 
     assert response.status_code == 200
     assert response.json()["quotes"] == 2
     assert response.json()["raw_payloads_saved"] == 0
+    assert response.json()["normalized_odds_saved"] == 0
     assert response.json()["persisted"] is False
     assert response.json()["cursor"]["last_seq"] == 1
     assert response.json()["resync_required"] is False
+
+
+def test_v1_provider_cursor_resync_requires_token_and_persists_status() -> None:
+    unauthorized = client.post(
+        "/api/v1/ingestion/provider-cursors/resync",
+        json={"provider": "odds_api_io", "stream": "tennis:moneyline", "last_seq": 12},
+    )
+    response = client.post(
+        "/api/v1/ingestion/provider-cursors/resync",
+        headers=ADMIN_HEADERS,
+        json={"provider": "odds_api_io", "stream": "tennis:moneyline", "last_seq": 12},
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["cursor"]["status"] == "resynced"
+    assert response.json()["cursor"]["last_seq"] == 12
+    assert response.json()["cursor"]["expected_next_seq"] == 13
+    assert response.json()["cursor"]["resync_required"] is False
 
 
 def test_v1_agent_ops_endpoints_expose_openclaw_router() -> None:

@@ -34,6 +34,8 @@ from tennis_edge.domain import (
     PaperSettlement,
     PaperSettleRequest,
     ProviderCursor,
+    ProviderCursorResyncRequest,
+    ProviderCursorResyncResult,
     ProviderHealth,
     RawProviderPayload,
     ReplayRunRequest,
@@ -82,7 +84,7 @@ from tennis_edge.services.execution_engine import (
     set_kill_switch_for,
 )
 from tennis_edge.services.normalizer import normalize_name
-from tennis_edge.services.provider_cursor import default_provider_cursors
+from tennis_edge.services.provider_cursor import default_provider_cursors, mark_resynced
 from tennis_edge.services.ingestion import LiveIngestionPipeline
 from tennis_edge.services.replay_engine import ReplayEngine
 from tennis_edge.services.storage import PersistentStore
@@ -233,6 +235,11 @@ class AnalysisRepository:
             stream=request.stream,
         )
         raw_payloads_saved = self.store.save_raw_payloads([raw_payload])
+        normalized_odds_saved = self.store.save_odds_quotes_for_event(
+            Provider.ODDS_API_IO,
+            raw_payload.source_event_id,
+            quotes,
+        )
         cursor_saved = self.store.save_provider_cursor(cursor)
         latency_saved = self.store.record_provider_latency(
             Provider.ODDS_API_IO,
@@ -245,7 +252,13 @@ class AnalysisRepository:
             cursor=cursor,
             quotes=len(quotes),
             raw_payloads_saved=raw_payloads_saved,
-            persisted=bool(raw_payloads_saved) or cursor_saved or latency_saved,
+            normalized_odds_saved=normalized_odds_saved,
+            persisted=(
+                bool(raw_payloads_saved)
+                or bool(normalized_odds_saved)
+                or cursor_saved
+                or latency_saved
+            ),
             resync_required=cursor.resync_required,
             source_event_id=raw_payload.source_event_id,
             source_ts=raw_payload.source_ts,
@@ -260,6 +273,14 @@ class AnalysisRepository:
             ),
             None,
         )
+
+    async def mark_provider_cursor_resynced(
+        self,
+        request: ProviderCursorResyncRequest,
+    ) -> ProviderCursorResyncResult:
+        cursor = mark_resynced(request.provider, request.stream, request.last_seq)
+        persisted = self.store.save_provider_cursor(cursor)
+        return ProviderCursorResyncResult(cursor=cursor, persisted=persisted)
 
     async def match_detail(self, match_id: str, target_date: date) -> MatchAnalysis | None:
         analyses = await self.analyses_for_date(target_date)

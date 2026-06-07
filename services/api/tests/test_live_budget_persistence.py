@@ -11,6 +11,7 @@ from tennis_edge.domain import Provider
 from tennis_edge.domain import ProviderCursor
 from tennis_edge.domain import ProviderMatchPayload
 from tennis_edge.domain import RawProviderPayload
+from tennis_edge.domain import OddsQuote
 from tennis_edge.domain import SignalStatus
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches
@@ -207,6 +208,79 @@ def test_provider_cursor_seed_ignores_process_cache_without_existing_cursor() ->
         CURSORS.clear()
 
 
+def test_save_odds_quotes_for_event_resolves_match_and_players() -> None:
+    source_ts = datetime(2026, 6, 7, 20, tzinfo=timezone.utc)
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.queries = []
+            self.params = []
+            self.rowcount = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.queries.append(query)
+            self.params.append(params)
+            self.rowcount = 1 if "INSERT INTO odds_ticks" in query else 0
+            return self
+
+        def fetchone(self):
+            return {
+                "match_id": "match_1",
+                "player1_id": "p1",
+                "player2_id": "p2",
+                "p1_name": "Jannik Sinner",
+                "p1_provider_ids": {"odds_api_io": "provider-p1"},
+                "p2_name": "Carlos Alcaraz",
+                "p2_provider_ids": {"odds_api_io": "provider-p2"},
+            }
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield self.conn
+
+    store = StoreStub()
+
+    inserted = store.save_odds_quotes_for_event(
+        Provider.ODDS_API_IO,
+        "event-1",
+        [
+            OddsQuote(bookmaker="SharpBook", player_id="provider-p1", decimal_odds=1.8, source_ts=source_ts),
+            OddsQuote(bookmaker="SharpBook", player_id="Carlos Alcaraz", decimal_odds=2.1, source_ts=source_ts),
+            OddsQuote(bookmaker="SharpBook", player_id="unknown", decimal_odds=9.9, source_ts=source_ts),
+        ],
+    )
+
+    insert_params = [params for query, params in zip(store.conn.cursor_stub.queries, store.conn.cursor_stub.params) if "INSERT INTO odds_ticks" in query]
+    assert inserted == 2
+    assert store.conn.cursor_stub.params[0] == ("event-1", "event-1")
+    assert len(insert_params) == 2
+    assert insert_params[0][0] == "match_1"
+    assert insert_params[0][4] == "p1"
+    assert insert_params[1][4] == "p2"
+
+
 def test_repository_ingests_odds_api_message_with_persisted_cursor() -> None:
     class StoreStub:
         def __init__(self) -> None:
@@ -234,6 +308,10 @@ def test_repository_ingests_odds_api_message_with_persisted_cursor() -> None:
         def save_raw_payloads(self, payloads):
             self.saved_payloads = payloads
             return len(payloads)
+
+        def save_odds_quotes_for_event(self, provider, source_event_id, quotes):
+            self.saved_odds = (provider, source_event_id, quotes)
+            return len(quotes)
 
         def save_provider_cursor(self, cursor):
             self.saved_cursor = cursor
@@ -270,12 +348,16 @@ def test_repository_ingests_odds_api_message_with_persisted_cursor() -> None:
 
     assert result.persisted is True
     assert result.raw_payloads_saved == 1
+    assert result.normalized_odds_saved == 2
     assert result.quotes == 2
     assert result.cursor.status == CursorStatus.HEALTHY
     assert result.cursor.last_seq == 41
     assert result.resync_required is False
     assert store.saved_payloads[0].provider == Provider.ODDS_API_IO
     assert store.saved_payloads[0].source_event_id == "event-1"
+    assert store.saved_odds[0] == Provider.ODDS_API_IO
+    assert store.saved_odds[1] == "event-1"
+    assert len(store.saved_odds[2]) == 2
     assert store.saved_cursor == result.cursor
     assert store.saved_latency[0] == Provider.ODDS_API_IO
     assert store.saved_latency[1] == "odds/tennis:moneyline"

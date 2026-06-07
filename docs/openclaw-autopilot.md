@@ -35,8 +35,14 @@ real-execution-readiness reviews are not buried by routine polling.
 Odds-API.io websocket smoke/replay can use
 `POST /api/v1/ingestion/odds-api-io/message` or the
 `api:ingest:odds-message` stdin wrapper. That path persists the raw provider
-payload, updates the provider cursor, records latency, and reports whether
-`resync_required` should block signals.
+payload, updates the provider cursor, records latency, attempts deterministic
+`odds_ticks` normalization for already-resolved matches/players, and reports
+whether `resync_required` should block signals.
+
+After a trusted REST snapshot is applied, the protected
+`POST /api/v1/ingestion/provider-cursors/resync` endpoint records the provider,
+stream, and last trusted sequence. Use it to clear websocket gaps only after the
+snapshot is actually reconciled.
 
 ## Preflight
 

@@ -37,6 +37,8 @@ from tennis_edge.domain import (
     PaperSettlement,
     PaperSettleRequest,
     ProviderCursor,
+    ProviderCursorResyncRequest,
+    ProviderCursorResyncResult,
     ProviderHealth,
     ReplayRunRequest,
     ReplayRunResult,
@@ -166,6 +168,15 @@ async def v1_ingest_odds_api_io_message(
     repo: AnalysisRepository = Depends(repository),
 ) -> OddsMessageIngestionResult:
     return await repo.ingest_odds_api_message(request)
+
+
+@app.post("/api/v1/ingestion/provider-cursors/resync", response_model=ProviderCursorResyncResult)
+async def v1_resync_provider_cursor(
+    request: ProviderCursorResyncRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ProviderCursorResyncResult:
+    return await repo.mark_provider_cursor_resynced(request)
 
 
 @app.get("/api/v1/models/registry", response_model=list[ModelRegistryEntry])

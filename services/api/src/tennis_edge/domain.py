@@ -716,10 +716,23 @@ class OddsMessageIngestionResult(BaseModel):
     cursor: ProviderCursor
     quotes: int
     raw_payloads_saved: int
+    normalized_odds_saved: int = 0
     persisted: bool
     resync_required: bool
     source_event_id: str
     source_ts: datetime
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ProviderCursorResyncRequest(BaseModel):
+    provider: Provider = Provider.ODDS_API_IO
+    stream: str = "tennis:moneyline"
+    last_seq: int = Field(ge=0)
+
+
+class ProviderCursorResyncResult(BaseModel):
+    cursor: ProviderCursor
+    persisted: bool
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

@@ -57,6 +57,7 @@ from tennis_edge.services.cost_profile import (
 )
 from tennis_edge.services.feature_engine import build_features
 from tennis_edge.services.model_service import predict_match
+from tennis_edge.services.normalizer import normalize_name
 from tennis_edge.services.provider_cursor import default_provider_cursors
 from tennis_edge.services.signal_engine import build_signals
 
@@ -223,6 +224,37 @@ class PersistentStore:
                     latest_ingested_at=latest_ingested_at,
                 )
         return True
+
+    def save_odds_quotes_for_event(
+        self,
+        provider: Provider,
+        source_event_id: str,
+        quotes: list[OddsQuote],
+    ) -> int:
+        if not self.enabled or not quotes:
+            return 0
+        with self._connect() as conn:
+            if conn is None:
+                return 0
+            with conn.cursor() as cur:
+                match_row = self._match_row_for_provider_event(cur, source_event_id)
+                if not match_row:
+                    return 0
+                player_lookup = self._player_lookup_from_match_row(match_row)
+                inserted = 0
+                for quote in quotes:
+                    player_id = player_lookup.get(str(quote.player_id)) or player_lookup.get(
+                        normalize_name(str(quote.player_id))
+                    )
+                    if player_id is None:
+                        continue
+                    inserted += self._insert_odds_quote(
+                        cur,
+                        match_id=match_row["match_id"],
+                        provider=provider,
+                        quote=quote.model_copy(update={"player_id": player_id}),
+                    )
+        return inserted
 
     def raw_payloads_for_match(self, match_id: str) -> list[RawProviderPayload]:
         if not self.enabled:
@@ -1537,25 +1569,116 @@ class PersistentStore:
         for quote in match.odds:
             if quote.player_id not in {match.player1.id, match.player2.id}:
                 continue
-            cur.execute(
-                """
-                INSERT INTO odds_ticks (
-                  match_id, provider, bookmaker, market, outcome_player_id,
-                  decimal_odds, source_ts, ingested_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    match.id,
-                    Provider.ODDS_API_IO.value,
-                    quote.bookmaker,
-                    quote.market,
-                    quote.player_id,
-                    quote.decimal_odds,
-                    quote.source_ts,
-                    quote.ingested_at,
-                ),
+            self._insert_odds_quote(
+                cur,
+                match_id=match.id,
+                provider=Provider.ODDS_API_IO,
+                quote=quote,
             )
+
+    def _insert_odds_quote(
+        self,
+        cur: Any,
+        *,
+        match_id: str,
+        provider: Provider,
+        quote: OddsQuote,
+    ) -> int:
+        cur.execute(
+            """
+            INSERT INTO odds_ticks (
+              match_id, provider, bookmaker, market, outcome_player_id,
+              decimal_odds, source_ts, ingested_at
+            )
+            SELECT %s, %s, %s, %s, %s, %s, %s, %s
+            WHERE NOT EXISTS (
+              SELECT 1 FROM odds_ticks
+              WHERE match_id = %s
+                AND provider = %s
+                AND bookmaker = %s
+                AND market = %s
+                AND outcome_player_id = %s
+                AND decimal_odds = %s
+                AND source_ts = %s
+            )
+            """,
+            (
+                match_id,
+                provider.value,
+                quote.bookmaker,
+                quote.market,
+                quote.player_id,
+                quote.decimal_odds,
+                quote.source_ts,
+                quote.ingested_at,
+                match_id,
+                provider.value,
+                quote.bookmaker,
+                quote.market,
+                quote.player_id,
+                quote.decimal_odds,
+                quote.source_ts,
+            ),
+        )
+        return max(0, cur.rowcount)
+
+    def _match_row_for_provider_event(self, cur: Any, source_event_id: str) -> dict[str, Any] | None:
+        return cur.execute(
+            """
+            SELECT
+              m.id AS match_id,
+              m.player1_id,
+              m.player2_id,
+              p1.name AS p1_name,
+              p1.provider_ids AS p1_provider_ids,
+              p2.name AS p2_name,
+              p2.provider_ids AS p2_provider_ids
+            FROM matches m
+            JOIN players p1 ON p1.id = m.player1_id
+            JOIN players p2 ON p2.id = m.player2_id
+            WHERE m.id = %s
+               OR EXISTS (
+                 SELECT 1
+                 FROM jsonb_each_text(m.provider_ids) provider_id(key, value)
+                 WHERE provider_id.value = %s
+               )
+            ORDER BY m.updated_at DESC
+            LIMIT 1
+            """,
+            (source_event_id, source_event_id),
+        ).fetchone()
+
+    def _player_lookup_from_match_row(self, row: dict[str, Any]) -> dict[str, str]:
+        lookup: dict[str, str] = {}
+        self._add_player_lookup_entries(
+            lookup,
+            row["player1_id"],
+            row.get("p1_name"),
+            row.get("p1_provider_ids") or {},
+        )
+        self._add_player_lookup_entries(
+            lookup,
+            row["player2_id"],
+            row.get("p2_name"),
+            row.get("p2_provider_ids") or {},
+        )
+        return lookup
+
+    def _add_player_lookup_entries(
+        self,
+        lookup: dict[str, str],
+        player_id: str,
+        player_name: str | None,
+        provider_ids: dict[str, Any],
+    ) -> None:
+        for candidate in [player_id, player_name, *provider_ids.values()]:
+            if candidate is None:
+                continue
+            value = str(candidate)
+            lookup[value] = player_id
+            normalized = normalize_name(value)
+            if normalized:
+                lookup[normalized] = player_id
 
     def _insert_feature_snapshot(self, cur: Any, features: FeatureVector) -> int:
         row = cur.execute(

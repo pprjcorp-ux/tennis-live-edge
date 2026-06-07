@@ -33,7 +33,10 @@ The `api:ingest` command runs one provider ingestion cycle and prints a JSON
 summary with source, match count, raw payload count, signal count, and timestamp.
 The `api:ingest:odds-message` command reads one Odds-API.io websocket-style JSON
 message from stdin, persists raw payload/cursor/latency when Postgres is
-enabled, and reports `resync_required` without creating orders.
+enabled, attempts deterministic normalized `odds_ticks` storage for resolved
+matches/players, and reports `resync_required` without creating orders.
+Only use `POST /api/v1/ingestion/provider-cursors/resync` after a trusted REST
+snapshot has been applied and the last provider sequence is known.
 The `autopilot` command creates paper orders only through
 `POST /api/v1/agent/autopilot/evaluate`.
 The `preflight` command should run before cron/autopilot jobs; it checks API

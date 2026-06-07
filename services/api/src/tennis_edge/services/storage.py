@@ -45,6 +45,10 @@ from tennis_edge.services.model_lab import (
     calibration_from_training_examples,
     walk_forward_from_training_examples,
 )
+from tennis_edge.services.execution_engine import (
+    CANCELABLE_ORDER_STATUSES,
+    OPEN_ORDER_STATUSES,
+)
 from tennis_edge.services.cost_profile import (
     cost_profile,
     provider_health_for,
@@ -69,6 +73,10 @@ def _json(value: Any) -> Any:
     except ImportError:  # pragma: no cover - only used when optional dependency is absent.
         return json.dumps(value)
     return Jsonb(value)
+
+
+PERSISTED_OPEN_ORDER_STATUSES = tuple(status.value for status in OPEN_ORDER_STATUSES)
+PERSISTED_CANCELABLE_ORDER_STATUSES = tuple(status.value for status in CANCELABLE_ORDER_STATUSES)
 
 
 class PersistentStore:
@@ -661,13 +669,14 @@ class PersistentStore:
                     SET status = %s,
                         audit = audit || %s::jsonb
                     WHERE external_order_ref = %s
-                      AND status IN ('paper', 'pending', 'submitted', 'partially_matched')
+                      AND status = ANY(%s)
                     RETURNING status
                     """,
                     (
                         OrderStatus.CANCELLED.value,
                         _json(["Persisted paper order cancelled by admin request."]),
                         order_id,
+                        list(PERSISTED_CANCELABLE_ORDER_STATUSES),
                     ),
                 ).fetchone()
         if not row:
@@ -799,12 +808,13 @@ class PersistentStore:
                       count(*) FILTER (WHERE status = 'settled')::int AS settled_orders,
                       count(*) FILTER (WHERE status = 'settled' AND coalesce(pnl, 0) > 0)::int AS wins,
                       count(*) FILTER (WHERE status = 'settled' AND coalesce(pnl, 0) <= 0)::int AS losses,
-                      count(*) FILTER (WHERE status IN ('paper', 'pending', 'submitted', 'partially_matched'))::int AS open_orders,
+                      count(*) FILTER (WHERE status = ANY(%s))::int AS open_orders,
                       coalesce(sum(CASE WHEN status = 'settled' THEN pnl ELSE 0 END), 0)::float AS pnl,
                       coalesce(sum(CASE WHEN status = 'settled' THEN coalesce(matched_stake, stake_amount) ELSE 0 END), 0)::float AS staked,
                       avg(CASE WHEN status = 'settled' THEN clv ELSE NULL END)::float AS clv
                     FROM paper_orders
-                    """
+                    """,
+                    (list(PERSISTED_OPEN_ORDER_STATUSES),),
                 ).fetchone()
         if not row:
             return None

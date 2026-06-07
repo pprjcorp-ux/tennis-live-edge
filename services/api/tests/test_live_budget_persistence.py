@@ -8,7 +8,15 @@ from tennis_edge.sample_data import sample_matches
 from tennis_edge.services.ingestion import LiveIngestionPipeline
 from tennis_edge.services.provider_cursor import CURSORS, ingest_odds_api_sequence
 from tennis_edge.services.repository import AnalysisRepository
-from tennis_edge.services.storage import PersistentStore
+from tennis_edge.services.execution_engine import (
+    CANCELABLE_ORDER_STATUSES,
+    OPEN_ORDER_STATUSES,
+)
+from tennis_edge.services.storage import (
+    PERSISTED_CANCELABLE_ORDER_STATUSES,
+    PERSISTED_OPEN_ORDER_STATUSES,
+    PersistentStore,
+)
 
 
 def test_persistence_is_disabled_for_sample_mode_even_with_database_url() -> None:
@@ -21,6 +29,13 @@ def test_persistence_is_disabled_for_sample_mode_even_with_database_url() -> Non
 
     assert store.enabled is False
     assert store.latest_analyses(date.today()) == []
+
+
+def test_persisted_order_status_contract_matches_execution_engine() -> None:
+    assert PERSISTED_OPEN_ORDER_STATUSES == tuple(status.value for status in OPEN_ORDER_STATUSES)
+    assert PERSISTED_CANCELABLE_ORDER_STATUSES == tuple(
+        status.value for status in CANCELABLE_ORDER_STATUSES
+    )
 
 
 def test_odds_api_io_resync_blocks_live_entry_signals() -> None:

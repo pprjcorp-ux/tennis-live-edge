@@ -346,8 +346,9 @@ class AnalysisRepository:
 
     async def orders(self) -> list[ExecutionOrder]:
         merged = {order.id: order for order in self.store.orders()}
-        for order in ORDERS.values():
-            merged.setdefault(order.id, order)
+        if self.settings.data_mode == "sample":
+            for order in ORDERS.values():
+                merged.setdefault(order.id, order)
         return sorted(merged.values(), key=lambda order: order.created_at, reverse=True)
 
     async def create_paper_order(self, request: OrderRequest) -> ExecutionOrder:

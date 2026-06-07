@@ -237,6 +237,37 @@ def test_orders_prefers_persisted_order_status_over_process_memory() -> None:
     assert bankroll.open_exposure == 0
 
 
+def test_live_orders_do_not_use_process_memory_when_persisted_order_missing() -> None:
+    ORDERS.clear()
+    AGENT_RUNS.clear()
+    repo = AnalysisRepository(Settings(data_mode="live", database_url=None, bankroll_starting_balance=10000))
+    memory_order = ExecutionOrder(
+        id="ord_live_memory_only",
+        signal_id="sig_conflict",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.PAPER,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=72,
+        average_price=2.0,
+    )
+    ORDERS[memory_order.id] = memory_order
+    store = AgentStoreStub(repo.store)
+    store.persisted_orders = []
+    repo.store = store
+
+    orders = asyncio.run(repo.orders())
+    bankroll = asyncio.run(repo.bankroll())
+
+    assert orders == []
+    assert bankroll.open_exposure == 0
+
+
 def test_settlement_prefers_persisted_order_over_stale_process_memory() -> None:
     ORDERS.clear()
     AGENT_RUNS.clear()

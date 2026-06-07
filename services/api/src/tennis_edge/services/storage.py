@@ -19,6 +19,7 @@ from tennis_edge.domain import (
     FeatureVector,
     Match,
     MatchAnalysis,
+    MatchFreshness,
     MatchState,
     OddsQuote,
     OrderStatus,
@@ -30,7 +31,9 @@ from tennis_edge.domain import (
     Provider,
     ProviderCursor,
     ProviderHealth,
+    RawProviderPayload,
     Signal,
+    SignalStatus,
 )
 from tennis_edge.services.backtest import evaluate_promotion
 from tennis_edge.services.cost_profile import (
@@ -129,6 +132,38 @@ class PersistentStore:
                         self._record_latency(cur, Provider.ODDS_API_IO, "odds/moneyline", analysis.match)
                     self._upsert_provider_cursors(cur)
 
+    def save_raw_payloads(self, payloads: list[RawProviderPayload]) -> None:
+        if not self.enabled or not payloads:
+            return
+        with self._connect() as conn:
+            if conn is None:
+                return
+            with conn.cursor() as cur:
+                for payload in payloads:
+                    cur.execute(
+                        """
+                        INSERT INTO raw_provider_payloads (
+                          id, provider, payload_type, source_event_id, source_ts,
+                          ingested_at, checksum, payload
+                        )
+                        SELECT %s, %s, %s, %s, %s, %s, %s, %s
+                        WHERE NOT EXISTS (
+                          SELECT 1 FROM raw_provider_payloads WHERE checksum = %s
+                        )
+                        """,
+                        (
+                            payload.id,
+                            payload.provider.value,
+                            payload.payload_type,
+                            payload.source_event_id,
+                            payload.source_ts,
+                            payload.ingested_at,
+                            payload.checksum,
+                            _json(payload.payload),
+                            payload.checksum,
+                        ),
+                    )
+
     def latest_analyses(self, target_date: date) -> list[MatchAnalysis]:
         if not self.enabled:
             return []
@@ -150,7 +185,9 @@ class PersistentStore:
                       p2.handedness AS p2_handedness, p2.elo_overall AS p2_elo_overall,
                       p2.elo_clay AS p2_elo_clay, p2.elo_hard AS p2_elo_hard,
                       p2.hold_rate AS p2_hold_rate, p2.break_rate AS p2_break_rate,
-                      st.raw_state AS latest_state
+                      st.raw_state AS latest_state,
+                      st.source_ts AS latest_score_source_ts,
+                      st.ingested_at AS latest_score_ingested_at
                     FROM matches m
                     JOIN players p1 ON p1.id = m.player1_id
                     JOIN players p2 ON p2.id = m.player2_id
@@ -168,6 +205,7 @@ class PersistentStore:
                 ).fetchall()
                 if not rows:
                     return []
+                match_ids = [row["id"] for row in rows]
                 odds_rows = cur.execute(
                     """
                     SELECT DISTINCT ON (match_id, bookmaker, market, outcome_player_id)
@@ -176,8 +214,39 @@ class PersistentStore:
                     WHERE match_id = ANY(%s)
                     ORDER BY match_id, bookmaker, market, outcome_player_id, source_ts DESC, ingested_at DESC
                     """,
-                    ([row["id"] for row in rows],),
+                    (match_ids,),
                 ).fetchall()
+                prediction_rows = cur.execute(
+                    """
+                    SELECT DISTINCT ON (ps.match_id)
+                      ps.id, ps.match_id, ps.model_version_id, ps.mode,
+                      ps.p1_win_prob, ps.p2_win_prob, ps.raw_p1_win_prob,
+                      ps.raw_p2_win_prob, ps.confidence_interval, ps.confidence,
+                      ps.explanations, fs.values AS feature_values
+                    FROM prediction_snapshots ps
+                    LEFT JOIN feature_snapshots fs ON fs.id = ps.feature_snapshot_id
+                    WHERE ps.match_id = ANY(%s)
+                    ORDER BY ps.match_id, ps.created_at DESC
+                    """,
+                    (match_ids,),
+                ).fetchall()
+                prediction_ids = [row["id"] for row in prediction_rows]
+                signal_rows = []
+                if prediction_ids:
+                    signal_rows = cur.execute(
+                        """
+                        SELECT
+                          match_id, prediction_snapshot_id, outcome_player_id, status,
+                          p.name AS player_name,
+                          model_prob, market_prob, best_odds, edge, stake_fraction,
+                          risk, reason
+                        FROM signals
+                        LEFT JOIN players p ON p.id = outcome_player_id
+                        WHERE prediction_snapshot_id = ANY(%s)
+                        ORDER BY created_at DESC
+                        """,
+                        (prediction_ids,),
+                    ).fetchall()
         odds_by_match: dict[str, list[OddsQuote]] = {}
         for row in odds_rows:
             odds_by_match.setdefault(row["match_id"], []).append(
@@ -190,18 +259,68 @@ class PersistentStore:
                     ingested_at=row["ingested_at"],
                 )
             )
+        predictions_by_match = {row["match_id"]: row for row in prediction_rows}
+        signals_by_prediction: dict[str, list[Signal]] = {}
+        for row in signal_rows:
+            risk = row["risk"] or {}
+            signal_id = risk.get("external_signal_id") or f"{row['match_id']}:{row['outcome_player_id']}"
+            signals_by_prediction.setdefault(row["prediction_snapshot_id"], []).append(
+                Signal(
+                    id=signal_id,
+                    match_id=row["match_id"],
+                    player_id=row["outcome_player_id"],
+                    player_name=row["player_name"] or row["outcome_player_id"],
+                    status=SignalStatus(row["status"]),
+                    model_prob=float(row["model_prob"]),
+                    market_prob=float(row["market_prob"]),
+                    best_odds=float(row["best_odds"]),
+                    edge=float(row["edge"]),
+                    stake_fraction=float(row["stake_fraction"]),
+                    threshold=float(risk.get("threshold", 0)),
+                    confidence=Confidence(risk.get("confidence", Confidence.LOW.value)),
+                    reason=row["reason"],
+                )
+            )
 
         analyses: list[MatchAnalysis] = []
         for row in rows:
             match = self._match_from_row(row, odds_by_match.get(row["id"], []))
-            features = build_features(match)
-            prediction = predict_match(match, features)
+            prediction_row = predictions_by_match.get(match.id)
+            if prediction_row and prediction_row["feature_values"]:
+                features = FeatureVector(**prediction_row["feature_values"])
+                prediction = Prediction(
+                    match_id=match.id,
+                    p1_win_prob=float(prediction_row["p1_win_prob"]),
+                    p2_win_prob=float(prediction_row["p2_win_prob"]),
+                    raw_p1_win_prob=float(prediction_row["raw_p1_win_prob"])
+                    if prediction_row["raw_p1_win_prob"] is not None
+                    else None,
+                    raw_p2_win_prob=float(prediction_row["raw_p2_win_prob"])
+                    if prediction_row["raw_p2_win_prob"] is not None
+                    else None,
+                    confidence=Confidence(prediction_row["confidence"]),
+                    mode=prediction_row["mode"],
+                    model_version=prediction_row["model_version_id"],
+                    confidence_interval=tuple(prediction_row["confidence_interval"])
+                    if prediction_row["confidence_interval"]
+                    else None,
+                    explanations=prediction_row["explanations"] or [],
+                )
+                signals = signals_by_prediction.get(prediction_row["id"], [])
+            else:
+                features = build_features(match)
+                prediction = predict_match(match, features)
+                signals = build_signals(match, prediction, features)
             analyses.append(
                 MatchAnalysis(
                     match=match,
                     features=features,
                     prediction=prediction,
-                    signals=build_signals(match, prediction, features),
+                    signals=signals,
+                    freshness=self._freshness_from_row(
+                        row,
+                        odds_by_match.get(row["id"], []),
+                    ),
                 )
             )
         return analyses
@@ -1109,4 +1228,35 @@ class PersistentStore:
             player2=p2,
             state=MatchState(**raw_state),
             odds=odds,
+        )
+
+    def _freshness_from_row(
+        self,
+        row: dict[str, Any],
+        odds: list[OddsQuote],
+    ) -> MatchFreshness:
+        now = _now()
+        score_source_ts = row.get("latest_score_source_ts")
+        odds_source_ts = max((quote.source_ts for quote in odds), default=None)
+        provider_ids = row["provider_ids"] or {}
+        provider_lineage: list[Provider] = []
+        if "api_tennis" in provider_ids:
+            provider_lineage.append(Provider.API_TENNIS)
+        if "theoddsapi" in provider_ids:
+            provider_lineage.append(Provider.THE_ODDS_API)
+        if odds:
+            provider_lineage.append(Provider.ODDS_API_IO)
+        return MatchFreshness(
+            source="persisted_fallback",
+            persisted=True,
+            score_source_ts=score_source_ts,
+            odds_source_ts=odds_source_ts,
+            score_age_ms=max(0, int((now - score_source_ts).total_seconds() * 1000))
+            if score_source_ts
+            else None,
+            odds_age_ms=max(0, int((now - odds_source_ts).total_seconds() * 1000))
+            if odds_source_ts
+            else None,
+            provider_lineage=list(dict.fromkeys(provider_lineage or [Provider.SAMPLE])),
+            note="Loaded from persisted canonical match, latest score tick, odds tick and decision snapshot.",
         )

@@ -4,6 +4,8 @@ from datetime import date
 from tennis_edge.config import Settings
 from tennis_edge.domain import SignalStatus
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
+from tennis_edge.sample_data import sample_matches
+from tennis_edge.services.ingestion import LiveIngestionPipeline
 from tennis_edge.services.provider_cursor import CURSORS, ingest_odds_api_sequence
 from tennis_edge.services.repository import AnalysisRepository
 from tennis_edge.services.storage import PersistentStore
@@ -81,3 +83,118 @@ def test_the_odds_api_parser_maps_h2h_moneyline_quotes() -> None:
         "alexander zverev",
     }
     assert {quote.market for quote in events[0].quotes} == {"ML"}
+
+
+class _FakeMatchSource:
+    def __init__(self, matches=None, exc: Exception | None = None) -> None:
+        self.matches = matches
+        self.exc = exc
+
+    async def get_today_matches(self, target_date: date):
+        if self.exc:
+            raise self.exc
+        return self.matches or []
+
+
+class _FakeArchiveSource:
+    async def get_tennis_h2h_events(self):
+        return []
+
+
+class _FakeStore:
+    def __init__(self, persisted=None) -> None:
+        self.persisted = persisted or []
+        self.saved_analyses = []
+        self.saved_payloads = []
+
+    def latest_analyses(self, target_date: date):
+        return self.persisted
+
+    def save_analyses(self, analyses):
+        self.saved_analyses = analyses
+
+    def save_raw_payloads(self, payloads):
+        self.saved_payloads = payloads
+
+
+async def _same_matches(matches, archive_source):
+    return matches
+
+
+def _live_provider_matches():
+    return [
+        match.model_copy(
+            update={
+                "provider_ids": {"api_tennis": match.provider_match_id},
+            }
+        )
+        for match in sample_matches()[:1]
+    ]
+
+
+def test_live_ingestion_pipeline_persists_provider_snapshot() -> None:
+    store = _FakeStore()
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource(_live_provider_matches()),
+        _FakeArchiveSource(),
+        store,
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert snapshot.source == "provider_live"
+    assert snapshot.persisted is True
+    assert len(snapshot.analyses) == 1
+    assert store.saved_analyses == snapshot.analyses
+    assert len(store.saved_payloads) == 1
+    assert snapshot.analyses[0].freshness is not None
+    assert snapshot.analyses[0].freshness.source == "provider_live"
+    assert store.saved_payloads[0].source_event_id == snapshot.analyses[0].match.provider_match_id
+
+
+def test_live_ingestion_pipeline_uses_persisted_fallback_after_provider_failure() -> None:
+    persisted = asyncio.run(
+        LiveIngestionPipeline(
+            _FakeMatchSource(_live_provider_matches()),
+            _FakeArchiveSource(),
+            _FakeStore(),
+            signal_gate=lambda match, signals: signals,
+            archive_augmenter=_same_matches,
+        ).snapshot_for_date(date.today())
+    ).analyses
+    store = _FakeStore(persisted=persisted)
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource(exc=RuntimeError("provider down")),
+        _FakeArchiveSource(),
+        store,
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert snapshot.source == "persisted_fallback"
+    assert snapshot.persisted is True
+    assert snapshot.analyses == persisted
+    assert store.saved_analyses == []
+    assert store.saved_payloads == []
+
+
+def test_live_ingestion_pipeline_labels_sample_snapshots_explicitly() -> None:
+    store = _FakeStore()
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource(sample_matches()[:1]),
+        _FakeArchiveSource(),
+        store,
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert snapshot.source == "sample"
+    assert snapshot.persisted is False
+    assert snapshot.analyses[0].freshness is not None
+    assert snapshot.analyses[0].freshness.source == "sample"

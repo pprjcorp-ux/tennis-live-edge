@@ -295,6 +295,16 @@ h2 {
   font-weight: 700;
 }
 
+.matchMeta .freshPill {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.matchMeta .stalePill {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
 .scoreLine {
   display: flex;
   align-items: center;

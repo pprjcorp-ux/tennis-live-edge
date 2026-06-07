@@ -17,14 +17,18 @@ decide whether the system behaves as budget or enterprise.
 
 ## Runtime Flow
 
-1. Provider adapters load fixtures, score state, odds, and market metadata.
-2. Normalization maps provider players/matches/markets into canonical IDs.
-3. Feature engines compute pre-match, live, market, data-quality, and risk
+1. `LiveIngestionPipeline` builds the operational snapshot for the target date.
+2. Provider adapters load fixtures, score state, odds, and market metadata.
+3. Raw provider/canonical payload lineage is persisted before decision snapshots.
+4. Normalization maps provider players/matches/markets into canonical IDs.
+5. Feature engines compute pre-match, live, market, data-quality, and risk
    features.
-4. Models produce calibrated probabilities and explanations.
-5. Signal gates compare model probability with no-vig market probability.
-6. Risk gates allow, monitor, block, or abstain.
-7. Paper execution records order decisions, fills, settlement, CLV, ROI, and
+6. Models produce calibrated probabilities and explanations.
+7. Signal gates compare model probability with no-vig market probability.
+8. Risk gates allow, monitor, block, or abstain.
+9. Postgres/Timescale serves persisted canonical matches, freshness metadata,
+   predictions, and signals when upstream providers are down.
+10. Paper execution records order decisions, fills, settlement, CLV, ROI, and
    calibration buckets.
 
 ## Local Verification

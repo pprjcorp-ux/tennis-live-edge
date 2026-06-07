@@ -84,6 +84,14 @@ function usd(value: number | null | undefined) {
   return `$${value.toFixed(0)}`;
 }
 
+function ageLabel(valueMs: number | null | undefined) {
+  if (valueMs === null || valueMs === undefined) return "n/a";
+  if (valueMs < 1000) return `${valueMs}ms`;
+  if (valueMs < 60_000) return `${Math.round(valueMs / 1000)}s`;
+  if (valueMs < 3_600_000) return `${Math.round(valueMs / 60_000)}m`;
+  return `${Math.round(valueMs / 3_600_000)}h`;
+}
+
 function statusClass(status: Signal["status"]) {
   if (status === "Entrada") return "status statusEntry";
   if (status === "Monitorar") return "status statusMonitor";
@@ -779,6 +787,9 @@ export default function Page() {
                     <span>{analysis.match.surface}</span>
                     <span>DQ {pct(analysis.features.data_quality)}</span>
                     <span>{analysis.features.provider_count} feeds</span>
+                    <span className={analysis.freshness?.source === "provider_live" ? "freshPill" : "stalePill"}>
+                      {analysis.freshness?.source ?? "sample"} · odds {ageLabel(analysis.freshness?.odds_age_ms)}
+                    </span>
                   </div>
                   <div className="scoreLine">
                     <strong>
@@ -976,6 +987,14 @@ export default function Page() {
                 <strong>{pct(selected.features.market_volatility)}</strong>
                 <span>Live pressure</span>
                 <strong>{selected.features.live_score_pressure.toFixed(3)}</strong>
+                <span>State source</span>
+                <strong>{selected.freshness?.source ?? "sample"}</strong>
+                <span>Score age</span>
+                <strong>{ageLabel(selected.freshness?.score_age_ms)}</strong>
+                <span>Odds age</span>
+                <strong>{ageLabel(selected.freshness?.odds_age_ms)}</strong>
+                <span>Lineage</span>
+                <strong>{selected.freshness?.provider_lineage.join(", ") || "-"}</strong>
               </div>
               <div className="explainList">
                 {selected.prediction.explanations.map((item) => (

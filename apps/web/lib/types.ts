@@ -136,6 +136,16 @@ export type MatchAnalysis = {
   features: FeatureVector;
   prediction: Prediction;
   signals: Signal[];
+  freshness?: {
+    source: "provider_live" | "persisted_fallback" | "sample" | "empty";
+    persisted: boolean;
+    score_source_ts: string | null;
+    odds_source_ts: string | null;
+    score_age_ms: number | null;
+    odds_age_ms: number | null;
+    provider_lineage: Provider[];
+    note: string;
+  } | null;
 };
 
 export type DailyMetrics = {

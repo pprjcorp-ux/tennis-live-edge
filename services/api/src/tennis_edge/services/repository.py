@@ -74,10 +74,8 @@ from tennis_edge.services.execution_engine import (
 )
 from tennis_edge.services.normalizer import normalize_name
 from tennis_edge.services.provider_cursor import default_provider_cursors
-from tennis_edge.services.feature_engine import build_features
-from tennis_edge.services.model_service import predict_match
+from tennis_edge.services.ingestion import LiveIngestionPipeline
 from tennis_edge.services.replay_engine import ReplayEngine
-from tennis_edge.services.signal_engine import build_signals
 from tennis_edge.services.storage import PersistentStore
 
 
@@ -92,40 +90,36 @@ class AnalysisRepository:
         self.the_odds_api = TheOddsApiClient(settings.the_odds_api_key, settings.data_mode)
         self.replay_engine = ReplayEngine()
         self.store = PersistentStore(settings)
+        self.ingestion = LiveIngestionPipeline(
+            self.api_tennis,
+            self.the_odds_api,
+            self.store,
+            signal_gate=self._gate_signals_for_match,
+            archive_augmenter=self._augment_with_archive_odds,
+        )
 
     async def analyses_for_date(self, target_date: date) -> list[MatchAnalysis]:
-        try:
-            matches = await self.api_tennis.get_today_matches(target_date)
-        except Exception:
-            matches = []
-        if not matches:
-            stored = self.store.latest_analyses(target_date)
-            if stored:
-                return stored
-        matches = await self._augment_with_archive_odds(matches)
-        analyses: list[MatchAnalysis] = []
-        for match in matches:
-            features = build_features(match)
-            prediction = predict_match(match, features)
-            signals = build_signals(match, prediction, features)
-            signals = apply_coverage_gate(signals, coverage_decision(match, self.settings))
-            signals = self._apply_provider_gates(signals)
-            analyses.append(
-                MatchAnalysis(
-                    match=match,
-                    features=features,
-                    prediction=prediction,
-                    signals=signals,
+        snapshot = await self.ingestion.snapshot_for_date(target_date)
+        if snapshot.source == "persisted_fallback":
+            return [
+                analysis.model_copy(
+                    update={
+                        "signals": self._gate_signals_for_match(
+                            analysis.match,
+                            analysis.signals,
+                        )
+                    }
                 )
-            )
-        self.store.save_analyses(analyses)
-        return analyses
+                for analysis in snapshot.analyses
+            ]
+        return snapshot.analyses
 
-    async def _augment_with_archive_odds(self, matches):
+    async def _augment_with_archive_odds(self, matches, archive_source=None):
         if self.settings.data_mode == "sample" or not self.settings.the_odds_api_key:
             return matches
         try:
-            events = await self.the_odds_api.get_tennis_h2h_events()
+            source = archive_source or self.the_odds_api
+            events = await source.get_tennis_h2h_events()
         except Exception:
             return matches
 
@@ -186,6 +180,10 @@ class AnalysisRepository:
                 )
             )
         return gated
+
+    def _gate_signals_for_match(self, match, signals: list[Signal]) -> list[Signal]:
+        signals = apply_coverage_gate(signals, coverage_decision(match, self.settings))
+        return self._apply_provider_gates(signals)
 
     async def live_signals(self, target_date: date) -> list[Signal]:
         analyses = await self.analyses_for_date(target_date)

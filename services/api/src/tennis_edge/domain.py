@@ -728,11 +728,23 @@ class DailyCostReport(BaseModel):
     note: str
 
 
+class MatchFreshness(BaseModel):
+    source: Literal["provider_live", "persisted_fallback", "sample", "empty"] = "sample"
+    persisted: bool = False
+    score_source_ts: datetime | None = None
+    odds_source_ts: datetime | None = None
+    score_age_ms: int | None = None
+    odds_age_ms: int | None = None
+    provider_lineage: list[Provider] = Field(default_factory=list)
+    note: str = ""
+
+
 class MatchAnalysis(BaseModel):
     match: Match
     features: FeatureVector
     prediction: Prediction
     signals: list[Signal]
+    freshness: MatchFreshness | None = None
 
 
 class DailyMetrics(BaseModel):

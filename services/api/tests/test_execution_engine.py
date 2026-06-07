@@ -15,8 +15,11 @@ from tennis_edge.domain import (
     SignalStatus,
 )
 from tennis_edge.services.execution_engine import (
+    ORDERS,
     KILL_SWITCH,
+    bankroll_snapshot,
     build_betfair_mapping,
+    cancel_order,
     create_order,
     execution_status,
     promote_from_learning,
@@ -180,6 +183,35 @@ def test_kill_switch_blocks_even_configured_real_execution() -> None:
     assert status.can_submit_real_orders is False
     assert any("Kill switch" in reason for reason in status.reasons)
     set_kill_switch_for(settings, KillSwitchRequest(enabled=False, reason="reset"))
+
+
+def test_matched_order_counts_as_exposure_but_is_not_cancelable() -> None:
+    ORDERS.clear()
+    settings = _settings(bankroll_starting_balance=10000)
+    order = ExecutionOrder(
+        id="ord_matched",
+        signal_id="sig_matched",
+        match_id="match",
+        player_id="player",
+        player_name="Player",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.MATCHED,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=2.0,
+    )
+    ORDERS[order.id] = order
+
+    snapshot = bankroll_snapshot(settings)
+    cancel = cancel_order(order.id)
+
+    assert snapshot.open_exposure == 100
+    assert cancel.status == OrderStatus.MATCHED
+    assert ORDERS[order.id].status == OrderStatus.MATCHED
+    ORDERS.clear()
 
 
 def test_learning_promotion_rejects_worse_clv_or_drawdown() -> None:

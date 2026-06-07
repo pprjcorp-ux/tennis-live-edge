@@ -39,6 +39,13 @@ OPEN_ORDER_STATUSES = {
     OrderStatus.MATCHED,
 }
 
+CANCELABLE_ORDER_STATUSES = {
+    OrderStatus.PAPER,
+    OrderStatus.PENDING,
+    OrderStatus.SUBMITTED,
+    OrderStatus.PARTIALLY_MATCHED,
+}
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(microsecond=0)
@@ -339,7 +346,7 @@ def cancel_order(order_id: str) -> CancelOrderResult:
     if order_id not in ORDERS:
         raise KeyError(order_id)
     order = ORDERS[order_id]
-    if order.status not in OPEN_ORDER_STATUSES:
+    if order.status not in CANCELABLE_ORDER_STATUSES:
         return CancelOrderResult(
             order_id=order_id,
             status=order.status,

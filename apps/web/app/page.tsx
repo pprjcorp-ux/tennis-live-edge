@@ -36,6 +36,7 @@ import {
   getDataQuality,
   getEntityConflicts,
   getExecutionStatus,
+  getIngestionRuns,
   getLiveSignals,
   getModelRegistry,
   getOrders,
@@ -67,6 +68,7 @@ import type {
   DataQualitySnapshot,
   ExecutionOrder,
   ExecutionStatus,
+  IngestionRunRecord,
   MatchAnalysis,
   ModelRegistryEntry,
   ModelPromotionDecision,
@@ -125,6 +127,7 @@ export default function Page() {
   const [costProfile, setCostProfile] = useState<CostProfile | null>(null);
   const [costReport, setCostReport] = useState<DailyCostReport | null>(null);
   const [dataQuality, setDataQuality] = useState<DataQualitySnapshot[]>([]);
+  const [ingestionRuns, setIngestionRuns] = useState<IngestionRunRecord[]>([]);
   const [providerCursors, setProviderCursors] = useState<ProviderCursor[]>([]);
   const [modelRegistry, setModelRegistry] = useState<ModelRegistryEntry[]>([]);
   const [championModel, setChampionModel] = useState<ModelRegistryEntry | null>(null);
@@ -169,6 +172,7 @@ export default function Page() {
       ]);
       const [
         nextDataQuality,
+        nextIngestionRuns,
         nextProviderCursors,
         nextModelRegistry,
         nextChampionModel,
@@ -180,6 +184,7 @@ export default function Page() {
         nextEntityConflicts
       ] = await Promise.all([
         getDataQuality(),
+        getIngestionRuns(),
         getProviderCursors(),
         getModelRegistry(),
         getChampionModel(),
@@ -200,6 +205,7 @@ export default function Page() {
       setCostProfile(nextCostProfile);
       setCostReport(nextCostReport);
       setDataQuality(nextDataQuality);
+      setIngestionRuns(nextIngestionRuns);
       setProviderCursors(nextProviderCursors);
       setModelRegistry(nextModelRegistry);
       setChampionModel(nextChampionModel);
@@ -490,7 +496,11 @@ export default function Page() {
 
       <section className="enterprisePanel">
         {activeDesk === "data" ? (
-          <DataHealthPanel dataQuality={dataQuality} providerCursors={providerCursors} />
+          <DataHealthPanel
+            dataQuality={dataQuality}
+            ingestionRuns={ingestionRuns}
+            providerCursors={providerCursors}
+          />
         ) : null}
 
         {activeDesk === "models" ? (

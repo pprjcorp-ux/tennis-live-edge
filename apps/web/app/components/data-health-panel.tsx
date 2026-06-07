@@ -1,16 +1,47 @@
-import { DatabaseZap, Timer } from "lucide-react";
+import { Activity, DatabaseZap, Timer } from "lucide-react";
 
-import type { DataQualitySnapshot, ProviderCursor } from "@/lib/types";
+import type { DataQualitySnapshot, IngestionRunRecord, ProviderCursor } from "@/lib/types";
 
 function pct(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function ingestionStatusClass(status: IngestionRunRecord["status"]) {
+  if (status === "completed") return "status statusEntry";
+  if (status === "failed") return "status statusBlocked";
+  return "status statusMonitor";
+}
+
+function summaryObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function summaryText(run: IngestionRunRecord) {
+  const summary = run.summary;
+  const directReason = typeof summary.reason === "string" ? summary.reason : null;
+  const error = typeof summary.error === "string" ? summary.error : null;
+  const oddsIngestion = summaryObject(summary.odds_ingestion);
+  const oddsReason =
+    oddsIngestion && typeof oddsIngestion.reason === "string" ? oddsIngestion.reason : null;
+  const targetDate = typeof summary.target_date === "string" ? summary.target_date : null;
+  const matches = typeof summary.matches === "number" ? `${summary.matches} matches` : null;
+  const entries =
+    typeof summary.entry_signals === "number" ? `${summary.entry_signals} entradas` : null;
+  const profile = typeof summary.profile === "string" ? summary.profile : null;
+  const fallback = [profile, targetDate, matches, entries].filter(Boolean).join(" · ");
+
+  return error ?? directReason ?? oddsReason ?? (fallback || "Sem resumo operacional");
+}
+
 export function DataHealthPanel({
   dataQuality,
+  ingestionRuns,
   providerCursors
 }: {
   dataQuality: DataQualitySnapshot[];
+  ingestionRuns: IngestionRunRecord[];
   providerCursors: ProviderCursor[];
 }) {
   return (
@@ -60,6 +91,38 @@ export function DataHealthPanel({
               <span>gaps {cursor.gap_count}</span>
             </div>
           ))}
+        </div>
+      </div>
+      <div className="panel wide">
+        <div className="panelHeader">
+          <div>
+            <p className="eyebrow">Ingestion Journal</p>
+            <h2>Ultimos ciclos persistidos</h2>
+          </div>
+          <Activity size={20} />
+        </div>
+        <div className="ingestionRows">
+          {ingestionRuns.length ? (
+            ingestionRuns.slice(0, 8).map((run) => (
+              <div className="ingestionRow" key={run.id}>
+                <div>
+                  <strong>{run.run_type.replaceAll("_", " ")}</strong>
+                  <span>{summaryText(run)}</span>
+                </div>
+                <span className={ingestionStatusClass(run.status)}>{run.status}</span>
+                <span>{run.source}</span>
+                <span>
+                  {new Date(run.completed_at).toLocaleTimeString("pt-BR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit"
+                  })}
+                </span>
+              </div>
+            ))
+          ) : (
+            <p className="empty">Nenhum ciclo persistido ainda.</p>
+          )}
         </div>
       </div>
     </div>

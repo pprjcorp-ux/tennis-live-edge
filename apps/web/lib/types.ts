@@ -214,6 +214,16 @@ export type DailyCostReport = {
   note: string;
 };
 
+export type IngestionRunRecord = {
+  id: string;
+  run_type: "score_snapshot" | "odds_message" | "odds_stream" | "live_budget_cycle";
+  source: "api" | "cli" | "openclaw" | "cron" | "system";
+  status: "completed" | "degraded" | "skipped" | "failed";
+  summary: Record<string, unknown>;
+  started_at: string;
+  completed_at: string;
+};
+
 export type ExecutionStatus = {
   execution_enabled: boolean;
   venue: "betfair";

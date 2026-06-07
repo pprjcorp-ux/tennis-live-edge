@@ -15,6 +15,7 @@ import type {
   DataQualitySnapshot,
   ExecutionOrder,
   ExecutionStatus,
+  IngestionRunRecord,
   MatchAnalysis,
   ModelRegistryEntry,
   ModelPromotionDecision,
@@ -61,6 +62,10 @@ export function getCostProfile(): Promise<CostProfile> {
 
 export function getDailyCostReport(): Promise<DailyCostReport> {
   return getJson<DailyCostReport>("/api/v1/cost-report/daily");
+}
+
+export function getIngestionRuns(): Promise<IngestionRunRecord[]> {
+  return getJson<IngestionRunRecord[]>("/api/v1/ingestion/runs");
 }
 
 export function getDataQuality(): Promise<DataQualitySnapshot[]> {

@@ -526,7 +526,8 @@ h2 {
 .cursorRows,
 .modelRows,
 .calibrationRows,
-.conflictRows {
+.conflictRows,
+.ingestionRows {
   display: grid;
   gap: 8px;
   padding: 14px;
@@ -536,7 +537,8 @@ h2 {
 .cursorRow,
 .modelRow,
 .calibrationRow,
-.conflictRow {
+.conflictRow,
+.ingestionRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) repeat(4, auto);
   gap: 10px;
@@ -556,6 +558,10 @@ h2 {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
 
+.ingestionRow {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
 .qualityRow strong,
 .qualityRow span,
 .cursorRow strong,
@@ -564,14 +570,17 @@ h2 {
 .modelRow span,
 .calibrationRow span,
 .conflictRow strong,
-.conflictRow span {
+.conflictRow span,
+.ingestionRow strong,
+.ingestionRow span {
   overflow-wrap: anywhere;
 }
 
 .qualityRow div span,
 .cursorRow div span,
 .modelRow div span,
-.conflictRow div span {
+.conflictRow div span,
+.ingestionRow div span {
   display: block;
   margin-top: 2px;
   color: var(--app-muted);
@@ -582,7 +591,8 @@ h2 {
 .cursorRow > span,
 .modelRow > span,
 .calibrationRow > span,
-.conflictRow > span {
+.conflictRow > span,
+.ingestionRow > span {
   color: var(--app-muted);
   font-size: 12px;
   font-weight: 800;
@@ -1039,6 +1049,7 @@ h2 {
   .conflictRow,
   .anomalyRow,
   .runRow,
+  .ingestionRow,
   .orderRow {
     grid-template-columns: 1fr;
   }

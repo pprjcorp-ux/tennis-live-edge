@@ -329,6 +329,8 @@ class AnalysisRepository:
         persisted = self.store.settle_paper_order(request)
         if persisted is not None:
             return persisted
+        if self.settings.data_mode != "sample":
+            raise KeyError(request.order_id)
         try:
             settlement = settle_paper_order(request)
         except KeyError:

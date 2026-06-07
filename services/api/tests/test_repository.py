@@ -3,6 +3,7 @@ from datetime import date
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import CanonicalEntityConflict, Confidence, PaperPerformance, Provider
+from tennis_edge.domain import LearningPromotionRequest
 from tennis_edge.domain import ReplayRunRequest
 from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.repository import AnalysisRepository
@@ -128,6 +129,40 @@ def test_entity_conflicts_prefers_persisted_store_over_sample_conflicts() -> Non
 
     assert conflicts == persisted_conflicts
     assert conflicts[0].id == "conf_persisted_market_alias"
+
+
+def test_learning_promotion_decision_is_persisted_for_audit() -> None:
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.saved_decisions = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def save_model_promotion_decision(self, decision):
+            self.saved_decisions.append(decision)
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    decision = asyncio.run(
+        repo.promote_from_learning(
+            LearningPromotionRequest(
+                candidate_model_version="audit_candidate",
+                roi=0.04,
+                clv=0.012,
+                brier_score=0.21,
+                log_loss=0.6,
+                calibration_error=0.03,
+                max_drawdown=0.1,
+            )
+        )
+    )
+
+    assert store.saved_decisions == [decision]
+    assert decision.candidate_model_version == "audit_candidate"
 
 
 def test_replay_prefers_persisted_raw_payloads_over_sample_payloads() -> None:

@@ -396,7 +396,9 @@ class AnalysisRepository:
     async def promote_from_learning(
         self, request: LearningPromotionRequest
     ) -> ModelPromotionDecision:
-        return promote_from_learning(request)
+        decision = promote_from_learning(request)
+        self.store.save_model_promotion_decision(decision)
+        return decision
 
     async def run_replay(self, request: ReplayRunRequest) -> ReplayRunResult:
         analyses = await self.analyses_for_date(date.today())

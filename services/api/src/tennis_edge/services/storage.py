@@ -26,6 +26,7 @@ from tennis_edge.domain import (
     MatchFreshness,
     MatchState,
     ModelRegistryEntry,
+    ModelPromotionDecision,
     OddsQuote,
     OrderStatus,
     PaperPerformance,
@@ -537,6 +538,51 @@ class PersistentStore:
             )
             for row in rows
         ]
+
+    def save_model_promotion_decision(self, decision: ModelPromotionDecision) -> None:
+        if not self.enabled:
+            return
+        with self._connect() as conn:
+            if conn is None:
+                return
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO learning_runs (
+                      id, model_version_id, run_type, training_window,
+                      metrics, promoted, created_at
+                    )
+                    VALUES (%s, NULL, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                      metrics = EXCLUDED.metrics,
+                      promoted = EXCLUDED.promoted
+                    """,
+                    (
+                        decision.run_id,
+                        "promotion_review",
+                        _json({"source": "promote_from_learning"}),
+                        _json(decision.metrics.model_dump(mode="json")),
+                        decision.promoted,
+                        decision.created_at,
+                    ),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO model_promotion_decisions (
+                      learning_run_id, candidate_model_version,
+                      promoted, reasons, metrics, created_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        decision.run_id,
+                        decision.candidate_model_version,
+                        decision.promoted,
+                        _json(decision.reasons),
+                        _json(decision.metrics.model_dump(mode="json")),
+                        decision.created_at,
+                    ),
+                )
 
     def save_order(self, order: ExecutionOrder) -> None:
         if not self.enabled:

@@ -14,7 +14,7 @@ from tennis_edge.domain import (
     SignalStatus,
 )
 from tennis_edge.services.agent_ops import AGENT_RUNS
-from tennis_edge.services.execution_engine import ORDERS
+from tennis_edge.services.execution_engine import CANCELABLE_ORDER_STATUSES, ORDERS
 from tennis_edge.services.repository import AnalysisRepository
 
 
@@ -24,6 +24,8 @@ class AgentStoreStub:
         self.saved_runs: list[AgentRun] = []
         self.saved_orders: list[ExecutionOrder] = []
         self.settle_requests: list[PaperSettleRequest] = []
+        self.cancel_requests: list[str] = []
+        self.cancel_results: dict[str, OrderStatus | None] = {}
         self.persisted_runs: list[AgentRun] = []
         self.persisted_orders: list[ExecutionOrder] = []
 
@@ -41,6 +43,16 @@ class AgentStoreStub:
 
     def orders(self) -> list[ExecutionOrder]:
         return list(self.persisted_orders)
+
+    def cancel_order(self, order_id: str) -> OrderStatus | None:
+        self.cancel_requests.append(order_id)
+        if order_id in self.cancel_results:
+            return self.cancel_results[order_id]
+        for index, order in enumerate(self.persisted_orders):
+            if order.id == order_id and order.status in CANCELABLE_ORDER_STATUSES:
+                self.persisted_orders[index] = order.model_copy(update={"status": OrderStatus.CANCELLED})
+                return OrderStatus.CANCELLED
+        return None
 
     def settle_paper_order(self, request: PaperSettleRequest) -> PaperSettlement | None:
         self.settle_requests.append(request)
@@ -266,3 +278,82 @@ def test_settlement_prefers_persisted_order_over_stale_process_memory() -> None:
     assert settlement.average_price == 2.0
     assert settlement.matched_stake == 100
     assert settlement.net_pnl == 98
+
+
+def test_cancel_prefers_persisted_non_cancelable_order_over_stale_process_memory() -> None:
+    ORDERS.clear()
+    AGENT_RUNS.clear()
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    persisted_order = ExecutionOrder(
+        id="ord_cancel_conflict",
+        signal_id="sig_conflict",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.SETTLED,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=2.0,
+        pnl=98,
+        clv=0.02,
+    )
+    ORDERS[persisted_order.id] = persisted_order.model_copy(
+        update={
+            "status": OrderStatus.PAPER,
+            "pnl": None,
+            "clv": None,
+        }
+    )
+    store = AgentStoreStub(repo.store)
+    store.persisted_orders = [persisted_order]
+    repo.store = store
+
+    result = asyncio.run(repo.cancel_order(persisted_order.id))
+
+    assert result.status == OrderStatus.SETTLED
+    assert "not open" in result.reason
+    assert ORDERS[persisted_order.id].status == OrderStatus.PAPER
+    assert store.cancel_requests == []
+
+
+def test_cancel_does_not_use_stale_memory_when_persisted_cancel_fails() -> None:
+    ORDERS.clear()
+    AGENT_RUNS.clear()
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    persisted_order = ExecutionOrder(
+        id="ord_cancel_open_conflict",
+        signal_id="sig_conflict",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.PAPER,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=2.0,
+    )
+    ORDERS[persisted_order.id] = persisted_order.model_copy(
+        update={
+            "status": OrderStatus.SETTLED,
+            "pnl": 98,
+            "clv": 0.02,
+        }
+    )
+    store = AgentStoreStub(repo.store)
+    store.persisted_orders = [persisted_order]
+    store.cancel_results[persisted_order.id] = None
+    repo.store = store
+
+    result = asyncio.run(repo.cancel_order(persisted_order.id))
+
+    assert store.cancel_requests == [persisted_order.id]
+    assert result.status == OrderStatus.PAPER
+    assert "could not be cancelled" in result.reason
+    assert ORDERS[persisted_order.id].status == OrderStatus.SETTLED

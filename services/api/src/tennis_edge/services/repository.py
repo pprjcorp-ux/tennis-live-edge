@@ -67,6 +67,7 @@ from tennis_edge.services.enterprise_analytics import (
     settle_paper_order,
 )
 from tennis_edge.services.execution_engine import (
+    CANCELABLE_ORDER_STATUSES,
     ORDERS,
     bankroll_snapshot,
     cancel_order,
@@ -377,17 +378,30 @@ class AnalysisRepository:
         return order
 
     async def cancel_order(self, order_id: str) -> CancelOrderResult:
-        try:
-            return cancel_order(order_id)
-        except KeyError:
-            status = self.store.cancel_order(order_id)
-            if status is None:
-                raise
+        persisted_order = next(
+            (order for order in self.store.orders() if order.id == order_id),
+            None,
+        )
+        if persisted_order is not None and persisted_order.status not in CANCELABLE_ORDER_STATUSES:
             return CancelOrderResult(
                 order_id=order_id,
-                status=status,
-                reason="Persisted paper order cancelled.",
+                status=persisted_order.status,
+                reason="Order is not open; no cancellation sent.",
             )
+        if persisted_order is not None:
+            status = self.store.cancel_order(order_id)
+            if status is not None:
+                return CancelOrderResult(
+                    order_id=order_id,
+                    status=status,
+                    reason="Persisted paper order cancelled.",
+                )
+            return CancelOrderResult(
+                order_id=order_id,
+                status=persisted_order.status,
+                reason="Persisted paper order could not be cancelled.",
+            )
+        return cancel_order(order_id)
 
     async def set_kill_switch(self, request: KillSwitchRequest) -> ExecutionStatus:
         return set_kill_switch_for(self.settings, request)

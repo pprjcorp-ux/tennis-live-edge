@@ -11,6 +11,7 @@ from tennis_edge.domain import (
     MatchAnalysis,
     MatchFreshness,
     Provider,
+    ProviderMatchPayload,
     RawProviderPayload,
     Signal,
 )
@@ -21,7 +22,7 @@ from tennis_edge.services.signal_engine import build_signals
 
 
 class MatchSource(Protocol):
-    async def get_today_matches(self, target_date: date) -> list[Match]:
+    async def get_today_matches(self, target_date: date) -> list[Match | ProviderMatchPayload]:
         ...
 
 
@@ -78,7 +79,8 @@ class LiveIngestionPipeline:
 
     async def snapshot_for_date(self, target_date: date) -> OperationalSnapshot:
         matches = await self._fetch_matches(target_date)
-        if not matches:
+        provider_matches, raw_payloads = _split_provider_matches(matches)
+        if not provider_matches:
             persisted = self.store.latest_analyses(target_date)
             if persisted:
                 return OperationalSnapshot(
@@ -94,9 +96,9 @@ class LiveIngestionPipeline:
                 generated_at=_now(),
             )
 
-        matches = await self.archive_augmenter(matches, self.archive_source)
+        matches = await self.archive_augmenter(provider_matches, self.archive_source)
         analyses = [self._analysis_for_match(match) for match in matches]
-        self.store.save_raw_payloads(_raw_payloads_from_matches(matches))
+        self.store.save_raw_payloads(raw_payloads or _raw_payloads_from_matches(matches))
         self.store.save_analyses(analyses)
         source = _snapshot_source(matches)
         return OperationalSnapshot(
@@ -106,7 +108,7 @@ class LiveIngestionPipeline:
             generated_at=_now(),
         )
 
-    async def _fetch_matches(self, target_date: date) -> list[Match]:
+    async def _fetch_matches(self, target_date: date) -> list[Match | ProviderMatchPayload]:
         try:
             return await self.match_source.get_today_matches(target_date)
         except Exception:
@@ -125,6 +127,20 @@ class LiveIngestionPipeline:
             signals=signals,
             freshness=_freshness_for_match(match, source=source, persisted=source != "sample"),
         )
+
+
+def _split_provider_matches(
+    records: list[Match | ProviderMatchPayload],
+) -> tuple[list[Match], list[RawProviderPayload]]:
+    matches: list[Match] = []
+    raw_payloads: list[RawProviderPayload] = []
+    for record in records:
+        if isinstance(record, ProviderMatchPayload):
+            matches.append(record.match)
+            raw_payloads.append(record.raw_payload)
+        else:
+            matches.append(record)
+    return matches, raw_payloads
 
 
 def _raw_payloads_from_matches(matches: list[Match]) -> list[RawProviderPayload]:

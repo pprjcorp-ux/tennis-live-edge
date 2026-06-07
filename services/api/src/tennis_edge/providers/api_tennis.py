@@ -3,9 +3,19 @@ from typing import Any
 
 import httpx
 
-from tennis_edge.domain import CompetitionLevel, Match, MatchState, Player, Surface, Tour
+from tennis_edge.domain import (
+    CompetitionLevel,
+    Match,
+    MatchState,
+    Player,
+    Provider,
+    ProviderMatchPayload,
+    RawProviderPayload,
+    Surface,
+    Tour,
+)
 from tennis_edge.sample_data import sample_matches
-from tennis_edge.services.normalizer import canonical_player_id
+from tennis_edge.services.normalizer import canonical_player_id, payload_checksum
 
 
 class ApiTennisClient:
@@ -18,6 +28,22 @@ class ApiTennisClient:
     async def get_today_matches(self, target_date: date) -> list[Match]:
         if self.data_mode == "sample":
             return sample_matches()
+        records = await self.get_today_match_payloads(target_date)
+        return [record.match for record in records]
+
+    async def get_today_match_payloads(self, target_date: date) -> list[ProviderMatchPayload]:
+        if self.data_mode == "sample":
+            return [
+                ProviderMatchPayload(
+                    match=match,
+                    raw_payload=self._raw_payload_for_match(
+                        match.model_dump(mode="json"),
+                        match,
+                        payload_type="fixture" if match.state.status == "prematch" else "score",
+                    ),
+                )
+                for match in sample_matches()
+            ]
         if not self.api_key:
             return []
 
@@ -31,11 +57,27 @@ class ApiTennisClient:
             response = await client.get(self.base_url, params=params)
             response.raise_for_status()
 
-        return self._parse_matches(response.json(), default_status="prematch")
+        return self._parse_match_payloads(response.json(), default_status="prematch")
 
     async def get_livescore(self) -> list[Match]:
         if self.data_mode == "sample":
             return sample_matches()
+        records = await self.get_livescore_payloads()
+        return [record.match for record in records]
+
+    async def get_livescore_payloads(self) -> list[ProviderMatchPayload]:
+        if self.data_mode == "sample":
+            return [
+                ProviderMatchPayload(
+                    match=match,
+                    raw_payload=self._raw_payload_for_match(
+                        match.model_dump(mode="json"),
+                        match,
+                        payload_type="score",
+                    ),
+                )
+                for match in sample_matches()
+            ]
         if not self.api_key:
             return []
 
@@ -43,23 +85,70 @@ class ApiTennisClient:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.get(self.base_url, params=params)
             response.raise_for_status()
-        return self._parse_matches(response.json(), default_status="live")
+        return self._parse_match_payloads(response.json(), default_status="live")
 
     def _parse_matches(self, payload: dict[str, Any], default_status: str) -> list[Match]:
+        return [record.match for record in self._parse_match_payloads(payload, default_status)]
+
+    def _parse_match_payloads(
+        self,
+        payload: dict[str, Any],
+        default_status: str,
+    ) -> list[ProviderMatchPayload]:
         events = payload.get("result", payload.get("data", []))
         if isinstance(events, dict):
             events = list(events.values())
         if not isinstance(events, list):
             return []
 
-        parsed: list[Match] = []
+        parsed: list[ProviderMatchPayload] = []
         for event in events:
             if not isinstance(event, dict):
                 continue
             match = self._parse_event(event, default_status)
             if match:
-                parsed.append(match)
+                payload_type = "fixture" if default_status == "prematch" else "score"
+                parsed.append(
+                    ProviderMatchPayload(
+                        match=match,
+                        raw_payload=self._raw_payload_for_match(
+                            event,
+                            match,
+                            payload_type=payload_type,
+                        ),
+                    )
+                )
         return parsed
+
+    def _raw_payload_for_match(
+        self,
+        event: dict[str, Any],
+        match: Match,
+        *,
+        payload_type: str,
+    ) -> RawProviderPayload:
+        source_ts = (
+            match.scheduled_at
+            if payload_type == "fixture"
+            else datetime.now(timezone.utc).replace(microsecond=0)
+        )
+        source_event_id = match.provider_match_id or match.id
+        checksum = payload_checksum(
+            Provider.API_TENNIS,
+            payload_type,
+            event,
+            source_event_id=source_event_id,
+            source_ts=source_ts,
+        )
+        return RawProviderPayload(
+            id=f"raw_api_tennis_{source_event_id}_{checksum[:12]}",
+            provider=Provider.API_TENNIS,
+            payload_type=payload_type,  # type: ignore[arg-type]
+            source_event_id=source_event_id,
+            source_ts=source_ts,
+            payload=event,
+            checksum=checksum,
+        )
 
     def _parse_event(self, event: dict[str, Any], default_status: str) -> Match | None:
         event_key = self._first(event, "event_key", "event_id", "id", "fixture_id")

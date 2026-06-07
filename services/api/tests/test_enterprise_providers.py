@@ -68,30 +68,29 @@ def test_payload_checksum_includes_provider_event_and_source_timestamp() -> None
 
 def test_api_tennis_parser_uses_provider_payload_not_sample_matches() -> None:
     client = ApiTennisClient(api_key="key", data_mode="live")
-    matches = client._parse_matches(
-        {
-            "result": [
-                {
-                    "event_key": "42",
-                    "event_date": date.today().isoformat(),
-                    "event_time": "13:30",
-                    "event_first_player": "Elena Rybakina",
-                    "event_second_player": "Ons Jabeur",
-                    "event_first_player_key": "101",
-                    "event_second_player_key": "102",
-                    "event_type_type": "WTA Singles",
-                    "tournament_name": "Rome WTA",
-                    "tournament_round": "QF",
-                    "tournament_surface": "Clay",
-                    "event_status": "Set 1",
-                    "event_game_result": "4 - 3",
-                    "event_point": "30 - 15",
-                    "event_serve": "First Player",
-                }
-            ]
-        },
-        default_status="live",
-    )
+    payload = {
+        "result": [
+            {
+                "event_key": "42",
+                "event_date": date.today().isoformat(),
+                "event_time": "13:30",
+                "event_first_player": "Elena Rybakina",
+                "event_second_player": "Ons Jabeur",
+                "event_first_player_key": "101",
+                "event_second_player_key": "102",
+                "event_type_type": "WTA Singles",
+                "tournament_name": "Rome WTA",
+                "tournament_round": "QF",
+                "tournament_surface": "Clay",
+                "event_status": "Set 1",
+                "event_game_result": "4 - 3",
+                "event_point": "30 - 15",
+                "event_serve": "First Player",
+            }
+        ]
+    }
+    records = client._parse_match_payloads(payload, default_status="live")
+    matches = client._parse_matches(payload, default_status="live")
 
     assert len(matches) == 1
     assert matches[0].id == "api_tennis_42"
@@ -99,6 +98,12 @@ def test_api_tennis_parser_uses_provider_payload_not_sample_matches() -> None:
     assert matches[0].state.status == "live"
     assert matches[0].state.p1_games == 4
     assert matches[0].player1.name == "Elena Rybakina"
+    assert len(records) == 1
+    assert records[0].match == matches[0]
+    assert records[0].raw_payload.provider == Provider.API_TENNIS
+    assert records[0].raw_payload.payload_type == "score"
+    assert records[0].raw_payload.source_event_id == "42"
+    assert records[0].raw_payload.payload["event_key"] == "42"
 
 
 def test_api_tennis_live_without_key_returns_no_synthetic_matches() -> None:

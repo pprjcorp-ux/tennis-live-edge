@@ -8,6 +8,8 @@ from tennis_edge.config import Settings
 from tennis_edge.domain import CursorStatus
 from tennis_edge.domain import Provider
 from tennis_edge.domain import ProviderCursor
+from tennis_edge.domain import ProviderMatchPayload
+from tennis_edge.domain import RawProviderPayload
 from tennis_edge.domain import SignalStatus
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches
@@ -334,6 +336,39 @@ def test_live_ingestion_pipeline_persists_provider_snapshot() -> None:
     assert snapshot.analyses[0].freshness is not None
     assert snapshot.analyses[0].freshness.source == "provider_live"
     assert store.saved_payloads[0].source_event_id == snapshot.analyses[0].match.provider_match_id
+
+
+def test_live_ingestion_pipeline_prefers_provider_raw_payload_over_canonical_proxy() -> None:
+    match = _live_provider_matches()[0]
+    raw_payload = RawProviderPayload(
+        id="raw_api_tennis_original",
+        provider=Provider.API_TENNIS,
+        payload_type="fixture",
+        source_event_id=match.provider_match_id or match.id,
+        source_ts=match.scheduled_at,
+        payload={
+            "event_key": match.provider_match_id,
+            "provider_shape": "api_tennis_original",
+        },
+        checksum="provider-raw-checksum",
+    )
+    store = _FakeStore()
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource([ProviderMatchPayload(match=match, raw_payload=raw_payload)]),
+        _FakeArchiveSource(),
+        store,
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert snapshot.source == "provider_live"
+    assert store.saved_payloads == [raw_payload]
+    assert store.saved_payloads[0].payload == {
+        "event_key": match.provider_match_id,
+        "provider_shape": "api_tennis_original",
+    }
 
 
 def test_live_ingestion_pipeline_uses_persisted_fallback_after_provider_failure() -> None:

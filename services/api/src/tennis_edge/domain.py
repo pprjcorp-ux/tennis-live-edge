@@ -207,6 +207,11 @@ class RawProviderPayload(BaseModel):
     checksum: str
 
 
+class ProviderMatchPayload(BaseModel):
+    match: "Match"
+    raw_payload: RawProviderPayload
+
+
 class CanonicalMatch(BaseModel):
     id: str
     provider_ids: dict[str, str]

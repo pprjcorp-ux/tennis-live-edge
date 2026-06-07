@@ -4,6 +4,8 @@ from pathlib import Path
 import os
 import sys
 
+from check_cloudflare_private_runtime import validate_cloudflare_private_runtime
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,6 +23,16 @@ def main() -> int:
         errors.append("Cloudflare API hostname example missing")
     if "edge.example.com" not in config.read_text():
         errors.append("Cloudflare dashboard hostname example missing")
+    cloudflare_errors = validate_cloudflare_private_runtime(
+        tunnel_config=config.read_text(),
+        env={
+            "PRIVATE_ALLOWED_EMAILS": "operator@example.com",
+            "ADMIN_API_TOKEN": "local-admin",
+            "TENNIS_EDGE_CORS_ORIGIN": "http://localhost:3000,https://edge.example.com",
+        },
+        require_real_hosts=False,
+    )
+    errors.extend(f"Cloudflare example invalid: {error}" for error in cloudflare_errors)
     schema_text = schema.read_text()
     for table in [
         "raw_provider_payloads",

@@ -6,6 +6,8 @@
     "web:build": "npm --prefix apps/web run build",
     "api:dev": "cd services/api && ../../.venv/bin/uvicorn tennis_edge.main:app --host 127.0.0.1 --port 8000 --reload",
     "api:test": "cd services/api && ../../.venv/bin/pytest",
+    "cloudflare:check": "python3 scripts/check_cloudflare_private_runtime.py",
+    "cloudflare:check:example": "PRIVATE_ALLOWED_EMAILS=operator@example.com ADMIN_API_TOKEN=local-admin TENNIS_EDGE_CORS_ORIGIN=http://localhost:3000,https://edge.example.com python3 scripts/check_cloudflare_private_runtime.py --example",
     "openclaw:briefing": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs briefing",
     "openclaw:anomalies": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies",
     "openclaw:runs": "node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs",

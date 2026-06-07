@@ -8,6 +8,7 @@ valid `Entrada` signal, and summarizes anomalies/results.
 
 ```bash
 npm run api:ingest:live-budget
+node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingest-live-budget
 npm run api:ingest
 printf '{"event_id":"smoke-event","seq":1,"timestamp":"2026-06-07T20:00:00Z","data":{"bookmaker":"SmokeBook","market":"h2h","selections":[{"player_id":"p1","odds":1.8},{"player_id":"p2","odds":2.1}]}}' | TENNIS_EDGE_DATA_MODE=sample TENNIS_EDGE_PERSISTENCE_ENABLED=false npm run api:ingest:odds-message
 npm run api:ingest:odds-stream -- --max-messages 25 --timeout-seconds 30
@@ -24,6 +25,8 @@ The skill lives in `openclaw/skills/tennis-edge-ops`. Copy it into
 For scheduled budget operation, prefer `api:ingest:live-budget`. It runs the
 API-Tennis snapshot and the Odds-API.io websocket consumer in one process, then
 prints a single JSON summary with safety state.
+OpenClaw can call the same cycle through the `ingest-live-budget` skill command
+when you want all operations routed through `tennis_edge_ops.mjs`.
 
 ## Audit Trail
 

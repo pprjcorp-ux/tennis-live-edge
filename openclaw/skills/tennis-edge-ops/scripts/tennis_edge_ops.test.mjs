@@ -16,9 +16,10 @@ function startServer(handler) {
   });
 }
 
-async function runCli(args, { stdin = "" } = {}) {
+async function runCli(args, { stdin = "", env = {} } = {}) {
   const child = spawn(process.execPath, [SCRIPT, ...args], {
     stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, ...env },
   });
   const stdoutChunks = [];
   const stderrChunks = [];
@@ -97,4 +98,33 @@ test("autopilot proceeds when preflight is degraded but not blocked", async () =
   } finally {
     server.close();
   }
+});
+
+test("ingest-live-budget prints consolidated no-key summary without protected actions", async () => {
+  const result = await runCli(
+    [
+      "ingest-live-budget",
+      "--date",
+      "2026-06-07",
+      "--odds-max-messages",
+      "1",
+      "--odds-timeout-seconds",
+      "0.01",
+    ],
+    {
+      env: {
+        TENNIS_EDGE_DATA_MODE: "live",
+        TENNIS_EDGE_PERSISTENCE_ENABLED: "false",
+        API_TENNIS_KEY: "",
+        ODDS_API_IO_KEY: "",
+      },
+    }
+  );
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.target_date, "2026-06-07");
+  assert.equal(payload.score_ingestion.source, "empty");
+  assert.equal(payload.odds_ingestion.connected, false);
+  assert.equal(payload.can_submit_real_orders, false);
 });

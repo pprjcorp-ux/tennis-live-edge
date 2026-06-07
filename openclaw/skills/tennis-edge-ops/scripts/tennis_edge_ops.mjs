@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { spawn } from "node:child_process";
+
 const command = process.argv[2] ?? "briefing";
 const apiBaseArg = process.argv.find((arg) => arg.startsWith("--api-base="));
 const API_BASE = apiBaseArg ? apiBaseArg.slice("--api-base=".length) : "http://127.0.0.1:8000";
@@ -101,6 +103,42 @@ async function autopilot() {
   });
 }
 
+async function ingestLiveBudget() {
+  const passthroughArgs = process.argv
+    .slice(3)
+    .filter((arg) => arg !== TOKEN_STDIN_FLAG && arg !== apiBaseArg);
+  const data = await runNpmJson("api:ingest:live-budget", passthroughArgs);
+  printJson(data);
+}
+
+function runNpmJson(scriptName, args = []) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("npm", ["--silent", "run", scriptName, "--", ...args], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    child.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
+    child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
+    child.on("error", reject);
+    child.on("close", (exitCode) => {
+      const stdout = Buffer.concat(stdoutChunks).toString("utf8").trim();
+      const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
+      if (exitCode !== 0) {
+        reject(new Error(stderr || stdout || `${scriptName} failed with exit ${exitCode}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch (error) {
+        reject(new Error(`${scriptName} returned non-JSON output: ${stdout || stderr}`));
+      }
+    });
+  });
+}
+
 function summarizeFailedChecks(checks = []) {
   const failed = checks.filter((check) => check.status === "fail");
   if (!failed.length) {
@@ -109,7 +147,14 @@ function summarizeFailedChecks(checks = []) {
   return failed.map((check) => `${check.name}: ${check.summary}`).join("; ");
 }
 
-const commands = { briefing, anomalies, runs, preflight, autopilot };
+const commands = {
+  briefing,
+  anomalies,
+  runs,
+  preflight,
+  autopilot,
+  "ingest-live-budget": ingestLiveBudget,
+};
 
 if (!commands[command]) {
   process.stderr.write(

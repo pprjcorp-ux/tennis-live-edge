@@ -502,11 +502,13 @@ class AnalysisRepository:
     async def live_dashboard_snapshot(self, target_date: date) -> LiveDashboardSnapshot:
         analyses = await self.analyses_for_date(target_date)
         performance = await self.paper_performance()
+        operational_state = self._operational_state_for(target_date, analyses, performance)
         return LiveDashboardSnapshot(
             matches=analyses,
             metrics=self._daily_metrics_for(analyses, performance),
             signals=self._sorted_signals_for(analyses),
-            operational_state=self._operational_state_for(target_date, analyses, performance),
+            operational_state=operational_state,
+            readiness=self.operational_state.live_readiness(operational_state),
         )
 
     async def bankroll(self, orders: list[ExecutionOrder] | None = None) -> BankrollSnapshot:

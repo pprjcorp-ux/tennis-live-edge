@@ -864,9 +864,28 @@ class DailyMetrics(BaseModel):
     note: str
 
 
+class LiveReadinessCheck(BaseModel):
+    name: str
+    status: Literal["pass", "warn", "fail"]
+    summary: str
+    detail: str | None = None
+
+
+class LiveReadinessSnapshot(BaseModel):
+    status: Literal["ready", "degraded", "blocked"]
+    can_analyze_live: bool
+    can_generate_entries: bool
+    can_submit_real_orders: bool
+    blockers: list[str]
+    warnings: list[str]
+    checks: list[LiveReadinessCheck]
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class LiveDashboardSnapshot(BaseModel):
     matches: list[MatchAnalysis]
     metrics: DailyMetrics
     signals: list[Signal]
     operational_state: OperationalStateSnapshot
+    readiness: LiveReadinessSnapshot
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

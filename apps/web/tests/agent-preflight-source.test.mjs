@@ -44,7 +44,10 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(pageSource, /nextDashboard\.matches/);
   assert.match(pageSource, /nextDashboard\.metrics/);
   assert.match(pageSource, /nextDashboard\.signals/);
+  assert.match(pageSource, /nextDashboard\.readiness/);
   assert.match(pageSource, /nextOperational\.daily_cost_report/);
+  assert.match(pageSource, /Live readiness/);
+  assert.match(pageSource, /can_generate_entries/);
   assert.match(pageSource, /ingestionRuns=\{ingestionRuns\}/);
   assert.match(apiSource, /\/api\/v1\/dashboard\/live-state/);
   assert.match(dataHealthSource, /Ingestion Journal/);

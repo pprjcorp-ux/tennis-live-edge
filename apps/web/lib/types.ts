@@ -240,6 +240,25 @@ export type LiveDashboardSnapshot = {
   metrics: DailyMetrics;
   signals: Signal[];
   operational_state: OperationalStateSnapshot;
+  readiness: LiveReadinessSnapshot;
+  generated_at: string;
+};
+
+export type LiveReadinessCheck = {
+  name: string;
+  status: "pass" | "warn" | "fail";
+  summary: string;
+  detail: string | null;
+};
+
+export type LiveReadinessSnapshot = {
+  status: "ready" | "degraded" | "blocked";
+  can_analyze_live: boolean;
+  can_generate_entries: boolean;
+  can_submit_real_orders: boolean;
+  blockers: string[];
+  warnings: string[];
+  checks: LiveReadinessCheck[];
   generated_at: string;
 };
 

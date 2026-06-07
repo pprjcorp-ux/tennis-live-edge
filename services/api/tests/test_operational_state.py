@@ -101,6 +101,13 @@ def test_operational_state_prefers_persisted_health_inputs() -> None:
     assert snapshot.cost_profile.active_plan == "lean_atp"
     assert snapshot.daily_cost_report.active_plan == "lean_atp"
     assert snapshot.execution_status.can_submit_real_orders is False
+    readiness = service.live_readiness(snapshot)
+    assert readiness.status == "blocked"
+    assert readiness.can_analyze_live is False
+    assert readiness.can_generate_entries is False
+    assert readiness.can_submit_real_orders is False
+    assert "API_TENNIS_KEY is missing." in readiness.blockers
+    assert "ODDS_API_IO_KEY is missing." in readiness.blockers
 
 
 def test_operational_state_falls_back_to_safe_runtime_defaults() -> None:

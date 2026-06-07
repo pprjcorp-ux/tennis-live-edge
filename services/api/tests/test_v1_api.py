@@ -35,7 +35,10 @@ def test_v1_live_matches_and_provider_health() -> None:
     assert len(matches.json()) >= 1
     assert len(dashboard.json()["matches"]) == dashboard.json()["metrics"]["matches"]
     assert "operational_state" in dashboard.json()
+    assert "readiness" in dashboard.json()
     assert dashboard.json()["operational_state"]["execution_status"]["can_submit_real_orders"] is False
+    assert dashboard.json()["readiness"]["can_submit_real_orders"] is False
+    assert dashboard.json()["readiness"]["status"] in {"ready", "degraded", "blocked"}
     assert {item["provider"] for item in health.json()} >= {"sportradar", "txodds"}
     assert all("cost_tier" in item for item in health.json())
     assert cost_profile.json()["active_plan"] == "lean_atp"

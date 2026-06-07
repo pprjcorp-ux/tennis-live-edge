@@ -61,6 +61,7 @@ import type {
   ExecutionOrder,
   ExecutionStatus,
   IngestionRunRecord,
+  LiveReadinessSnapshot,
   MatchAnalysis,
   ModelRegistryEntry,
   ModelPromotionDecision,
@@ -132,6 +133,7 @@ export default function Page() {
   const [autopilotResult, setAutopilotResult] = useState<AgentAutopilotResult | null>(null);
   const [entityConflicts, setEntityConflicts] = useState<CanonicalEntityConflict[]>([]);
   const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | null>(null);
+  const [readiness, setReadiness] = useState<LiveReadinessSnapshot | null>(null);
   const [bankroll, setBankroll] = useState<BankrollSnapshot | null>(null);
   const [orders, setOrders] = useState<ExecutionOrder[]>([]);
   const [health, setHealth] = useState<ProviderHealth[]>([]);
@@ -194,6 +196,7 @@ export default function Page() {
       setAgentRuns(nextAgentRuns);
       setEntityConflicts(nextEntityConflicts);
       setExecutionStatus(nextOperational.execution_status);
+      setReadiness(nextDashboard.readiness);
       setBankroll(nextBankroll);
       setOrders(nextOrders);
       setHealth(nextOperational.provider_health);
@@ -395,6 +398,12 @@ export default function Page() {
   );
 
   const selectedSignal = selected ? bestSignal(selected) : null;
+  const readinessMessages =
+    readiness && readiness.blockers.length > 0
+      ? readiness.blockers
+      : readiness?.warnings.length
+        ? readiness.warnings
+        : ["Paper-first readiness checks passing."];
 
   return (
     <main className="shell">
@@ -872,6 +881,33 @@ export default function Page() {
         </div>
 
         <aside className="sideStack">
+          <section className="panel">
+            <div className="panelHeader">
+              <div>
+                <p className="eyebrow">Live readiness</p>
+                <h2>{readiness?.status ?? "unknown"}</h2>
+              </div>
+              <ShieldCheck size={20} />
+            </div>
+            <div className="executionGrid">
+              <span>Analyze live</span>
+              <strong>{readiness?.can_analyze_live ? "yes" : "no"}</strong>
+              <span>Paper entries</span>
+              <strong>{readiness?.can_generate_entries ? "ready" : "blocked"}</strong>
+              <span>Real orders</span>
+              <strong>{readiness?.can_submit_real_orders ? "enabled" : "hard-blocked"}</strong>
+              <span>Status</span>
+              <strong className={preflightStatusClass(readiness?.status ?? "blocked")}>
+                {readiness?.status ?? "blocked"}
+              </strong>
+            </div>
+            <div className="executionWarnings">
+              {readinessMessages.slice(0, 4).map((reason) => (
+                <span key={reason}>{reason}</span>
+              ))}
+            </div>
+          </section>
+
           <section className="panel">
             <div className="panelHeader">
               <div>

@@ -54,6 +54,18 @@ def test_v1_enterprise_observability_endpoints() -> None:
     assert champion.json()["model_version"] == "baseline_v0"
 
 
+def test_v1_ingestion_run_requires_token_and_returns_operational_summary() -> None:
+    unauthorized = client.post("/api/v1/ingestion/run", json={})
+    response = client.post("/api/v1/ingestion/run", headers=ADMIN_HEADERS, json={})
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["source"] == "sample"
+    assert response.json()["matches"] >= 1
+    assert response.json()["raw_payloads_saved"] >= 1
+    assert "signals_generated" in response.json()
+
+
 def test_v1_agent_ops_endpoints_expose_openclaw_router() -> None:
     briefing = client.get("/api/v1/agent/briefing")
     anomalies = client.get("/api/v1/agent/anomalies")

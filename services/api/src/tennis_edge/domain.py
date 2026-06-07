@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -687,6 +687,21 @@ class AgentPreflightCheck(BaseModel):
 class AgentPreflight(BaseModel):
     status: Literal["ready", "degraded", "blocked"]
     checks: list[AgentPreflightCheck]
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class IngestionRunRequest(BaseModel):
+    target_date: date | None = None
+
+
+class IngestionRunResult(BaseModel):
+    target_date: date
+    source: Literal["provider_live", "persisted_fallback", "sample", "empty"]
+    persisted: bool
+    matches: int
+    raw_payloads_saved: int
+    signals_generated: int
+    entry_signals: int
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

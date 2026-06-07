@@ -4,6 +4,17 @@ Use these after Telegram pairing/allowlist and local secrets are configured.
 They are not created automatically because the repository must not assume a
 Telegram chat id or store `ADMIN_API_TOKEN`.
 
+Ingestion every 5 minutes while the system is active:
+
+```bash
+openclaw cron add \
+  --name tennis-edge-live-ingestion \
+  --every 5m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm run api:ingest from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report source, matches, raw_payloads_saved, and whether provider keys are missing; do not create orders from this cron." \
+  --timeout-seconds 45
+```
+
 Daily briefing, cheap model:
 
 ```bash

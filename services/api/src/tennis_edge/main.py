@@ -23,6 +23,8 @@ from tennis_edge.domain import (
     DataQualitySnapshot,
     ExecutionOrder,
     ExecutionStatus,
+    IngestionRunRequest,
+    IngestionRunResult,
     KillSwitchRequest,
     LearningPromotionRequest,
     MatchAnalysis,
@@ -144,6 +146,15 @@ async def v1_provider_cursors(
     repo: AnalysisRepository = Depends(repository),
 ) -> list[ProviderCursor]:
     return await repo.provider_cursors()
+
+
+@app.post("/api/v1/ingestion/run", response_model=IngestionRunResult)
+async def v1_run_ingestion(
+    request: IngestionRunRequest | None = Body(default=None),
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> IngestionRunResult:
+    return await repo.run_ingestion(request)
 
 
 @app.get("/api/v1/models/registry", response_model=list[ModelRegistryEntry])

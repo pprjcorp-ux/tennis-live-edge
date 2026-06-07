@@ -107,6 +107,51 @@ def test_raw_payloads_for_match_maps_persisted_rows_to_domain_payloads() -> None
     assert payloads[0].payload["status"] == "live"
 
 
+def test_latest_analyses_score_tick_lateral_selects_timestamps() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.queries = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.queries.append(query)
+            return self
+
+        def fetchall(self):
+            return []
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield self.conn
+
+    store = StoreStub()
+
+    assert store.latest_analyses(date.today()) == []
+    query = store.conn.cursor_stub.queries[0]
+    assert "SELECT raw_state, source_ts, ingested_at" in query
+
+
 def test_provider_cursor_seed_does_not_overwrite_persisted_cursor() -> None:
     class CursorStub:
         def __init__(self) -> None:
@@ -333,6 +378,7 @@ def test_live_ingestion_pipeline_persists_provider_snapshot() -> None:
     assert len(snapshot.analyses) == 1
     assert store.saved_analyses == snapshot.analyses
     assert len(store.saved_payloads) == 1
+    assert snapshot.raw_payloads_saved == 1
     assert snapshot.analyses[0].freshness is not None
     assert snapshot.analyses[0].freshness.source == "provider_live"
     assert store.saved_payloads[0].source_event_id == snapshot.analyses[0].match.provider_match_id
@@ -364,6 +410,7 @@ def test_live_ingestion_pipeline_prefers_provider_raw_payload_over_canonical_pro
     snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
 
     assert snapshot.source == "provider_live"
+    assert snapshot.raw_payloads_saved == 1
     assert store.saved_payloads == [raw_payload]
     assert store.saved_payloads[0].payload == {
         "event_key": match.provider_match_id,
@@ -394,6 +441,7 @@ def test_live_ingestion_pipeline_uses_persisted_fallback_after_provider_failure(
 
     assert snapshot.source == "persisted_fallback"
     assert snapshot.persisted is True
+    assert snapshot.raw_payloads_saved == 0
     assert snapshot.analyses == persisted
     assert store.saved_analyses == []
     assert store.saved_payloads == []

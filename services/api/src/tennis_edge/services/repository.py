@@ -20,6 +20,8 @@ from tennis_edge.domain import (
     DataQualitySnapshot,
     ExecutionOrder,
     ExecutionStatus,
+    IngestionRunRequest,
+    IngestionRunResult,
     KillSwitchRequest,
     LearningPromotionRequest,
     MatchAnalysis,
@@ -192,6 +194,24 @@ class AnalysisRepository:
         analyses = await self.analyses_for_date(target_date)
         signals = [signal for analysis in analyses for signal in analysis.signals]
         return sorted(signals, key=lambda signal: signal.edge, reverse=True)
+
+    async def run_ingestion(
+        self,
+        request: IngestionRunRequest | None = None,
+    ) -> IngestionRunResult:
+        target_date = request.target_date if request and request.target_date else date.today()
+        snapshot = await self.ingestion.snapshot_for_date(target_date)
+        signals = [signal for analysis in snapshot.analyses for signal in analysis.signals]
+        return IngestionRunResult(
+            target_date=target_date,
+            source=snapshot.source,
+            persisted=snapshot.persisted,
+            matches=len(snapshot.analyses),
+            raw_payloads_saved=snapshot.raw_payloads_saved,
+            signals_generated=len(signals),
+            entry_signals=sum(1 for signal in signals if signal.status == SignalStatus.ENTRY),
+            generated_at=snapshot.generated_at,
+        )
 
     async def match_detail(self, match_id: str, target_date: date) -> MatchAnalysis | None:
         analyses = await self.analyses_for_date(target_date)

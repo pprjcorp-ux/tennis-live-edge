@@ -48,6 +48,7 @@ class OperationalSnapshot:
     source: str
     persisted: bool
     generated_at: datetime
+    raw_payloads_saved: int = 0
 
 
 SignalGate = Callable[[Match, list[Signal]], list[Signal]]
@@ -88,17 +89,20 @@ class LiveIngestionPipeline:
                     source="persisted_fallback",
                     persisted=True,
                     generated_at=_now(),
+                    raw_payloads_saved=0,
                 )
             return OperationalSnapshot(
                 analyses=[],
                 source="empty",
                 persisted=False,
                 generated_at=_now(),
+                raw_payloads_saved=0,
             )
 
         matches = await self.archive_augmenter(provider_matches, self.archive_source)
         analyses = [self._analysis_for_match(match) for match in matches]
-        self.store.save_raw_payloads(raw_payloads or _raw_payloads_from_matches(matches))
+        saved_payloads = raw_payloads or _raw_payloads_from_matches(matches)
+        self.store.save_raw_payloads(saved_payloads)
         self.store.save_analyses(analyses)
         source = _snapshot_source(matches)
         return OperationalSnapshot(
@@ -106,6 +110,7 @@ class LiveIngestionPipeline:
             source=source,
             persisted=source != "sample",
             generated_at=_now(),
+            raw_payloads_saved=len(saved_payloads),
         )
 
     async def _fetch_matches(self, target_date: date) -> list[Match | ProviderMatchPayload]:

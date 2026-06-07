@@ -7,6 +7,7 @@ valid `Entrada` signal, and summarizes anomalies/results.
 ## Local Commands
 
 ```bash
+npm run api:ingest
 npm run openclaw:briefing
 npm run openclaw:anomalies
 npm run openclaw:runs

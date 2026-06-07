@@ -112,21 +112,25 @@ class PersistentStore:
             yield None
             return
 
-        conn = None
         try:
             conn = psycopg.connect(
                 self.settings.database_url,
                 autocommit=True,
                 row_factory=dict_row,
             )
-            self.last_error = None
-            yield conn
         except Exception as exc:  # pragma: no cover - exercised with real DB failures.
             self.last_error = str(exc)
             yield None
+            return
+
+        self.last_error = None
+        try:
+            yield conn
         finally:
-            if conn is not None:
+            try:
                 conn.close()
+            except Exception:
+                pass
 
     def save_analyses(self, analyses: Iterable[MatchAnalysis]) -> None:
         if not self.enabled:
@@ -243,7 +247,7 @@ class PersistentStore:
                     JOIN players p1 ON p1.id = m.player1_id
                     JOIN players p2 ON p2.id = m.player2_id
                     LEFT JOIN LATERAL (
-                      SELECT raw_state
+                      SELECT raw_state, source_ts, ingested_at
                       FROM score_ticks
                       WHERE match_id = m.id
                       ORDER BY source_ts DESC, ingested_at DESC

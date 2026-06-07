@@ -20,6 +20,7 @@ FastAPI backend.
 ## Commands
 
 ```bash
+npm run api:ingest
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs briefing
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
@@ -27,6 +28,8 @@ node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
 printf "%s" "$ADMIN_API_TOKEN" | node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
 
+The `api:ingest` command runs one provider ingestion cycle and prints a JSON
+summary with source, match count, raw payload count, signal count, and timestamp.
 The `autopilot` command creates paper orders only through
 `POST /api/v1/agent/autopilot/evaluate`.
 The `preflight` command should run before cron/autopilot jobs; it checks API

@@ -501,4 +501,5 @@ export type AgentAutopilotResult = {
   paper_orders_skipped: number;
   real_execution_blocked: boolean;
   anomalies: AgentAnomaly[];
+  created_orders: ExecutionOrder[];
 };

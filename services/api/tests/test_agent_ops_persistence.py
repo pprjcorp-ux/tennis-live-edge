@@ -97,6 +97,7 @@ def test_agent_autopilot_persists_run_and_created_paper_orders() -> None:
     assert result.paper_orders_created >= 1
     assert store.saved_runs == [result.run]
     assert len(store.saved_orders) == result.paper_orders_created
+    assert store.saved_orders == result.created_orders
     assert all(order.status == OrderStatus.PAPER for order in store.saved_orders)
 
 

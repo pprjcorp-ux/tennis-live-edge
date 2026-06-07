@@ -699,6 +699,7 @@ class AgentAutopilotResult(BaseModel):
     paper_orders_skipped: int
     real_execution_blocked: bool
     anomalies: list[AgentAnomaly]
+    created_orders: list[ExecutionOrder] = Field(default_factory=list)
 
 
 class ProviderHealth(BaseModel):

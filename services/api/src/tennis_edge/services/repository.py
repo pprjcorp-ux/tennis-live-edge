@@ -308,12 +308,8 @@ class AnalysisRepository:
             anomalies,
             orders=order_snapshot,
         )
-        for action in result.run.actions:
-            if action.type != "paper_order" or action.status.value != "executed" or not action.target_id:
-                continue
-            order = ORDERS.get(action.target_id)
-            if order is not None:
-                self.store.save_order(order)
+        for order in result.created_orders:
+            self.store.save_order(order)
         self.store.save_agent_run(result.run)
         return result
 

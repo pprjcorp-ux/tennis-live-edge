@@ -472,6 +472,7 @@ def run_agent_autopilot(
 ) -> AgentAutopilotResult:
     order_snapshot = _order_snapshot(orders)
     actions: list[AgentAction] = []
+    created_orders: list[ExecutionOrder] = []
     paper_orders_created = 0
     paper_orders_skipped = 0
 
@@ -514,6 +515,7 @@ def run_agent_autopilot(
                     orders=order_snapshot,
                 )
                 order_snapshot.append(order)
+                created_orders.append(order)
                 paper_orders_created += 1
                 actions.append(
                     AgentAction(
@@ -593,4 +595,5 @@ def run_agent_autopilot(
         paper_orders_skipped=paper_orders_skipped,
         real_execution_blocked=real_execution_blocked,
         anomalies=anomalies,
+        created_orders=created_orders,
     )

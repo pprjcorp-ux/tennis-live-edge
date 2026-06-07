@@ -312,6 +312,10 @@ def test_the_odds_api_parser_maps_h2h_moneyline_quotes() -> None:
         "alexander zverev",
     }
     assert {quote.market for quote in events[0].quotes} == {"ML"}
+    assert events[0].raw_payload is not None
+    assert events[0].raw_payload.provider == Provider.THE_ODDS_API
+    assert events[0].raw_payload.payload_type == "odds"
+    assert events[0].raw_payload.payload["sport_key"] == "tennis_atp_french_open"
 
 
 class _FakeMatchSource:

@@ -6,8 +6,8 @@ from typing import Any
 
 import httpx
 
-from tennis_edge.domain import OddsQuote
-from tennis_edge.services.normalizer import normalize_name
+from tennis_edge.domain import OddsQuote, Provider, RawProviderPayload
+from tennis_edge.services.normalizer import normalize_name, payload_checksum
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,7 @@ class TheOddsApiEvent:
     away_team: str
     commence_time: datetime
     quotes: list[OddsQuote] = field(default_factory=list)
+    raw_payload: RawProviderPayload | None = None
 
     @property
     def name_key(self) -> frozenset[str]:
@@ -89,9 +90,48 @@ class TheOddsApiClient:
                     away_team=away,
                     commence_time=self._timestamp(row.get("commence_time")),
                     quotes=quotes,
+                    raw_payload=self._raw_payload_for_event(row, sport_key, event_id),
                 )
             )
         return events
+
+    def _raw_payload_for_event(
+        self,
+        row: dict[str, Any],
+        sport_key: str,
+        event_id: str,
+    ) -> RawProviderPayload:
+        source_ts = self._source_timestamp_for_event(row)
+        checksum = payload_checksum(
+            Provider.THE_ODDS_API,
+            "odds",
+            row,
+            source_event_id=event_id,
+            source_ts=source_ts,
+        )
+        return RawProviderPayload(
+            id=f"raw_theoddsapi_{event_id}_{checksum[:12]}",
+            provider=Provider.THE_ODDS_API,
+            payload_type="odds",
+            source_event_id=event_id,
+            source_ts=source_ts,
+            payload={"sport_key": sport_key, **row},
+            checksum=checksum,
+        )
+
+    def _source_timestamp_for_event(self, row: dict[str, Any]) -> datetime:
+        timestamps = [
+            self._timestamp(row.get("last_update") or row.get("commence_time"))
+        ]
+        for bookmaker in row.get("bookmakers") or []:
+            if not isinstance(bookmaker, dict):
+                continue
+            if bookmaker.get("last_update"):
+                timestamps.append(self._timestamp(bookmaker.get("last_update")))
+            for market in bookmaker.get("markets") or []:
+                if isinstance(market, dict) and market.get("last_update"):
+                    timestamps.append(self._timestamp(market.get("last_update")))
+        return max(timestamps)
 
     def _quotes_for_event(self, row: dict[str, Any]) -> list[OddsQuote]:
         quotes: list[OddsQuote] = []

@@ -130,12 +130,15 @@ class AnalysisRepository:
 
         by_names = {event.name_key: event for event in events}
         updated = []
+        raw_payloads = []
         for match in matches:
             key = frozenset({normalize_name(match.player1.name), normalize_name(match.player2.name)})
             event = by_names.get(key)
             if not event or not event.quotes:
                 updated.append(match)
                 continue
+            if event.raw_payload is not None:
+                raw_payloads.append(event.raw_payload)
             player_map = {
                 normalize_name(match.player1.name): match.player1.id,
                 normalize_name(match.player2.name): match.player2.id,
@@ -155,6 +158,7 @@ class AnalysisRepository:
                     }
                 )
             )
+        self.store.save_raw_payloads(raw_payloads)
         return updated
 
     def _apply_provider_gates(self, signals: list[Signal]) -> list[Signal]:

@@ -6,7 +6,8 @@ from tennis_edge.domain import CanonicalEntityConflict, Confidence, ExecutionOrd
 from tennis_edge.domain import ExecutionVenue, OrderStatus
 from tennis_edge.domain import LearningPromotionRequest
 from tennis_edge.domain import ReplayRunRequest
-from tennis_edge.sample_data import sample_raw_payloads
+from tennis_edge.providers.the_odds_api import TheOddsApiClient
+from tennis_edge.sample_data import sample_matches, sample_raw_payloads
 from tennis_edge.services.execution_engine import ORDERS
 from tennis_edge.services.repository import AnalysisRepository
 
@@ -142,6 +143,68 @@ def test_daily_cost_report_uses_persisted_positive_clv_signals() -> None:
 
     assert report.cost_per_positive_clv_signal_usd == 7.17
     assert "positive-CLV" in report.note
+
+
+def test_archive_odds_augmentation_persists_theoddsapi_raw_payload() -> None:
+    match = sample_matches()[0]
+    events = TheOddsApiClient(api_key="key", data_mode="live").parse_odds_payload(
+        "tennis_atp_french_open",
+        [
+            {
+                "id": "event-raw-1",
+                "home_team": match.player1.name,
+                "away_team": match.player2.name,
+                "commence_time": match.scheduled_at.isoformat(),
+                "bookmakers": [
+                    {
+                        "title": "Pinnacle",
+                        "last_update": match.scheduled_at.isoformat(),
+                        "markets": [
+                            {
+                                "key": "h2h",
+                                "outcomes": [
+                                    {"name": match.player1.name, "price": 1.72},
+                                    {"name": match.player2.name, "price": 2.16},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    )
+
+    class ArchiveSource:
+        async def get_tennis_h2h_events(self):
+            return events
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.saved_payloads = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def save_raw_payloads(self, payloads):
+            self.saved_payloads.extend(payloads)
+
+    repo = AnalysisRepository(
+        Settings(data_mode="live", the_odds_api_key="key", persistence_enabled=False)
+    )
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    updated = asyncio.run(repo._augment_with_archive_odds([match], ArchiveSource()))
+
+    assert updated[0].provider_ids["theoddsapi"] == "event-raw-1"
+    assert {quote.player_id for quote in updated[0].odds} == {
+        match.player1.id,
+        match.player2.id,
+    }
+    assert len(store.saved_payloads) == 1
+    assert store.saved_payloads[0].provider == Provider.THE_ODDS_API
+    assert store.saved_payloads[0].source_event_id == "event-raw-1"
 
 
 def test_entity_conflicts_prefers_persisted_store_over_sample_conflicts() -> None:

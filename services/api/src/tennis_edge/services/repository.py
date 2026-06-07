@@ -330,13 +330,13 @@ class AnalysisRepository:
         )
 
     async def settle_paper(self, request: PaperSettleRequest) -> PaperSettlement:
+        persisted = self.store.settle_paper_order(request)
+        if persisted is not None:
+            return persisted
         try:
             settlement = settle_paper_order(request)
         except KeyError:
-            persisted = self.store.settle_paper_order(request)
-            if persisted is None:
-                raise
-            return persisted
+            raise
         self.store.save_settlement(settlement)
         return settlement
 

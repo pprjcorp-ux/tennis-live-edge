@@ -9,6 +9,8 @@ from tennis_edge.domain import (
     ExecutionOrder,
     ExecutionVenue,
     OrderStatus,
+    PaperSettlement,
+    PaperSettleRequest,
     SignalStatus,
 )
 from tennis_edge.services.agent_ops import AGENT_RUNS
@@ -21,6 +23,7 @@ class AgentStoreStub:
         self.fallback = fallback
         self.saved_runs: list[AgentRun] = []
         self.saved_orders: list[ExecutionOrder] = []
+        self.settle_requests: list[PaperSettleRequest] = []
         self.persisted_runs: list[AgentRun] = []
         self.persisted_orders: list[ExecutionOrder] = []
 
@@ -38,6 +41,32 @@ class AgentStoreStub:
 
     def orders(self) -> list[ExecutionOrder]:
         return list(self.persisted_orders)
+
+    def settle_paper_order(self, request: PaperSettleRequest) -> PaperSettlement | None:
+        self.settle_requests.append(request)
+        order = next(
+            (item for item in self.persisted_orders if item.id == request.order_id),
+            None,
+        )
+        if order is None:
+            return None
+        average_price = order.average_price or order.requested_odds
+        matched = order.matched_stake or order.stake_amount
+        gross = matched * (average_price - 1) if request.result_win else -matched
+        commission = max(0, gross) * 0.02
+        return PaperSettlement(
+            order_id=order.id,
+            status=OrderStatus.SETTLED,
+            result_win=request.result_win,
+            requested_odds=order.requested_odds,
+            average_price=average_price,
+            matched_stake=matched,
+            gross_pnl=round(gross, 2),
+            commission=round(commission, 2),
+            net_pnl=round(gross - commission, 2),
+            closing_odds=request.closing_odds,
+            clv=round((1 / request.closing_odds) - (1 / average_price), 6),
+        )
 
 
 def test_agent_autopilot_persists_run_and_created_paper_orders() -> None:
@@ -189,3 +218,51 @@ def test_orders_prefers_persisted_order_status_over_process_memory() -> None:
     assert orders[0].status == OrderStatus.SETTLED
     assert orders[0].pnl == 82
     assert bankroll.open_exposure == 0
+
+
+def test_settlement_prefers_persisted_order_over_stale_process_memory() -> None:
+    ORDERS.clear()
+    AGENT_RUNS.clear()
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    persisted_order = ExecutionOrder(
+        id="ord_settle_conflict",
+        signal_id="sig_conflict",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.PAPER,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=2.0,
+    )
+    ORDERS[persisted_order.id] = persisted_order.model_copy(
+        update={
+            "requested_odds": 1.5,
+            "accepted_odds": 1.5,
+            "stake_amount": 50,
+            "matched_stake": 50,
+            "average_price": 1.5,
+        }
+    )
+    store = AgentStoreStub(repo.store)
+    store.persisted_orders = [persisted_order]
+    repo.store = store
+
+    settlement = asyncio.run(
+        repo.settle_paper(
+            PaperSettleRequest(
+                order_id=persisted_order.id,
+                result_win=True,
+                closing_odds=1.9,
+            )
+        )
+    )
+
+    assert store.settle_requests
+    assert settlement.average_price == 2.0
+    assert settlement.matched_stake == 100
+    assert settlement.net_pnl == 98

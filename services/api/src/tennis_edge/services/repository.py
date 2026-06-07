@@ -83,7 +83,6 @@ from tennis_edge.services.storage import PersistentStore
 
 
 BACKTESTS: dict[str, BacktestMetrics] = {}
-REPLAYS: dict[str, ReplayRunResult] = {}
 
 
 class AnalysisRepository:
@@ -410,9 +409,7 @@ class AnalysisRepository:
             if signal.status == SignalStatus.ENTRY
         )
         payloads = self._raw_payloads_for_replay(request.match_id, analyses)
-        result = self.replay_engine.summarize(request.match_id, payloads, signals=signal_count)
-        REPLAYS[result.run_id] = result
-        return result
+        return self.replay_engine.summarize(request.match_id, payloads, signals=signal_count)
 
     def _raw_payloads_for_replay(
         self,

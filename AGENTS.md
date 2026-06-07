@@ -29,6 +29,8 @@ Do not commit `.env`, `.logs/`, `.venv/`, `.next/`, `node_modules/`,
 - `infra/cloudflare`: Cloudflare Tunnel/Access docs.
 - `openclaw`: local-only OpenClaw skill/config examples.
 - `docs`: shared architecture plus branch-specific operating docs.
+- `docs/strategic-refactor-plan.md`: current product objective, best v2
+  direction, refactor order, and OpenClaw/Cloudflare/provider strategy.
 
 ## Runtime Defaults
 

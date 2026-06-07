@@ -51,6 +51,7 @@ predictions, signals, provider cursors, provider latency, and paper orders when
 ## Documentation
 
 - [Common architecture](docs/architecture.md)
+- [Strategic refactor plan](docs/strategic-refactor-plan.md)
 - [Budget profile](docs/budget-profile.md)
 - [Enterprise profile](docs/enterprise-profile.md)
 - [Execution safety](docs/execution-safety.md)

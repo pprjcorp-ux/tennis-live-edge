@@ -416,14 +416,14 @@ class AnalysisRepository:
         return metrics
 
     async def get_backtest(self, run_id: str) -> BacktestMetrics:
+        persisted = self.store.get_backtest(run_id)
+        if persisted is not None:
+            return persisted
         if run_id == "latest" and BACKTESTS:
             return list(BACKTESTS.values())[-1]
-        if run_id not in BACKTESTS:
-            persisted = self.store.get_backtest(run_id)
-            if persisted is None:
-                raise KeyError(run_id)
-            return persisted
-        return BACKTESTS[run_id]
+        if run_id in BACKTESTS:
+            return BACKTESTS[run_id]
+        raise KeyError(run_id)
 
     async def daily_metrics(self, target_date: date) -> DailyMetrics:
         analyses = await self.analyses_for_date(target_date)

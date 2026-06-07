@@ -4,6 +4,7 @@ import asyncio
 from tennis_edge.domain import BacktestRunRequest, OrderStatus, PaperSettlement, TrainingExample
 from tennis_edge.config import Settings
 from tennis_edge.services.repository import AnalysisRepository
+from tennis_edge.services.repository import BACKTESTS
 from tennis_edge.services.storage import PersistentStore
 from tennis_edge.services.model_lab import (
     calibration_from_training_examples,
@@ -213,3 +214,32 @@ def test_repository_prefers_persisted_model_lab_reports() -> None:
     assert asyncio.run(repo.champion_model()) == "persisted-champion"
     assert asyncio.run(repo.calibration_report("bt_store")) == report
     assert asyncio.run(repo.run_backtest(BacktestRunRequest(model_version="prematch_ensemble_v1"))) == metrics
+
+
+def test_repository_latest_backtest_prefers_persisted_store_over_memory_cache() -> None:
+    BACKTESTS.clear()
+    stale_metrics = walk_forward_from_training_examples(
+        BacktestRunRequest(model_version="baseline_v0"),
+        [
+            _example(1, 0.52, False, -0.5, -0.01, model_version="baseline_v0"),
+        ],
+    )
+    persisted_metrics = walk_forward_from_training_examples(
+        BacktestRunRequest(model_version="prematch_ensemble_v1"),
+        [
+            _example(2, 0.62, True, 0.8, 0.012),
+            _example(3, 0.71, True, 0.6, 0.008),
+        ],
+    )
+    BACKTESTS[stale_metrics.run_id] = stale_metrics
+
+    class StoreStub:
+        def get_backtest(self, run_id):
+            assert run_id == "latest"
+            return persisted_metrics
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    repo.store = StoreStub()
+
+    assert asyncio.run(repo.get_backtest("latest")) == persisted_metrics
+    BACKTESTS.clear()

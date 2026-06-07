@@ -23,11 +23,15 @@ FastAPI backend.
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs briefing
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
+node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
 printf "%s" "$ADMIN_API_TOKEN" | node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
 
 The `autopilot` command creates paper orders only through
 `POST /api/v1/agent/autopilot/evaluate`.
+The `preflight` command should run before cron/autopilot jobs; it checks API
+reachability, local gateway reachability, persistence, provider key readiness,
+and the real-execution hard block.
 
 Use the repo npm wrapper for autopilot so the token is passed through stdin and
 is not read by the skill from `.env` or process environment.

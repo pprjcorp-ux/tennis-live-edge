@@ -9,6 +9,7 @@ from tennis_edge.domain import (
     AgentAutopilotRequest,
     AgentAutopilotResult,
     AgentBriefing,
+    AgentPreflight,
     AgentRun,
     BacktestMetrics,
     BacktestRunRequest,
@@ -185,6 +186,13 @@ async def v1_agent_anomalies(
     repo: AnalysisRepository = Depends(repository),
 ) -> list[AgentAnomaly]:
     return await repo.agent_anomalies()
+
+
+@app.get("/api/v1/agent/preflight", response_model=AgentPreflight)
+async def v1_agent_preflight(
+    repo: AnalysisRepository = Depends(repository),
+) -> AgentPreflight:
+    return await repo.agent_preflight()
 
 
 @app.post("/api/v1/agent/autopilot/evaluate", response_model=AgentAutopilotResult)

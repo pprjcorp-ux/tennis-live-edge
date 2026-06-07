@@ -671,6 +671,19 @@ class AgentBriefing(BaseModel):
     latest_run: AgentRun | None = None
 
 
+class AgentPreflightCheck(BaseModel):
+    name: str
+    status: Literal["pass", "warn", "fail"]
+    summary: str
+    detail: str | None = None
+
+
+class AgentPreflight(BaseModel):
+    status: Literal["ready", "degraded", "blocked"]
+    checks: list[AgentPreflightCheck]
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class AgentAutopilotRequest(BaseModel):
     source: Literal["dashboard", "telegram", "cron", "openclaw", "system"] = "dashboard"
     create_paper_orders: bool = True

@@ -64,6 +64,15 @@ async function runs() {
   printJson(data);
 }
 
+async function preflight() {
+  const data = await request("/api/v1/agent/preflight");
+  printJson({
+    status: data.status,
+    checks: data.checks,
+    generated_at: data.generated_at
+  });
+}
+
 async function autopilot() {
   const data = await request("/api/v1/agent/autopilot/evaluate", {
     method: "POST",
@@ -86,7 +95,7 @@ async function autopilot() {
   });
 }
 
-const commands = { briefing, anomalies, runs, autopilot };
+const commands = { briefing, anomalies, runs, preflight, autopilot };
 
 if (!commands[command]) {
   process.stderr.write(

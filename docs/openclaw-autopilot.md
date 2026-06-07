@@ -10,6 +10,7 @@ valid `Entrada` signal, and summarizes anomalies/results.
 npm run openclaw:briefing
 npm run openclaw:anomalies
 npm run openclaw:runs
+npm run openclaw:preflight
 ADMIN_API_TOKEN=... npm run openclaw:autopilot
 ```
 
@@ -28,6 +29,17 @@ falls back to in-memory runs only in sample/dev mode. Each run stores:
 
 Critical-route runs are shown first in the audit view so severe anomaly or
 real-execution-readiness reviews are not buried by routine polling.
+
+## Preflight
+
+Run `npm run openclaw:preflight` before cron/autopilot execution. It checks:
+
+- FastAPI Agent Ops reachability;
+- admin-token readiness for protected actions;
+- OpenClaw loopback gateway reachability;
+- persistence/store status;
+- budget provider key readiness;
+- `REAL_EXECUTION_HARD_BLOCK` and `can_submit_real_orders=false`.
 
 ## Model Routing
 

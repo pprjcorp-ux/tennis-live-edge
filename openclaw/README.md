@@ -28,6 +28,7 @@ export OPENCLAW_TELEGRAM_ALLOWED_USER_IDS=123456789
 npm run openclaw:briefing
 npm run openclaw:anomalies
 npm run openclaw:runs
+npm run openclaw:preflight
 npm run openclaw:autopilot
 ```
 
@@ -45,6 +46,10 @@ When Postgres persistence is enabled, OpenClaw autopilot writes every run to the
 backend `agent_runs` table and persists each created paper order. `npm run
 openclaw:runs` should therefore keep showing the last operational runs after an
 API restart. In sample/dev mode, the endpoint falls back to process memory.
+
+Run `npm run openclaw:preflight` before cron/autopilot jobs. It checks the API,
+OpenClaw loopback gateway, admin-token readiness, persistence, budget provider
+keys, and the real-execution hard block.
 
 ## Model Router Defaults
 

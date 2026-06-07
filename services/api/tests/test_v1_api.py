@@ -58,13 +58,16 @@ def test_v1_agent_ops_endpoints_expose_openclaw_router() -> None:
     briefing = client.get("/api/v1/agent/briefing")
     anomalies = client.get("/api/v1/agent/anomalies")
     runs = client.get("/api/v1/agent/runs")
+    preflight = client.get("/api/v1/agent/preflight")
 
     assert briefing.status_code == 200
     assert anomalies.status_code == 200
     assert runs.status_code == 200
+    assert preflight.status_code == 200
     assert briefing.json()["critical_model"] == "gpt-5.5"
     assert "create_paper_order" in briefing.json()["allowed_actions"]
     assert isinstance(anomalies.json(), list)
+    assert "real_execution_hard_block" in {check["name"] for check in preflight.json()["checks"]}
 
 
 def test_v1_agent_autopilot_requires_token() -> None:

@@ -6,6 +6,7 @@ from tennis_edge.domain import (
     AgentAutopilotRequest,
     AgentAutopilotResult,
     AgentBriefing,
+    AgentPreflight,
     AgentRun,
     BacktestMetrics,
     BacktestRunRequest,
@@ -40,6 +41,7 @@ from tennis_edge.domain import (
 from tennis_edge.services.agent_ops import (
     agent_runs,
     build_agent_briefing,
+    build_agent_preflight,
     detect_anomalies,
     run_agent_autopilot,
 )
@@ -264,6 +266,14 @@ class AnalysisRepository:
             paper_performance=await self.paper_performance(),
             bankroll=await self.bankroll(),
             cost_report=await self.daily_cost_report(date.today()),
+        )
+
+    async def agent_preflight(self) -> AgentPreflight:
+        return build_agent_preflight(
+            self.settings,
+            provider_health=await self.provider_health(),
+            execution_status=await self.execution_status(),
+            persistence_last_error=self.store.last_error,
         )
 
     async def agent_autopilot(

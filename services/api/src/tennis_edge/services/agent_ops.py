@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from datetime import datetime, timezone
+import socket
 from uuid import uuid4
 
 from tennis_edge.config import Settings
@@ -10,6 +12,8 @@ from tennis_edge.domain import (
     AgentAutopilotResult,
     AgentBriefing,
     AgentModelRoute,
+    AgentPreflight,
+    AgentPreflightCheck,
     AgentRun,
     AgentRunType,
     BankrollSnapshot,
@@ -86,6 +90,133 @@ def _model_routes(settings: Settings, *, critical: bool = False) -> list[AgentMo
             )
         )
     return routes
+
+
+def probe_openclaw_gateway(host: str = "127.0.0.1", port: int = 18789) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def build_agent_preflight(
+    settings: Settings,
+    *,
+    provider_health: list[ProviderHealth],
+    execution_status: ExecutionStatus,
+    persistence_last_error: str | None,
+    gateway_probe: Callable[[], bool] = probe_openclaw_gateway,
+) -> AgentPreflight:
+    checks = [
+        AgentPreflightCheck(
+            name="api",
+            status="pass",
+            summary="FastAPI Agent Ops endpoint is responding.",
+        )
+    ]
+    checks.append(
+        AgentPreflightCheck(
+            name="admin_api_token",
+            status="pass" if settings.admin_api_token else "warn",
+            summary=(
+                "Admin token configured for protected OpenClaw actions."
+                if settings.admin_api_token
+                else "Admin token missing; OpenClaw can read but cannot run autopilot/backtests."
+            ),
+        )
+    )
+    try:
+        gateway_ok = gateway_probe()
+    except Exception as exc:
+        gateway_ok = False
+        gateway_detail = str(exc)
+    else:
+        gateway_detail = None
+    checks.append(
+        AgentPreflightCheck(
+            name="openclaw_gateway",
+            status="pass" if gateway_ok else "fail",
+            summary=(
+                "OpenClaw loopback gateway is reachable."
+                if gateway_ok
+                else "OpenClaw loopback gateway is not reachable."
+            ),
+            detail=gateway_detail,
+        )
+    )
+    checks.append(
+        AgentPreflightCheck(
+            name="persistence",
+            status="fail"
+            if settings.persistence_enabled and persistence_last_error
+            else "pass"
+            if settings.persistence_enabled
+            else "warn",
+            summary=(
+                "Persistence enabled and no current store error reported."
+                if settings.persistence_enabled and not persistence_last_error
+                else "Persistence enabled but store reports an error."
+                if settings.persistence_enabled
+                else "Persistence disabled; Agent Ops audit is process-local only."
+            ),
+            detail=persistence_last_error,
+        )
+    )
+    missing_provider_keys = _missing_provider_keys(settings, provider_health)
+    checks.append(
+        AgentPreflightCheck(
+            name="provider_keys",
+            status="warn" if missing_provider_keys else "pass",
+            summary=(
+                "Budget live provider keys appear configured."
+                if not missing_provider_keys
+                else "One or more budget live provider keys are missing."
+            ),
+            detail=", ".join(missing_provider_keys) if missing_provider_keys else None,
+        )
+    )
+    checks.append(
+        AgentPreflightCheck(
+            name="real_execution_hard_block",
+            status="pass"
+            if execution_status.real_execution_hard_block and not execution_status.can_submit_real_orders
+            else "fail",
+            summary=(
+                "Real execution hard block is active."
+                if execution_status.real_execution_hard_block and not execution_status.can_submit_real_orders
+                else "Real execution is not hard-blocked; OpenClaw must not operate autonomously."
+            ),
+        )
+    )
+    statuses = {check.status for check in checks}
+    return AgentPreflight(
+        status="blocked" if "fail" in statuses else "degraded" if "warn" in statuses else "ready",
+        checks=checks,
+    )
+
+
+def _missing_provider_keys(
+    settings: Settings,
+    provider_health: list[ProviderHealth],
+) -> list[str]:
+    if settings.data_mode == "sample":
+        return []
+    missing = []
+    if not settings.api_tennis_key:
+        missing.append("API_TENNIS_KEY")
+    if not settings.odds_api_io_key:
+        missing.append("ODDS_API_IO_KEY")
+    if not settings.the_odds_api_key:
+        missing.append("THE_ODDS_API_KEY")
+    for health in provider_health:
+        if not health.configured and health.provider.value in {
+            "api_tennis",
+            "odds_api_io",
+            "theoddsapi",
+        }:
+            missing.append(f"{health.provider.value}:{health.status}")
+    return sorted(set(missing))
 
 
 def _remember_run(run: AgentRun) -> AgentRun:

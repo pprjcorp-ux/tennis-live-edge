@@ -14,7 +14,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:6380:6379"
 
   nats:
     image: nats:2.10-alpine

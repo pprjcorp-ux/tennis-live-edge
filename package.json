@@ -7,6 +7,7 @@
     "api:dev": "cd services/api && ../../.venv/bin/uvicorn tennis_edge.main:app --host 127.0.0.1 --port 8000 --reload",
     "api:ingest": "cd services/api && ../../.venv/bin/python -m tennis_edge.ingest_once",
     "api:ingest:odds-message": "cd services/api && ../../.venv/bin/python -m tennis_edge.ingest_odds_message",
+    "api:ingest:odds-stream": "cd services/api && ../../.venv/bin/python -m tennis_edge.ingest_odds_stream",
     "api:test": "cd services/api && ../../.venv/bin/pytest",
     "web:test": "npm --prefix apps/web test",
     "cloudflare:check": "python3 scripts/check_cloudflare_private_runtime.py",

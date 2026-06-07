@@ -9,6 +9,7 @@ valid `Entrada` signal, and summarizes anomalies/results.
 ```bash
 npm run api:ingest
 printf '{"event_id":"smoke-event","seq":1,"timestamp":"2026-06-07T20:00:00Z","data":{"bookmaker":"SmokeBook","market":"h2h","selections":[{"player_id":"p1","odds":1.8},{"player_id":"p2","odds":2.1}]}}' | TENNIS_EDGE_DATA_MODE=sample TENNIS_EDGE_PERSISTENCE_ENABLED=false npm run api:ingest:odds-message
+npm run api:ingest:odds-stream -- --max-messages 25 --timeout-seconds 30
 npm run openclaw:briefing
 npm run openclaw:anomalies
 npm run openclaw:runs
@@ -43,6 +44,11 @@ After a trusted REST snapshot is applied, the protected
 `POST /api/v1/ingestion/provider-cursors/resync` endpoint records the provider,
 stream, and last trusted sequence. Use it to clear websocket gaps only after the
 snapshot is actually reconciled.
+
+`api:ingest:odds-stream` opens the live Odds-API.io websocket only when
+`ODDS_API_IO_KEY` is configured and the persisted cursor does not require
+resync. It uses the same persistent message-ingestion path for each websocket
+payload.
 
 ## Preflight
 

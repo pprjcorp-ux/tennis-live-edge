@@ -22,6 +22,7 @@ FastAPI backend.
 ```bash
 npm run api:ingest
 printf '{"event_id":"smoke-event","seq":1,"timestamp":"2026-06-07T20:00:00Z","data":{"bookmaker":"SmokeBook","market":"h2h","selections":[{"player_id":"p1","odds":1.8},{"player_id":"p2","odds":2.1}]}}' | TENNIS_EDGE_DATA_MODE=sample TENNIS_EDGE_PERSISTENCE_ENABLED=false npm run api:ingest:odds-message
+npm run api:ingest:odds-stream -- --max-messages 25 --timeout-seconds 30
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs briefing
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
@@ -35,6 +36,8 @@ The `api:ingest:odds-message` command reads one Odds-API.io websocket-style JSON
 message from stdin, persists raw payload/cursor/latency when Postgres is
 enabled, attempts deterministic normalized `odds_ticks` storage for resolved
 matches/players, and reports `resync_required` without creating orders.
+The `api:ingest:odds-stream` command opens the live websocket only when
+`ODDS_API_IO_KEY` exists and the persisted cursor is safe to consume from.
 Only use `POST /api/v1/ingestion/provider-cursors/resync` after a trusted REST
 snapshot has been applied and the last provider sequence is known.
 The `autopilot` command creates paper orders only through

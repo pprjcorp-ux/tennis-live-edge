@@ -163,3 +163,15 @@ def test_odds_api_io_ingest_message_returns_quotes_and_cursor_for_custom_stream(
     assert len(quotes) == 2
     assert cursor.stream == "tennis:live:ml"
     assert cursor.last_seq == 7
+
+
+def test_odds_api_io_subscription_message_includes_last_seq_when_available() -> None:
+    client = OddsApiIoClient(api_key="key", data_mode="live")
+
+    message = client.subscription_message("tennis:moneyline", last_seq=42)
+    without_cursor = client.subscription_message("tennis:moneyline")
+
+    assert message["type"] == "subscribe"
+    assert message["sport"] == "tennis"
+    assert message["lastSeq"] == 42
+    assert "lastSeq" not in without_cursor

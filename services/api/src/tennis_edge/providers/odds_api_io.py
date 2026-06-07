@@ -18,9 +18,19 @@ class OddsApiIoClient:
 
     async def stream_live_odds(self) -> AsyncIterator[list[OddsQuote]]:
         """Stream Odds-API.io tennis moneyline quotes when credentials are present."""
+        async for payload in self.stream_live_messages():
+            yield self.parse_message(payload)
+
+    async def stream_live_messages(
+        self,
+        *,
+        stream: str = "tennis:moneyline",
+        last_seq: int | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Stream raw Odds-API.io messages so operational ingestion can persist lineage."""
         if self.data_mode == "sample" or not self.api_key:
             if False:
-                yield []
+                yield {}
             return
 
         try:
@@ -39,17 +49,25 @@ class OddsApiIoClient:
             websocket_context = websockets.connect(self.websocket_url, **connect_kwargs)
 
         async with websocket_context as websocket:
-            await websocket.send(
-                json.dumps(
-                    {
-                        "type": "subscribe",
-                        "sport": "tennis",
-                        "markets": ["ML", "h2h", "moneyline"],
-                    }
-                )
-            )
+            await websocket.send(json.dumps(self.subscription_message(stream, last_seq=last_seq)))
             async for message in websocket:
-                yield self.parse_message(json.loads(message))
+                yield json.loads(message)
+
+    def subscription_message(
+        self,
+        stream: str = "tennis:moneyline",
+        *,
+        last_seq: int | None = None,
+    ) -> dict[str, Any]:
+        message: dict[str, Any] = {
+            "type": "subscribe",
+            "sport": "tennis",
+            "markets": ["ML", "h2h", "moneyline"],
+            "stream": stream,
+        }
+        if last_seq is not None:
+            message["lastSeq"] = last_seq
+        return message
 
     def parse_message(
         self,

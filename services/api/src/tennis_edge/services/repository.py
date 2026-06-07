@@ -62,15 +62,11 @@ from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.backtest import run_walk_forward_backtest
 from tennis_edge.services.cost_profile import (
     apply_coverage_gate,
-    cost_profile,
     coverage_decision,
-    daily_cost_report,
-    provider_health_for,
 )
 from tennis_edge.services.enterprise_analytics import (
     calibration_report,
     champion_model,
-    data_quality_snapshots,
     entity_conflicts,
     model_registry,
     paper_performance,
@@ -82,12 +78,12 @@ from tennis_edge.services.execution_engine import (
     bankroll_snapshot,
     cancel_order,
     create_order,
-    execution_status,
     promote_from_learning,
     set_kill_switch_for,
 )
 from tennis_edge.services.normalizer import normalize_name
-from tennis_edge.services.provider_cursor import default_provider_cursors, mark_resynced
+from tennis_edge.services.operational_state import OperationalStateService
+from tennis_edge.services.provider_cursor import mark_resynced
 from tennis_edge.services.ingestion import LiveIngestionPipeline
 from tennis_edge.services.replay_engine import ReplayEngine
 from tennis_edge.services.storage import PersistentStore
@@ -104,6 +100,7 @@ class AnalysisRepository:
         self.the_odds_api = TheOddsApiClient(settings.the_odds_api_key, settings.data_mode)
         self.replay_engine = ReplayEngine()
         self.store = PersistentStore(settings)
+        self.operational_state = OperationalStateService(settings, self.store)
         self.ingestion = LiveIngestionPipeline(
             self.api_tennis,
             self.the_odds_api,
@@ -173,7 +170,7 @@ class AnalysisRepository:
     def _apply_provider_gates(self, signals: list[Signal]) -> list[Signal]:
         if self.settings.data_mode == "sample" or not self.settings.odds_ws_resync_required_blocks_signals:
             return signals
-        cursors = self.store.provider_cursors() or self._fallback_provider_cursors()
+        cursors = self.store.provider_cursors() or self.operational_state.fallback_provider_cursors()
         odds_cursor = next(
             (
                 cursor
@@ -258,7 +255,7 @@ class AnalysisRepository:
         return run
 
     async def ingestion_runs(self) -> list[IngestionRunRecord]:
-        return self.store.ingestion_runs()
+        return self.operational_state.ingestion_runs()
 
     @staticmethod
     def _now() -> datetime:
@@ -352,31 +349,23 @@ class AnalysisRepository:
         return None
 
     async def provider_health(self) -> list[ProviderHealth]:
-        return self.store.provider_health()
+        return self.operational_state.provider_health()
 
     async def cost_profile(self) -> CostProfile:
-        return cost_profile(self.settings)
+        return self.operational_state.cost_profile()
 
     async def daily_cost_report(self, target_date: date) -> DailyCostReport:
-        return daily_cost_report(
-            self.settings,
+        return self.operational_state.daily_cost_report(
+            target_date,
             await self.analyses_for_date(target_date),
             await self.paper_performance(),
         )
 
     async def data_quality(self) -> list[DataQualitySnapshot]:
-        persisted = self.store.data_quality()
-        return persisted or data_quality_snapshots(self.settings)
+        return self.operational_state.data_quality()
 
     async def provider_cursors(self) -> list[ProviderCursor]:
-        persisted = self.store.provider_cursors()
-        return persisted or self._fallback_provider_cursors()
-
-    def _fallback_provider_cursors(self) -> list[ProviderCursor]:
-        return default_provider_cursors(
-            self.settings,
-            use_process_cache=self.settings.data_mode == "sample",
-        )
+        return self.operational_state.provider_cursors()
 
     async def model_registry(self) -> list[ModelRegistryEntry]:
         persisted = self.store.model_registry()
@@ -502,7 +491,7 @@ class AnalysisRepository:
         return settlement
 
     async def execution_status(self) -> ExecutionStatus:
-        return execution_status(self.settings)
+        return self.operational_state.execution_status()
 
     async def bankroll(self, orders: list[ExecutionOrder] | None = None) -> BankrollSnapshot:
         return bankroll_snapshot(self.settings, orders if orders is not None else await self.orders())

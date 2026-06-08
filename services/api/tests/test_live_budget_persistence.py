@@ -393,6 +393,45 @@ def test_save_order_prefers_exact_external_signal_id_lookup() -> None:
     )
 
 
+def test_insert_signals_records_provider_lineage_in_risk_context() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.risks = []
+
+        def execute(self, query, params=None):
+            assert "INSERT INTO signals" in query
+            self.risks.append(params[9].obj)
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    analysis = asyncio.run(repo.analyses_for_date(date.today()))[0]
+    assert analysis.signals
+    match = analysis.match.model_copy(
+        update={
+            "provider_ids": {
+                "api_tennis": "fixture-1",
+                "odds_api_io": "odds-1",
+            }
+        }
+    )
+    cursor = CursorStub()
+
+    PersistentStore(
+        Settings(
+            data_mode="live",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        )
+    )._insert_signals(cursor, analysis.signals, "prediction_1", match)
+
+    assert cursor.risks
+    assert all(risk["score_provider"] == Provider.API_TENNIS.value for risk in cursor.risks)
+    assert all(risk["odds_provider"] == Provider.ODDS_API_IO.value for risk in cursor.risks)
+    assert all(
+        risk["provider_lineage"] == [Provider.API_TENNIS.value, Provider.ODDS_API_IO.value]
+        for risk in cursor.risks
+    )
+
+
 def test_odds_stream_usage_reads_persisted_ingestion_runs() -> None:
     target_date = date(2026, 6, 8)
     started_at = datetime(2026, 6, 8, 12, tzinfo=timezone.utc)
@@ -1203,6 +1242,62 @@ def test_paper_performance_survives_segment_schema_drift() -> None:
     assert store.last_error.startswith("paper_performance_segments failed:")
 
 
+def test_paper_performance_segments_group_provider_by_signal_odds_provider() -> None:
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            assert "s.risk->>'odds_provider'" in query
+            assert "po.risk_snapshot->>'odds_provider'" in query
+            assert "po.venue" in query
+            return self
+
+        def fetchall(self):
+            return [
+                {
+                    "segment_type": "provider",
+                    "segment": Provider.ODDS_API_IO.value,
+                    "settled_orders": 2,
+                    "realized_pnl": 14.0,
+                    "staked": 100.0,
+                    "clv": 0.018,
+                }
+            ]
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    segments = StoreStub()._paper_performance_segments()
+
+    assert len(segments) == 1
+    assert segments[0].segment_type == "provider"
+    assert segments[0].segment == Provider.ODDS_API_IO.value
+    assert segments[0].roi == 0.14
+
+
 def test_persisted_fallback_schema_drift_returns_empty_snapshot_with_store_error() -> None:
     class StoreStub:
         def __init__(self) -> None:
@@ -1786,7 +1881,7 @@ def test_save_analyses_records_score_latency_for_primary_provider() -> None:
         def _insert_prediction_snapshot(self, cur, prediction, feature_id):
             return "prediction_id"
 
-        def _insert_signals(self, cur, signals, prediction_id):
+        def _insert_signals(self, cur, signals, prediction_id, match):
             pass
 
         def _record_latency(self, cur, provider, feed, match):

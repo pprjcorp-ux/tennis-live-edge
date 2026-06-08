@@ -62,6 +62,7 @@ from tennis_edge.services.provider_cursor import default_provider_cursors
 from tennis_edge.services.provider_lineage import (
     odds_provider_for_match,
     provider_lineage_for_ids,
+    provider_lineage_for_match,
     primary_provider_for_match,
 )
 
@@ -253,7 +254,12 @@ class PersistentStore:
                             prediction_id = self._insert_prediction_snapshot(
                                 cur, analysis.prediction, feature_id
                             )
-                            self._insert_signals(cur, analysis.signals, prediction_id)
+                            self._insert_signals(
+                                cur,
+                                analysis.signals,
+                                prediction_id,
+                                analysis.match,
+                            )
                             self._record_latency(
                                 cur,
                                 primary_provider_for_match(analysis.match),
@@ -2038,7 +2044,13 @@ class PersistentStore:
                             po.clv::float AS clv,
                             coalesce(po.matched_stake, po.stake_amount)::float AS staked,
                             coalesce(po.average_price, po.accepted_odds, po.requested_odds)::float AS odds,
-                            po.venue,
+                            coalesce(
+                              s.risk->>'odds_provider',
+                              po.risk_snapshot->>'odds_provider',
+                              po.risk_snapshot->>'provider',
+                              po.venue,
+                              'unknown'
+                            ) AS provider,
                             m.surface,
                             m.tour,
                             ps.model_version_id AS model_version
@@ -2057,7 +2069,7 @@ class PersistentStore:
                           UNION ALL
                           SELECT 'tour', coalesce(tour, 'unknown'), * FROM settled
                           UNION ALL
-                          SELECT 'provider', coalesce(venue, 'unknown'), * FROM settled
+                          SELECT 'provider', coalesce(provider, 'unknown'), * FROM settled
                         )
                         SELECT
                           segment_type,
@@ -2380,7 +2392,21 @@ class PersistentStore:
         )
         return prediction_id
 
-    def _insert_signals(self, cur: Any, signals: Iterable[Signal], prediction_id: str) -> None:
+    def _insert_signals(
+        self,
+        cur: Any,
+        signals: Iterable[Signal],
+        prediction_id: str,
+        match: Match,
+    ) -> None:
+        odds_provider = odds_provider_for_match(match)
+        risk_context = {
+            "score_provider": primary_provider_for_match(match).value,
+            "odds_provider": odds_provider.value if odds_provider is not None else None,
+            "provider_lineage": [
+                provider.value for provider in provider_lineage_for_match(match)
+            ],
+        }
         for signal in signals:
             cur.execute(
                 """
@@ -2400,7 +2426,14 @@ class PersistentStore:
                     signal.best_odds,
                     signal.edge,
                     signal.stake_fraction,
-                    _json({"threshold": signal.threshold, "confidence": signal.confidence.value, "external_signal_id": signal.id}),
+                    _json(
+                        {
+                            "threshold": signal.threshold,
+                            "confidence": signal.confidence.value,
+                            "external_signal_id": signal.id,
+                            **risk_context,
+                        }
+                    ),
                     signal.reason,
                     _now(),
                 ),

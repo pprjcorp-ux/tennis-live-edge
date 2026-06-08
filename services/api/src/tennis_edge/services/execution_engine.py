@@ -25,6 +25,11 @@ from tennis_edge.domain import (
 )
 from tennis_edge.providers.betfair import BetfairClient
 from tennis_edge.services.backtest import evaluate_promotion
+from tennis_edge.services.provider_lineage import (
+    odds_provider_for_match,
+    primary_provider_for_match,
+    provider_lineage_for_match,
+)
 
 
 ORDERS: dict[str, ExecutionOrder] = {}
@@ -252,6 +257,7 @@ def create_order(
     stake_amount = round(bankroll_amount * stake_fraction, 2)
     risk_reasons = order_risk_reasons(settings, analysis, signal, stake_amount, orders)
     status = OrderStatus.PAPER if not real else OrderStatus.SUBMITTED
+    odds_provider = odds_provider_for_match(analysis.match)
     audit = [
         "Order created from deterministic signal gate.",
         "No browser automation or sportsbook scraping used.",
@@ -328,6 +334,11 @@ def create_order(
             "surface": analysis.match.surface.value,
             "tour": analysis.match.tour.value,
             "competition_level": analysis.match.competition_level.value,
+            "score_provider": primary_provider_for_match(analysis.match).value,
+            "odds_provider": odds_provider.value if odds_provider is not None else None,
+            "provider_lineage": [
+                provider.value for provider in provider_lineage_for_match(analysis.match)
+            ],
             "risk_reasons": risk_reasons,
             "bankroll_amount": bankroll_amount,
             "stake_cap": stage_stake_cap(settings),

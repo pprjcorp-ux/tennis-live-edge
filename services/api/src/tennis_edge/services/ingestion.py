@@ -18,6 +18,10 @@ from tennis_edge.domain import (
 from tennis_edge.services.feature_engine import build_features
 from tennis_edge.services.model_service import predict_match
 from tennis_edge.services.normalizer import payload_checksum
+from tennis_edge.services.provider_lineage import (
+    primary_provider_for_ids,
+    provider_lineage_for_match,
+)
 from tennis_edge.services.signal_engine import build_signals
 
 
@@ -182,11 +186,7 @@ def _raw_payloads_from_matches(matches: list[Match]) -> list[RawProviderPayload]
 
 
 def _primary_provider(match: Match) -> Provider:
-    if "api_tennis" in match.provider_ids:
-        return Provider.API_TENNIS
-    if "theoddsapi" in match.provider_ids:
-        return Provider.THE_ODDS_API
-    return Provider.SAMPLE
+    return primary_provider_for_ids(match.provider_ids)
 
 
 def _snapshot_source(matches: list[Match]) -> str:
@@ -199,9 +199,6 @@ def _freshness_for_match(match: Match, source: str, persisted: bool) -> MatchFre
     now = _now()
     odds_source_ts = max((quote.source_ts for quote in match.odds), default=None)
     score_source_ts = match.scheduled_at if match.state.status == "prematch" else now
-    provider_lineage = [_primary_provider(match)]
-    if match.odds:
-        provider_lineage.append(Provider.ODDS_API_IO)
     return MatchFreshness(
         source=source,
         persisted=persisted,
@@ -211,7 +208,7 @@ def _freshness_for_match(match: Match, source: str, persisted: bool) -> MatchFre
         odds_age_ms=max(0, int((now - odds_source_ts).total_seconds() * 1000))
         if odds_source_ts
         else None,
-        provider_lineage=list(dict.fromkeys(provider_lineage)),
+        provider_lineage=provider_lineage_for_match(match),
         note="Canonical operational snapshot built by LiveIngestionPipeline.",
     )
 

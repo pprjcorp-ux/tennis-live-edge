@@ -60,6 +60,10 @@ from tennis_edge.services.feature_engine import build_features
 from tennis_edge.services.model_service import predict_match
 from tennis_edge.services.normalizer import normalize_name
 from tennis_edge.services.provider_cursor import default_provider_cursors
+from tennis_edge.services.provider_lineage import (
+    odds_provider_for_match,
+    provider_lineage_for_ids,
+)
 from tennis_edge.services.signal_engine import build_signals
 
 
@@ -157,8 +161,14 @@ class PersistentStore:
                     )
                     self._insert_signals(cur, analysis.signals, prediction_id)
                     self._record_latency(cur, Provider.API_TENNIS, "score/live", analysis.match)
-                    if analysis.match.odds:
-                        self._record_latency(cur, Provider.ODDS_API_IO, "odds/moneyline", analysis.match)
+                    odds_provider = odds_provider_for_match(analysis.match)
+                    if odds_provider is not None:
+                        self._record_latency(
+                            cur,
+                            odds_provider,
+                            "odds/moneyline",
+                            analysis.match,
+                        )
                     self._upsert_provider_cursors(cur, existing_cursors=existing_cursors)
         return True
 
@@ -1643,13 +1653,14 @@ class PersistentStore:
         )
 
     def _insert_odds_ticks(self, cur: Any, match: Match) -> None:
+        provider = odds_provider_for_match(match) or Provider.ODDS_API_IO
         for quote in match.odds:
             if quote.player_id not in {match.player1.id, match.player2.id}:
                 continue
             self._insert_odds_quote(
                 cur,
                 match_id=match.id,
-                provider=Provider.ODDS_API_IO,
+                provider=provider,
                 quote=quote,
             )
 
@@ -2017,13 +2028,7 @@ class PersistentStore:
         score_source_ts = row.get("latest_score_source_ts")
         odds_source_ts = max((quote.source_ts for quote in odds), default=None)
         provider_ids = row["provider_ids"] or {}
-        provider_lineage: list[Provider] = []
-        if "api_tennis" in provider_ids:
-            provider_lineage.append(Provider.API_TENNIS)
-        if "theoddsapi" in provider_ids:
-            provider_lineage.append(Provider.THE_ODDS_API)
-        if odds:
-            provider_lineage.append(Provider.ODDS_API_IO)
+        provider_lineage = provider_lineage_for_ids(provider_ids, has_odds=bool(odds))
         return MatchFreshness(
             source="persisted_fallback",
             persisted=True,
@@ -2035,6 +2040,6 @@ class PersistentStore:
             odds_age_ms=max(0, int((now - odds_source_ts).total_seconds() * 1000))
             if odds_source_ts
             else None,
-            provider_lineage=list(dict.fromkeys(provider_lineage or [Provider.SAMPLE])),
+            provider_lineage=provider_lineage,
             note="Loaded from persisted canonical match, latest score tick, odds tick and decision snapshot.",
         )

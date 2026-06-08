@@ -356,6 +356,41 @@ def test_save_odds_quotes_for_event_resolves_match_and_players() -> None:
     assert insert_params[1][4] == "p2"
 
 
+def test_save_analyses_persists_theoddsapi_archive_odds_with_archive_provider() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.queries = []
+            self.params = []
+            self.rowcount = 1
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.queries.append(query)
+            self.params.append(params)
+            return self
+
+    match = sample_matches()[0].model_copy(
+        update={"provider_ids": {"api_tennis": "fixture-1", "theoddsapi": "archive-1"}}
+    )
+    store = PersistentStore(Settings(data_mode="live", persistence_enabled=True))
+    cursor = CursorStub()
+
+    store._insert_odds_ticks(cursor, match)
+
+    insert_params = [
+        params
+        for query, params in zip(cursor.queries, cursor.params)
+        if "INSERT INTO odds_ticks" in query
+    ]
+    assert insert_params
+    assert {params[1] for params in insert_params} == {Provider.THE_ODDS_API.value}
+
+
 def test_repository_ingests_odds_api_message_with_persisted_cursor() -> None:
     class StoreStub:
         def __init__(self) -> None:
@@ -661,6 +696,60 @@ def test_live_ingestion_pipeline_prefers_provider_raw_payload_over_canonical_pro
         "event_key": match.provider_match_id,
         "provider_shape": "api_tennis_original",
     }
+
+
+def test_live_ingestion_pipeline_marks_theoddsapi_archive_lineage() -> None:
+    match = _live_provider_matches()[0]
+    events = TheOddsApiClient(api_key="key", data_mode="live").parse_odds_payload(
+        "tennis_atp_french_open",
+        [
+            {
+                "id": "archive-event-1",
+                "home_team": match.player1.name,
+                "away_team": match.player2.name,
+                "commence_time": match.scheduled_at.isoformat(),
+                "bookmakers": [
+                    {
+                        "title": "Pinnacle",
+                        "last_update": match.scheduled_at.isoformat(),
+                        "markets": [
+                            {
+                                "key": "h2h",
+                                "outcomes": [
+                                    {"name": match.player1.name, "price": 1.72},
+                                    {"name": match.player2.name, "price": 2.16},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    )
+
+    class ArchiveSource:
+        async def get_tennis_h2h_events(self):
+            return events
+
+    repo = AnalysisRepository(
+        Settings(data_mode="live", the_odds_api_key="key", persistence_enabled=False)
+    )
+    store = _FakeStore()
+    repo.store = store
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource([match]),
+        ArchiveSource(),
+        store,
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=repo._augment_with_archive_odds,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+    lineage = snapshot.analyses[0].freshness.provider_lineage
+
+    assert Provider.API_TENNIS in lineage
+    assert Provider.THE_ODDS_API in lineage
+    assert Provider.ODDS_API_IO not in lineage
 
 
 def test_live_ingestion_pipeline_does_not_claim_persistence_when_store_does_not_save() -> None:

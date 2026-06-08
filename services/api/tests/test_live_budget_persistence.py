@@ -4,17 +4,29 @@ from datetime import date
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
+import sys
+from types import ModuleType
 
 from tennis_edge.config import Settings
+from tennis_edge.domain import AgentRun
+from tennis_edge.domain import AgentRunType
+from tennis_edge.domain import BacktestMetrics
+from tennis_edge.domain import BacktestRunRequest
 from tennis_edge.domain import CursorStatus
+from tennis_edge.domain import ExecutionOrder
+from tennis_edge.domain import ExecutionVenue
 from tennis_edge.domain import IngestionRunRecord
 from tennis_edge.domain import MatchFreshness
 from tennis_edge.domain import OddsMessageIngestionRequest, ProviderCursorResyncRequest
+from tennis_edge.domain import OrderStatus
 from tennis_edge.domain import Provider
 from tennis_edge.domain import ProviderCursor
 from tennis_edge.domain import ProviderMatchPayload
 from tennis_edge.domain import RawProviderPayload
 from tennis_edge.domain import OddsQuote
+from tennis_edge.domain import ModelPromotionDecision
+from tennis_edge.domain import PaperSettlement
+from tennis_edge.domain import PaperSettleRequest
 from tennis_edge.domain import SignalStatus
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches
@@ -96,6 +108,7 @@ def test_operational_read_methods_degrade_on_schema_drift() -> None:
         ("latest_analyses", lambda store: store.latest_analyses(date.today()), []),
         ("provider_cursors", lambda store: store.provider_cursors(), []),
         ("data_quality", lambda store: store.data_quality(), []),
+        ("ingestion_runs", lambda store: store.ingestion_runs(), []),
         ("agent_runs", lambda store: store.agent_runs(), []),
         ("orders", lambda store: store.orders(), []),
         ("paper_performance", lambda store: store.paper_performance(), None),
@@ -114,6 +127,415 @@ def test_operational_read_methods_degrade_on_schema_drift() -> None:
         assert store.last_error is not None
         assert store.last_error.startswith(f"{operation} failed:")
         assert "relation provider_cursors does not exist" in store.last_error
+
+
+def test_operational_write_methods_degrade_on_schema_drift() -> None:
+    source_ts = datetime(2026, 6, 7, 12, tzinfo=timezone.utc)
+    metrics = BacktestMetrics(
+        run_id="bt_write_drift",
+        model_version="candidate_write_drift",
+        matches=10,
+        signals=2,
+        roi=0.01,
+        clv=0.005,
+        brier_score=0.22,
+        log_loss=0.63,
+        calibration_error=0.04,
+        max_drawdown=0.02,
+    )
+    order = ExecutionOrder(
+        id="ord_write_drift",
+        signal_id="sig_write_drift",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.PAPER,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=2.0,
+    )
+    settlement = PaperSettlement(
+        order_id=order.id,
+        status=OrderStatus.SETTLED,
+        result_win=True,
+        requested_odds=2.0,
+        average_price=2.0,
+        matched_stake=100,
+        gross_pnl=100,
+        commission=2,
+        net_pnl=98,
+        closing_odds=1.95,
+        clv=0.012,
+        settled_at=source_ts,
+    )
+    analysis = asyncio.run(
+        AnalysisRepository(Settings(data_mode="sample")).analyses_for_date(date.today())
+    )[0]
+    payload = RawProviderPayload(
+        id="raw_write_drift",
+        provider=Provider.API_TENNIS,
+        payload_type="score",
+        source_event_id="match_atp_001",
+        source_ts=source_ts,
+        ingested_at=source_ts,
+        checksum="write_drift_checksum",
+        payload={"status": "live"},
+    )
+    cursor = ProviderCursor(
+        provider=Provider.ODDS_API_IO,
+        stream="tennis:moneyline",
+        last_seq=10,
+        expected_next_seq=11,
+        status=CursorStatus.HEALTHY,
+        gap_count=0,
+        resync_required=False,
+        last_message_at=source_ts,
+        note="write drift test",
+    )
+    ingestion_run = IngestionRunRecord(
+        id="ingest_write_drift",
+        run_type="live_budget_cycle",
+        source="cli",
+        status="failed",
+        summary={"reason": "schema drift"},
+        started_at=source_ts,
+        completed_at=source_ts,
+    )
+    promotion = ModelPromotionDecision(
+        run_id="promotion_write_drift",
+        candidate_model_version="candidate_write_drift",
+        promoted=False,
+        reasons=["schema drift test"],
+        metrics=metrics,
+        created_at=source_ts,
+    )
+    agent_run = AgentRun(
+        id="agent_write_drift",
+        run_type=AgentRunType.AUTOPILOT_EVALUATE,
+        source="openclaw",
+        summary="write drift test",
+        created_at=source_ts,
+    )
+
+    cases = [
+        ("save_analyses", lambda store: store.save_analyses([analysis]), False),
+        ("save_raw_payloads", lambda store: store.save_raw_payloads([payload]), 0),
+        ("save_provider_cursor", lambda store: store.save_provider_cursor(cursor), False),
+        (
+            "record_provider_latency",
+            lambda store: store.record_provider_latency(
+                Provider.API_TENNIS,
+                "score/live",
+                latest_source_ts=source_ts,
+                latest_ingested_at=source_ts,
+            ),
+            False,
+        ),
+        (
+            "save_odds_quotes_for_event",
+            lambda store: store.save_odds_quotes_for_event(
+                Provider.THE_ODDS_API,
+                "event_write_drift",
+                [
+                    OddsQuote(
+                        player_id="atp_sinner",
+                        decimal_odds=2.0,
+                        bookmaker="book",
+                        source_ts=source_ts,
+                    )
+                ],
+            ),
+            0,
+        ),
+        ("save_model_promotion_decision", lambda store: store.save_model_promotion_decision(promotion), None),
+        ("save_order", lambda store: store.save_order(order), None),
+        ("save_agent_run", lambda store: store.save_agent_run(agent_run), None),
+        ("save_ingestion_run", lambda store: store.save_ingestion_run(ingestion_run), False),
+        ("cancel_order", lambda store: store.cancel_order(order.id), None),
+        (
+            "settle_paper_order",
+            lambda store: store.settle_paper_order(
+                PaperSettleRequest(order_id=order.id, result_win=True, closing_odds=1.95)
+            ),
+            None,
+        ),
+        ("save_settlement", lambda store: store.save_settlement(settlement), False),
+        ("save_backtest", lambda store: store.save_backtest(metrics, BacktestRunRequest()), None),
+    ]
+
+    for operation, call, expected in cases:
+        store = _RaisingReadStore()
+
+        assert call(store) == expected
+        assert store.last_error is not None
+        assert store.last_error.startswith(f"{operation} failed:")
+        assert "relation provider_cursors does not exist" in store.last_error
+
+
+def test_settle_paper_order_returns_none_when_settlement_write_fails() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.query = query
+            if "INSERT INTO paper_settlements" in query:
+                raise RuntimeError("relation paper_settlements does not exist")
+            return self
+
+        def fetchone(self):
+            if "SELECT external_order_ref" in self.query:
+                return {
+                    "external_order_ref": "ord_write_drift",
+                    "match_id": "match_atp_001",
+                    "player_id": "atp_sinner",
+                    "requested_odds": 2.0,
+                    "average_price": 2.0,
+                    "matched_stake": 100,
+                    "stake_amount": 100,
+                }
+            if "SELECT id" in self.query:
+                return {"id": 101}
+            return None
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            self.last_error = None
+            yield ConnStub()
+
+    store = StoreStub()
+
+    settlement = store.settle_paper_order(
+        PaperSettleRequest(order_id="ord_write_drift", result_win=True, closing_odds=1.95)
+    )
+
+    assert settlement is None
+    assert store.last_error is not None
+    assert store.last_error.startswith("save_settlement failed:")
+    assert "relation paper_settlements does not exist" in store.last_error
+
+
+def test_save_settlement_failure_reaches_transaction_for_rollback() -> None:
+    class TransactionStub:
+        def __init__(self) -> None:
+            self.saw_exception = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.saw_exception = exc_type is RuntimeError
+            return False
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.query = query
+            if "INSERT INTO paper_settlements" in query:
+                raise RuntimeError("relation paper_settlements does not exist")
+            return self
+
+        def fetchone(self):
+            if "SELECT id" in self.query:
+                return {"id": 101}
+            return None
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.transaction_stub = TransactionStub()
+
+        def cursor(self):
+            return CursorStub()
+
+        def transaction(self):
+            return self.transaction_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield self.conn
+
+    store = StoreStub()
+
+    saved = store.save_settlement(
+        PaperSettlement(
+            order_id="ord_write_drift",
+            status=OrderStatus.SETTLED,
+            result_win=True,
+            requested_odds=2.0,
+            average_price=2.0,
+            matched_stake=100,
+            gross_pnl=100,
+            commission=2,
+            net_pnl=98,
+            closing_odds=1.95,
+            clv=0.012,
+        )
+    )
+
+    assert saved is False
+    assert store.conn.transaction_stub.saw_exception is True
+    assert store.last_error is not None
+    assert store.last_error.startswith("save_settlement failed:")
+
+
+def test_raw_payload_batch_failure_reaches_transaction_for_rollback() -> None:
+    class TransactionStub:
+        def __init__(self) -> None:
+            self.saw_exception = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.saw_exception = exc_type is RuntimeError
+            return False
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.rowcount = 0
+            self.execute_count = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.execute_count += 1
+            if self.execute_count == 2:
+                raise RuntimeError("raw payload insert failed")
+            self.rowcount = 1
+            return self
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.transaction_stub = TransactionStub()
+
+        def cursor(self):
+            return CursorStub()
+
+        def transaction(self):
+            return self.transaction_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield self.conn
+
+    source_ts = datetime(2026, 6, 7, 12, tzinfo=timezone.utc)
+    payloads = [
+        RawProviderPayload(
+            id=f"raw_write_drift_{idx}",
+            provider=Provider.API_TENNIS,
+            payload_type="score",
+            source_event_id="match_atp_001",
+            source_ts=source_ts,
+            ingested_at=source_ts,
+            checksum=f"write_drift_checksum_{idx}",
+            payload={"status": "live"},
+        )
+        for idx in range(2)
+    ]
+    store = StoreStub()
+
+    inserted = store.save_raw_payloads(payloads)
+
+    assert inserted == 0
+    assert store.conn.transaction_stub.saw_exception is True
+    assert store.last_error is not None
+    assert store.last_error.startswith("save_raw_payloads failed:")
+
+
+def test_successful_connection_does_not_clear_previous_store_error(monkeypatch) -> None:
+    class ConnStub:
+        def close(self) -> None:
+            pass
+
+    psycopg = ModuleType("psycopg")
+    psycopg.connect = lambda *args, **kwargs: ConnStub()
+    rows = ModuleType("psycopg.rows")
+    rows.dict_row = object()
+    monkeypatch.setitem(sys.modules, "psycopg", psycopg)
+    monkeypatch.setitem(sys.modules, "psycopg.rows", rows)
+    store = PersistentStore(
+        Settings(
+            data_mode="live",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        )
+    )
+    store.last_error = "save_raw_payloads failed: previous schema drift"
+
+    with store._connect() as conn:
+        assert conn is not None
+
+    assert store.last_error == "save_raw_payloads failed: previous schema drift"
 
 
 def test_provider_health_degrades_budget_providers_on_schema_drift() -> None:

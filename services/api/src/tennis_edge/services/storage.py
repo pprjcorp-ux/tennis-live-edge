@@ -153,7 +153,6 @@ class PersistentStore:
             yield None
             return
 
-        self.last_error = None
         try:
             yield conn
         finally:
@@ -162,7 +161,19 @@ class PersistentStore:
             except Exception:
                 pass
 
+    @contextmanager
+    def _write_transaction(self, conn: Any):
+        transaction = getattr(conn, "transaction", None)
+        if transaction is None:
+            yield
+            return
+        with transaction():
+            yield
+
     def _record_read_error(self, operation: str, exc: Exception) -> None:
+        self.last_error = f"{operation} failed: {exc}"
+
+    def _record_write_error(self, operation: str, exc: Exception) -> None:
         self.last_error = f"{operation} failed: {exc}"
 
     def save_analyses(self, analyses: Iterable[MatchAnalysis]) -> bool:
@@ -175,33 +186,38 @@ class PersistentStore:
             if conn is None:
                 return False
             existing_cursors = self.provider_cursors()
-            for analysis in analyses:
-                with conn.cursor() as cur:
-                    self._upsert_player(cur, analysis.match.player1)
-                    self._upsert_player(cur, analysis.match.player2)
-                    self._upsert_match(cur, analysis.match)
-                    self._insert_score_tick(cur, analysis.match, analysis.freshness)
-                    self._insert_odds_ticks(cur, analysis.match)
-                    feature_id = self._insert_feature_snapshot(cur, analysis.features)
-                    prediction_id = self._insert_prediction_snapshot(
-                        cur, analysis.prediction, feature_id
-                    )
-                    self._insert_signals(cur, analysis.signals, prediction_id)
-                    self._record_latency(
-                        cur,
-                        primary_provider_for_match(analysis.match),
-                        "score/live",
-                        analysis.match,
-                    )
-                    odds_provider = odds_provider_for_match(analysis.match)
-                    if odds_provider is not None:
-                        self._record_latency(
-                            cur,
-                            odds_provider,
-                            "odds/moneyline",
-                            analysis.match,
-                        )
-                    self._upsert_provider_cursors(cur, existing_cursors=existing_cursors)
+            try:
+                with self._write_transaction(conn):
+                    for analysis in analyses:
+                        with conn.cursor() as cur:
+                            self._upsert_player(cur, analysis.match.player1)
+                            self._upsert_player(cur, analysis.match.player2)
+                            self._upsert_match(cur, analysis.match)
+                            self._insert_score_tick(cur, analysis.match, analysis.freshness)
+                            self._insert_odds_ticks(cur, analysis.match)
+                            feature_id = self._insert_feature_snapshot(cur, analysis.features)
+                            prediction_id = self._insert_prediction_snapshot(
+                                cur, analysis.prediction, feature_id
+                            )
+                            self._insert_signals(cur, analysis.signals, prediction_id)
+                            self._record_latency(
+                                cur,
+                                primary_provider_for_match(analysis.match),
+                                "score/live",
+                                analysis.match,
+                            )
+                            odds_provider = odds_provider_for_match(analysis.match)
+                            if odds_provider is not None:
+                                self._record_latency(
+                                    cur,
+                                    odds_provider,
+                                    "odds/moneyline",
+                                    analysis.match,
+                                )
+                            self._upsert_provider_cursors(cur, existing_cursors=existing_cursors)
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_analyses", exc)
+                return False
         return True
 
     def save_raw_payloads(self, payloads: list[RawProviderPayload]) -> int:
@@ -211,32 +227,37 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return 0
-            with conn.cursor() as cur:
-                for payload in payloads:
-                    cur.execute(
-                        """
-                        INSERT INTO raw_provider_payloads (
-                          id, provider, payload_type, source_event_id, source_ts,
-                          ingested_at, checksum, payload
-                        )
-                        SELECT %s, %s, %s, %s, %s, %s, %s, %s
-                        WHERE NOT EXISTS (
-                          SELECT 1 FROM raw_provider_payloads WHERE checksum = %s
-                        )
-                        """,
-                        (
-                            payload.id,
-                            payload.provider.value,
-                            payload.payload_type,
-                            payload.source_event_id,
-                            payload.source_ts,
-                            payload.ingested_at,
-                            payload.checksum,
-                            _json(payload.payload),
-                            payload.checksum,
-                        ),
-                    )
-                    inserted += max(0, cur.rowcount)
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        for payload in payloads:
+                            cur.execute(
+                                """
+                                INSERT INTO raw_provider_payloads (
+                                  id, provider, payload_type, source_event_id, source_ts,
+                                  ingested_at, checksum, payload
+                                )
+                                SELECT %s, %s, %s, %s, %s, %s, %s, %s
+                                WHERE NOT EXISTS (
+                                  SELECT 1 FROM raw_provider_payloads WHERE checksum = %s
+                                )
+                                """,
+                                (
+                                    payload.id,
+                                    payload.provider.value,
+                                    payload.payload_type,
+                                    payload.source_event_id,
+                                    payload.source_ts,
+                                    payload.ingested_at,
+                                    payload.checksum,
+                                    _json(payload.payload),
+                                    payload.checksum,
+                                ),
+                            )
+                            inserted += max(0, cur.rowcount)
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_raw_payloads", exc)
+                return 0
         return inserted
 
     def save_provider_cursor(self, cursor: ProviderCursor) -> bool:
@@ -245,8 +266,13 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return False
-            with conn.cursor() as cur:
-                self._upsert_one_provider_cursor(cur, cursor)
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        self._upsert_one_provider_cursor(cur, cursor)
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_provider_cursor", exc)
+                return False
         return True
 
     def record_provider_latency(
@@ -262,14 +288,19 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return False
-            with conn.cursor() as cur:
-                self._insert_provider_latency(
-                    cur,
-                    provider,
-                    feed,
-                    latest_source_ts=latest_source_ts,
-                    latest_ingested_at=latest_ingested_at,
-                )
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        self._insert_provider_latency(
+                            cur,
+                            provider,
+                            feed,
+                            latest_source_ts=latest_source_ts,
+                            latest_ingested_at=latest_ingested_at,
+                        )
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("record_provider_latency", exc)
+                return False
         return True
 
     def save_odds_quotes_for_event(
@@ -283,24 +314,29 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return 0
-            with conn.cursor() as cur:
-                match_row = self._match_row_for_provider_event(cur, source_event_id)
-                if not match_row:
-                    return 0
-                player_lookup = self._player_lookup_from_match_row(match_row)
-                inserted = 0
-                for quote in quotes:
-                    player_id = player_lookup.get(str(quote.player_id)) or player_lookup.get(
-                        normalize_name(str(quote.player_id))
-                    )
-                    if player_id is None:
-                        continue
-                    inserted += self._insert_odds_quote(
-                        cur,
-                        match_id=match_row["match_id"],
-                        provider=provider,
-                        quote=quote.model_copy(update={"player_id": player_id}),
-                    )
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        match_row = self._match_row_for_provider_event(cur, source_event_id)
+                        if not match_row:
+                            return 0
+                        player_lookup = self._player_lookup_from_match_row(match_row)
+                        inserted = 0
+                        for quote in quotes:
+                            player_id = player_lookup.get(str(quote.player_id)) or player_lookup.get(
+                                normalize_name(str(quote.player_id))
+                            )
+                            if player_id is None:
+                                continue
+                            inserted += self._insert_odds_quote(
+                                cur,
+                                match_id=match_row["match_id"],
+                                provider=provider,
+                                quote=quote.model_copy(update={"player_id": player_id}),
+                            )
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_odds_quotes_for_event", exc)
+                return 0
         return inserted
 
     def raw_payloads_for_match(self, match_id: str) -> list[RawProviderPayload]:
@@ -786,44 +822,48 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO learning_runs (
-                      id, model_version_id, run_type, training_window,
-                      metrics, promoted, created_at
-                    )
-                    VALUES (%s, NULL, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                      metrics = EXCLUDED.metrics,
-                      promoted = EXCLUDED.promoted
-                    """,
-                    (
-                        decision.run_id,
-                        "promotion_review",
-                        _json({"source": "promote_from_learning"}),
-                        _json(decision.metrics.model_dump(mode="json")),
-                        decision.promoted,
-                        decision.created_at,
-                    ),
-                )
-                cur.execute(
-                    """
-                    INSERT INTO model_promotion_decisions (
-                      learning_run_id, candidate_model_version,
-                      promoted, reasons, metrics, created_at
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        decision.run_id,
-                        decision.candidate_model_version,
-                        decision.promoted,
-                        _json(decision.reasons),
-                        _json(decision.metrics.model_dump(mode="json")),
-                        decision.created_at,
-                    ),
-                )
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO learning_runs (
+                              id, model_version_id, run_type, training_window,
+                              metrics, promoted, created_at
+                            )
+                            VALUES (%s, NULL, %s, %s, %s, %s, %s)
+                            ON CONFLICT (id) DO UPDATE SET
+                              metrics = EXCLUDED.metrics,
+                              promoted = EXCLUDED.promoted
+                            """,
+                            (
+                                decision.run_id,
+                                "promotion_review",
+                                _json({"source": "promote_from_learning"}),
+                                _json(decision.metrics.model_dump(mode="json")),
+                                decision.promoted,
+                                decision.created_at,
+                            ),
+                        )
+                        cur.execute(
+                            """
+                            INSERT INTO model_promotion_decisions (
+                              learning_run_id, candidate_model_version,
+                              promoted, reasons, metrics, created_at
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            """,
+                            (
+                                decision.run_id,
+                                decision.candidate_model_version,
+                                decision.promoted,
+                                _json(decision.reasons),
+                                _json(decision.metrics.model_dump(mode="json")),
+                                decision.created_at,
+                            ),
+                        )
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_model_promotion_decision", exc)
 
     def save_order(self, order: ExecutionOrder) -> None:
         if not self.enabled:
@@ -831,67 +871,71 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return
-            with conn.cursor() as cur:
-                signal_row = cur.execute(
-                    """
-                    SELECT id
-                    FROM signals
-                    WHERE match_id = %s AND outcome_player_id = %s
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                    """,
-                    (order.match_id, order.player_id),
-                ).fetchone()
-                if not signal_row:
-                    return
-                order_row = cur.execute(
-                    """
-                    INSERT INTO paper_orders (
-                      signal_id, external_order_ref, external_signal_id, match_id, player_id,
-                      venue, customer_order_ref, requested_odds, accepted_odds, stake_fraction,
-                      stake_amount, matched_stake, average_price, risk_snapshot,
-                      rejection_reason, settlement_status, pnl, clv, status, audit, created_at
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (external_order_ref) DO UPDATE SET
-                      accepted_odds = EXCLUDED.accepted_odds,
-                      matched_stake = EXCLUDED.matched_stake,
-                      average_price = EXCLUDED.average_price,
-                      risk_snapshot = EXCLUDED.risk_snapshot,
-                      rejection_reason = EXCLUDED.rejection_reason,
-                      settlement_status = EXCLUDED.settlement_status,
-                      pnl = EXCLUDED.pnl,
-                      clv = EXCLUDED.clv,
-                      status = EXCLUDED.status,
-                      audit = EXCLUDED.audit
-                    RETURNING id
-                    """,
-                    (
-                        signal_row["id"],
-                        order.id,
-                        order.signal_id,
-                        order.match_id,
-                        order.player_id,
-                        order.venue.value,
-                        order.customer_order_ref,
-                        order.requested_odds,
-                        order.accepted_odds,
-                        order.stake_fraction,
-                        order.stake_amount,
-                        order.matched_stake,
-                        order.average_price,
-                        _json(order.risk_snapshot),
-                        order.rejection_reason,
-                        order.settlement_status,
-                        order.pnl,
-                        order.clv,
-                        order.status.value,
-                        _json(order.audit),
-                        order.created_at,
-                    ),
-                ).fetchone()
-                if order_row and order.matched_stake > 0 and order.average_price:
-                    self._insert_paper_fill(cur, int(order_row["id"]), order)
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        signal_row = cur.execute(
+                            """
+                            SELECT id
+                            FROM signals
+                            WHERE match_id = %s AND outcome_player_id = %s
+                            ORDER BY created_at DESC
+                            LIMIT 1
+                            """,
+                            (order.match_id, order.player_id),
+                        ).fetchone()
+                        if not signal_row:
+                            return
+                        order_row = cur.execute(
+                            """
+                            INSERT INTO paper_orders (
+                              signal_id, external_order_ref, external_signal_id, match_id, player_id,
+                              venue, customer_order_ref, requested_odds, accepted_odds, stake_fraction,
+                              stake_amount, matched_stake, average_price, risk_snapshot,
+                              rejection_reason, settlement_status, pnl, clv, status, audit, created_at
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (external_order_ref) DO UPDATE SET
+                              accepted_odds = EXCLUDED.accepted_odds,
+                              matched_stake = EXCLUDED.matched_stake,
+                              average_price = EXCLUDED.average_price,
+                              risk_snapshot = EXCLUDED.risk_snapshot,
+                              rejection_reason = EXCLUDED.rejection_reason,
+                              settlement_status = EXCLUDED.settlement_status,
+                              pnl = EXCLUDED.pnl,
+                              clv = EXCLUDED.clv,
+                              status = EXCLUDED.status,
+                              audit = EXCLUDED.audit
+                            RETURNING id
+                            """,
+                            (
+                                signal_row["id"],
+                                order.id,
+                                order.signal_id,
+                                order.match_id,
+                                order.player_id,
+                                order.venue.value,
+                                order.customer_order_ref,
+                                order.requested_odds,
+                                order.accepted_odds,
+                                order.stake_fraction,
+                                order.stake_amount,
+                                order.matched_stake,
+                                order.average_price,
+                                _json(order.risk_snapshot),
+                                order.rejection_reason,
+                                order.settlement_status,
+                                order.pnl,
+                                order.clv,
+                                order.status.value,
+                                _json(order.audit),
+                                order.created_at,
+                            ),
+                        ).fetchone()
+                        if order_row and order.matched_stake > 0 and order.average_price:
+                            self._insert_paper_fill(cur, int(order_row["id"]), order)
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_order", exc)
 
     def save_agent_run(self, run: AgentRun) -> None:
         if not self.enabled:
@@ -899,31 +943,35 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO agent_runs (
-                      id, run_type, source, model_routes, actions, summary, created_at
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                      run_type = EXCLUDED.run_type,
-                      source = EXCLUDED.source,
-                      model_routes = EXCLUDED.model_routes,
-                      actions = EXCLUDED.actions,
-                      summary = EXCLUDED.summary,
-                      created_at = EXCLUDED.created_at
-                    """,
-                    (
-                        run.id,
-                        run.run_type.value,
-                        run.source,
-                        _json([route.model_dump(mode="json") for route in run.model_routes]),
-                        _json([action.model_dump(mode="json") for action in run.actions]),
-                        run.summary,
-                        run.created_at,
-                    ),
-                )
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO agent_runs (
+                              id, run_type, source, model_routes, actions, summary, created_at
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (id) DO UPDATE SET
+                              run_type = EXCLUDED.run_type,
+                              source = EXCLUDED.source,
+                              model_routes = EXCLUDED.model_routes,
+                              actions = EXCLUDED.actions,
+                              summary = EXCLUDED.summary,
+                              created_at = EXCLUDED.created_at
+                            """,
+                            (
+                                run.id,
+                                run.run_type.value,
+                                run.source,
+                                _json([route.model_dump(mode="json") for route in run.model_routes]),
+                                _json([action.model_dump(mode="json") for action in run.actions]),
+                                run.summary,
+                                run.created_at,
+                            ),
+                        )
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_agent_run", exc)
 
     def save_ingestion_run(self, run: IngestionRunRecord) -> bool:
         if not self.enabled:
@@ -932,34 +980,35 @@ class PersistentStore:
             if conn is None:
                 return False
             try:
-                with conn.cursor() as cur:
-                    self._ensure_ingestion_runs_table(cur)
-                    cur.execute(
-                        """
-                        INSERT INTO ingestion_runs (
-                          id, run_type, source, status, summary, started_at, completed_at
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        self._ensure_ingestion_runs_table(cur)
+                        cur.execute(
+                            """
+                            INSERT INTO ingestion_runs (
+                              id, run_type, source, status, summary, started_at, completed_at
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (id) DO UPDATE SET
+                              run_type = EXCLUDED.run_type,
+                              source = EXCLUDED.source,
+                              status = EXCLUDED.status,
+                              summary = EXCLUDED.summary,
+                              started_at = EXCLUDED.started_at,
+                              completed_at = EXCLUDED.completed_at
+                            """,
+                            (
+                                run.id,
+                                run.run_type,
+                                run.source,
+                                run.status,
+                                _json(run.summary),
+                                run.started_at,
+                                run.completed_at,
+                            ),
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (id) DO UPDATE SET
-                          run_type = EXCLUDED.run_type,
-                          source = EXCLUDED.source,
-                          status = EXCLUDED.status,
-                          summary = EXCLUDED.summary,
-                          started_at = EXCLUDED.started_at,
-                          completed_at = EXCLUDED.completed_at
-                        """,
-                        (
-                            run.id,
-                            run.run_type,
-                            run.source,
-                            run.status,
-                            _json(run.summary),
-                            run.started_at,
-                            run.completed_at,
-                        ),
-                    )
-            except Exception as exc:  # pragma: no cover - exercised with real DB drift.
-                self.last_error = str(exc)
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_ingestion_run", exc)
                 return False
         return True
 
@@ -981,8 +1030,8 @@ class PersistentStore:
                         """,
                         (limit,),
                     ).fetchall()
-            except Exception as exc:  # pragma: no cover - exercised with real DB drift.
-                self.last_error = str(exc)
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("ingestion_runs", exc)
                 return []
         return [
             IngestionRunRecord(
@@ -1093,23 +1142,28 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return None
-            with conn.cursor() as cur:
-                row = cur.execute(
-                    """
-                    UPDATE paper_orders
-                    SET status = %s,
-                        audit = audit || %s::jsonb
-                    WHERE external_order_ref = %s
-                      AND status = ANY(%s)
-                    RETURNING status
-                    """,
-                    (
-                        OrderStatus.CANCELLED.value,
-                        _json(["Persisted paper order cancelled by admin request."]),
-                        order_id,
-                        list(PERSISTED_CANCELABLE_ORDER_STATUSES),
-                    ),
-                ).fetchone()
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        row = cur.execute(
+                            """
+                            UPDATE paper_orders
+                            SET status = %s,
+                                audit = audit || %s::jsonb
+                            WHERE external_order_ref = %s
+                              AND status = ANY(%s)
+                            RETURNING status
+                            """,
+                            (
+                                OrderStatus.CANCELLED.value,
+                                _json(["Persisted paper order cancelled by admin request."]),
+                                order_id,
+                                list(PERSISTED_CANCELABLE_ORDER_STATUSES),
+                            ),
+                        ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("cancel_order", exc)
+                return None
         if not row:
             return None
         return OrderStatus(row["status"])
@@ -1120,18 +1174,22 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return None
-            with conn.cursor() as cur:
-                row = cur.execute(
-                    """
-                    SELECT external_order_ref, match_id, player_id, requested_odds, average_price,
-                           matched_stake, stake_amount
-                    FROM paper_orders
-                    WHERE external_order_ref = %s
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                    """,
-                    (request.order_id,),
-                ).fetchone()
+            try:
+                with conn.cursor() as cur:
+                    row = cur.execute(
+                        """
+                        SELECT external_order_ref, match_id, player_id, requested_odds, average_price,
+                               matched_stake, stake_amount
+                        FROM paper_orders
+                        WHERE external_order_ref = %s
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """,
+                        (request.order_id,),
+                    ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("settle_paper_order", exc)
+                return None
         if not row:
             return None
         matched = float(row["matched_stake"] or row["stake_amount"] or 0)
@@ -1153,77 +1211,84 @@ class PersistentStore:
             closing_odds=request.closing_odds,
             clv=round(clv, 6),
         )
-        self.save_settlement(settlement)
+        if not self.save_settlement(settlement):
+            return None
         return settlement
 
-    def save_settlement(self, settlement: PaperSettlement) -> None:
+    def save_settlement(self, settlement: PaperSettlement) -> bool:
         if not self.enabled:
-            return
+            return False
         with self._connect() as conn:
             if conn is None:
-                return
-            with conn.cursor() as cur:
-                row = cur.execute(
-                    """
-                    SELECT id
-                    FROM paper_orders
-                    WHERE external_order_ref = %s
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                    """,
-                    (settlement.order_id,),
-                ).fetchone()
-                if not row:
-                    return
-                paper_order_id = row["id"]
-                self._insert_closing_line_snapshot(cur, paper_order_id, settlement)
-                cur.execute(
-                    """
-                    INSERT INTO paper_settlements (
-                      paper_order_id, result_win, requested_odds, average_price,
-                      matched_stake, gross_pnl, commission, net_pnl, closing_odds,
-                      clv, settled_at
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        paper_order_id,
-                        settlement.result_win,
-                        settlement.requested_odds,
-                        settlement.average_price,
-                        settlement.matched_stake,
-                        settlement.gross_pnl,
-                        settlement.commission,
-                        settlement.net_pnl,
-                        settlement.closing_odds,
-                        settlement.clv,
-                        settlement.settled_at,
-                    ),
-                )
-                cur.execute(
-                    """
-                    UPDATE paper_orders
-                    SET status = %s,
-                        settlement_status = %s,
-                        pnl = %s,
-                        clv = %s,
-                        matched_stake = %s,
-                        average_price = %s,
-                        audit = audit || %s::jsonb
-                    WHERE id = %s
-                    """,
-                    (
-                        OrderStatus.SETTLED.value,
-                        "settled",
-                        settlement.net_pnl,
-                        settlement.clv,
-                        settlement.matched_stake,
-                        settlement.average_price,
-                        _json(["Paper order settled with closing-line CLV."]),
-                        paper_order_id,
-                    ),
-                )
-                self._insert_training_example(cur, paper_order_id, settlement)
+                return False
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        row = cur.execute(
+                            """
+                            SELECT id
+                            FROM paper_orders
+                            WHERE external_order_ref = %s
+                            ORDER BY created_at DESC
+                            LIMIT 1
+                            """,
+                            (settlement.order_id,),
+                        ).fetchone()
+                        if not row:
+                            return False
+                        paper_order_id = row["id"]
+                        self._insert_closing_line_snapshot(cur, paper_order_id, settlement)
+                        cur.execute(
+                            """
+                            INSERT INTO paper_settlements (
+                              paper_order_id, result_win, requested_odds, average_price,
+                              matched_stake, gross_pnl, commission, net_pnl, closing_odds,
+                              clv, settled_at
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (
+                                paper_order_id,
+                                settlement.result_win,
+                                settlement.requested_odds,
+                                settlement.average_price,
+                                settlement.matched_stake,
+                                settlement.gross_pnl,
+                                settlement.commission,
+                                settlement.net_pnl,
+                                settlement.closing_odds,
+                                settlement.clv,
+                                settlement.settled_at,
+                            ),
+                        )
+                        cur.execute(
+                            """
+                            UPDATE paper_orders
+                            SET status = %s,
+                                settlement_status = %s,
+                                pnl = %s,
+                                clv = %s,
+                                matched_stake = %s,
+                                average_price = %s,
+                                audit = audit || %s::jsonb
+                            WHERE id = %s
+                            """,
+                            (
+                                OrderStatus.SETTLED.value,
+                                "settled",
+                                settlement.net_pnl,
+                                settlement.clv,
+                                settlement.matched_stake,
+                                settlement.average_price,
+                                _json(["Paper order settled with closing-line CLV."]),
+                                paper_order_id,
+                            ),
+                        )
+                        self._insert_training_example(cur, paper_order_id, settlement)
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_settlement", exc)
+                return False
+        return True
 
     def paper_performance(self) -> PaperPerformance | None:
         if not self.enabled:
@@ -1359,52 +1424,56 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO model_versions (id, model_type, training_window, metrics, promoted, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                      metrics = EXCLUDED.metrics,
-                      promoted = EXCLUDED.promoted
-                    """,
-                    (
-                        metrics.model_version,
-                        "paper_walk_forward",
-                        _json(
-                            {
-                                "start_date": request.start_date,
-                                "end_date": request.end_date,
-                                "walk_forward": request.walk_forward,
-                            }
-                        ),
-                        _json(metrics.model_dump(mode="json")),
-                        metrics.promoted,
-                        _now(),
-                    ),
-                )
-                cur.execute(
-                    """
-                    INSERT INTO backtests (id, model_version_id, run_config, metrics, created_at)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET metrics = EXCLUDED.metrics
-                    """,
-                    (
-                        metrics.run_id,
-                        metrics.model_version,
-                        _json(request.model_dump(mode="json")),
-                        _json(metrics.model_dump(mode="json")),
-                        _now(),
-                    ),
-                )
-                examples = self.training_examples(request)
-                if examples:
-                    report = calibration_from_training_examples(
-                        metrics.run_id,
-                        metrics.model_version,
-                        examples,
-                    )
-                    self._save_calibration_report(cur, report)
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO model_versions (id, model_type, training_window, metrics, promoted, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (id) DO UPDATE SET
+                              metrics = EXCLUDED.metrics,
+                              promoted = EXCLUDED.promoted
+                            """,
+                            (
+                                metrics.model_version,
+                                "paper_walk_forward",
+                                _json(
+                                    {
+                                        "start_date": request.start_date,
+                                        "end_date": request.end_date,
+                                        "walk_forward": request.walk_forward,
+                                    }
+                                ),
+                                _json(metrics.model_dump(mode="json")),
+                                metrics.promoted,
+                                _now(),
+                            ),
+                        )
+                        cur.execute(
+                            """
+                            INSERT INTO backtests (id, model_version_id, run_config, metrics, created_at)
+                            VALUES (%s, %s, %s, %s, %s)
+                            ON CONFLICT (id) DO UPDATE SET metrics = EXCLUDED.metrics
+                            """,
+                            (
+                                metrics.run_id,
+                                metrics.model_version,
+                                _json(request.model_dump(mode="json")),
+                                _json(metrics.model_dump(mode="json")),
+                                _now(),
+                            ),
+                        )
+                        examples = self.training_examples(request)
+                        if examples:
+                            report = calibration_from_training_examples(
+                                metrics.run_id,
+                                metrics.model_version,
+                                examples,
+                            )
+                            self._save_calibration_report(cur, report)
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_backtest", exc)
 
     def get_backtest(self, run_id: str) -> BacktestMetrics | None:
         if not self.enabled:

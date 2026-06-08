@@ -167,6 +167,49 @@ def test_repository_kill_switch_survives_restart_from_persisted_store() -> None:
     assert any("manual persisted stop" in reason for reason in restarted_status.reasons)
 
 
+def test_live_kill_switch_fails_closed_without_process_global_when_persistence_fails() -> None:
+    settings = Settings(
+        data_mode="live",
+        persistence_enabled=True,
+        database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        execution_enabled=True,
+        execution_stage="tiny_real",
+        betfair_app_key="app",
+        betfair_username="user",
+        betfair_cert_path="/tmp/cert",
+        betfair_key_path="/tmp/key",
+        betfair_password_secret_ref="secret://betfair",
+        betfair_live_key_approved=True,
+        real_execution_hard_block=False,
+    )
+
+    class StoreStub:
+        last_error = "execution_controls write failed"
+
+        def save_kill_switch(self, request):
+            return False
+
+        def kill_switch_state(self):
+            return None
+
+    KILL_SWITCH["enabled"] = False
+    KILL_SWITCH["reason"] = "not set"
+    repo = AnalysisRepository(settings)
+    repo.store = StoreStub()
+    repo.operational_state = OperationalStateService(settings, repo.store)
+
+    status = asyncio.run(
+        repo.set_kill_switch(KillSwitchRequest(enabled=False, reason="operator tried to clear"))
+    )
+    restarted_status = asyncio.run(repo.execution_status())
+
+    assert status.kill_switch_enabled is True
+    assert any("persistence unavailable" in reason for reason in status.reasons)
+    assert KILL_SWITCH["enabled"] is False
+    assert restarted_status.kill_switch_enabled is True
+    assert any("execution_controls write failed" in reason for reason in restarted_status.reasons)
+
+
 def test_daily_cost_report_uses_persisted_positive_clv_signals() -> None:
     class StoreStub:
         def __init__(self, fallback) -> None:

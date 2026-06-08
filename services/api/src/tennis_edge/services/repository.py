@@ -668,6 +668,15 @@ class AnalysisRepository:
                 self.store.kill_switch_state()
                 or {"enabled": request.enabled, "reason": request.reason},
             )
+        if self.settings.data_mode != "sample":
+            detail = self.store.last_error or "kill switch state was not persisted"
+            return execution_status(
+                self.settings,
+                {
+                    "enabled": True,
+                    "reason": f"kill switch persistence unavailable: {detail}",
+                },
+            )
         return set_kill_switch_for(self.settings, request)
 
     async def promote_from_learning(

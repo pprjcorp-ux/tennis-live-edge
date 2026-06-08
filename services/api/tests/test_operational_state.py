@@ -10,6 +10,7 @@ from tennis_edge.domain import (
     ProviderCursor,
 )
 from tennis_edge.services.operational_state import OperationalStateService
+from tennis_edge.services.execution_engine import KILL_SWITCH
 from tennis_edge.services.provider_cursor import CURSORS, mark_resynced
 from tennis_edge.services.storage import PersistentStore
 
@@ -268,12 +269,34 @@ def test_operational_state_falls_back_to_safe_runtime_defaults() -> None:
     service = OperationalStateService(Settings(data_mode="live"), StoreStub())
 
     cursors = service.provider_cursors()
+    quality = service.data_quality()
     status = service.execution_status()
 
     assert any(cursor.provider == Provider.ODDS_API_IO for cursor in cursors)
     assert any(cursor.resync_required for cursor in cursors)
+    assert quality == []
     assert status.real_execution_hard_block is True
     assert status.can_submit_real_orders is False
+
+
+def test_live_execution_status_ignores_process_global_when_persistence_has_no_row() -> None:
+    settings = Settings(
+        data_mode="live",
+        persistence_enabled=True,
+        database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+    )
+    KILL_SWITCH["enabled"] = True
+    KILL_SWITCH["reason"] = "stale process stop"
+    try:
+        service = OperationalStateService(settings, StoreStub())
+
+        status = service.execution_status()
+
+        assert status.kill_switch_enabled is False
+        assert not any("stale process stop" in reason for reason in status.reasons)
+    finally:
+        KILL_SWITCH["enabled"] = False
+        KILL_SWITCH["reason"] = "not set"
 
 
 def test_sample_operational_state_fallback_ignores_process_cursor_cache() -> None:

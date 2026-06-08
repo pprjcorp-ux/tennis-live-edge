@@ -49,7 +49,11 @@ class OperationalStateService:
 
     def data_quality(self) -> list[DataQualitySnapshot]:
         persisted = self.store.data_quality()
-        return persisted or data_quality_snapshots(self.settings)
+        if persisted:
+            return persisted
+        if self.settings.data_mode == "sample":
+            return data_quality_snapshots(self.settings)
+        return []
 
     def provider_cursors(self) -> list[ProviderCursor]:
         persisted = self.store.provider_cursors()
@@ -66,6 +70,23 @@ class OperationalStateService:
 
     def execution_status(self) -> ExecutionStatus:
         kill_switch_state = getattr(self.store, "kill_switch_state", lambda: None)()
+        persistence_issue = getattr(self.store, "last_error", None)
+        if (
+            kill_switch_state is None
+            and self.settings.data_mode != "sample"
+        ):
+            if (
+                persistence_issue
+                or not self.settings.persistence_enabled
+                or not self.settings.database_url
+            ):
+                reason = persistence_issue or "kill switch persistence is not configured"
+                kill_switch_state = {
+                    "enabled": True,
+                    "reason": f"kill switch state unavailable: {reason}",
+                }
+            else:
+                kill_switch_state = {"enabled": False, "reason": "not set"}
         return execution_status(self.settings, kill_switch_state)
 
     def snapshot(self, *, cost_report: DailyCostReport) -> OperationalStateSnapshot:

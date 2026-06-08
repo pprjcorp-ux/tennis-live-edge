@@ -1793,7 +1793,7 @@ def test_live_provider_cursors_ignore_process_cache_when_persistence_is_missing(
         CURSORS.clear()
 
 
-def test_live_data_quality_ignores_process_cursor_cache_when_persistence_is_missing() -> None:
+def test_live_data_quality_returns_no_fabricated_snapshot_when_persistence_is_missing() -> None:
     CURSORS.clear()
     try:
         mark_resynced(Provider.ODDS_API_IO, "tennis:moneyline", 88)
@@ -1806,12 +1806,8 @@ def test_live_data_quality_ignores_process_cursor_cache_when_persistence_is_miss
         )
 
         snapshots = asyncio.run(repo.data_quality())
-        odds_snapshot = next(
-            snapshot for snapshot in snapshots if snapshot.provider == Provider.ODDS_API_IO
-        )
 
-        assert odds_snapshot.sequence_health == 0.35
-        assert odds_snapshot.blocked_signals == 1
+        assert snapshots == []
     finally:
         CURSORS.clear()
 

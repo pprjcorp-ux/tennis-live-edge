@@ -30,6 +30,8 @@ decide whether the system behaves as budget or enterprise.
    predictions, and signals when upstream providers are down.
    Entity-resolution conflicts are read from the persisted review queue in live
    mode; sample conflicts are demo-only.
+   Data-quality rows are likewise persisted-only in live mode; sample quality
+   snapshots are demo-only.
 10. Paper execution records order decisions, deterministic fills, closing-line
    snapshots, settlement, CLV, ROI, segmented performance, and calibration
    buckets.
@@ -47,7 +49,10 @@ decide whether the system behaves as budget or enterprise.
 14. Live model registry reads persisted `model_versions`; without persisted
     metrics it exposes only a clearly unvalidated runtime default instead of
     demo ROI/CLV.
-15. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
+15. Live execution status derives kill-switch state from persisted
+    `execution_controls`; if that state cannot be read or written it fails
+    closed instead of trusting process memory.
+16. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
     paper orders are persisted so restart recovery includes the operational
     audit trail.
 

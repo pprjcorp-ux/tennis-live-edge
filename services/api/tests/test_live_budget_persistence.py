@@ -577,10 +577,22 @@ def test_repository_ingests_odds_api_message_with_persisted_cursor() -> None:
 def _provider_health_with_latency(
     settings: Settings,
     *,
-    latest_ingested_at: datetime,
+    latest_ingested_at: datetime | None = None,
     latency_ms: int = 500,
+    latency_rows=None,
     provider_warnings=None,
 ):
+    latency_rows = latency_rows or [
+        {
+            "provider": Provider.API_TENNIS.value,
+            "feed": "score/live",
+            "latest_ingested_at": latest_ingested_at
+            or datetime.now(timezone.utc).replace(microsecond=0),
+            "latency_ms": latency_ms,
+            "healthy": True,
+        }
+    ]
+
     class CursorStub:
         def __init__(self) -> None:
             self.last_query = ""
@@ -597,15 +609,7 @@ def _provider_health_with_latency(
 
         def fetchall(self):
             if "FROM provider_latency" in self.last_query:
-                return [
-                    {
-                        "provider": Provider.API_TENNIS.value,
-                        "feed": "score/live",
-                        "latest_ingested_at": latest_ingested_at,
-                        "latency_ms": latency_ms,
-                        "healthy": True,
-                    }
-                ]
+                return latency_rows
             if "FROM raw_provider_payloads" in self.last_query:
                 return [{"provider": Provider.API_TENNIS.value, "count": 1}]
             return []
@@ -694,6 +698,41 @@ def test_provider_health_keeps_configured_provider_healthy_with_recent_persisted
     assert api_tennis.configured is True
     assert api_tennis.healthy is True
     assert "stale persisted feed" not in api_tennis.status
+
+
+def test_provider_health_aggregates_multiple_feeds_per_provider_conservatively() -> None:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    health = _provider_health_with_latency(
+        Settings(
+            data_mode="live",
+            odds_api_io_key="key",
+            max_odds_staleness_ms=2500,
+        ),
+        latency_rows=[
+            {
+                "provider": Provider.ODDS_API_IO.value,
+                "feed": "odds/moneyline",
+                "latest_ingested_at": now,
+                "latency_ms": 300,
+                "healthy": True,
+            },
+            {
+                "provider": Provider.ODDS_API_IO.value,
+                "feed": "odds/tennis:moneyline",
+                "latest_ingested_at": now - timedelta(seconds=8),
+                "latency_ms": 700,
+                "healthy": True,
+            },
+        ],
+    )
+    odds = next(item for item in health if item.provider == Provider.ODDS_API_IO)
+
+    assert odds.configured is True
+    assert odds.healthy is False
+    assert odds.latency_ms == 700
+    assert odds.last_message_at == now
+    assert "odds/moneyline, odds/tennis:moneyline" in odds.status
+    assert "stale persisted feed: odds/tennis:moneyline" in odds.status
 
 
 def test_data_quality_surfaces_latest_score_ingestion_warning() -> None:

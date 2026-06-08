@@ -538,32 +538,43 @@ class PersistentStore:
                 score_warnings = _provider_warnings_from_summary(
                     score_run["summary"] if score_run else {}
                 )
-        by_provider = {row["provider"]: row for row in latencies}
+        by_provider: dict[str, list[dict[str, Any]]] = {}
+        for row in latencies:
+            by_provider.setdefault(row["provider"], []).append(row)
         updated: list[ProviderHealth] = []
         for item in base:
-            row = by_provider.get(item.provider.value)
+            rows = by_provider.get(item.provider.value, [])
             score_degraded = item.provider == Provider.API_TENNIS and bool(score_warnings)
-            if row:
-                status = f"{item.status}; persisted {row['feed']}"
-                feed_stale = _feed_stale(row, self.settings)
-                if feed_stale:
-                    status = f"{status}; stale persisted feed"
+            if rows:
+                feeds = ", ".join(str(row["feed"]) for row in rows[:3])
+                stale_feeds = [
+                    str(row["feed"]) for row in rows if _feed_stale(row, self.settings)
+                ]
+                status = f"{item.status}; persisted {feeds}"
+                if stale_feeds:
+                    status = f"{status}; stale persisted feed: {', '.join(stale_feeds[:3])}"
                 if score_degraded:
                     status = f"{status}; degraded: {'; '.join(score_warnings[:2])}"
+                latest_ingested_at = max(
+                    row["latest_ingested_at"] for row in rows if row["latest_ingested_at"]
+                )
+                max_latency_ms = max(
+                    row["latency_ms"] for row in rows if row["latency_ms"] is not None
+                )
                 updated.append(
                     item.model_copy(
                         update={
                             "healthy": (
                                 item.healthy
-                                and bool(row["healthy"])
-                                and not feed_stale
+                                and all(bool(row["healthy"]) for row in rows)
+                                and not stale_feeds
                                 and not score_degraded
                             ),
-                            "latency_ms": row["latency_ms"],
-                            "last_message_at": row["latest_ingested_at"],
+                            "latency_ms": max_latency_ms,
+                            "last_message_at": latest_ingested_at,
                             "status": status,
                             "quota_used": call_counts.get(item.provider.value, item.quota_used),
-                            "last_billable_call_at": row["latest_ingested_at"],
+                            "last_billable_call_at": latest_ingested_at,
                         }
                     )
                 )

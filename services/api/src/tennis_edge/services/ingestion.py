@@ -84,7 +84,7 @@ class LiveIngestionPipeline:
 
     async def snapshot_for_date(self, target_date: date) -> OperationalSnapshot:
         matches = await self._fetch_matches(target_date)
-        provider_matches, raw_payloads = _split_provider_matches(matches)
+        provider_matches, raw_payloads, score_source_ts_by_key = _split_provider_matches(matches)
         if not provider_matches:
             persisted = self.store.latest_analyses(target_date)
             if persisted:
@@ -104,7 +104,13 @@ class LiveIngestionPipeline:
             )
 
         matches = await self.archive_augmenter(provider_matches, self.archive_source)
-        analyses = [self._analysis_for_match(match) for match in matches]
+        analyses = [
+            self._analysis_for_match(
+                match,
+                score_source_ts=score_source_ts_by_key.get(_match_key(match)),
+            )
+            for match in matches
+        ]
         source = _snapshot_source(matches)
         saved_payloads = raw_payloads or _raw_payloads_from_matches(matches)
         raw_payloads_saved = 0
@@ -128,7 +134,12 @@ class LiveIngestionPipeline:
         except Exception:
             return []
 
-    def _analysis_for_match(self, match: Match) -> MatchAnalysis:
+    def _analysis_for_match(
+        self,
+        match: Match,
+        *,
+        score_source_ts: datetime | None = None,
+    ) -> MatchAnalysis:
         features = build_features(match)
         prediction = predict_match(match, features)
         signals = build_signals(match, prediction, features)
@@ -139,26 +150,41 @@ class LiveIngestionPipeline:
             features=features,
             prediction=prediction,
             signals=signals,
-            freshness=_freshness_for_match(match, source=source, persisted=source != "sample"),
+            freshness=_freshness_for_match(
+                match,
+                source=source,
+                persisted=source != "sample",
+                score_source_ts=score_source_ts,
+            ),
         )
 
 
 def _split_provider_matches(
     records: list[Match | ProviderMatchPayload],
-) -> tuple[list[Match], list[RawProviderPayload]]:
+) -> tuple[list[Match], list[RawProviderPayload], dict[str, datetime]]:
     matches_by_key: dict[str, Match] = {}
     raw_payloads: list[RawProviderPayload] = []
+    source_timestamps_by_key: dict[str, tuple[int, datetime]] = {}
     for record in records:
         if isinstance(record, ProviderMatchPayload):
             _merge_match(matches_by_key, record.match)
             raw_payloads.append(record.raw_payload)
+            _merge_source_timestamp(source_timestamps_by_key, record.raw_payload)
         else:
             _merge_match(matches_by_key, record)
-    return list(matches_by_key.values()), raw_payloads
+    return (
+        list(matches_by_key.values()),
+        raw_payloads,
+        {key: value[1] for key, value in source_timestamps_by_key.items()},
+    )
+
+
+def _match_key(match: Match) -> str:
+    return match.provider_match_id or match.id
 
 
 def _merge_match(matches_by_key: dict[str, Match], match: Match) -> None:
-    key = match.provider_match_id or match.id
+    key = _match_key(match)
     current = matches_by_key.get(key)
     if current is None or _match_preference_rank(match) >= _match_preference_rank(current):
         matches_by_key[key] = match
@@ -169,6 +195,30 @@ def _match_preference_rank(match: Match) -> int:
         return 3
     if match.state.status == "finished":
         return 2
+    return 0
+
+
+def _merge_source_timestamp(
+    timestamps_by_key: dict[str, tuple[int, datetime]],
+    payload: RawProviderPayload,
+) -> None:
+    rank = _payload_freshness_rank(payload)
+    if rank == 0:
+        return
+    current = timestamps_by_key.get(payload.source_event_id)
+    if (
+        current is None
+        or rank > current[0]
+        or (rank == current[0] and payload.source_ts > current[1])
+    ):
+        timestamps_by_key[payload.source_event_id] = (rank, payload.source_ts)
+
+
+def _payload_freshness_rank(payload: RawProviderPayload) -> int:
+    if payload.payload_type in {"score", "point"}:
+        return 2
+    if payload.payload_type == "fixture":
+        return 1
     return 0
 
 
@@ -210,10 +260,18 @@ def _snapshot_source(matches: list[Match]) -> str:
     return "provider_live"
 
 
-def _freshness_for_match(match: Match, source: str, persisted: bool) -> MatchFreshness:
+def _freshness_for_match(
+    match: Match,
+    source: str,
+    persisted: bool,
+    *,
+    score_source_ts: datetime | None = None,
+) -> MatchFreshness:
     now = _now()
     odds_source_ts = max((quote.source_ts for quote in match.odds), default=None)
-    score_source_ts = match.scheduled_at if match.state.status == "prematch" else now
+    score_source_ts = score_source_ts or (
+        match.scheduled_at if match.state.status == "prematch" else now
+    )
     return MatchFreshness(
         source=source,
         persisted=persisted,

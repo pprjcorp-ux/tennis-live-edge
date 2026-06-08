@@ -735,13 +735,13 @@ def _live_provider_matches():
     ]
 
 
-def _api_tennis_raw(match, payload_type):
+def _api_tennis_raw(match, payload_type, source_ts=None):
     return RawProviderPayload(
         id=f"raw_{payload_type}_{match.provider_match_id}",
         provider=Provider.API_TENNIS,
         payload_type=payload_type,
         source_event_id=match.provider_match_id,
-        source_ts=match.scheduled_at,
+        source_ts=source_ts or match.scheduled_at,
         payload={
             "event_key": match.provider_match_id,
             "payload_type": payload_type,
@@ -838,6 +838,7 @@ def test_live_ingestion_pipeline_persists_provider_snapshot() -> None:
 
 def test_live_ingestion_pipeline_merges_fixture_and_livescore_without_losing_raw_payloads() -> None:
     fixture = _live_provider_matches()[0]
+    score_source_ts = datetime(2026, 6, 8, 12, tzinfo=timezone.utc)
     livescore = fixture.model_copy(
         update={
             "state": fixture.state.model_copy(
@@ -861,7 +862,11 @@ def test_live_ingestion_pipeline_merges_fixture_and_livescore_without_losing_raw
                 ),
                 ProviderMatchPayload(
                     match=livescore,
-                    raw_payload=_api_tennis_raw(livescore, "score"),
+                    raw_payload=_api_tennis_raw(
+                        livescore,
+                        "score",
+                        source_ts=score_source_ts,
+                    ),
                 ),
             ]
         ),
@@ -878,6 +883,10 @@ def test_live_ingestion_pipeline_merges_fixture_and_livescore_without_losing_raw
     assert snapshot.analyses[0].match.state.p1_games == 4
     assert snapshot.raw_payloads_saved == 2
     assert [payload.payload_type for payload in store.saved_payloads] == ["fixture", "score"]
+    assert snapshot.analyses[0].freshness is not None
+    assert snapshot.analyses[0].freshness.score_source_ts == score_source_ts
+    assert snapshot.analyses[0].freshness.score_age_ms is not None
+    assert snapshot.analyses[0].freshness.score_age_ms > 0
 
 
 def test_live_ingestion_pipeline_prefers_provider_raw_payload_over_canonical_proxy() -> None:

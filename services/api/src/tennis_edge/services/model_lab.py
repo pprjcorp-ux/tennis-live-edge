@@ -104,14 +104,12 @@ def calibration_from_training_examples(
         _calibration_bucket(bucket, bucket_examples)
         for bucket, bucket_examples in sorted(grouped.items(), key=lambda item: _bucket_bounds(item[0]))
     ]
-    brier_values = [bucket.brier_score for bucket in buckets]
-    log_loss_values = [bucket.log_loss for bucket in buckets]
     return CalibrationReport(
         run_id=run_id,
         model_version=model_version,
         buckets=buckets,
-        brier_score=round(mean(brier_values), 6) if brier_values else 0.25,
-        log_loss=round(mean(log_loss_values), 6) if log_loss_values else 0.693147,
+        brier_score=round(_brier_score(settled), 6) if settled else 0.25,
+        log_loss=round(_log_loss(settled), 6) if settled else 0.693147,
         calibration_error=round(_calibration_error(settled), 6) if settled else 1,
     )
 
@@ -165,6 +163,27 @@ def _calibration_bucket(
             ),
             6,
         ),
+    )
+
+
+def _brier_score(examples: list[TrainingExample]) -> float:
+    outcomes = [1.0 if example.result_win else 0.0 for example in examples]
+    probabilities = [_clip_probability(example.model_probability) for example in examples]
+    return mean(
+        (probability - outcome) ** 2
+        for probability, outcome in zip(probabilities, outcomes, strict=True)
+    )
+
+
+def _log_loss(examples: list[TrainingExample]) -> float:
+    outcomes = [1.0 if example.result_win else 0.0 for example in examples]
+    probabilities = [_clip_probability(example.model_probability) for example in examples]
+    return mean(
+        -(
+            outcome * log(probability)
+            + (1 - outcome) * log(1 - probability)
+        )
+        for probability, outcome in zip(probabilities, outcomes, strict=True)
     )
 
 

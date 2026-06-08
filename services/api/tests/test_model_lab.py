@@ -87,6 +87,23 @@ def test_calibration_report_is_built_by_probability_bucket() -> None:
     assert report.calibration_error > 0
 
 
+def test_calibration_report_scores_are_weighted_by_signal_count() -> None:
+    examples = [
+        *[_example(index, 0.5, True, 0.1, 0.01) for index in range(1, 10)],
+        _example(10, 0.9, True, 0.1, 0.01),
+    ]
+
+    report = calibration_from_training_examples(
+        "bt_weighted",
+        "prematch_ensemble_v1",
+        examples,
+    )
+
+    assert [bucket.predictions for bucket in report.buckets] == [9, 1]
+    assert report.brier_score == 0.226
+    assert report.log_loss == 0.634369
+
+
 def test_walk_forward_rejects_better_roi_with_bad_clv_and_calibration() -> None:
     examples = [
         _example(1, 0.9, True, 1.0, -0.02),

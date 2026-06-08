@@ -30,7 +30,7 @@ from tennis_edge.domain import (
     Signal,
     SignalStatus,
 )
-from tennis_edge.services.execution_engine import ORDERS, create_order
+from tennis_edge.services.execution_engine import create_order
 
 
 AGENT_RUNS: list[AgentRun] = []
@@ -58,7 +58,7 @@ def _entry_signals(analyses: list[MatchAnalysis]) -> list[Signal]:
 
 
 def _order_snapshot(orders: Iterable[ExecutionOrder] | None = None) -> list[ExecutionOrder]:
-    return list(orders) if orders is not None else list(ORDERS.values())
+    return list(orders) if orders is not None else []
 
 
 def _open_order_count(orders: Iterable[ExecutionOrder] | None = None) -> int:

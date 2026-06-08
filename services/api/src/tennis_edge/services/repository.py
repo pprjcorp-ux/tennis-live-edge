@@ -34,6 +34,7 @@ from tennis_edge.domain import (
     OddsMessageIngestionRequest,
     OddsMessageIngestionResult,
     OrderRequest,
+    OrderStatus,
     OperationalStateSnapshot,
     PaperPerformance,
     PaperSettlement,
@@ -71,13 +72,10 @@ from tennis_edge.services.enterprise_analytics import (
     entity_conflicts,
     model_registry,
     paper_performance,
-    settle_paper_order,
 )
 from tennis_edge.services.execution_engine import (
     CANCELABLE_ORDER_STATUSES,
-    ORDERS,
     bankroll_snapshot,
-    cancel_order,
     create_order,
     promote_from_learning,
     set_kill_switch_for,
@@ -96,6 +94,7 @@ class AnalysisRepository:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._sample_backtests: dict[str, BacktestMetrics] = {}
+        self._sample_orders: dict[str, ExecutionOrder] = {}
         self.api_tennis = ApiTennisClient(settings.api_tennis_key, settings.data_mode)
         self.api_tennis_source = ApiTennisMatchSource(self.api_tennis)
         self.odds_api_io = OddsApiIoClient(settings.odds_api_io_key, settings.data_mode)
@@ -438,6 +437,7 @@ class AnalysisRepository:
         )
         for order in result.created_orders:
             self.store.save_order(order)
+            self._remember_sample_order(order)
         self.store.save_agent_run(result.run)
         return result
 
@@ -467,7 +467,7 @@ class AnalysisRepository:
         if self.settings.data_mode != "sample":
             raise KeyError(request.order_id)
         try:
-            settlement = settle_paper_order(request)
+            settlement = self._settle_sample_order(request)
         except KeyError:
             raise
         self.store.save_settlement(settlement)
@@ -496,7 +496,7 @@ class AnalysisRepository:
     async def orders(self) -> list[ExecutionOrder]:
         merged = {order.id: order for order in self.store.orders()}
         if self.settings.data_mode == "sample":
-            for order in ORDERS.values():
+            for order in self._sample_orders.values():
                 merged.setdefault(order.id, order)
         return sorted(merged.values(), key=lambda order: order.created_at, reverse=True)
 
@@ -510,6 +510,7 @@ class AnalysisRepository:
             orders=order_snapshot,
         )
         self.store.save_order(order)
+        self._remember_sample_order(order)
         return order
 
     async def submit_order(self, request: OrderRequest) -> ExecutionOrder:
@@ -522,6 +523,7 @@ class AnalysisRepository:
             orders=order_snapshot,
         )
         self.store.save_order(order)
+        self._remember_sample_order(order)
         return order
 
     async def cancel_order(self, order_id: str) -> CancelOrderResult:
@@ -548,7 +550,72 @@ class AnalysisRepository:
                 status=persisted_order.status,
                 reason="Persisted paper order could not be cancelled.",
             )
-        return cancel_order(order_id)
+        if self.settings.data_mode == "sample" and order_id in self._sample_orders:
+            return self._cancel_sample_order(order_id)
+        raise KeyError(order_id)
+
+    def _remember_sample_order(self, order: ExecutionOrder) -> None:
+        if self.settings.data_mode == "sample":
+            self._sample_orders[order.id] = order
+
+    def _cancel_sample_order(self, order_id: str) -> CancelOrderResult:
+        order = self._sample_orders[order_id]
+        if order.status not in CANCELABLE_ORDER_STATUSES:
+            return CancelOrderResult(
+                order_id=order_id,
+                status=order.status,
+                reason="Order is not open; no cancellation sent.",
+            )
+        updated = order.model_copy(
+            update={
+                "status": OrderStatus.CANCELLED,
+                "updated_at": self._now(),
+                "audit": [*order.audit, "Sample paper order cancelled by admin request."],
+            }
+        )
+        self._sample_orders[order_id] = updated
+        return CancelOrderResult(
+            order_id=order_id,
+            status=updated.status,
+            reason="Sample paper order cancelled.",
+        )
+
+    def _settle_sample_order(self, request: PaperSettleRequest) -> PaperSettlement:
+        if request.order_id not in self._sample_orders:
+            raise KeyError(request.order_id)
+        order = self._sample_orders[request.order_id]
+        matched = order.matched_stake if order.matched_stake > 0 else order.stake_amount
+        average_price = order.average_price or order.requested_odds
+        gross = matched * (average_price - 1) if request.result_win else -matched
+        commission = max(0.0, gross) * 0.02
+        net = gross - commission
+        clv = (1 / request.closing_odds) - (1 / average_price)
+        settlement = PaperSettlement(
+            order_id=order.id,
+            status=OrderStatus.SETTLED,
+            result_win=request.result_win,
+            requested_odds=order.requested_odds,
+            average_price=average_price,
+            matched_stake=matched,
+            gross_pnl=round(gross, 2),
+            commission=round(commission, 2),
+            net_pnl=round(net, 2),
+            closing_odds=request.closing_odds,
+            clv=round(clv, 6),
+        )
+        self._sample_orders[order.id] = order.model_copy(
+            update={
+                "status": OrderStatus.SETTLED,
+                "matched_stake": matched,
+                "average_price": average_price,
+                "settlement_status": "settled",
+                "pnl": settlement.net_pnl,
+                "clv": settlement.clv,
+                "updated_at": self._now(),
+                "audit": [*order.audit, "Sample paper order settled with closing-line CLV."],
+            }
+        )
+        return settlement
 
     async def set_kill_switch(self, request: KillSwitchRequest) -> ExecutionStatus:
         return set_kill_switch_for(self.settings, request)

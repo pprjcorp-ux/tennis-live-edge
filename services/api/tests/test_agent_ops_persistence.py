@@ -12,6 +12,7 @@ from tennis_edge.domain import (
     DataQualitySnapshot,
     ExecutionOrder,
     ExecutionVenue,
+    OrderRequest,
     OrderStatus,
     PaperSettlement,
     PaperSettleRequest,
@@ -351,6 +352,71 @@ def test_live_orders_do_not_use_process_memory_when_persisted_order_missing() ->
     assert bankroll.open_exposure == 0
 
 
+def test_sample_orders_do_not_use_process_memory_when_repository_cache_empty() -> None:
+    ORDERS.clear()
+    AGENT_RUNS.clear()
+    repo = AnalysisRepository(Settings(data_mode="sample", bankroll_starting_balance=10000))
+    memory_order = ExecutionOrder(
+        id="ord_sample_memory_only",
+        signal_id="sig_conflict",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.PAPER,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=72,
+        average_price=2.0,
+    )
+    ORDERS[memory_order.id] = memory_order
+    store = AgentStoreStub(repo.store)
+    store.persisted_orders = []
+    repo.store = store
+
+    orders = asyncio.run(repo.orders())
+    bankroll = asyncio.run(repo.bankroll())
+
+    assert orders == []
+    assert bankroll.open_exposure == 0
+
+
+def test_sample_paper_order_round_trips_through_repository_cache() -> None:
+    ORDERS.clear()
+    AGENT_RUNS.clear()
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    store = AgentStoreStub(repo.store)
+    repo.store = store
+    analyses = asyncio.run(repo.analyses_for_date(date.today()))
+    entry = next(
+        signal
+        for analysis in analyses
+        for signal in analysis.signals
+        if signal.status == SignalStatus.ENTRY
+    )
+
+    order = asyncio.run(repo.create_paper_order(OrderRequest(signal_id=entry.id)))
+    orders = asyncio.run(repo.orders())
+    settlement = asyncio.run(
+        repo.settle_paper(
+            PaperSettleRequest(
+                order_id=order.id,
+                result_win=True,
+                closing_odds=order.requested_odds - 0.02,
+            )
+        )
+    )
+    settled_orders = asyncio.run(repo.orders())
+
+    assert store.saved_orders == [order]
+    assert orders == [order]
+    assert settlement.status == OrderStatus.SETTLED
+    assert settled_orders[0].status == OrderStatus.SETTLED
+    assert settled_orders[0].pnl == settlement.net_pnl
+
+
 def test_settlement_prefers_persisted_order_over_stale_process_memory() -> None:
     ORDERS.clear()
     AGENT_RUNS.clear()
@@ -476,6 +542,37 @@ def test_cancel_prefers_persisted_non_cancelable_order_over_stale_process_memory
     assert "not open" in result.reason
     assert ORDERS[persisted_order.id].status == OrderStatus.PAPER
     assert store.cancel_requests == []
+
+
+def test_sample_cancel_does_not_use_process_memory_when_repository_cache_empty() -> None:
+    ORDERS.clear()
+    AGENT_RUNS.clear()
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    memory_order = ExecutionOrder(
+        id="ord_sample_cancel_memory_only",
+        signal_id="sig_conflict",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.PAPER,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=2.0,
+    )
+    ORDERS[memory_order.id] = memory_order
+    store = AgentStoreStub(repo.store)
+    store.persisted_orders = []
+    repo.store = store
+
+    with pytest.raises(KeyError):
+        asyncio.run(repo.cancel_order(memory_order.id))
+
+    assert store.cancel_requests == []
+    assert ORDERS[memory_order.id].status == OrderStatus.PAPER
 
 
 def test_cancel_does_not_use_stale_memory_when_persisted_cancel_fails() -> None:

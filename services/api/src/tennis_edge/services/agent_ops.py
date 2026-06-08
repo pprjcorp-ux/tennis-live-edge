@@ -306,6 +306,23 @@ def detect_anomalies(
             )
 
     for snapshot in data_quality:
+        if snapshot.stale_ticks > 0:
+            detail_parts = [f"stale_ticks={snapshot.stale_ticks}"]
+            if snapshot.latency_ms is not None:
+                detail_parts.append(f"latency_ms={snapshot.latency_ms}")
+            if snapshot.notes:
+                detail_parts.append("; ".join(snapshot.notes))
+            anomalies.append(
+                AgentAnomaly(
+                    id=_run_id("anom"),
+                    severity="critical",
+                    category="provider_latency",
+                    summary=f"{snapshot.provider} {snapshot.feed} has stale provider ticks",
+                    detail="; ".join(detail_parts),
+                    blocked_signals=snapshot.blocked_signals,
+                    detected_at=_now(),
+                )
+            )
         feed_score = (
             snapshot.score_completeness
             if "score" in snapshot.feed or "live-state" in snapshot.feed

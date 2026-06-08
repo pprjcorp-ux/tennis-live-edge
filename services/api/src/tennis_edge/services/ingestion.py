@@ -145,6 +145,7 @@ class LiveIngestionPipeline:
         *,
         score_source_ts: datetime | None = None,
     ) -> MatchAnalysis:
+        match = _with_score_latency(match, score_source_ts)
         features = build_features(match)
         prediction = predict_match(match, features)
         signals = build_signals(match, prediction, features)
@@ -232,6 +233,19 @@ def _payload_freshness_rank(payload: RawProviderPayload) -> int:
     if payload.payload_type == "fixture":
         return 1
     return 0
+
+
+def _with_score_latency(match: Match, score_source_ts: datetime | None) -> Match:
+    if not score_source_ts or match.state.status != "live":
+        return match
+    source_latency_ms = max(0, int((_now() - score_source_ts).total_seconds() * 1000))
+    return match.model_copy(
+        update={
+            "state": match.state.model_copy(
+                update={"source_latency_ms": source_latency_ms}
+            )
+        }
+    )
 
 
 def _raw_payloads_from_matches(matches: list[Match]) -> list[RawProviderPayload]:

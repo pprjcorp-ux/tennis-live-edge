@@ -47,3 +47,19 @@ def test_stale_live_odds_are_blocked() -> None:
     signals = build_signals(match, prediction, features)
 
     assert any("stale" in signal.reason for signal in signals)
+
+
+def test_stale_live_score_is_blocked() -> None:
+    base_match = sample_matches()[1]
+    match = base_match.model_copy(
+        update={
+            "state": base_match.state.model_copy(update={"source_latency_ms": 16000})
+        }
+    )
+    features = build_features(match)
+    prediction = predict_match(match, features)
+
+    signals = build_signals(match, prediction, features)
+
+    assert any("Live score feed is stale" in signal.reason for signal in signals)
+    assert all(signal.status != SignalStatus.ENTRY for signal in signals)

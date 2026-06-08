@@ -2,6 +2,7 @@ import asyncio
 from contextlib import contextmanager
 from datetime import date
 from datetime import datetime
+from datetime import timedelta
 from datetime import timezone
 
 from tennis_edge.config import Settings
@@ -991,7 +992,7 @@ def test_live_ingestion_pipeline_persists_provider_snapshot() -> None:
 
 def test_live_ingestion_pipeline_merges_fixture_and_livescore_without_losing_raw_payloads() -> None:
     fixture = _live_provider_matches()[0]
-    score_source_ts = datetime(2026, 6, 8, 12, tzinfo=timezone.utc)
+    score_source_ts = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(seconds=20)
     livescore = fixture.model_copy(
         update={
             "state": fixture.state.model_copy(
@@ -1036,6 +1037,8 @@ def test_live_ingestion_pipeline_merges_fixture_and_livescore_without_losing_raw
     assert snapshot.analyses[0].match.state.p1_games == 4
     assert snapshot.raw_payloads_saved == 2
     assert [payload.payload_type for payload in store.saved_payloads] == ["fixture", "score"]
+    assert snapshot.analyses[0].match.state.source_latency_ms is not None
+    assert snapshot.analyses[0].match.state.source_latency_ms > 0
     assert snapshot.analyses[0].freshness is not None
     assert snapshot.analyses[0].freshness.score_source_ts == score_source_ts
     assert snapshot.analyses[0].freshness.score_age_ms is not None

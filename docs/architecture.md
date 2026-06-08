@@ -44,7 +44,10 @@ decide whether the system behaves as budget or enterprise.
 13. Live readiness reads the persisted settled `training_examples` count and
     surfaces Model Lab readiness as a warning/pass check, rather than discovering
     missing datasets only when a backtest is requested.
-14. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
+14. Live model registry reads persisted `model_versions`; without persisted
+    metrics it exposes only a clearly unvalidated runtime default instead of
+    demo ROI/CLV.
+15. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
     paper orders are persisted so restart recovery includes the operational
     audit trail.
 

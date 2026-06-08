@@ -333,6 +333,32 @@ def test_live_run_backtest_requires_persisted_training_examples() -> None:
     assert store.saved is False
 
 
+def test_live_model_registry_uses_unvalidated_runtime_default_without_persisted_metrics() -> None:
+    class StoreStub:
+        def model_registry(self):
+            return None
+
+        def champion_model(self):
+            return None
+
+    repo = AnalysisRepository(Settings(data_mode="live", model_champion_version="baseline_v0"))
+    repo.store = StoreStub()
+
+    registry = asyncio.run(repo.model_registry())
+    champion = asyncio.run(repo.champion_model())
+
+    assert len(registry) == 1
+    assert champion == registry[0]
+    assert champion.model_version == "baseline_v0"
+    assert champion.model_type == "configured_default_unvalidated"
+    assert champion.metrics.matches == 0
+    assert champion.metrics.signals == 0
+    assert champion.metrics.roi == 0
+    assert champion.metrics.brier_score == 1
+    assert champion.promoted is False
+    assert "no persisted" in " ".join(champion.notes).lower()
+
+
 def test_calibration_report_fallback_uses_persisted_backtest_run_config() -> None:
     examples = [
         _example(1, 0.52, True, 0.2, 0.01),

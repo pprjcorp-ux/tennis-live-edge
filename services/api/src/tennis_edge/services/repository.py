@@ -359,11 +359,54 @@ class AnalysisRepository:
 
     async def model_registry(self) -> list[ModelRegistryEntry]:
         persisted = self.store.model_registry()
-        return persisted or model_registry(self.settings)
+        if persisted:
+            return persisted
+        if self.settings.data_mode == "sample":
+            return model_registry(self.settings)
+        return self._unvalidated_model_registry()
 
     async def champion_model(self) -> ModelRegistryEntry:
         persisted = self.store.champion_model()
-        return persisted or champion_model(self.settings)
+        if persisted is not None:
+            return persisted
+        if self.settings.data_mode == "sample":
+            return champion_model(self.settings)
+        return self._unvalidated_champion_model()
+
+    def _unvalidated_model_registry(self) -> list[ModelRegistryEntry]:
+        metrics = BacktestMetrics(
+            run_id=f"registry_unvalidated_{self.settings.model_champion_version}",
+            model_version=self.settings.model_champion_version,
+            matches=0,
+            signals=0,
+            roi=0,
+            clv=0,
+            brier_score=1,
+            log_loss=1,
+            calibration_error=1,
+            max_drawdown=1,
+            promoted=False,
+            rejection_reason="No persisted model registry/backtest metrics available.",
+        )
+        return [
+            ModelRegistryEntry(
+                model_version=self.settings.model_champion_version,
+                role="champion",
+                model_type="configured_default_unvalidated",
+                feature_set="unvalidated",
+                training_window={"source": "runtime_config", "persisted": False},
+                metrics=metrics,
+                promoted=False,
+                promoted_at=None,
+                notes=[
+                    "Configured runtime default only; no persisted model_versions/backtests were found.",
+                    "Run settled paper backtests before treating metrics as operational evidence.",
+                ],
+            )
+        ]
+
+    def _unvalidated_champion_model(self) -> ModelRegistryEntry:
+        return self._unvalidated_model_registry()[0]
 
     async def calibration_report(self, run_id: str) -> CalibrationReport:
         persisted = self.store.calibration_report(run_id)

@@ -139,7 +139,7 @@ def test_walk_forward_roi_uses_staked_exposure_when_available() -> None:
 
 def test_training_example_uses_decision_timestamp_and_matched_stake() -> None:
     prediction_created_at = datetime(2026, 5, 1, 14, tzinfo=timezone.utc)
-    settlement = PaperSettlement(
+    first_settlement = PaperSettlement(
         order_id="paper_1",
         status=OrderStatus.SETTLED,
         result_win=True,
@@ -153,19 +153,25 @@ def test_training_example_uses_decision_timestamp_and_matched_stake() -> None:
         clv=0.017,
         settled_at=datetime(2026, 5, 3, 20, tzinfo=timezone.utc),
     )
+    second_settlement = PaperSettlement(
+        order_id="paper_1",
+        status=OrderStatus.SETTLED,
+        result_win=False,
+        requested_odds=2.0,
+        average_price=2.02,
+        matched_stake=50,
+        gross_pnl=-50,
+        commission=0,
+        net_pnl=-50,
+        closing_odds=2.5,
+        clv=-0.104,
+        settled_at=datetime(2026, 5, 4, 20, tzinfo=timezone.utc),
+    )
 
     class CursorStub:
         def __init__(self) -> None:
-            self.insert_params = None
-
-        def execute(self, query, params):
-            if "SELECT" in query:
-                return self
-            self.insert_params = params
-            return self
-
-        def fetchone(self):
-            return {
+            self.rows = {}
+            self.source_row = {
                 "external_order_ref": "paper_1",
                 "match_id": "match_1",
                 "player_id": "player_1",
@@ -179,16 +185,81 @@ def test_training_example_uses_decision_timestamp_and_matched_stake() -> None:
                 "prediction_created_at": prediction_created_at,
             }
 
+        def execute(self, query, params):
+            if "SELECT" in query:
+                return self
+            columns = [
+                "id",
+                "match_id",
+                "player_id",
+                "model_version",
+                "feature_snapshot_id",
+                "decision_ts",
+                "model_probability",
+                "market_probability",
+                "closing_probability",
+                "result_win",
+                "pnl",
+                "clv",
+                "stake_amount",
+                "calibration_bucket",
+                "created_at",
+            ]
+            candidate = dict(zip(columns, params, strict=True))
+            existing = self.rows.get(candidate["id"])
+            if existing is None:
+                self.rows[candidate["id"]] = candidate
+                return self
+            for column in columns:
+                if f"{column} = EXCLUDED.{column}" in query:
+                    existing[column] = candidate[column]
+            return self
+
+        def fetchone(self):
+            return self.source_row
+
     cursor = CursorStub()
-    PersistentStore(Settings(data_mode="sample"))._insert_training_example(
+    store = PersistentStore(Settings(data_mode="sample"))
+    store._insert_training_example(
         cursor,
         paper_order_id=1,
-        settlement=settlement,
+        settlement=first_settlement,
     )
+    first_row = dict(cursor.rows["train_paper_1"])
 
-    assert cursor.insert_params is not None
-    assert cursor.insert_params[5] == prediction_created_at
-    assert cursor.insert_params[12] == 75
+    cursor.source_row = {
+        **cursor.source_row,
+        "matched_stake": 50,
+        "model_prob": 0.99,
+        "market_prob": 0.11,
+        "model_version_id": "leaky_future_model",
+        "feature_snapshot_id": 999,
+        "prediction_created_at": datetime(2026, 5, 2, 14, tzinfo=timezone.utc),
+    }
+    store._insert_training_example(
+        cursor,
+        paper_order_id=1,
+        settlement=second_settlement,
+    )
+    updated_row = cursor.rows["train_paper_1"]
+
+    assert first_row["decision_ts"] == prediction_created_at
+    assert first_row["closing_probability"] == pytest.approx(1 / 1.95)
+    assert first_row["stake_amount"] == 75
+    assert updated_row["closing_probability"] == pytest.approx(1 / 2.5)
+    assert updated_row["result_win"] is False
+    assert updated_row["pnl"] == -50
+    assert updated_row["clv"] == -0.104
+    assert updated_row["stake_amount"] == 50
+    for immutable_column in [
+        "decision_ts",
+        "model_probability",
+        "market_probability",
+        "model_version",
+        "feature_snapshot_id",
+        "created_at",
+    ]:
+        assert updated_row[immutable_column] == first_row[immutable_column]
 
 
 def test_repository_prefers_persisted_model_lab_reports() -> None:

@@ -1545,6 +1545,7 @@ class PersistentStore:
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
+              closing_probability = EXCLUDED.closing_probability,
               result_win = EXCLUDED.result_win,
               pnl = EXCLUDED.pnl,
               clv = EXCLUDED.clv,

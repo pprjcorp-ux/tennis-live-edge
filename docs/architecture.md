@@ -36,8 +36,9 @@ decide whether the system behaves as budget or enterprise.
 12. Model Lab backtests read persisted training examples first, compute
     walk-forward ROI, CLV, Brier, log loss, calibration error, and drawdown,
     then save model registry and calibration reports. Synthetic backtests remain
-    only as a `sample`/dev fallback; live mode returns an explicit blocked state
-    until persisted `training_examples` exist.
+    and synthetic calibration reports remain only as `sample`/dev fallbacks; live
+    mode returns explicit blocked/not-found states until persisted
+    `training_examples` and calibration reports exist.
 13. Live readiness reads the persisted settled `training_examples` count and
     surfaces Model Lab readiness as a warning/pass check, rather than discovering
     missing datasets only when a backtest is requested.

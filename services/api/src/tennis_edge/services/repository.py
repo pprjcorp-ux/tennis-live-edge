@@ -367,7 +367,11 @@ class AnalysisRepository:
 
     async def calibration_report(self, run_id: str) -> CalibrationReport:
         persisted = self.store.calibration_report(run_id)
-        return persisted or calibration_report(run_id)
+        if persisted is not None:
+            return persisted
+        if self.settings.data_mode == "sample":
+            return calibration_report(run_id)
+        raise KeyError(run_id)
 
     async def entity_conflicts(self) -> list[CanonicalEntityConflict]:
         persisted = self.store.entity_conflicts()

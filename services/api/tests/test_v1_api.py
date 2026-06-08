@@ -347,6 +347,21 @@ def test_unknown_backtest_returns_404() -> None:
     assert response.status_code == 404
 
 
+def test_unknown_calibration_report_returns_404() -> None:
+    class RepoStub:
+        async def calibration_report(self, run_id):
+            raise KeyError(run_id)
+
+    app.dependency_overrides[repository] = lambda: RepoStub()
+    try:
+        response = client.get("/api/v1/backtests/missing-run/calibration")
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Calibration report not found"
+
+
 def test_admin_model_promotion_allows_local_token() -> None:
     client.post("/api/v1/backtests/run", headers=ADMIN_HEADERS)
     response = client.post(

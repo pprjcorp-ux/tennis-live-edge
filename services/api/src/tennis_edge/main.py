@@ -402,7 +402,10 @@ async def v1_backtest_calibration(
     run_id: str,
     repo: AnalysisRepository = Depends(repository),
 ) -> CalibrationReport:
-    return await repo.calibration_report(run_id)
+    try:
+        return await repo.calibration_report(run_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Calibration report not found") from None
 
 
 @app.post("/api/v1/admin/model/promote", response_model=BacktestMetrics)

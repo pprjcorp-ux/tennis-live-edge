@@ -458,6 +458,19 @@ def test_live_backtest_lookup_does_not_use_process_memory_cache() -> None:
         asyncio.run(repo.get_backtest(cached_metrics.run_id))
 
 
+def test_live_calibration_report_does_not_use_synthetic_fallback() -> None:
+    class StoreStub:
+        def calibration_report(self, run_id):
+            assert run_id == "missing-run"
+            return None
+
+    repo = AnalysisRepository(Settings(data_mode="live", database_url=None))
+    repo.store = StoreStub()
+
+    with pytest.raises(KeyError):
+        asyncio.run(repo.calibration_report("missing-run"))
+
+
 def test_sample_backtest_cache_is_repository_scoped() -> None:
     class StoreStub:
         def backtest_metrics(self, request):

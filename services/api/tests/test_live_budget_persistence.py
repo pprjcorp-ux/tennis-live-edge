@@ -320,6 +320,79 @@ def test_provider_usage_counts_reads_raw_payloads_for_target_date() -> None:
     }
 
 
+def test_save_order_prefers_exact_external_signal_id_lookup() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.query = ""
+            self.params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.query = query
+            self.params = params
+            return self
+
+        def fetchone(self):
+            return None
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield self.conn
+
+    order = ExecutionOrder(
+        id="ord_lookup",
+        signal_id="sig_exact",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.PAPER,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+    )
+    store = StoreStub()
+
+    store.save_order(order)
+
+    assert "risk->>'external_signal_id' = %s" in store.conn.cursor_stub.query
+    assert "CASE WHEN risk->>'external_signal_id' = %s THEN 0 ELSE 1 END" in store.conn.cursor_stub.query
+    assert store.conn.cursor_stub.params == (
+        "sig_exact",
+        "match_atp_001",
+        "atp_sinner",
+        "sig_exact",
+    )
+
+
 def test_odds_stream_usage_reads_persisted_ingestion_runs() -> None:
     target_date = date(2026, 6, 8)
     started_at = datetime(2026, 6, 8, 12, tzinfo=timezone.utc)

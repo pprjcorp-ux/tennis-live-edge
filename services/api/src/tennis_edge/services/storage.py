@@ -1001,11 +1001,19 @@ class PersistentStore:
                             """
                             SELECT id
                             FROM signals
-                            WHERE match_id = %s AND outcome_player_id = %s
-                            ORDER BY created_at DESC
+                            WHERE risk->>'external_signal_id' = %s
+                               OR (match_id = %s AND outcome_player_id = %s)
+                            ORDER BY
+                              CASE WHEN risk->>'external_signal_id' = %s THEN 0 ELSE 1 END,
+                              created_at DESC
                             LIMIT 1
                             """,
-                            (order.match_id, order.player_id),
+                            (
+                                order.signal_id,
+                                order.match_id,
+                                order.player_id,
+                                order.signal_id,
+                            ),
                         ).fetchone()
                         if not signal_row:
                             return

@@ -21,11 +21,13 @@ class StoreStub:
         cursors: list[ProviderCursor] | None = None,
         data_quality: list[DataQualitySnapshot] | None = None,
         ingestion_runs: list[IngestionRunRecord] | None = None,
+        training_examples_count: int = 0,
         last_error: str | None = None,
     ) -> None:
         self._cursors = cursors or []
         self._data_quality = data_quality or []
         self._ingestion_runs = ingestion_runs or []
+        self._training_examples_count = training_examples_count
         self.last_error = last_error
 
     def provider_health(self):
@@ -39,6 +41,9 @@ class StoreStub:
 
     def ingestion_runs(self) -> list[IngestionRunRecord]:
         return self._ingestion_runs
+
+    def training_example_count(self) -> int:
+        return self._training_examples_count
 
 
 def _healthy_odds_cursor() -> ProviderCursor:
@@ -205,6 +210,35 @@ def test_live_readiness_allows_entries_with_persistent_truth_and_trusted_cursor(
     persistence_check = next(check for check in readiness.checks if check.name == "persistence")
     assert persistence_check.status == "pass"
     assert persistence_check.detail is None
+    dataset_check = next(
+        check for check in readiness.checks if check.name == "model_learning_dataset"
+    )
+    assert dataset_check.status == "warn"
+    assert "No settled persisted training examples" in dataset_check.summary
+
+
+def test_live_readiness_reports_persisted_training_examples() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(cursors=[_healthy_odds_cursor()], training_examples_count=42),
+    )
+
+    readiness = service.live_readiness(_snapshot(service, generated_at))
+
+    assert readiness.status == "ready"
+    dataset_check = next(
+        check for check in readiness.checks if check.name == "model_learning_dataset"
+    )
+    assert dataset_check.status == "pass"
+    assert dataset_check.summary == "42 settled persisted training examples available."
+    assert dataset_check.detail is None
 
 
 def test_live_readiness_blocks_entries_when_persistent_store_cannot_connect() -> None:

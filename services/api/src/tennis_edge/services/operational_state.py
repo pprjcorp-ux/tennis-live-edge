@@ -96,6 +96,16 @@ class OperationalStateService:
             and bool(self.settings.database_url)
             and not persistence_error
         )
+        training_examples_count = 0
+        if persistence_ready:
+            training_examples_count = getattr(
+                self.store,
+                "training_example_count",
+                lambda *_args, **_kwargs: 0,
+            )()
+            persistence_error = getattr(self.store, "last_error", None)
+            if persistence_error:
+                persistence_ready = False
         if persistence_ready:
             persistence_detail = None
         elif persistence_error:
@@ -157,6 +167,22 @@ class OperationalStateService:
                 if persistence_ready
                 else "Postgres persistence is required for live operational truth.",
                 detail=persistence_detail,
+            ),
+            LiveReadinessCheck(
+                name="model_learning_dataset",
+                status="pass" if training_examples_count > 0 else "warn",
+                summary=(
+                    f"{training_examples_count} settled persisted training examples available."
+                    if training_examples_count > 0
+                    else "No settled persisted training examples are available yet."
+                ),
+                detail=(
+                    None
+                    if training_examples_count > 0
+                    else "Live backtests and model promotion require settled paper orders; /api/v1/backtests/run will return 409 until examples exist."
+                    if persistence_ready and data_mode_live
+                    else "Dataset count is unavailable until live persistence is healthy."
+                ),
             ),
             LiveReadinessCheck(
                 name="real_execution",

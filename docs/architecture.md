@@ -38,7 +38,10 @@ decide whether the system behaves as budget or enterprise.
     then save model registry and calibration reports. Synthetic backtests remain
     only as a `sample`/dev fallback; live mode returns an explicit blocked state
     until persisted `training_examples` exist.
-13. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
+13. Live readiness reads the persisted settled `training_examples` count and
+    surfaces Model Lab readiness as a warning/pass check, rather than discovering
+    missing datasets only when a backtest is requested.
+14. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
     paper orders are persisted so restart recovery includes the operational
     audit trail.
 

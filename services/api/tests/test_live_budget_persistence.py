@@ -123,6 +123,7 @@ def test_operational_read_methods_degrade_on_schema_drift() -> None:
         ("paper_performance", lambda store: store.paper_performance(), None),
         ("paper_performance_segments", lambda store: store._paper_performance_segments(), []),
         ("training_examples", lambda store: store.training_examples(), []),
+        ("training_example_count", lambda store: store.training_example_count(), 0),
         ("entity_conflicts", lambda store: store.entity_conflicts(), []),
         ("get_backtest", lambda store: store.get_backtest("latest"), None),
         ("calibration_report", lambda store: store.calibration_report("run_1"), None),
@@ -136,6 +137,71 @@ def test_operational_read_methods_degrade_on_schema_drift() -> None:
         assert store.last_error is not None
         assert store.last_error.startswith(f"{operation} failed:")
         assert "relation provider_cursors does not exist" in store.last_error
+
+
+def test_training_example_count_uses_persisted_settled_rows_and_filters() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            assert "FROM training_examples" in query
+            assert "result_win IS NOT NULL" in query
+            assert "pnl IS NOT NULL" in query
+            self.params = params
+            return self
+
+        def fetchone(self):
+            assert self.params == (
+                "prematch_ensemble_v1",
+                "prematch_ensemble_v1",
+                "2026-06-01",
+                "2026-06-01",
+                "2026-06-08",
+                "2026-06-08",
+            )
+            return {"examples": 7}
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    count = StoreStub().training_example_count(
+        BacktestRunRequest(
+            model_version="prematch_ensemble_v1",
+            start_date="2026-06-01",
+            end_date="2026-06-08",
+        )
+    )
+
+    assert count == 7
 
 
 def test_operational_write_methods_degrade_on_schema_drift() -> None:

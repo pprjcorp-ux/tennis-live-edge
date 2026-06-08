@@ -39,6 +39,10 @@ def test_v1_live_matches_and_provider_health() -> None:
     assert dashboard.json()["operational_state"]["execution_status"]["can_submit_real_orders"] is False
     assert dashboard.json()["readiness"]["can_submit_real_orders"] is False
     assert dashboard.json()["readiness"]["status"] in {"ready", "degraded", "blocked"}
+    assert any(
+        check["name"] == "model_learning_dataset"
+        for check in dashboard.json()["readiness"]["checks"]
+    )
     assert {item["provider"] for item in health.json()} >= {"sportradar", "txodds"}
     assert all("cost_tier" in item for item in health.json())
     assert cost_profile.json()["active_plan"] == "lean_atp"

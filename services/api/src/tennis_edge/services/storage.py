@@ -1467,6 +1467,41 @@ class PersistentStore:
             )
         return examples
 
+    def training_example_count(self, request: BacktestRunRequest | None = None) -> int:
+        if not self.enabled:
+            return 0
+        model_version = request.model_version if request else None
+        start_date = request.start_date if request else None
+        end_date = request.end_date if request else None
+        with self._connect() as conn:
+            if conn is None:
+                return 0
+            try:
+                with conn.cursor() as cur:
+                    row = cur.execute(
+                        """
+                        SELECT count(*)::int AS examples
+                        FROM training_examples
+                        WHERE result_win IS NOT NULL
+                          AND pnl IS NOT NULL
+                          AND (%s IS NULL OR model_version = %s)
+                          AND (%s IS NULL OR decision_ts::date >= %s::date)
+                          AND (%s IS NULL OR decision_ts::date <= %s::date)
+                        """,
+                        (
+                            model_version,
+                            model_version,
+                            start_date,
+                            start_date,
+                            end_date,
+                            end_date,
+                        ),
+                    ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("training_example_count", exc)
+                return 0
+        return int(row["examples"] or 0) if row else 0
+
     def backtest_metrics(self, request: BacktestRunRequest | None = None) -> BacktestMetrics | None:
         request = request or BacktestRunRequest()
         examples = self.training_examples(request)

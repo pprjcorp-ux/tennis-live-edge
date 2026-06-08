@@ -84,6 +84,7 @@ from tennis_edge.services.execution_engine import (
     set_kill_switch_for,
 )
 from tennis_edge.services.normalizer import normalize_name
+from tennis_edge.services.live_dashboard import LiveDashboardReadModel
 from tennis_edge.services.operational_state import OperationalStateService
 from tennis_edge.services.provider_cursor import mark_resynced
 from tennis_edge.services.ingestion import LiveIngestionPipeline
@@ -103,6 +104,7 @@ class AnalysisRepository:
         self.replay_engine = ReplayEngine()
         self.store = PersistentStore(settings)
         self.operational_state = OperationalStateService(settings, self.store)
+        self.dashboard_read_model = LiveDashboardReadModel(self.operational_state)
         self.ingestion = LiveIngestionPipeline(
             self.api_tennis,
             self.the_odds_api,
@@ -204,7 +206,7 @@ class AnalysisRepository:
 
     async def live_signals(self, target_date: date) -> list[Signal]:
         analyses = await self.analyses_for_date(target_date)
-        return self._sorted_signals_for(analyses)
+        return self.dashboard_read_model.sorted_signals(analyses)
 
     async def run_ingestion(
         self,
@@ -497,19 +499,16 @@ class AnalysisRepository:
     async def operational_state_snapshot(self, target_date: date) -> OperationalStateSnapshot:
         analyses = await self.analyses_for_date(target_date)
         performance = await self.paper_performance()
-        return self._operational_state_for(target_date, analyses, performance)
+        return self.dashboard_read_model.operational_state_snapshot(
+            target_date,
+            analyses,
+            performance,
+        )
 
     async def live_dashboard_snapshot(self, target_date: date) -> LiveDashboardSnapshot:
         analyses = await self.analyses_for_date(target_date)
         performance = await self.paper_performance()
-        operational_state = self._operational_state_for(target_date, analyses, performance)
-        return LiveDashboardSnapshot(
-            matches=analyses,
-            metrics=self._daily_metrics_for(analyses, performance),
-            signals=self._sorted_signals_for(analyses),
-            operational_state=operational_state,
-            readiness=self.operational_state.live_readiness(operational_state),
-        )
+        return self.dashboard_read_model.snapshot(target_date, analyses, performance)
 
     async def bankroll(self, orders: list[ExecutionOrder] | None = None) -> BankrollSnapshot:
         return bankroll_snapshot(self.settings, orders if orders is not None else await self.orders())
@@ -635,61 +634,4 @@ class AnalysisRepository:
     async def daily_metrics(self, target_date: date) -> DailyMetrics:
         analyses = await self.analyses_for_date(target_date)
         paper = await self.paper_performance()
-        return self._daily_metrics_for(analyses, paper)
-
-    def _daily_metrics_for(
-        self,
-        analyses: list[MatchAnalysis],
-        paper: PaperPerformance,
-    ) -> DailyMetrics:
-        all_signals = [signal for analysis in analyses for signal in analysis.signals]
-        entries = [signal for signal in all_signals if signal.status == SignalStatus.ENTRY]
-        positive_edges = [signal.edge for signal in all_signals if signal.edge > 0]
-        confidence_values = [
-            abs(analysis.prediction.p1_win_prob - 0.5) * 2 for analysis in analyses
-        ]
-
-        return DailyMetrics(
-            matches=len(analyses),
-            live_matches=sum(1 for analysis in analyses if analysis.match.state.status == "live"),
-            entry_signals=len(entries),
-            monitor_signals=sum(1 for signal in all_signals if signal.status == SignalStatus.MONITOR),
-            no_value_signals=sum(
-                1 for signal in all_signals if signal.status == SignalStatus.NO_VALUE
-            ),
-            average_edge=round(sum(positive_edges) / len(positive_edges), 4)
-            if positive_edges
-            else 0,
-            average_model_confidence=round(
-                sum(confidence_values) / len(confidence_values), 4
-            )
-            if confidence_values
-            else 0,
-            paper_roi=paper.roi,
-            clv=paper.clv,
-            brier_score=paper.calibration_error,
-            note=(
-                "Paper metrics loaded from persisted paper performance."
-                if paper.settled_orders
-                else "Paper metrics ficam nulos ate existirem sinais liquidados e closing lines."
-            ),
-        )
-
-    @staticmethod
-    def _sorted_signals_for(analyses: list[MatchAnalysis]) -> list[Signal]:
-        signals = [signal for analysis in analyses for signal in analysis.signals]
-        return sorted(signals, key=lambda signal: signal.edge, reverse=True)
-
-    def _operational_state_for(
-        self,
-        target_date: date,
-        analyses: list[MatchAnalysis],
-        performance: PaperPerformance,
-    ) -> OperationalStateSnapshot:
-        return self.operational_state.snapshot(
-            cost_report=self.operational_state.daily_cost_report(
-                target_date,
-                analyses,
-                performance,
-            )
-        )
+        return self.dashboard_read_model.daily_metrics(analyses, paper)

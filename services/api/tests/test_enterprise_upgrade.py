@@ -108,6 +108,52 @@ def test_odds_api_sequence_detects_gap_from_persisted_cursor_after_restart() -> 
     assert stored.resync_required is True
 
 
+def test_odds_api_sequence_prefers_persisted_cursor_over_process_cache() -> None:
+    CURSORS.clear()
+    try:
+        mark_resynced(Provider.ODDS_API_IO, "tennis:moneyline", 88)
+        persisted_cursor = ProviderCursor(
+            provider=Provider.ODDS_API_IO,
+            stream="tennis:moneyline",
+            last_seq=41,
+            expected_next_seq=42,
+            status=CursorStatus.HEALTHY,
+            gap_count=0,
+            resync_required=False,
+            note="Persisted cursor after process restart.",
+        )
+
+        OddsApiIoClient(api_key="key", data_mode="live").parse_message(
+            {"type": "updated", "seq": 42},
+            current_cursor=persisted_cursor,
+        )
+
+        stored = CURSORS[(Provider.ODDS_API_IO, "tennis:moneyline")]
+        assert stored.status == CursorStatus.HEALTHY
+        assert stored.last_seq == 42
+        assert stored.expected_next_seq == 43
+        assert stored.resync_required is False
+    finally:
+        CURSORS.clear()
+
+
+def test_odds_api_sequence_uses_process_cache_when_no_persisted_cursor() -> None:
+    CURSORS.clear()
+    try:
+        mark_resynced(Provider.ODDS_API_IO, "tennis:moneyline", 88)
+
+        OddsApiIoClient(api_key="key", data_mode="live").parse_message(
+            {"type": "updated", "seq": 42}
+        )
+
+        stored = CURSORS[(Provider.ODDS_API_IO, "tennis:moneyline")]
+        assert stored.status == CursorStatus.GAP_DETECTED
+        assert stored.expected_next_seq == 89
+        assert stored.resync_required is True
+    finally:
+        CURSORS.clear()
+
+
 def test_markov_engine_handles_game_set_and_match_states() -> None:
     hold_point = serve_point_from_hold_rate(0.82)
     game = game_win_probability(hold_point, "40-30")

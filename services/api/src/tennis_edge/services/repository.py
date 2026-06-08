@@ -77,6 +77,7 @@ from tennis_edge.services.execution_engine import (
     CANCELABLE_ORDER_STATUSES,
     bankroll_snapshot,
     create_order,
+    execution_status,
     promote_from_learning,
     set_kill_switch_for,
 )
@@ -531,6 +532,7 @@ class AnalysisRepository:
             request,
             real=True,
             orders=order_snapshot,
+            kill_switch=self.store.kill_switch_state(),
             remember_in_process=False,
         )
         self.store.save_order(order)
@@ -609,6 +611,12 @@ class AnalysisRepository:
         return settlement
 
     async def set_kill_switch(self, request: KillSwitchRequest) -> ExecutionStatus:
+        if self.store.save_kill_switch(request):
+            return execution_status(
+                self.settings,
+                self.store.kill_switch_state()
+                or {"enabled": request.enabled, "reason": request.reason},
+            )
         return set_kill_switch_for(self.settings, request)
 
     async def promote_from_learning(

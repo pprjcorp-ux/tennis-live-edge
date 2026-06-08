@@ -16,6 +16,7 @@ from tennis_edge.domain import CursorStatus
 from tennis_edge.domain import ExecutionOrder
 from tennis_edge.domain import ExecutionVenue
 from tennis_edge.domain import IngestionRunRecord
+from tennis_edge.domain import KillSwitchRequest
 from tennis_edge.domain import MatchFreshness
 from tennis_edge.domain import OddsMessageIngestionRequest, ProviderCursorResyncRequest
 from tennis_edge.domain import OrderStatus
@@ -106,6 +107,14 @@ def test_operational_read_methods_degrade_on_schema_drift() -> None:
     cases = [
         ("raw_payloads_for_match", lambda store: store.raw_payloads_for_match("match_1"), []),
         ("latest_analyses", lambda store: store.latest_analyses(date.today()), []),
+        (
+            "kill_switch_state",
+            lambda store: store.kill_switch_state(),
+            {
+                "enabled": True,
+                "reason": "kill switch state unavailable: relation provider_cursors does not exist",
+            },
+        ),
         ("provider_cursors", lambda store: store.provider_cursors(), []),
         ("data_quality", lambda store: store.data_quality(), []),
         ("ingestion_runs", lambda store: store.ingestion_runs(), []),
@@ -225,6 +234,13 @@ def test_operational_write_methods_degrade_on_schema_drift() -> None:
         ("save_analyses", lambda store: store.save_analyses([analysis]), False),
         ("save_raw_payloads", lambda store: store.save_raw_payloads([payload]), 0),
         ("save_provider_cursor", lambda store: store.save_provider_cursor(cursor), False),
+        (
+            "save_kill_switch",
+            lambda store: store.save_kill_switch(
+                KillSwitchRequest(enabled=True, reason="schema drift")
+            ),
+            False,
+        ),
         (
             "record_provider_latency",
             lambda store: store.record_provider_latency(
@@ -873,6 +889,71 @@ def test_ingestion_run_journal_creates_schema_and_maps_rows() -> None:
     assert rows[0].summary["reason"] == "missing keys"
     assert any("CREATE TABLE IF NOT EXISTS ingestion_runs" in query for query in store.conn.cursor_stub.queries)
     assert any("INSERT INTO ingestion_runs" in query for query in store.conn.cursor_stub.queries)
+
+
+def test_kill_switch_state_creates_schema_and_maps_rows() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.queries = []
+            self.params = []
+            self.enabled = False
+            self.reason = "not set"
+            self.query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.query = query
+            self.queries.append(query)
+            self.params.append(params)
+            if "INSERT INTO execution_controls" in query and params:
+                self.enabled = bool(params[1])
+                self.reason = params[2]
+            return self
+
+        def fetchone(self):
+            if "FROM execution_controls" in self.query:
+                return {"enabled": self.enabled, "reason": self.reason}
+            return None
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield self.conn
+
+    store = StoreStub()
+
+    saved = store.save_kill_switch(
+        KillSwitchRequest(enabled=True, reason="manual persisted stop")
+    )
+    state = store.kill_switch_state()
+
+    assert saved is True
+    assert state == {"enabled": True, "reason": "manual persisted stop"}
+    assert any(
+        "CREATE TABLE IF NOT EXISTS execution_controls" in query
+        for query in store.conn.cursor_stub.queries
+    )
+    assert any("INSERT INTO execution_controls" in query for query in store.conn.cursor_stub.queries)
 
 
 def test_provider_cursor_seed_does_not_overwrite_persisted_cursor() -> None:

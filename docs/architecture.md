@@ -12,7 +12,7 @@ decide whether the system behaves as budget or enterprise.
   trading, risk/bankroll, entity resolution, and OpenClaw Autopilot.
 - `infra/schema.sql`: event-sourced Postgres/Timescale schema for raw payloads,
   score/odds ticks, predictions, signals, paper orders, model versions, and
-  audit events.
+  execution controls/audit events.
 - `openclaw/`: local-only OpenClaw skill, policy example, and cron examples.
 
 ## Runtime Flow

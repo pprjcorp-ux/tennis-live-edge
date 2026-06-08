@@ -15,7 +15,7 @@ Real-money betting is not enabled in either canonical branch.
 ## Allowed in Current Phase
 
 - Paper orders through backend risk gates.
-- Bankroll snapshots, stake caps, kill switch, audit events, partial-fill
+- Bankroll snapshots, stake caps, persisted kill switch, audit events, partial-fill
   simulation, settlement, CLV, ROI, and calibration records.
 - Readiness reports after at least 60 paper days or 500 settled paper signals.
 

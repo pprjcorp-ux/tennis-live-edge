@@ -330,6 +330,13 @@ CREATE TABLE IF NOT EXISTS execution_orders (
   CONSTRAINT execution_orders_disabled_guard CHECK (status <> 'enabled_without_compliance')
 );
 
+CREATE TABLE IF NOT EXISTS execution_controls (
+  key TEXT PRIMARY KEY,
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  reason TEXT NOT NULL DEFAULT 'not set',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS bankroll_snapshots (
   id BIGSERIAL PRIMARY KEY,
   base_currency TEXT NOT NULL,

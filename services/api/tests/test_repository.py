@@ -7,6 +7,7 @@ from tennis_edge.domain import (
     CanonicalEntityConflict,
     Confidence,
     ExecutionOrder,
+    KillSwitchRequest,
     ModelRegistryEntry,
     PaperPerformance,
     Provider,
@@ -16,7 +17,8 @@ from tennis_edge.domain import LearningPromotionRequest
 from tennis_edge.domain import ReplayRunRequest
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches, sample_raw_payloads
-from tennis_edge.services.execution_engine import ORDERS
+from tennis_edge.services.execution_engine import KILL_SWITCH, ORDERS
+from tennis_edge.services.operational_state import OperationalStateService
 from tennis_edge.services.repository import AnalysisRepository
 
 
@@ -116,6 +118,53 @@ def test_paper_performance_uses_persisted_order_snapshot_when_aggregate_missing(
     assert performance.positive_clv_signals == 1
     assert performance.roi == 0.96
     assert performance.realized_pnl == 96
+
+
+def test_repository_kill_switch_survives_restart_from_persisted_store() -> None:
+    persisted: dict[str, object] = {}
+    settings = Settings(
+        data_mode="live",
+        persistence_enabled=True,
+        database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        execution_enabled=True,
+        execution_stage="tiny_real",
+        betfair_app_key="app",
+        betfair_username="user",
+        betfair_cert_path="/tmp/cert",
+        betfair_key_path="/tmp/key",
+        betfair_password_secret_ref="secret://betfair",
+        betfair_live_key_approved=True,
+        real_execution_hard_block=False,
+    )
+
+    class StoreStub:
+        def save_kill_switch(self, request):
+            persisted["enabled"] = request.enabled
+            persisted["reason"] = request.reason
+            return True
+
+        def kill_switch_state(self):
+            return dict(persisted) if persisted else None
+
+    store = StoreStub()
+    repo = AnalysisRepository(settings)
+    repo.store = store
+    repo.operational_state = OperationalStateService(settings, store)
+    KILL_SWITCH["enabled"] = False
+
+    status = asyncio.run(
+        repo.set_kill_switch(KillSwitchRequest(enabled=True, reason="manual persisted stop"))
+    )
+
+    KILL_SWITCH["enabled"] = False
+    restarted_repo = AnalysisRepository(settings)
+    restarted_repo.store = store
+    restarted_repo.operational_state = OperationalStateService(settings, store)
+    restarted_status = asyncio.run(restarted_repo.execution_status())
+
+    assert status.kill_switch_enabled is True
+    assert restarted_status.kill_switch_enabled is True
+    assert any("manual persisted stop" in reason for reason in restarted_status.reasons)
 
 
 def test_daily_cost_report_uses_persisted_positive_clv_signals() -> None:

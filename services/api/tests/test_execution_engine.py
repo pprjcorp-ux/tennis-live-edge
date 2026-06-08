@@ -185,6 +185,54 @@ def test_kill_switch_blocks_even_configured_real_execution() -> None:
     set_kill_switch_for(settings, KillSwitchRequest(enabled=False, reason="reset"))
 
 
+def test_execution_status_accepts_persisted_kill_switch_snapshot() -> None:
+    settings = _settings(
+        execution_enabled=True,
+        execution_stage="tiny_real",
+        betfair_app_key="app",
+        betfair_username="user",
+        betfair_cert_path="/tmp/cert",
+        betfair_key_path="/tmp/key",
+        betfair_password_secret_ref="secret://betfair",
+        betfair_live_key_approved=True,
+        real_execution_hard_block=False,
+    )
+    KILL_SWITCH["enabled"] = False
+
+    status = execution_status(settings, {"enabled": True, "reason": "persisted manual stop"})
+
+    assert status.kill_switch_enabled is True
+    assert status.can_submit_real_orders is False
+    assert any("persisted manual stop" in reason for reason in status.reasons)
+
+
+def test_real_order_uses_persisted_kill_switch_snapshot() -> None:
+    settings = _settings(
+        execution_enabled=True,
+        execution_stage="tiny_real",
+        betfair_app_key="app",
+        betfair_username="user",
+        betfair_cert_path="/tmp/cert",
+        betfair_key_path="/tmp/key",
+        betfair_password_secret_ref="secret://betfair",
+        betfair_live_key_approved=True,
+        real_execution_hard_block=False,
+    )
+    analyses, _, signal = _entry_signal_context(settings)
+    KILL_SWITCH["enabled"] = False
+
+    order = create_order(
+        settings,
+        analyses,
+        request=OrderRequest(signal_id=signal.id),
+        real=True,
+        kill_switch={"enabled": True, "reason": "persisted manual stop"},
+    )
+
+    assert order.status == OrderStatus.EXECUTION_BLOCKED
+    assert "persisted manual stop" in (order.rejection_reason or "")
+
+
 def test_matched_order_counts_as_exposure_but_is_not_cancelable() -> None:
     ORDERS.clear()
     settings = _settings(bankroll_starting_balance=10000)

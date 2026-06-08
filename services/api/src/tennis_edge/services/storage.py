@@ -22,6 +22,7 @@ from tennis_edge.domain import (
     ExecutionVenue,
     FeatureVector,
     IngestionRunRecord,
+    KillSwitchRequest,
     Match,
     MatchAnalysis,
     MatchFreshness,
@@ -175,6 +176,62 @@ class PersistentStore:
 
     def _record_write_error(self, operation: str, exc: Exception) -> None:
         self.last_error = f"{operation} failed: {exc}"
+
+    def kill_switch_state(self) -> dict[str, object] | None:
+        if not self.enabled:
+            return None
+        with self._connect() as conn:
+            if conn is None:
+                return None
+            try:
+                with conn.cursor() as cur:
+                    self._ensure_execution_controls_table(cur)
+                    row = cur.execute(
+                        """
+                        SELECT enabled, reason
+                        FROM execution_controls
+                        WHERE key = %s
+                        """,
+                        ("kill_switch",),
+                    ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("kill_switch_state", exc)
+                return {
+                    "enabled": True,
+                    "reason": f"kill switch state unavailable: {exc}",
+                }
+        if not row:
+            return None
+        return {
+            "enabled": bool(row["enabled"]),
+            "reason": row["reason"] or "not set",
+        }
+
+    def save_kill_switch(self, request: KillSwitchRequest) -> bool:
+        if not self.enabled:
+            return False
+        with self._connect() as conn:
+            if conn is None:
+                return False
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        self._ensure_execution_controls_table(cur)
+                        cur.execute(
+                            """
+                            INSERT INTO execution_controls (key, enabled, reason, updated_at)
+                            VALUES (%s, %s, %s, %s)
+                            ON CONFLICT (key) DO UPDATE SET
+                              enabled = EXCLUDED.enabled,
+                              reason = EXCLUDED.reason,
+                              updated_at = EXCLUDED.updated_at
+                            """,
+                            ("kill_switch", request.enabled, request.reason, _now()),
+                        )
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_kill_switch", exc)
+                return False
+        return True
 
     def save_analyses(self, analyses: Iterable[MatchAnalysis]) -> bool:
         analyses = list(analyses)
@@ -2019,6 +2076,18 @@ class PersistentStore:
             """
             CREATE INDEX IF NOT EXISTS ingestion_runs_completed_idx
               ON ingestion_runs (completed_at DESC)
+            """
+        )
+
+    def _ensure_execution_controls_table(self, cur: Any) -> None:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS execution_controls (
+              key TEXT PRIMARY KEY,
+              enabled BOOLEAN NOT NULL DEFAULT false,
+              reason TEXT NOT NULL DEFAULT 'not set',
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
             """
         )
 

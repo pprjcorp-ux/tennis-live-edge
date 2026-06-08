@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -76,10 +76,16 @@ def betfair_configured(settings: Settings) -> bool:
     )
 
 
-def execution_status(settings: Settings) -> ExecutionStatus:
+def execution_status(
+    settings: Settings,
+    kill_switch: Mapping[str, object] | None = None,
+) -> ExecutionStatus:
     stage = _execution_stage(settings)
     venue = _execution_venue(settings)
     configured = betfair_configured(settings)
+    kill_switch = kill_switch or KILL_SWITCH
+    kill_switch_enabled = bool(kill_switch.get("enabled", False))
+    kill_switch_reason = str(kill_switch.get("reason") or "not set")
     reasons: list[str] = []
 
     if not settings.execution_enabled:
@@ -94,8 +100,8 @@ def execution_status(settings: Settings) -> ExecutionStatus:
         reasons.append("Betfair credentials/certificate settings are incomplete.")
     if not settings.betfair_live_key_approved:
         reasons.append("Betfair live app key approval is not confirmed.")
-    if KILL_SWITCH["enabled"]:
-        reasons.append(f"Kill switch enabled: {KILL_SWITCH['reason']}.")
+    if kill_switch_enabled:
+        reasons.append(f"Kill switch enabled: {kill_switch_reason}.")
 
     return ExecutionStatus(
         execution_enabled=settings.execution_enabled,
@@ -104,7 +110,7 @@ def execution_status(settings: Settings) -> ExecutionStatus:
         betfair_configured=configured,
         betfair_live_key_approved=settings.betfair_live_key_approved,
         real_execution_hard_block=settings.real_execution_hard_block,
-        kill_switch_enabled=bool(KILL_SWITCH["enabled"]),
+        kill_switch_enabled=kill_switch_enabled,
         can_submit_real_orders=not reasons,
         reasons=reasons,
     )
@@ -159,7 +165,7 @@ def _average_clv(orders: Iterable[ExecutionOrder] | None = None) -> float | None
 def set_kill_switch_for(settings: Settings, request: KillSwitchRequest) -> ExecutionStatus:
     KILL_SWITCH["enabled"] = request.enabled
     KILL_SWITCH["reason"] = request.reason
-    return execution_status(settings)
+    return execution_status(settings, KILL_SWITCH)
 
 
 def find_signal(analyses: list[MatchAnalysis], signal_id: str) -> tuple[MatchAnalysis, Signal]:
@@ -233,6 +239,7 @@ def create_order(
     *,
     real: bool,
     orders: Iterable[ExecutionOrder] | None = None,
+    kill_switch: Mapping[str, object] | None = None,
     remember_in_process: bool = True,
 ) -> ExecutionOrder:
     analysis, signal = find_signal(analyses, request.signal_id)
@@ -263,7 +270,7 @@ def create_order(
             risk_reasons.append(str(exc))
 
     if real:
-        status_snapshot = execution_status(settings)
+        status_snapshot = execution_status(settings, kill_switch)
         risk_reasons.extend(status_snapshot.reasons)
         if risk_reasons:
             status = OrderStatus.EXECUTION_BLOCKED

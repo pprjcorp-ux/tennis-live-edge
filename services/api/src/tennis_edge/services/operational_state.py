@@ -65,7 +65,8 @@ class OperationalStateService:
         return self.store.ingestion_runs()
 
     def execution_status(self) -> ExecutionStatus:
-        return execution_status(self.settings)
+        kill_switch_state = getattr(self.store, "kill_switch_state", lambda: None)()
+        return execution_status(self.settings, kill_switch_state)
 
     def snapshot(self, *, cost_report: DailyCostReport) -> OperationalStateSnapshot:
         return OperationalStateSnapshot(

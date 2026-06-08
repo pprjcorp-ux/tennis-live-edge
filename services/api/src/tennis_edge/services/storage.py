@@ -336,6 +336,47 @@ class PersistentStore:
                 return {}
         return {Provider(row["provider"]): int(row["count"] or 0) for row in rows}
 
+    def odds_stream_usage(self, target_date: date) -> dict[str, Any]:
+        if not self.enabled:
+            return {}
+        with self._connect() as conn:
+            if conn is None:
+                return {}
+            try:
+                with conn.cursor() as cur:
+                    self._ensure_ingestion_runs_table(cur)
+                    rows = cur.execute(
+                        """
+                        SELECT summary, started_at, completed_at
+                        FROM ingestion_runs
+                        WHERE run_type = 'odds_stream'
+                          AND completed_at::date = %s
+                        """,
+                        (target_date,),
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("odds_stream_usage", exc)
+                return {}
+        if not rows:
+            return {}
+        connected_runs = 0
+        websocket_minutes = 0
+        for row in rows:
+            summary = row["summary"] or {}
+            if not summary.get("connected"):
+                continue
+            connected_runs += 1
+            started_at = row["started_at"]
+            completed_at = row["completed_at"]
+            duration_seconds = max(0, int((completed_at - started_at).total_seconds()))
+            websocket_minutes += max(1, round(duration_seconds / 60))
+        return {
+            "websocket_uptime_pct": round(connected_runs / len(rows), 4),
+            "provider_websocket_minutes": {
+                Provider.ODDS_API_IO: websocket_minutes,
+            },
+        }
+
     def save_provider_cursor(self, cursor: ProviderCursor) -> bool:
         if not self.enabled:
             return False

@@ -274,6 +274,8 @@ def daily_cost_report(
     analyses: list[MatchAnalysis],
     paper_performance: PaperPerformance | None = None,
     provider_usage_counts: dict[Provider, int] | None = None,
+    provider_websocket_minutes: dict[Provider, int] | None = None,
+    websocket_uptime_pct: float | None = None,
 ) -> DailyCostReport:
     skipped = sum(1 for analysis in analyses if not coverage_decision(analysis.match, settings).eligible)
     signals = [signal for analysis in analyses for signal in analysis.signals]
@@ -284,9 +286,13 @@ def daily_cost_report(
     watchlist = sum(1 for analysis in analyses if should_escalate_polling(analysis))
     positive_clv_signals = paper_performance.positive_clv_signals if paper_performance else 0
     provider_usage_counts = provider_usage_counts or {}
+    provider_websocket_minutes = provider_websocket_minutes or {}
 
     def billable_calls(provider: Provider, fallback: int) -> int:
         return provider_usage_counts.get(provider, fallback)
+
+    def websocket_minutes(provider: Provider, fallback: int) -> int:
+        return provider_websocket_minutes.get(provider, fallback)
 
     price_map = (
         ENTERPRISE_PROVIDER_MONTHLY_USD
@@ -304,7 +310,7 @@ def daily_cost_report(
         ProviderCostUsage(
             provider=Provider.ODDS_API_IO,
             api_calls=billable_calls(Provider.ODDS_API_IO, max(1, live_matches + watchlist)),
-            websocket_minutes=live_matches * 120,
+            websocket_minutes=websocket_minutes(Provider.ODDS_API_IO, live_matches * 120),
             quota_used=billable_calls(Provider.ODDS_API_IO, max(1, live_matches + watchlist)),
             quota_limit=5000,
             estimated_daily_cost_usd=round(price_map[Provider.ODDS_API_IO] / 30, 2),
@@ -337,7 +343,7 @@ def daily_cost_report(
                 ProviderCostUsage(
                     provider=Provider.TXODDS,
                     api_calls=billable_calls(Provider.TXODDS, max(1, live_matches + watchlist)),
-                    websocket_minutes=live_matches * 120,
+                    websocket_minutes=websocket_minutes(Provider.TXODDS, live_matches * 120),
                     quota_used=billable_calls(Provider.TXODDS, max(1, live_matches + watchlist)),
                     quota_limit=None,
                     estimated_daily_cost_usd=round(price_map[Provider.TXODDS] / 30, 2),
@@ -350,7 +356,11 @@ def daily_cost_report(
         estimated_monthly_spend_usd=monthly,
         estimated_daily_spend_usd=daily,
         api_calls_by_provider=usages,
-        websocket_uptime_pct=0.992 if settings.odds_primary.endswith("_ws") else 0,
+        websocket_uptime_pct=websocket_uptime_pct
+        if websocket_uptime_pct is not None
+        else 0.992
+        if settings.odds_primary.endswith("_ws")
+        else 0,
         matches_analyzed=len(analyses),
         matches_skipped_by_coverage=skipped,
         signals_generated=len(entry_signals),

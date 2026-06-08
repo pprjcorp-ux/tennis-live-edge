@@ -50,11 +50,21 @@ class OperationalStateService:
             "provider_usage_counts",
             lambda _target_date: {},
         )(target_date)
+        odds_stream_usage = getattr(
+            self.store,
+            "odds_stream_usage",
+            lambda _target_date: {},
+        )(target_date)
         return daily_cost_report(
             self.settings,
             analyses,
             paper_performance,
             provider_usage_counts=provider_usage_counts,
+            provider_websocket_minutes=odds_stream_usage.get(
+                "provider_websocket_minutes",
+                {},
+            ),
+            websocket_uptime_pct=odds_stream_usage.get("websocket_uptime_pct"),
         )
 
     def data_quality(self) -> list[DataQualitySnapshot]:

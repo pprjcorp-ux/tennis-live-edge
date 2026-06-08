@@ -138,3 +138,16 @@ def test_daily_cost_report_prefers_persisted_provider_usage_counts() -> None:
     assert usage["api_tennis"].quota_used == 12
     assert usage["odds_api_io"].api_calls == 8
     assert usage["theoddsapi"].api_calls == 3
+
+
+def test_daily_cost_report_prefers_persisted_websocket_usage() -> None:
+    report = daily_cost_report(
+        Settings(data_mode="live", runtime_profile="lean_atp"),
+        analyses=[],
+        provider_websocket_minutes={Provider.ODDS_API_IO: 17},
+        websocket_uptime_pct=0.5,
+    )
+    usage = {item.provider: item for item in report.api_calls_by_provider}
+
+    assert report.websocket_uptime_pct == 0.5
+    assert usage[Provider.ODDS_API_IO].websocket_minutes == 17

@@ -320,6 +320,76 @@ def test_provider_usage_counts_reads_raw_payloads_for_target_date() -> None:
     }
 
 
+def test_odds_stream_usage_reads_persisted_ingestion_runs() -> None:
+    target_date = date(2026, 6, 8)
+    started_at = datetime(2026, 6, 8, 12, tzinfo=timezone.utc)
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.params = None
+            self.queries = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.queries.append(query)
+            if "FROM ingestion_runs" in query:
+                assert "run_type = 'odds_stream'" in query
+                assert "completed_at::date = %s" in query
+                self.params = params
+            return self
+
+        def fetchall(self):
+            assert self.params == (target_date,)
+            return [
+                {
+                    "summary": {"connected": True},
+                    "started_at": started_at,
+                    "completed_at": started_at + timedelta(minutes=3),
+                },
+                {
+                    "summary": {"connected": False, "reason": "missing key"},
+                    "started_at": started_at + timedelta(minutes=4),
+                    "completed_at": started_at + timedelta(minutes=4),
+                },
+            ]
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield self.conn
+
+    usage = StoreStub().odds_stream_usage(target_date)
+
+    assert usage["websocket_uptime_pct"] == 0.5
+    assert usage["provider_websocket_minutes"] == {Provider.ODDS_API_IO: 3}
+
+
 def test_training_examples_filter_by_feature_set_and_decision_window() -> None:
     decision_ts = datetime(2026, 6, 3, 14, tzinfo=timezone.utc)
 

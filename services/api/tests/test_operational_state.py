@@ -24,6 +24,7 @@ class StoreStub:
         ingestion_runs: list[IngestionRunRecord] | None = None,
         training_examples_count: int = 0,
         provider_usage_counts: dict[Provider, int] | None = None,
+        odds_stream_usage: dict | None = None,
         last_error: str | None = None,
     ) -> None:
         self._cursors = cursors or []
@@ -31,6 +32,7 @@ class StoreStub:
         self._ingestion_runs = ingestion_runs or []
         self._training_examples_count = training_examples_count
         self._provider_usage_counts = provider_usage_counts or {}
+        self._odds_stream_usage = odds_stream_usage or {}
         self.last_error = last_error
 
     def provider_health(self):
@@ -50,6 +52,9 @@ class StoreStub:
 
     def provider_usage_counts(self, target_date) -> dict[Provider, int]:
         return self._provider_usage_counts
+
+    def odds_stream_usage(self, target_date) -> dict:
+        return self._odds_stream_usage
 
 
 def _healthy_odds_cursor() -> ProviderCursor:
@@ -195,6 +200,25 @@ def test_daily_cost_report_uses_persisted_provider_usage_counts() -> None:
     assert usage[Provider.API_TENNIS].api_calls == 14
     assert usage[Provider.ODDS_API_IO].quota_used == 9
     assert usage[Provider.THE_ODDS_API].api_calls == 2
+
+
+def test_daily_cost_report_uses_persisted_odds_stream_usage() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(data_mode="live", runtime_profile="lean_atp"),
+        StoreStub(
+            odds_stream_usage={
+                "websocket_uptime_pct": 0.25,
+                "provider_websocket_minutes": {Provider.ODDS_API_IO: 6},
+            }
+        ),
+    )
+
+    report = service.daily_cost_report(generated_at.date(), [], _paper_performance())
+    usage = {item.provider: item for item in report.api_calls_by_provider}
+
+    assert report.websocket_uptime_pct == 0.25
+    assert usage[Provider.ODDS_API_IO].websocket_minutes == 6
 
 
 def test_live_readiness_blocks_entries_when_persisted_odds_cursor_is_missing() -> None:

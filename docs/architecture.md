@@ -28,6 +28,8 @@ decide whether the system behaves as budget or enterprise.
 8. Risk gates allow, monitor, block, or abstain.
 9. Postgres/Timescale serves persisted canonical matches, freshness metadata,
    predictions, and signals when upstream providers are down.
+   Entity-resolution conflicts are read from the persisted review queue in live
+   mode; sample conflicts are demo-only.
 10. Paper execution records order decisions, deterministic fills, closing-line
    snapshots, settlement, CLV, ROI, segmented performance, and calibration
    buckets.

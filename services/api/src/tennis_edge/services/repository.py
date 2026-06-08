@@ -375,7 +375,11 @@ class AnalysisRepository:
 
     async def entity_conflicts(self) -> list[CanonicalEntityConflict]:
         persisted = self.store.entity_conflicts()
-        return persisted or entity_conflicts()
+        if persisted:
+            return persisted
+        if self.settings.data_mode == "sample":
+            return entity_conflicts()
+        return []
 
     async def paper_performance(self) -> PaperPerformance:
         persisted = self.store.paper_performance()

@@ -298,6 +298,17 @@ def test_entity_conflicts_prefers_persisted_store_over_sample_conflicts() -> Non
     assert conflicts[0].id == "conf_persisted_market_alias"
 
 
+def test_live_entity_conflicts_do_not_use_sample_conflicts() -> None:
+    class StoreStub:
+        def entity_conflicts(self):
+            return []
+
+    repo = AnalysisRepository(Settings(data_mode="live", database_url=None))
+    repo.store = StoreStub()
+
+    assert asyncio.run(repo.entity_conflicts()) == []
+
+
 def test_learning_promotion_decision_is_persisted_for_audit() -> None:
     class StoreStub:
         def __init__(self, fallback) -> None:

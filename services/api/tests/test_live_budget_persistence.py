@@ -16,6 +16,7 @@ from tennis_edge.domain import OddsQuote
 from tennis_edge.domain import SignalStatus
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches
+from tennis_edge.services.api_tennis_source import ApiTennisMatchSource
 from tennis_edge.services.ingestion import LiveIngestionPipeline
 from tennis_edge.services.provider_cursor import CURSORS, ingest_odds_api_sequence, mark_resynced
 from tennis_edge.services.repository import AnalysisRepository
@@ -691,6 +692,34 @@ class _FakeStore:
         return len(payloads)
 
 
+class _FakeApiTennisClient:
+    def __init__(
+        self,
+        fixtures=None,
+        livescore=None,
+        fixture_exc=None,
+        livescore_exc=None,
+    ) -> None:
+        self.fixtures = fixtures
+        self.livescore = livescore
+        self.fixture_exc = fixture_exc
+        self.livescore_exc = livescore_exc
+        self.fixture_date = None
+        self.livescore_called = False
+
+    async def get_today_match_payloads(self, target_date: date):
+        self.fixture_date = target_date
+        if self.fixture_exc:
+            raise self.fixture_exc
+        return self.fixtures or []
+
+    async def get_livescore_payloads(self):
+        self.livescore_called = True
+        if self.livescore_exc:
+            raise self.livescore_exc
+        return self.livescore or []
+
+
 async def _same_matches(matches, archive_source):
     return matches
 
@@ -704,6 +733,83 @@ def _live_provider_matches():
         )
         for match in sample_matches()[:1]
     ]
+
+
+def _api_tennis_raw(match, payload_type):
+    return RawProviderPayload(
+        id=f"raw_{payload_type}_{match.provider_match_id}",
+        provider=Provider.API_TENNIS,
+        payload_type=payload_type,
+        source_event_id=match.provider_match_id,
+        source_ts=match.scheduled_at,
+        payload={
+            "event_key": match.provider_match_id,
+            "payload_type": payload_type,
+            "status": match.state.status,
+        },
+        checksum=f"checksum-{payload_type}-{match.provider_match_id}",
+    )
+
+
+def test_api_tennis_match_source_combines_fixtures_and_livescore_payloads() -> None:
+    fixture = _live_provider_matches()[0]
+    livescore = fixture.model_copy(
+        update={
+            "state": fixture.state.model_copy(
+                update={
+                    "status": "live",
+                    "p1_games": 2,
+                    "p2_games": 1,
+                }
+            )
+        }
+    )
+    target_date = date(2026, 6, 8)
+    fake_client = _FakeApiTennisClient(
+        fixtures=[
+            ProviderMatchPayload(
+                match=fixture,
+                raw_payload=_api_tennis_raw(fixture, "fixture"),
+            )
+        ],
+        livescore=[
+            ProviderMatchPayload(
+                match=livescore,
+                raw_payload=_api_tennis_raw(livescore, "score"),
+            )
+        ],
+    )
+    source = ApiTennisMatchSource(fake_client)
+
+    records = asyncio.run(source.get_today_matches(target_date))
+
+    assert fake_client.fixture_date == target_date
+    assert fake_client.livescore_called is True
+    assert [record.raw_payload.payload_type for record in records] == ["fixture", "score"]
+
+
+def test_api_tennis_match_source_keeps_livescore_when_fixture_endpoint_fails() -> None:
+    base_match = _live_provider_matches()[0]
+    match = base_match.model_copy(
+        update={"state": base_match.state.model_copy(update={"status": "live"})}
+    )
+    fake_client = _FakeApiTennisClient(
+        fixture_exc=RuntimeError("fixtures unavailable"),
+        livescore=[
+            ProviderMatchPayload(
+                match=match,
+                raw_payload=_api_tennis_raw(match, "score"),
+            )
+        ],
+    )
+    source = ApiTennisMatchSource(fake_client)
+
+    records = asyncio.run(source.get_today_matches(date(2026, 6, 8)))
+
+    assert fake_client.fixture_date == date(2026, 6, 8)
+    assert fake_client.livescore_called is True
+    assert len(records) == 1
+    assert records[0].raw_payload.payload_type == "score"
 
 
 def test_live_ingestion_pipeline_persists_provider_snapshot() -> None:
@@ -728,6 +834,50 @@ def test_live_ingestion_pipeline_persists_provider_snapshot() -> None:
     assert snapshot.analyses[0].freshness.source == "provider_live"
     assert snapshot.analyses[0].freshness.persisted is True
     assert store.saved_payloads[0].source_event_id == snapshot.analyses[0].match.provider_match_id
+
+
+def test_live_ingestion_pipeline_merges_fixture_and_livescore_without_losing_raw_payloads() -> None:
+    fixture = _live_provider_matches()[0]
+    livescore = fixture.model_copy(
+        update={
+            "state": fixture.state.model_copy(
+                update={
+                    "status": "live",
+                    "p1_games": 4,
+                    "p2_games": 3,
+                    "point_score": "30-15",
+                    "server_player_id": fixture.player1.id,
+                }
+            )
+        }
+    )
+    store = _FakeStore()
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource(
+            [
+                ProviderMatchPayload(
+                    match=fixture,
+                    raw_payload=_api_tennis_raw(fixture, "fixture"),
+                ),
+                ProviderMatchPayload(
+                    match=livescore,
+                    raw_payload=_api_tennis_raw(livescore, "score"),
+                ),
+            ]
+        ),
+        _FakeArchiveSource(),
+        store,
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert len(snapshot.analyses) == 1
+    assert snapshot.analyses[0].match.state.status == "live"
+    assert snapshot.analyses[0].match.state.p1_games == 4
+    assert snapshot.raw_payloads_saved == 2
+    assert [payload.payload_type for payload in store.saved_payloads] == ["fixture", "score"]
 
 
 def test_live_ingestion_pipeline_prefers_provider_raw_payload_over_canonical_proxy() -> None:

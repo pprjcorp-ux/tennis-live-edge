@@ -146,15 +146,30 @@ class LiveIngestionPipeline:
 def _split_provider_matches(
     records: list[Match | ProviderMatchPayload],
 ) -> tuple[list[Match], list[RawProviderPayload]]:
-    matches: list[Match] = []
+    matches_by_key: dict[str, Match] = {}
     raw_payloads: list[RawProviderPayload] = []
     for record in records:
         if isinstance(record, ProviderMatchPayload):
-            matches.append(record.match)
+            _merge_match(matches_by_key, record.match)
             raw_payloads.append(record.raw_payload)
         else:
-            matches.append(record)
-    return matches, raw_payloads
+            _merge_match(matches_by_key, record)
+    return list(matches_by_key.values()), raw_payloads
+
+
+def _merge_match(matches_by_key: dict[str, Match], match: Match) -> None:
+    key = match.provider_match_id or match.id
+    current = matches_by_key.get(key)
+    if current is None or _match_preference_rank(match) >= _match_preference_rank(current):
+        matches_by_key[key] = match
+
+
+def _match_preference_rank(match: Match) -> int:
+    if match.state.status == "live":
+        return 3
+    if match.state.status == "finished":
+        return 2
+    return 0
 
 
 def _raw_payloads_from_matches(matches: list[Match]) -> list[RawProviderPayload]:

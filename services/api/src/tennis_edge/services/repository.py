@@ -60,6 +60,7 @@ from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_raw_payloads
+from tennis_edge.services.api_tennis_source import ApiTennisMatchSource
 from tennis_edge.services.backtest import run_walk_forward_backtest
 from tennis_edge.services.enterprise_analytics import (
     calibration_report,
@@ -95,6 +96,7 @@ class AnalysisRepository:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.api_tennis = ApiTennisClient(settings.api_tennis_key, settings.data_mode)
+        self.api_tennis_source = ApiTennisMatchSource(self.api_tennis)
         self.odds_api_io = OddsApiIoClient(settings.odds_api_io_key, settings.data_mode)
         self.the_odds_api = TheOddsApiClient(settings.the_odds_api_key, settings.data_mode)
         self.replay_engine = ReplayEngine()
@@ -107,7 +109,7 @@ class AnalysisRepository:
             or self.operational_state.fallback_provider_cursors(),
         )
         self.ingestion = LiveIngestionPipeline(
-            self.api_tennis,
+            self.api_tennis_source,
             self.the_odds_api,
             self.store,
             signal_gate=self._gate_signals_for_match,

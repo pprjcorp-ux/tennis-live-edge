@@ -1,5 +1,6 @@
-from datetime import datetime, timedelta, timezone
 import asyncio
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -233,6 +234,84 @@ def test_repository_prefers_persisted_model_lab_reports() -> None:
     assert asyncio.run(repo.champion_model()) == "persisted-champion"
     assert asyncio.run(repo.calibration_report("bt_store")) == report
     assert asyncio.run(repo.run_backtest(BacktestRunRequest(model_version="prematch_ensemble_v1"))) == metrics
+
+
+def test_calibration_report_fallback_uses_persisted_backtest_run_config() -> None:
+    examples = [
+        _example(1, 0.52, True, 0.2, 0.01),
+        _example(2, 0.72, False, -0.2, -0.01),
+    ]
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.query = query
+            return self
+
+        def fetchone(self):
+            if "FROM calibration_reports" in self.query:
+                return None
+            if "FROM backtests" in self.query:
+                return {
+                    "model_version_id": "prematch_ensemble_v1",
+                    "run_config": {
+                        "start_date": "2026-05-03",
+                        "end_date": "2026-05-03",
+                        "model_version": "prematch_ensemble_v1",
+                        "feature_set": "enterprise_v1",
+                        "walk_forward": True,
+                    },
+                }
+            return None
+
+    class ConnectionStub:
+        def __init__(self, cursor) -> None:
+            self.cursor_stub = cursor
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+            self.cursor = CursorStub()
+            self.request_seen = None
+
+        @contextmanager
+        def _connect(self):
+            yield ConnectionStub(self.cursor)
+
+        def training_examples(self, request=None):
+            self.request_seen = request
+            return [
+                example
+                for example in examples
+                if example.decision_ts.date().isoformat() == request.start_date
+            ]
+
+    store = StoreStub()
+
+    report = store.calibration_report("bt_windowed")
+
+    assert store.request_seen is not None
+    assert store.request_seen.start_date == "2026-05-03"
+    assert store.request_seen.end_date == "2026-05-03"
+    assert report is not None
+    assert sum(bucket.predictions for bucket in report.buckets) == 1
 
 
 def test_repository_latest_backtest_prefers_persisted_store_over_memory_cache() -> None:

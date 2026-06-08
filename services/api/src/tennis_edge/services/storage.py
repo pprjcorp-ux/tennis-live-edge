@@ -1404,12 +1404,21 @@ class PersistentStore:
                         generated_at=row["generated_at"],
                     )
                 backtest_row = cur.execute(
-                    "SELECT model_version_id FROM backtests WHERE id = %s",
+                    "SELECT model_version_id, run_config FROM backtests WHERE id = %s",
                     (run_id,),
                 ).fetchone()
         if not backtest_row:
             return None
-        request = BacktestRunRequest(model_version=backtest_row["model_version_id"])
+        run_config = backtest_row.get("run_config") if isinstance(backtest_row, dict) else None
+        if isinstance(run_config, dict):
+            run_config = {
+                **run_config,
+                "model_version": run_config.get("model_version")
+                or backtest_row["model_version_id"],
+            }
+            request = BacktestRunRequest(**run_config)
+        else:
+            request = BacktestRunRequest(model_version=backtest_row["model_version_id"])
         examples = self.training_examples(request)
         if not examples:
             return None

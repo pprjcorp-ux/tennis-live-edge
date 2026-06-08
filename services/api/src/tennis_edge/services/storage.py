@@ -1235,11 +1235,23 @@ class PersistentStore:
                 with conn.cursor() as cur:
                     row = cur.execute(
                         """
-                        SELECT external_order_ref, match_id, player_id, requested_odds, average_price,
-                               matched_stake, stake_amount
-                        FROM paper_orders
-                        WHERE external_order_ref = %s
-                        ORDER BY created_at DESC
+                        SELECT
+                          po.external_order_ref, po.match_id, po.player_id,
+                          po.requested_odds, po.average_price, po.matched_stake,
+                          po.stake_amount, po.status,
+                          ps.result_win, ps.gross_pnl, ps.commission, ps.net_pnl,
+                          ps.closing_odds, ps.clv, ps.settled_at
+                        FROM paper_orders po
+                        LEFT JOIN LATERAL (
+                          SELECT result_win, gross_pnl, commission, net_pnl,
+                                 closing_odds, clv, settled_at
+                          FROM paper_settlements
+                          WHERE paper_order_id = po.id
+                          ORDER BY settled_at DESC, id DESC
+                          LIMIT 1
+                        ) ps ON TRUE
+                        WHERE po.external_order_ref = %s
+                        ORDER BY po.created_at DESC
                         LIMIT 1
                         """,
                         (request.order_id,),
@@ -1248,6 +1260,23 @@ class PersistentStore:
                 self._record_write_error("settle_paper_order", exc)
                 return None
         if not row:
+            return None
+        if row["status"] == OrderStatus.SETTLED.value and row["closing_odds"] is not None:
+            return PaperSettlement(
+                order_id=request.order_id,
+                status=OrderStatus.SETTLED,
+                result_win=row["result_win"],
+                requested_odds=float(row["requested_odds"]),
+                average_price=float(row["average_price"] or row["requested_odds"]),
+                matched_stake=float(row["matched_stake"] or row["stake_amount"] or 0),
+                gross_pnl=float(row["gross_pnl"]),
+                commission=float(row["commission"]),
+                net_pnl=float(row["net_pnl"]),
+                closing_odds=float(row["closing_odds"]),
+                clv=float(row["clv"]),
+                settled_at=row["settled_at"],
+            )
+        if row["status"] not in PERSISTED_OPEN_ORDER_STATUSES:
             return None
         matched = float(row["matched_stake"] or row["stake_amount"] or 0)
         average_price = float(row["average_price"] or row["requested_odds"])
@@ -1283,7 +1312,7 @@ class PersistentStore:
                     with conn.cursor() as cur:
                         row = cur.execute(
                             """
-                            SELECT id
+                            SELECT id, status
                             FROM paper_orders
                             WHERE external_order_ref = %s
                             ORDER BY created_at DESC
@@ -1292,6 +1321,10 @@ class PersistentStore:
                             (settlement.order_id,),
                         ).fetchone()
                         if not row:
+                            return False
+                        if row["status"] == OrderStatus.SETTLED.value:
+                            return True
+                        if row["status"] not in PERSISTED_OPEN_ORDER_STATUSES:
                             return False
                         paper_order_id = row["id"]
                         self._insert_closing_line_snapshot(cur, paper_order_id, settlement)
@@ -1302,7 +1335,10 @@ class PersistentStore:
                               matched_stake, gross_pnl, commission, net_pnl, closing_odds,
                               clv, settled_at
                             )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                            WHERE NOT EXISTS (
+                              SELECT 1 FROM paper_settlements WHERE paper_order_id = %s
+                            )
                             """,
                             (
                                 paper_order_id,
@@ -1316,6 +1352,7 @@ class PersistentStore:
                                 settlement.closing_odds,
                                 settlement.clv,
                                 settlement.settled_at,
+                                paper_order_id,
                             ),
                         )
                         cur.execute(
@@ -1329,6 +1366,7 @@ class PersistentStore:
                                 average_price = %s,
                                 audit = audit || %s::jsonb
                             WHERE id = %s
+                              AND status = ANY(%s)
                             """,
                             (
                                 OrderStatus.SETTLED.value,
@@ -1339,6 +1377,7 @@ class PersistentStore:
                                 settlement.average_price,
                                 _json(["Paper order settled with closing-line CLV."]),
                                 paper_order_id,
+                                list(PERSISTED_OPEN_ORDER_STATUSES),
                             ),
                         )
                         self._insert_training_example(cur, paper_order_id, settlement)
@@ -1883,7 +1922,15 @@ class PersistentStore:
               match_id, player_id, bookmaker, closing_decimal_odds,
               no_vig_probability, source_ts, created_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            SELECT %s, %s, %s, %s, %s, %s, %s
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM closing_line_snapshots
+              WHERE match_id = %s
+                AND player_id = %s
+                AND bookmaker = %s
+                AND source_ts = %s
+            )
             """,
             (
                 row["match_id"],
@@ -1893,6 +1940,10 @@ class PersistentStore:
                 round(1 / settlement.closing_odds, 6),
                 settlement.settled_at,
                 _now(),
+                row["match_id"],
+                row["player_id"],
+                "closing_proxy",
+                settlement.settled_at,
             ),
         )
 

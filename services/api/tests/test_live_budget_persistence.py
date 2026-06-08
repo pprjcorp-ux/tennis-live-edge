@@ -469,7 +469,9 @@ def test_settle_paper_order_returns_none_when_settlement_write_fails() -> None:
             return self
 
         def fetchone(self):
-            if "SELECT external_order_ref" in self.query:
+            if "SELECT id" in self.query:
+                return {"id": 101, "status": OrderStatus.PAPER.value}
+            if "external_order_ref" in self.query:
                 return {
                     "external_order_ref": "ord_write_drift",
                     "match_id": "match_atp_001",
@@ -478,9 +480,15 @@ def test_settle_paper_order_returns_none_when_settlement_write_fails() -> None:
                     "average_price": 2.0,
                     "matched_stake": 100,
                     "stake_amount": 100,
+                    "status": OrderStatus.PAPER.value,
+                    "result_win": None,
+                    "gross_pnl": None,
+                    "commission": None,
+                    "net_pnl": None,
+                    "closing_odds": None,
+                    "clv": None,
+                    "settled_at": None,
                 }
-            if "SELECT id" in self.query:
-                return {"id": 101}
             return None
 
     class ConnStub:
@@ -518,6 +526,156 @@ def test_settle_paper_order_returns_none_when_settlement_write_fails() -> None:
     assert "relation paper_settlements does not exist" in store.last_error
 
 
+def test_settle_paper_order_blocks_non_open_persisted_order() -> None:
+    class CursorStub:
+        query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.query = query
+            return self
+
+        def fetchone(self):
+            if "SELECT" not in self.query:
+                return None
+            return {
+                "external_order_ref": "ord_cancelled",
+                "match_id": "match_atp_001",
+                "player_id": "atp_sinner",
+                "requested_odds": 2.0,
+                "average_price": 2.0,
+                "matched_stake": 100,
+                "stake_amount": 100,
+                "status": OrderStatus.CANCELLED.value,
+                "result_win": None,
+                "gross_pnl": None,
+                "commission": None,
+                "net_pnl": None,
+                "closing_odds": None,
+                "clv": None,
+                "settled_at": None,
+            }
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+            self.save_called = False
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+        def save_settlement(self, settlement: PaperSettlement) -> bool:
+            self.save_called = True
+            return True
+
+    store = StoreStub()
+
+    settlement = store.settle_paper_order(
+        PaperSettleRequest(order_id="ord_cancelled", result_win=True, closing_odds=1.9)
+    )
+
+    assert settlement is None
+    assert store.save_called is False
+
+
+def test_settle_paper_order_returns_existing_settlement_without_rewriting() -> None:
+    settled_at = datetime(2026, 5, 3, 20, tzinfo=timezone.utc)
+
+    class CursorStub:
+        query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.query = query
+            return self
+
+        def fetchone(self):
+            if "SELECT" not in self.query:
+                return None
+            return {
+                "external_order_ref": "ord_settled",
+                "match_id": "match_atp_001",
+                "player_id": "atp_sinner",
+                "requested_odds": 2.0,
+                "average_price": 2.02,
+                "matched_stake": 75,
+                "stake_amount": 100,
+                "status": OrderStatus.SETTLED.value,
+                "result_win": True,
+                "gross_pnl": 76.5,
+                "commission": 1.53,
+                "net_pnl": 74.97,
+                "closing_odds": 1.95,
+                "clv": 0.017,
+                "settled_at": settled_at,
+            }
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+            self.save_called = False
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+        def save_settlement(self, settlement: PaperSettlement) -> bool:
+            self.save_called = True
+            return True
+
+    store = StoreStub()
+
+    settlement = store.settle_paper_order(
+        PaperSettleRequest(order_id="ord_settled", result_win=False, closing_odds=3.0)
+    )
+
+    assert settlement is not None
+    assert settlement.result_win is True
+    assert settlement.net_pnl == 74.97
+    assert settlement.closing_odds == 1.95
+    assert settlement.settled_at == settled_at
+    assert store.save_called is False
+
+
 def test_save_settlement_failure_reaches_transaction_for_rollback() -> None:
     class TransactionStub:
         def __init__(self) -> None:
@@ -548,7 +706,7 @@ def test_save_settlement_failure_reaches_transaction_for_rollback() -> None:
 
         def fetchone(self):
             if "SELECT id" in self.query:
-                return {"id": 101}
+                return {"id": 101, "status": OrderStatus.PAPER.value}
             return None
 
     class ConnStub:

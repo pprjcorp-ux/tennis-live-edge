@@ -254,7 +254,8 @@ Current implementation status: complete for the first persistent v1 loop.
 Settled paper orders now produce `training_examples` with model version,
 decision timestamp, stake exposure, result, P&L, CLV, and calibration bucket.
 Backtests prefer those persisted examples, save model/version records, and save
-calibration reports before falling back to synthetic sample reports.
+calibration reports. Synthetic reports are limited to `sample`/dev mode; live
+mode blocks backtest runs until persisted `training_examples` exist.
 
 Tasks:
 

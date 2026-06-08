@@ -306,6 +306,33 @@ def test_repository_prefers_persisted_model_lab_reports() -> None:
     assert asyncio.run(repo.run_backtest(BacktestRunRequest(model_version="prematch_ensemble_v1"))) == metrics
 
 
+def test_live_run_backtest_requires_persisted_training_examples() -> None:
+    class StoreStub:
+        def __init__(self) -> None:
+            self.saved = False
+
+        def backtest_metrics(self, request):
+            return None
+
+        def save_backtest(self, metrics, request):
+            self.saved = True
+
+    store = StoreStub()
+    repo = AnalysisRepository(
+        Settings(
+            data_mode="live",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        )
+    )
+    repo.store = store
+
+    with pytest.raises(KeyError):
+        asyncio.run(repo.run_backtest(BacktestRunRequest(model_version="prematch_ensemble_v1")))
+
+    assert store.saved is False
+
+
 def test_calibration_report_fallback_uses_persisted_backtest_run_config() -> None:
     examples = [
         _example(1, 0.52, True, 0.2, 0.01),

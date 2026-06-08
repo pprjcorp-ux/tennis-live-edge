@@ -377,7 +377,13 @@ async def v1_run_backtest(
     _: None = Depends(require_admin_token),
     repo: AnalysisRepository = Depends(repository),
 ) -> BacktestMetrics:
-    return await repo.run_backtest(request)
+    try:
+        return await repo.run_backtest(request)
+    except KeyError:
+        raise HTTPException(
+            status_code=409,
+            detail="No persisted training examples available for live backtest.",
+        ) from None
 
 
 @app.get("/api/v1/backtests/{run_id}", response_model=BacktestMetrics)

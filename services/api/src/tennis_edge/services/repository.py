@@ -664,7 +664,11 @@ class AnalysisRepository:
         return list(dict.fromkeys(candidate for candidate in candidates if candidate))
 
     async def run_backtest(self, request: BacktestRunRequest | None = None) -> BacktestMetrics:
-        metrics = self.store.backtest_metrics(request) or run_walk_forward_backtest(request)
+        metrics = self.store.backtest_metrics(request)
+        if metrics is None:
+            if self.settings.data_mode != "sample":
+                raise KeyError("No persisted training examples available for live backtest")
+            metrics = run_walk_forward_backtest(request)
         self.store.save_backtest(metrics, request)
         if self.settings.data_mode == "sample":
             self._sample_backtests[metrics.run_id] = metrics

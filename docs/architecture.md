@@ -36,7 +36,8 @@ decide whether the system behaves as budget or enterprise.
 12. Model Lab backtests read persisted training examples first, compute
     walk-forward ROI, CLV, Brier, log loss, calibration error, and drawdown,
     then save model registry and calibration reports. Synthetic backtests remain
-    only as a sample/dev fallback when no persisted examples exist.
+    only as a `sample`/dev fallback; live mode returns an explicit blocked state
+    until persisted `training_examples` exist.
 13. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
     paper orders are persisted so restart recovery includes the operational
     audit trail.

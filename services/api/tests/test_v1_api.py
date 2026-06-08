@@ -10,7 +10,7 @@ from tennis_edge.config import get_settings
 
 get_settings.cache_clear()
 
-from tennis_edge.main import app
+from tennis_edge.main import app, repository
 from tennis_edge.services.agent_ops import AGENT_RUNS
 from tennis_edge.services.execution_engine import ORDERS
 from tennis_edge.services.provider_cursor import CURSORS
@@ -221,6 +221,25 @@ def test_v1_replay_and_backtest() -> None:
     assert "brier_score" in backtest.json()
     assert calibration.status_code == 200
     assert calibration.json()["buckets"]
+
+
+def test_v1_live_backtest_without_training_examples_returns_409() -> None:
+    class RepoStub:
+        async def run_backtest(self, request):
+            raise KeyError("No persisted training examples available for live backtest")
+
+    app.dependency_overrides[repository] = lambda: RepoStub()
+    try:
+        response = client.post(
+            "/api/v1/backtests/run",
+            headers=ADMIN_HEADERS,
+            json={"model_version": "prematch_ensemble_v1"},
+        )
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert response.status_code == 409
+    assert "No persisted training examples" in response.json()["detail"]
 
 
 def test_v1_execution_endpoints_are_safe_by_default() -> None:

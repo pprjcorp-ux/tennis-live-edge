@@ -42,6 +42,18 @@ async function getJson<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body.detail === "string" && body.detail.trim()) {
+      return body.detail;
+    }
+  } catch {
+    // Some upstream failures have no JSON body; keep the caller's status fallback.
+  }
+  return fallback;
+}
+
 export function getTodayMatches(): Promise<MatchAnalysis[]> {
   return getJson<MatchAnalysis[]>("/api/v1/live/matches");
 }
@@ -186,7 +198,7 @@ export async function runBacktest(adminToken: string): Promise<BacktestMetrics> 
     })
   });
   if (!response.ok) {
-    throw new Error(`Backtest request failed: ${response.status}`);
+    throw new Error(await errorMessage(response, `Backtest request failed: ${response.status}`));
   }
   return response.json() as Promise<BacktestMetrics>;
 }

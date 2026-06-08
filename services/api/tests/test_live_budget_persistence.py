@@ -720,6 +720,8 @@ def test_data_quality_surfaces_latest_score_ingestion_warning() -> None:
                     {"kind": "scores", "count": 2},
                     {"kind": "odds", "count": 4},
                 ]
+            if "FROM provider_latency" in self.last_query:
+                return []
             return []
 
         def fetchone(self):
@@ -750,6 +752,80 @@ def test_data_quality_surfaces_latest_score_ingestion_warning() -> None:
     assert quality.sequence_health == 0.7
     assert quality.blocked_signals == 1
     assert any(warning in note for note in quality.notes)
+
+
+def test_data_quality_surfaces_stale_provider_latency_rows() -> None:
+    stale_at = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(seconds=12)
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.last_query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.last_query = query
+            return self
+
+        def fetchall(self):
+            if "SELECT kind" in self.last_query:
+                return [
+                    {"kind": "matches", "count": 2},
+                    {"kind": "scores", "count": 2},
+                    {"kind": "odds", "count": 4},
+                ]
+            if "FROM provider_latency" in self.last_query:
+                return [
+                    {
+                        "provider": Provider.API_TENNIS.value,
+                        "feed": "score/live",
+                        "latest_ingested_at": stale_at,
+                        "latency_ms": 400,
+                        "healthy": True,
+                    }
+                ]
+            return []
+
+        def fetchone(self):
+            if "provider_cursors" in self.last_query:
+                return {"gaps": 0}
+            if "FROM ingestion_runs" in self.last_query:
+                return {"summary": {"provider_warnings": []}}
+            return None
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    api_tennis_key="key",
+                    max_odds_staleness_ms=2500,
+                )
+            )
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    quality = StoreStub().data_quality()[0]
+
+    assert quality.sequence_health == 0.5
+    assert quality.latency_ms == 400
+    assert quality.stale_ticks == 1
+    assert quality.blocked_signals == 1
+    assert any("api_tennis:score/live" in note for note in quality.notes)
 
 
 def test_odds_api_io_resync_blocks_live_entry_signals() -> None:

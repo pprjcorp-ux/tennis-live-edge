@@ -638,6 +638,14 @@ class PersistentStore:
                 cursor_rows = cur.execute(
                     "SELECT count(*)::int AS gaps FROM provider_cursors WHERE resync_required = true"
                 ).fetchone()
+                latency_rows = cur.execute(
+                    """
+                    SELECT DISTINCT ON (provider, feed)
+                      provider, feed, latest_ingested_at, latency_ms, healthy
+                    FROM provider_latency
+                    ORDER BY provider, feed, ingested_at DESC
+                    """
+                ).fetchall()
                 self._ensure_ingestion_runs_table(cur)
                 score_run = cur.execute(
                     """
@@ -655,15 +663,26 @@ class PersistentStore:
         score_warnings = _provider_warnings_from_summary(
             score_run["summary"] if score_run else {}
         )
+        stale_latency_rows = [
+            row for row in latency_rows if _feed_stale(row, self.settings)
+        ]
+        max_latency_ms = max((row["latency_ms"] for row in latency_rows), default=None)
         sequence_health = 0.35 if gaps else 1.0
         if score_warnings:
             sequence_health = min(sequence_health, 0.7)
+        if stale_latency_rows:
+            sequence_health = min(sequence_health, 0.5)
         notes = [
             "Computed from persisted matches, score ticks, odds ticks and cursor state.",
             "Signals should abstain when odds are incomplete, stale or resync_required.",
         ]
         if score_warnings:
             notes.append(f"Latest score ingestion warnings: {'; '.join(score_warnings[:2])}.")
+        if stale_latency_rows:
+            stale_feeds = ", ".join(
+                f"{row['provider']}:{row['feed']}" for row in stale_latency_rows[:3]
+            )
+            notes.append(f"Latest provider latency rows are stale: {stale_feeds}.")
         return [
             DataQualitySnapshot(
                 id="dq_persisted_live_budget",
@@ -673,7 +692,9 @@ class PersistentStore:
                 odds_completeness=round(odds_completeness, 4),
                 entity_resolution_rate=1.0 if counts.get("matches", 0) else 0.0,
                 sequence_health=sequence_health,
-                blocked_signals=gaps + len(score_warnings),
+                latency_ms=max_latency_ms,
+                stale_ticks=len(stale_latency_rows),
+                blocked_signals=gaps + len(score_warnings) + len(stale_latency_rows),
                 notes=notes,
             )
         ]

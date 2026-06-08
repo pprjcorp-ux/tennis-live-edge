@@ -7,6 +7,7 @@ from datetime import timezone
 from tennis_edge.config import Settings
 from tennis_edge.domain import CursorStatus
 from tennis_edge.domain import IngestionRunRecord
+from tennis_edge.domain import MatchFreshness
 from tennis_edge.domain import OddsMessageIngestionRequest
 from tennis_edge.domain import Provider
 from tennis_edge.domain import ProviderCursor
@@ -426,7 +427,7 @@ def test_save_analyses_records_score_latency_for_primary_provider() -> None:
         def _upsert_match(self, cur, match):
             pass
 
-        def _insert_score_tick(self, cur, match):
+        def _insert_score_tick(self, cur, match, freshness=None):
             pass
 
         def _insert_odds_ticks(self, cur, match):
@@ -457,6 +458,37 @@ def test_save_analyses_records_score_latency_for_primary_provider() -> None:
     assert store.save_analyses([analysis.model_copy(update={"match": match})]) is True
     assert (Provider.THE_ODDS_API, "score/live") in store.latencies
     assert (Provider.API_TENNIS, "score/live") not in store.latencies
+
+
+def test_insert_score_tick_uses_freshness_source_time_and_provider() -> None:
+    source_ts = datetime(2026, 6, 8, 12, tzinfo=timezone.utc)
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.params = None
+
+        def execute(self, query, params=None):
+            self.params = params
+
+    base_match = sample_matches()[0]
+    match = base_match.model_copy(
+        update={
+            "provider_ids": {"theoddsapi": "archive-only"},
+            "state": base_match.state.model_copy(update={"status": "live"}),
+        }
+    )
+    freshness = MatchFreshness(
+        score_source_ts=source_ts,
+        provider_lineage=[Provider.THE_ODDS_API],
+    )
+    cursor = CursorStub()
+    store = PersistentStore(Settings(data_mode="live", persistence_enabled=True))
+
+    store._insert_score_tick(cursor, match, freshness)
+
+    assert cursor.params is not None
+    assert cursor.params[1] == Provider.THE_ODDS_API.value
+    assert cursor.params[3] == source_ts
 
 
 def test_repository_ingests_odds_api_message_with_persisted_cursor() -> None:

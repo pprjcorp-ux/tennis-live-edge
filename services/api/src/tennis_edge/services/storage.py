@@ -154,7 +154,7 @@ class PersistentStore:
                     self._upsert_player(cur, analysis.match.player1)
                     self._upsert_player(cur, analysis.match.player2)
                     self._upsert_match(cur, analysis.match)
-                    self._insert_score_tick(cur, analysis.match)
+                    self._insert_score_tick(cur, analysis.match, analysis.freshness)
                     self._insert_odds_ticks(cur, analysis.match)
                     feature_id = self._insert_feature_snapshot(cur, analysis.features)
                     prediction_id = self._insert_prediction_snapshot(
@@ -1643,7 +1643,14 @@ class PersistentStore:
             ),
         )
 
-    def _insert_score_tick(self, cur: Any, match: Match) -> None:
+    def _insert_score_tick(
+        self,
+        cur: Any,
+        match: Match,
+        freshness: MatchFreshness | None = None,
+    ) -> None:
+        source_ts = self._score_tick_source_ts(match, freshness)
+        provider = self._score_tick_provider(match, freshness)
         cur.execute(
             """
             INSERT INTO score_ticks (match_id, provider, raw_state, source_ts, ingested_at)
@@ -1651,12 +1658,32 @@ class PersistentStore:
             """,
             (
                 match.id,
-                Provider.API_TENNIS.value,
+                provider.value,
                 _json(match.state.model_dump(mode="json")),
-                match.scheduled_at if match.state.status == "prematch" else _now(),
+                source_ts,
                 _now(),
             ),
         )
+
+    def _score_tick_source_ts(
+        self,
+        match: Match,
+        freshness: MatchFreshness | None,
+    ) -> datetime:
+        if freshness and freshness.score_source_ts:
+            return freshness.score_source_ts
+        if match.state.status == "prematch":
+            return match.scheduled_at
+        return _now()
+
+    def _score_tick_provider(
+        self,
+        match: Match,
+        freshness: MatchFreshness | None,
+    ) -> Provider:
+        if freshness and freshness.provider_lineage:
+            return freshness.provider_lineage[0]
+        return primary_provider_for_match(match)
 
     def _insert_odds_ticks(self, cur: Any, match: Match) -> None:
         provider = odds_provider_for_match(match) or Provider.ODDS_API_IO

@@ -6,13 +6,16 @@ import pytest
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
     AgentAutopilotRequest,
+    AgentActionStatus,
     AgentRun,
     AgentRunType,
+    DataQualitySnapshot,
     ExecutionOrder,
     ExecutionVenue,
     OrderStatus,
     PaperSettlement,
     PaperSettleRequest,
+    Provider,
     SignalStatus,
 )
 from tennis_edge.services.agent_ops import AGENT_RUNS
@@ -30,6 +33,7 @@ class AgentStoreStub:
         self.cancel_results: dict[str, OrderStatus | None] = {}
         self.persisted_runs: list[AgentRun] = []
         self.persisted_orders: list[ExecutionOrder] = []
+        self.persisted_data_quality: list[DataQualitySnapshot] = []
 
     def __getattr__(self, name):
         return getattr(self.fallback, name)
@@ -45,6 +49,9 @@ class AgentStoreStub:
 
     def orders(self) -> list[ExecutionOrder]:
         return list(self.persisted_orders)
+
+    def data_quality(self) -> list[DataQualitySnapshot]:
+        return list(self.persisted_data_quality)
 
     def cancel_order(self, order_id: str) -> OrderStatus | None:
         self.cancel_requests.append(order_id)
@@ -101,6 +108,46 @@ def test_agent_autopilot_persists_run_and_created_paper_orders() -> None:
     assert len(store.saved_orders) == result.paper_orders_created
     assert store.saved_orders == result.created_orders
     assert all(order.status == OrderStatus.PAPER for order in store.saved_orders)
+
+
+def test_agent_autopilot_blocks_paper_orders_when_provider_latency_is_critical() -> None:
+    ORDERS.clear()
+    AGENT_RUNS.clear()
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    store = AgentStoreStub(repo.store)
+    store.persisted_data_quality = [
+        DataQualitySnapshot(
+            id="dq_api_tennis_score",
+            provider=Provider.API_TENNIS,
+            feed="score/live",
+            score_completeness=1,
+            odds_completeness=1,
+            entity_resolution_rate=1,
+            sequence_health=0.5,
+            latency_ms=12000,
+            stale_ticks=2,
+            blocked_signals=3,
+            notes=["Latest provider latency rows are stale: api_tennis:score/live."],
+        )
+    ]
+    repo.store = store
+    repo.operational_state.store = store
+
+    result = asyncio.run(
+        repo.agent_autopilot(
+            AgentAutopilotRequest(source="openclaw", create_paper_orders=True, max_paper_orders=2)
+        )
+    )
+
+    assert result.paper_orders_created == 0
+    assert result.paper_orders_skipped >= 1
+    assert store.saved_orders == []
+    assert store.saved_runs == [result.run]
+    assert any(
+        action.type == "paper_autopilot" and action.status == AgentActionStatus.BLOCKED
+        for action in result.run.actions
+    )
+    assert any(anomaly.category == "provider_latency" for anomaly in result.anomalies)
 
 
 def test_agent_runs_prefers_persisted_runs_after_restart() -> None:

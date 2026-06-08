@@ -97,6 +97,17 @@ def _model_routes(settings: Settings, *, critical: bool = False) -> list[AgentMo
     return routes
 
 
+def _critical_anomalies(anomalies: Iterable[AgentAnomaly]) -> list[AgentAnomaly]:
+    return [anomaly for anomaly in anomalies if anomaly.severity == "critical"]
+
+
+def _summarize_anomalies(anomalies: list[AgentAnomaly]) -> str:
+    summaries = [anomaly.summary for anomaly in anomalies[:3]]
+    if len(anomalies) > 3:
+        summaries.append(f"+{len(anomalies) - 3} more")
+    return "; ".join(summaries)
+
+
 def probe_openclaw_gateway(host: str = "127.0.0.1", port: int = 18789) -> bool:
     try:
         with socket.create_connection((host, port), timeout=0.5):
@@ -506,9 +517,8 @@ def run_agent_autopilot(
     paper_orders_created = 0
     paper_orders_skipped = 0
 
-    critical = bool(request.request_real_execution) or any(
-        anomaly.severity == "critical" for anomaly in anomalies
-    )
+    critical_anomalies = _critical_anomalies(anomalies)
+    critical = bool(request.request_real_execution) or bool(critical_anomalies)
 
     if not settings.openclaw_autopilot_enabled:
         actions.append(
@@ -516,6 +526,20 @@ def run_agent_autopilot(
                 type="autopilot",
                 status=AgentActionStatus.BLOCKED,
                 summary="OpenClaw autopilot disabled by configuration.",
+                created_at=_now(),
+            )
+        )
+    elif request.create_paper_orders and critical_anomalies:
+        skipped = min(len(_entry_signals(analyses)), request.max_paper_orders)
+        paper_orders_skipped += skipped
+        actions.append(
+            AgentAction(
+                type="paper_autopilot",
+                status=AgentActionStatus.BLOCKED,
+                summary=(
+                    "Paper autopilot blocked by critical operational anomalies: "
+                    f"{_summarize_anomalies(critical_anomalies)}."
+                ),
                 created_at=_now(),
             )
         )

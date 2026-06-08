@@ -109,6 +109,7 @@ def test_agent_autopilot_persists_run_and_created_paper_orders() -> None:
     assert len(store.saved_orders) == result.paper_orders_created
     assert store.saved_orders == result.created_orders
     assert all(order.status == OrderStatus.PAPER for order in store.saved_orders)
+    assert asyncio.run(repo.agent_runs())[0] == result.run
 
 
 def test_agent_autopilot_blocks_paper_orders_when_provider_latency_is_critical() -> None:
@@ -205,6 +206,23 @@ def test_live_agent_runs_do_not_use_process_memory_when_persisted_missing() -> N
     )
     AGENT_RUNS.append(memory_run)
     repo = AnalysisRepository(Settings(data_mode="live", database_url=None))
+    store = AgentStoreStub(repo.store)
+    store.persisted_runs = []
+    repo.store = store
+
+    assert asyncio.run(repo.agent_runs()) == []
+
+
+def test_sample_agent_runs_do_not_use_process_memory_when_repository_cache_empty() -> None:
+    AGENT_RUNS.clear()
+    memory_run = AgentRun(
+        id="agent_sample_memory_only",
+        run_type=AgentRunType.AUTOPILOT_EVALUATE,
+        source="openclaw",
+        summary="Memory-only run must not become sample repository truth.",
+    )
+    AGENT_RUNS.append(memory_run)
+    repo = AnalysisRepository(Settings(data_mode="sample"))
     store = AgentStoreStub(repo.store)
     store.persisted_runs = []
     repo.store = store

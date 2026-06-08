@@ -51,7 +51,6 @@ from tennis_edge.domain import (
     Provider,
 )
 from tennis_edge.services.agent_ops import (
-    agent_runs,
     build_agent_briefing,
     build_agent_preflight,
     detect_anomalies,
@@ -95,6 +94,7 @@ class AnalysisRepository:
         self.settings = settings
         self._sample_backtests: dict[str, BacktestMetrics] = {}
         self._sample_orders: dict[str, ExecutionOrder] = {}
+        self._sample_agent_runs: list[AgentRun] = []
         self.api_tennis = ApiTennisClient(settings.api_tennis_key, settings.data_mode)
         self.api_tennis_source = ApiTennisMatchSource(self.api_tennis)
         self.odds_api_io = OddsApiIoClient(settings.odds_api_io_key, settings.data_mode)
@@ -439,12 +439,13 @@ class AnalysisRepository:
             self.store.save_order(order)
             self._remember_sample_order(order)
         self.store.save_agent_run(result.run)
+        self._remember_sample_agent_run(result.run)
         return result
 
     async def agent_runs(self) -> list[AgentRun]:
         merged = {run.id: run for run in self.store.agent_runs()}
         if self.settings.data_mode == "sample":
-            for run in agent_runs():
+            for run in self._sample_agent_runs:
                 merged.setdefault(run.id, run)
         return sorted(
             merged.values(),
@@ -458,7 +459,7 @@ class AnalysisRepository:
     def _sample_latest_agent_run(self) -> AgentRun | None:
         if self.settings.data_mode != "sample":
             return None
-        return next(iter(agent_runs()), None)
+        return next(iter(self._sample_agent_runs), None)
 
     async def settle_paper(self, request: PaperSettleRequest) -> PaperSettlement:
         persisted = self.store.settle_paper_order(request)
@@ -557,6 +558,11 @@ class AnalysisRepository:
     def _remember_sample_order(self, order: ExecutionOrder) -> None:
         if self.settings.data_mode == "sample":
             self._sample_orders[order.id] = order
+
+    def _remember_sample_agent_run(self, run: AgentRun) -> None:
+        if self.settings.data_mode == "sample":
+            self._sample_agent_runs.insert(0, run)
+            del self._sample_agent_runs[50:]
 
     def _cancel_sample_order(self, order_id: str) -> CancelOrderResult:
         order = self._sample_orders[order_id]

@@ -21,7 +21,7 @@ def cursor_key(provider: Provider, stream: str) -> tuple[Provider, str]:
 def default_provider_cursors(
     settings: Settings,
     *,
-    use_process_cache: bool = True,
+    use_process_cache: bool = False,
 ) -> list[ProviderCursor]:
     if use_process_cache and CURSORS:
         return sorted(CURSORS.values(), key=lambda item: (item.provider, item.stream))

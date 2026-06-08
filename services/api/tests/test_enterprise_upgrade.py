@@ -55,6 +55,21 @@ def test_live_default_odds_cursor_requires_resync_until_real_sequence_arrives() 
     assert odds_cursor.last_seq is None
 
 
+def test_default_provider_cursors_do_not_trust_process_cache_by_default() -> None:
+    CURSORS.clear()
+    try:
+        mark_resynced(Provider.ODDS_API_IO, "tennis:moneyline", 88)
+
+        cursors = default_provider_cursors(Settings(data_mode="live", odds_api_io_key="key"))
+        odds_cursor = next(cursor for cursor in cursors if cursor.provider == Provider.ODDS_API_IO)
+
+        assert odds_cursor.status == CursorStatus.RESYNC_REQUIRED
+        assert odds_cursor.resync_required is True
+        assert odds_cursor.last_seq is None
+    finally:
+        CURSORS.clear()
+
+
 def test_odds_api_sequence_detects_gap_from_persisted_cursor_after_restart() -> None:
     CURSORS.clear()
     persisted_cursor = ProviderCursor(

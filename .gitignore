@@ -4,6 +4,7 @@
 .env.backup-*
 .secrets/
 .logs/
+.serena/
 .venv/
 __pycache__/
 *.egg-info/

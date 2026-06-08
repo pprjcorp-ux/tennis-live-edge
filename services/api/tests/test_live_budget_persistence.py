@@ -567,8 +567,9 @@ class _FakeArchiveSource:
 
 
 class _FakeStore:
-    def __init__(self, persisted=None) -> None:
+    def __init__(self, persisted=None, saves_enabled: bool = True) -> None:
         self.persisted = persisted or []
+        self.saves_enabled = saves_enabled
         self.saved_analyses = []
         self.saved_payloads = []
 
@@ -576,10 +577,16 @@ class _FakeStore:
         return self.persisted
 
     def save_analyses(self, analyses):
+        if not self.saves_enabled:
+            return False
         self.saved_analyses = analyses
+        return bool(analyses)
 
     def save_raw_payloads(self, payloads):
+        if not self.saves_enabled:
+            return 0
         self.saved_payloads = payloads
+        return len(payloads)
 
 
 async def _same_matches(matches, archive_source):
@@ -617,6 +624,7 @@ def test_live_ingestion_pipeline_persists_provider_snapshot() -> None:
     assert snapshot.raw_payloads_saved == 1
     assert snapshot.analyses[0].freshness is not None
     assert snapshot.analyses[0].freshness.source == "provider_live"
+    assert snapshot.analyses[0].freshness.persisted is True
     assert store.saved_payloads[0].source_event_id == snapshot.analyses[0].match.provider_match_id
 
 
@@ -647,11 +655,33 @@ def test_live_ingestion_pipeline_prefers_provider_raw_payload_over_canonical_pro
 
     assert snapshot.source == "provider_live"
     assert snapshot.raw_payloads_saved == 1
+    assert snapshot.persisted is True
     assert store.saved_payloads == [raw_payload]
     assert store.saved_payloads[0].payload == {
         "event_key": match.provider_match_id,
         "provider_shape": "api_tennis_original",
     }
+
+
+def test_live_ingestion_pipeline_does_not_claim_persistence_when_store_does_not_save() -> None:
+    store = _FakeStore(saves_enabled=False)
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource(_live_provider_matches()),
+        _FakeArchiveSource(),
+        store,
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert snapshot.source == "provider_live"
+    assert snapshot.persisted is False
+    assert snapshot.raw_payloads_saved == 0
+    assert snapshot.analyses[0].freshness is not None
+    assert snapshot.analyses[0].freshness.persisted is False
+    assert store.saved_analyses == []
+    assert store.saved_payloads == []
 
 
 def test_live_ingestion_pipeline_uses_persisted_fallback_after_provider_failure() -> None:
@@ -697,5 +727,8 @@ def test_live_ingestion_pipeline_labels_sample_snapshots_explicitly() -> None:
 
     assert snapshot.source == "sample"
     assert snapshot.persisted is False
+    assert snapshot.raw_payloads_saved == 0
+    assert store.saved_analyses == []
+    assert store.saved_payloads == []
     assert snapshot.analyses[0].freshness is not None
     assert snapshot.analyses[0].freshness.source == "sample"

@@ -35,10 +35,10 @@ class OperationalStore(Protocol):
     def latest_analyses(self, target_date: date) -> list[MatchAnalysis]:
         ...
 
-    def save_analyses(self, analyses: list[MatchAnalysis]) -> None:
+    def save_analyses(self, analyses: list[MatchAnalysis]) -> bool:
         ...
 
-    def save_raw_payloads(self, payloads: list[RawProviderPayload]) -> None:
+    def save_raw_payloads(self, payloads: list[RawProviderPayload]) -> int:
         ...
 
 
@@ -101,16 +101,21 @@ class LiveIngestionPipeline:
 
         matches = await self.archive_augmenter(provider_matches, self.archive_source)
         analyses = [self._analysis_for_match(match) for match in matches]
-        saved_payloads = raw_payloads or _raw_payloads_from_matches(matches)
-        self.store.save_raw_payloads(saved_payloads)
-        self.store.save_analyses(analyses)
         source = _snapshot_source(matches)
+        saved_payloads = raw_payloads or _raw_payloads_from_matches(matches)
+        raw_payloads_saved = 0
+        analyses_saved = False
+        if source != "sample":
+            raw_payloads_saved = self.store.save_raw_payloads(saved_payloads)
+            analyses_saved = self.store.save_analyses(analyses)
+        persisted = source != "sample" and (analyses_saved or raw_payloads_saved > 0)
+        analyses = [_with_freshness_persisted(analysis, persisted) for analysis in analyses]
         return OperationalSnapshot(
             analyses=analyses,
             source=source,
-            persisted=source != "sample",
+            persisted=persisted,
             generated_at=_now(),
-            raw_payloads_saved=len(saved_payloads),
+            raw_payloads_saved=raw_payloads_saved,
         )
 
     async def _fetch_matches(self, target_date: date) -> list[Match | ProviderMatchPayload]:
@@ -208,6 +213,19 @@ def _freshness_for_match(match: Match, source: str, persisted: bool) -> MatchFre
         else None,
         provider_lineage=list(dict.fromkeys(provider_lineage)),
         note="Canonical operational snapshot built by LiveIngestionPipeline.",
+    )
+
+
+def _with_freshness_persisted(
+    analysis: MatchAnalysis,
+    persisted: bool,
+) -> MatchAnalysis:
+    if analysis.freshness is None:
+        return analysis
+    return analysis.model_copy(
+        update={
+            "freshness": analysis.freshness.model_copy(update={"persisted": persisted})
+        }
     )
 
 

@@ -78,7 +78,8 @@ def test_v1_ingestion_run_requires_token_and_returns_operational_summary() -> No
     assert response.status_code == 200
     assert response.json()["source"] == "sample"
     assert response.json()["matches"] >= 1
-    assert response.json()["raw_payloads_saved"] >= 1
+    assert response.json()["persisted"] is False
+    assert response.json()["raw_payloads_saved"] == 0
     assert "signals_generated" in response.json()
 
 

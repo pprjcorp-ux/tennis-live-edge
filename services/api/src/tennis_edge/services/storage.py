@@ -134,12 +134,15 @@ class PersistentStore:
             except Exception:
                 pass
 
-    def save_analyses(self, analyses: Iterable[MatchAnalysis]) -> None:
+    def save_analyses(self, analyses: Iterable[MatchAnalysis]) -> bool:
+        analyses = list(analyses)
         if not self.enabled:
-            return
+            return False
+        if not analyses:
+            return False
         with self._connect() as conn:
             if conn is None:
-                return
+                return False
             existing_cursors = self.provider_cursors()
             for analysis in analyses:
                 with conn.cursor() as cur:
@@ -157,6 +160,7 @@ class PersistentStore:
                     if analysis.match.odds:
                         self._record_latency(cur, Provider.ODDS_API_IO, "odds/moneyline", analysis.match)
                     self._upsert_provider_cursors(cur, existing_cursors=existing_cursors)
+        return True
 
     def save_raw_payloads(self, payloads: list[RawProviderPayload]) -> int:
         if not self.enabled or not payloads:

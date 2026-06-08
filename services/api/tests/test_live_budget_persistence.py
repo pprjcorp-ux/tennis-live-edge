@@ -209,6 +209,57 @@ def test_training_example_count_uses_persisted_settled_rows_and_filters() -> Non
     assert count == 7
 
 
+def test_training_example_count_casts_optional_null_filters() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            assert "%s::text IS NULL OR te.model_version = %s::text" in query
+            assert "%s::text IS NULL OR fs.feature_set = %s::text" in query
+            assert "%s::date IS NULL OR te.decision_ts::date >= %s::date" in query
+            assert "%s::date IS NULL OR te.decision_ts::date <= %s::date" in query
+            self.params = params
+            return self
+
+        def fetchone(self):
+            assert self.params == (None, None, None, None, None, None, None, None)
+            return {"examples": 0}
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    assert StoreStub().training_example_count() == 0
+
+
 def test_training_examples_filter_by_feature_set_and_decision_window() -> None:
     decision_ts = datetime(2026, 6, 3, 14, tzinfo=timezone.utc)
 

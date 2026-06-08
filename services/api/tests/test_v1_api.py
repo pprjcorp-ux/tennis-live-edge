@@ -196,6 +196,7 @@ def test_v1_agent_autopilot_creates_paper_orders_and_blocks_real_request() -> No
     assert second.json()["paper_orders_skipped"] >= 1
     assert orders.status_code == 200
     assert all(order["status"] == "paper" for order in orders.json())
+    assert ORDERS == {}
     assert runs.status_code == 200
     assert runs.json()[0]["model_routes"][-1]["model"] == "gpt-5.5"
 

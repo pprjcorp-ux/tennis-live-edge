@@ -233,6 +233,7 @@ def create_order(
     *,
     real: bool,
     orders: Iterable[ExecutionOrder] | None = None,
+    remember_in_process: bool = True,
 ) -> ExecutionOrder:
     analysis, signal = find_signal(analyses, request.signal_id)
     if not real and signal.status != SignalStatus.ENTRY:
@@ -337,7 +338,8 @@ def create_order(
         audit=audit,
         updated_at=_now(),
     )
-    ORDERS[order.id] = order
+    if remember_in_process:
+        ORDERS[order.id] = order
     return order
 
 

@@ -110,6 +110,7 @@ def test_agent_autopilot_persists_run_and_created_paper_orders() -> None:
     assert store.saved_orders == result.created_orders
     assert all(order.status == OrderStatus.PAPER for order in store.saved_orders)
     assert asyncio.run(repo.agent_runs())[0] == result.run
+    assert ORDERS == {}
 
 
 def test_agent_autopilot_blocks_paper_orders_when_provider_latency_is_critical() -> None:
@@ -430,6 +431,7 @@ def test_sample_paper_order_round_trips_through_repository_cache() -> None:
 
     assert store.saved_orders == [order]
     assert orders == [order]
+    assert ORDERS == {}
     assert settlement.status == OrderStatus.SETTLED
     assert settled_orders[0].status == OrderStatus.SETTLED
     assert settled_orders[0].pnl == settlement.net_pnl

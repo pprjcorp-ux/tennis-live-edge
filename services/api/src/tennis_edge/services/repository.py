@@ -510,6 +510,7 @@ class AnalysisRepository:
             request,
             real=False,
             orders=order_snapshot,
+            remember_in_process=False,
         )
         self.store.save_order(order)
         self._remember_sample_order(order)
@@ -523,6 +524,7 @@ class AnalysisRepository:
             request,
             real=True,
             orders=order_snapshot,
+            remember_in_process=False,
         )
         self.store.save_order(order)
         self._remember_sample_order(order)

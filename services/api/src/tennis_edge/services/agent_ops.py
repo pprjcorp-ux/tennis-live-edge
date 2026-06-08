@@ -567,6 +567,7 @@ def run_agent_autopilot(
                     ),
                     real=False,
                     orders=order_snapshot,
+                    remember_in_process=False,
                 )
                 order_snapshot.append(order)
                 created_orders.append(order)

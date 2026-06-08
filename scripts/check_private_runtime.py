@@ -2,12 +2,36 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import re
 import sys
 
 from check_cloudflare_private_runtime import validate_cloudflare_private_runtime
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def duplicate_schema_columns(schema_text: str) -> list[str]:
+    duplicates: list[str] = []
+    table_pattern = re.compile(
+        r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+([a-zA-Z_][\w]*)\s*\((.*?)\);",
+        re.IGNORECASE | re.DOTALL,
+    )
+    table_constraints = {"CONSTRAINT", "PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "EXCLUDE"}
+    for table_match in table_pattern.finditer(schema_text):
+        table = table_match.group(1)
+        columns: set[str] = set()
+        for raw_line in table_match.group(2).splitlines():
+            line = raw_line.strip().rstrip(",")
+            if not line or line.startswith("--"):
+                continue
+            column = line.split(None, 1)[0].strip('"')
+            if not column or column.upper() in table_constraints:
+                continue
+            if column in columns:
+                duplicates.append(f"{table}.{column}")
+            columns.add(column)
+    return duplicates
 
 
 def main() -> int:
@@ -34,6 +58,8 @@ def main() -> int:
     )
     errors.extend(f"Cloudflare example invalid: {error}" for error in cloudflare_errors)
     schema_text = schema.read_text()
+    for duplicate_column in duplicate_schema_columns(schema_text):
+        errors.append(f"Schema duplicate column {duplicate_column}")
     for table in [
         "raw_provider_payloads",
         "point_events",

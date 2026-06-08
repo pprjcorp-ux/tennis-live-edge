@@ -2,7 +2,15 @@ import asyncio
 from datetime import date
 
 from tennis_edge.config import Settings
-from tennis_edge.domain import CanonicalEntityConflict, Confidence, ExecutionOrder, PaperPerformance, Provider
+from tennis_edge.domain import (
+    BacktestMetrics,
+    CanonicalEntityConflict,
+    Confidence,
+    ExecutionOrder,
+    ModelRegistryEntry,
+    PaperPerformance,
+    Provider,
+)
 from tennis_edge.domain import ExecutionVenue, OrderStatus
 from tennis_edge.domain import LearningPromotionRequest
 from tennis_edge.domain import ReplayRunRequest
@@ -273,6 +281,70 @@ def test_learning_promotion_decision_is_persisted_for_audit() -> None:
 
     assert store.saved_decisions == [decision]
     assert decision.candidate_model_version == "audit_candidate"
+
+
+def test_learning_promotion_rejects_candidate_that_regresses_champion() -> None:
+    champion_metrics = BacktestMetrics(
+        run_id="bt_champion",
+        model_version="production_champion",
+        matches=600,
+        signals=100,
+        roi=0.05,
+        clv=0.02,
+        brier_score=0.19,
+        log_loss=0.55,
+        calibration_error=0.02,
+        max_drawdown=0.08,
+        promoted=True,
+    )
+    champion = ModelRegistryEntry(
+        model_version="production_champion",
+        role="champion",
+        model_type="walk_forward_ensemble",
+        feature_set="enterprise_v1",
+        training_window={"walk_forward": True},
+        metrics=champion_metrics,
+        promoted=True,
+    )
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.saved_decisions = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def champion_model(self):
+            return champion
+
+        def save_model_promotion_decision(self, decision):
+            self.saved_decisions.append(decision)
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    decision = asyncio.run(
+        repo.promote_from_learning(
+            LearningPromotionRequest(
+                candidate_model_version="absolute_gate_candidate",
+                roi=0.04,
+                clv=0.012,
+                brier_score=0.21,
+                log_loss=0.6,
+                calibration_error=0.03,
+                max_drawdown=0.1,
+            )
+        )
+    )
+
+    assert decision.promoted is False
+    assert decision.metrics.promoted is False
+    assert "ROI below champion" in " ".join(decision.reasons)
+    assert "CLV below champion" in " ".join(decision.reasons)
+    assert "Brier score worse than champion" in " ".join(decision.reasons)
+    assert store.saved_decisions == [decision]
 
 
 def test_replay_prefers_persisted_raw_payloads_over_sample_payloads() -> None:

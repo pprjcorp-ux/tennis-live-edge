@@ -61,7 +61,10 @@ from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.api_tennis_source import ApiTennisMatchSource
-from tennis_edge.services.backtest import run_walk_forward_backtest
+from tennis_edge.services.backtest import (
+    enforce_champion_non_regression,
+    run_walk_forward_backtest,
+)
 from tennis_edge.services.enterprise_analytics import (
     calibration_report,
     champion_model,
@@ -556,6 +559,18 @@ class AnalysisRepository:
         self, request: LearningPromotionRequest
     ) -> ModelPromotionDecision:
         decision = promote_from_learning(request)
+        champion = await self.champion_model()
+        metrics = enforce_champion_non_regression(decision.metrics, champion.metrics)
+        reasons = decision.reasons
+        if not metrics.promoted and metrics.rejection_reason:
+            reasons = [metrics.rejection_reason]
+        decision = decision.model_copy(
+            update={
+                "promoted": metrics.promoted,
+                "reasons": reasons,
+                "metrics": metrics,
+            }
+        )
         self.store.save_model_promotion_decision(decision)
         return decision
 

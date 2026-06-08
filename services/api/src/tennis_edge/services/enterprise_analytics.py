@@ -31,7 +31,7 @@ def _now() -> datetime:
 def data_quality_snapshots(settings: Settings) -> list[DataQualitySnapshot]:
     cursors = default_provider_cursors(
         settings,
-        use_process_cache=settings.data_mode == "sample",
+        use_process_cache=False,
     )
     odds_cursor = next((cursor for cursor in cursors if cursor.provider == Provider.ODDS_API_IO), None)
     sequence_health = 0.35 if odds_cursor and odds_cursor.resync_required else 0.98

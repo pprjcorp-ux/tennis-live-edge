@@ -10,6 +10,7 @@ from tennis_edge.domain import (
     ProviderCursor,
 )
 from tennis_edge.services.operational_state import OperationalStateService
+from tennis_edge.services.provider_cursor import CURSORS, mark_resynced
 
 
 class StoreStub:
@@ -120,3 +121,24 @@ def test_operational_state_falls_back_to_safe_runtime_defaults() -> None:
     assert any(cursor.resync_required for cursor in cursors)
     assert status.real_execution_hard_block is True
     assert status.can_submit_real_orders is False
+
+
+def test_sample_operational_state_fallback_ignores_process_cursor_cache() -> None:
+    CURSORS.clear()
+    try:
+        mark_resynced(Provider.ODDS_API_IO, "tennis:moneyline", 88)
+        service = OperationalStateService(Settings(data_mode="sample"), StoreStub())
+
+        cursors = service.provider_cursors()
+        quality = service.data_quality()
+        odds_cursor = next(cursor for cursor in cursors if cursor.provider == Provider.ODDS_API_IO)
+        odds_quality = next(
+            snapshot for snapshot in quality if snapshot.provider == Provider.ODDS_API_IO
+        )
+
+        assert odds_cursor.last_seq == 1024
+        assert odds_cursor.expected_next_seq == 1025
+        assert odds_quality.sequence_health == 0.98
+        assert odds_quality.blocked_signals == 0
+    finally:
+        CURSORS.clear()

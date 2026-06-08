@@ -2114,7 +2114,7 @@ class PersistentStore:
             (cursor.provider, cursor.stream): cursor
             for cursor in default_provider_cursors(
                 self.settings,
-                use_process_cache=self.settings.data_mode == "sample",
+                use_process_cache=False,
             )
         }
         for cursor in existing_cursors or []:

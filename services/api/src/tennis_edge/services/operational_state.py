@@ -58,7 +58,7 @@ class OperationalStateService:
     def fallback_provider_cursors(self) -> list[ProviderCursor]:
         return default_provider_cursors(
             self.settings,
-            use_process_cache=self.settings.data_mode == "sample",
+            use_process_cache=False,
         )
 
     def ingestion_runs(self) -> list[IngestionRunRecord]:

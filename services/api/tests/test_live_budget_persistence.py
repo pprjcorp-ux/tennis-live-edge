@@ -260,6 +260,66 @@ def test_training_example_count_casts_optional_null_filters() -> None:
     assert StoreStub().training_example_count() == 0
 
 
+def test_provider_usage_counts_reads_raw_payloads_for_target_date() -> None:
+    target_date = date(2026, 6, 8)
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            assert "FROM raw_provider_payloads" in query
+            assert "ingested_at::date = %s" in query
+            self.params = params
+            return self
+
+        def fetchall(self):
+            assert self.params == (target_date,)
+            return [
+                {"provider": Provider.API_TENNIS.value, "count": 12},
+                {"provider": Provider.ODDS_API_IO.value, "count": 8},
+            ]
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield self.conn
+
+    counts = StoreStub().provider_usage_counts(target_date)
+
+    assert counts == {
+        Provider.API_TENNIS: 12,
+        Provider.ODDS_API_IO: 8,
+    }
+
+
 def test_training_examples_filter_by_feature_set_and_decision_window() -> None:
     decision_ts = datetime(2026, 6, 3, 14, tzinfo=timezone.utc)
 

@@ -23,12 +23,14 @@ class StoreStub:
         data_quality: list[DataQualitySnapshot] | None = None,
         ingestion_runs: list[IngestionRunRecord] | None = None,
         training_examples_count: int = 0,
+        provider_usage_counts: dict[Provider, int] | None = None,
         last_error: str | None = None,
     ) -> None:
         self._cursors = cursors or []
         self._data_quality = data_quality or []
         self._ingestion_runs = ingestion_runs or []
         self._training_examples_count = training_examples_count
+        self._provider_usage_counts = provider_usage_counts or {}
         self.last_error = last_error
 
     def provider_health(self):
@@ -45,6 +47,9 @@ class StoreStub:
 
     def training_example_count(self) -> int:
         return self._training_examples_count
+
+    def provider_usage_counts(self, target_date) -> dict[Provider, int]:
+        return self._provider_usage_counts
 
 
 def _healthy_odds_cursor() -> ProviderCursor:
@@ -169,6 +174,27 @@ def test_live_readiness_blocks_entries_without_persistent_truth() -> None:
     persistence_check = next(check for check in readiness.checks if check.name == "persistence")
     assert persistence_check.status == "fail"
     assert persistence_check.detail == "DATABASE_URL is missing."
+
+
+def test_daily_cost_report_uses_persisted_provider_usage_counts() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(data_mode="live", runtime_profile="lean_atp"),
+        StoreStub(
+            provider_usage_counts={
+                Provider.API_TENNIS: 14,
+                Provider.ODDS_API_IO: 9,
+                Provider.THE_ODDS_API: 2,
+            }
+        ),
+    )
+
+    report = service.daily_cost_report(generated_at.date(), [], _paper_performance())
+    usage = {item.provider: item for item in report.api_calls_by_provider}
+
+    assert usage[Provider.API_TENNIS].api_calls == 14
+    assert usage[Provider.ODDS_API_IO].quota_used == 9
+    assert usage[Provider.THE_ODDS_API].api_calls == 2
 
 
 def test_live_readiness_blocks_entries_when_persisted_odds_cursor_is_missing() -> None:

@@ -273,6 +273,7 @@ def daily_cost_report(
     settings: Settings,
     analyses: list[MatchAnalysis],
     paper_performance: PaperPerformance | None = None,
+    provider_usage_counts: dict[Provider, int] | None = None,
 ) -> DailyCostReport:
     skipped = sum(1 for analysis in analyses if not coverage_decision(analysis.match, settings).eligible)
     signals = [signal for analysis in analyses for signal in analysis.signals]
@@ -282,6 +283,10 @@ def daily_cost_report(
     live_matches = sum(1 for analysis in analyses if analysis.match.state.status == "live")
     watchlist = sum(1 for analysis in analyses if should_escalate_polling(analysis))
     positive_clv_signals = paper_performance.positive_clv_signals if paper_performance else 0
+    provider_usage_counts = provider_usage_counts or {}
+
+    def billable_calls(provider: Provider, fallback: int) -> int:
+        return provider_usage_counts.get(provider, fallback)
 
     price_map = (
         ENTERPRISE_PROVIDER_MONTHLY_USD
@@ -291,23 +296,23 @@ def daily_cost_report(
     usages = [
         ProviderCostUsage(
             provider=Provider.API_TENNIS,
-            api_calls=max(1, len(analyses)),
-            quota_used=max(1, len(analyses)),
+            api_calls=billable_calls(Provider.API_TENNIS, max(1, len(analyses))),
+            quota_used=billable_calls(Provider.API_TENNIS, max(1, len(analyses))),
             quota_limit=200000,
             estimated_daily_cost_usd=round(price_map[Provider.API_TENNIS] / 30, 2),
         ),
         ProviderCostUsage(
             provider=Provider.ODDS_API_IO,
-            api_calls=max(1, live_matches + watchlist),
+            api_calls=billable_calls(Provider.ODDS_API_IO, max(1, live_matches + watchlist)),
             websocket_minutes=live_matches * 120,
-            quota_used=max(1, live_matches + watchlist),
+            quota_used=billable_calls(Provider.ODDS_API_IO, max(1, live_matches + watchlist)),
             quota_limit=5000,
             estimated_daily_cost_usd=round(price_map[Provider.ODDS_API_IO] / 30, 2),
         ),
         ProviderCostUsage(
             provider=Provider.THE_ODDS_API,
-            api_calls=1,
-            quota_used=1,
+            api_calls=billable_calls(Provider.THE_ODDS_API, 1),
+            quota_used=billable_calls(Provider.THE_ODDS_API, 1),
             quota_limit=200000,
             estimated_daily_cost_usd=round(price_map[Provider.THE_ODDS_API] / 30, 2),
         ),
@@ -317,23 +322,23 @@ def daily_cost_report(
             [
                 ProviderCostUsage(
                     provider=Provider.SPORTRADAR,
-                    api_calls=max(1, len(analyses)),
-                    quota_used=max(1, len(analyses)),
+                    api_calls=billable_calls(Provider.SPORTRADAR, max(1, len(analyses))),
+                    quota_used=billable_calls(Provider.SPORTRADAR, max(1, len(analyses))),
                     quota_limit=None,
                     estimated_daily_cost_usd=round(price_map[Provider.SPORTRADAR] / 30, 2),
                 ),
                 ProviderCostUsage(
                     provider=Provider.BETRADAR_UOF,
-                    api_calls=max(1, live_matches),
-                    quota_used=max(1, live_matches),
+                    api_calls=billable_calls(Provider.BETRADAR_UOF, max(1, live_matches)),
+                    quota_used=billable_calls(Provider.BETRADAR_UOF, max(1, live_matches)),
                     quota_limit=None,
                     estimated_daily_cost_usd=round(price_map[Provider.BETRADAR_UOF] / 30, 2),
                 ),
                 ProviderCostUsage(
                     provider=Provider.TXODDS,
-                    api_calls=max(1, live_matches + watchlist),
+                    api_calls=billable_calls(Provider.TXODDS, max(1, live_matches + watchlist)),
                     websocket_minutes=live_matches * 120,
-                    quota_used=max(1, live_matches + watchlist),
+                    quota_used=billable_calls(Provider.TXODDS, max(1, live_matches + watchlist)),
                     quota_limit=None,
                     estimated_daily_cost_usd=round(price_map[Provider.TXODDS] / 30, 2),
                 ),

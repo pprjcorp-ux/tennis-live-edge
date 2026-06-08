@@ -45,7 +45,17 @@ class OperationalStateService:
         analyses: list[MatchAnalysis],
         paper_performance: PaperPerformance,
     ) -> DailyCostReport:
-        return daily_cost_report(self.settings, analyses, paper_performance)
+        provider_usage_counts = getattr(
+            self.store,
+            "provider_usage_counts",
+            lambda _target_date: {},
+        )(target_date)
+        return daily_cost_report(
+            self.settings,
+            analyses,
+            paper_performance,
+            provider_usage_counts=provider_usage_counts,
+        )
 
     def data_quality(self) -> list[DataQualitySnapshot]:
         persisted = self.store.data_quality()

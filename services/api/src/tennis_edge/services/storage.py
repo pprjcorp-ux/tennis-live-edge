@@ -314,6 +314,28 @@ class PersistentStore:
                 return 0
         return inserted
 
+    def provider_usage_counts(self, target_date: date) -> dict[Provider, int]:
+        if not self.enabled:
+            return {}
+        with self._connect() as conn:
+            if conn is None:
+                return {}
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
+                        """
+                        SELECT provider, count(*)::int AS count
+                        FROM raw_provider_payloads
+                        WHERE ingested_at::date = %s
+                        GROUP BY provider
+                        """,
+                        (target_date,),
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("provider_usage_counts", exc)
+                return {}
+        return {Provider(row["provider"]): int(row["count"] or 0) for row in rows}
+
     def save_provider_cursor(self, cursor: ProviderCursor) -> bool:
         if not self.enabled:
             return False

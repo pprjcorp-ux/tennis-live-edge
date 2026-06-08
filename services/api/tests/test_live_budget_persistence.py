@@ -20,6 +20,8 @@ from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches
 from tennis_edge.services.api_tennis_source import ApiTennisMatchSource
 from tennis_edge.services.ingestion import LiveIngestionPipeline
+from tennis_edge.services.live_dashboard import LiveDashboardReadModel
+from tennis_edge.services.operational_state import OperationalStateService
 from tennis_edge.services.provider_cursor import CURSORS, ingest_odds_api_sequence, mark_resynced
 from tennis_edge.services.repository import AnalysisRepository
 from tennis_edge.services.execution_engine import (
@@ -50,6 +52,225 @@ def test_persisted_order_status_contract_matches_execution_engine() -> None:
     assert PERSISTED_CANCELABLE_ORDER_STATUSES == tuple(
         status.value for status in CANCELABLE_ORDER_STATUSES
     )
+
+
+class _RaisingCursor:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, query, params=None):
+        raise RuntimeError("relation provider_cursors does not exist")
+
+
+class _RaisingConn:
+    def cursor(self):
+        return _RaisingCursor()
+
+
+class _RaisingReadStore(PersistentStore):
+    def __init__(self) -> None:
+        super().__init__(
+            Settings(
+                data_mode="live",
+                persistence_enabled=True,
+                database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+            )
+        )
+
+    @property
+    def enabled(self) -> bool:
+        return True
+
+    @contextmanager
+    def _connect(self):
+        self.last_error = None
+        yield _RaisingConn()
+
+
+def test_operational_read_methods_degrade_on_schema_drift() -> None:
+    cases = [
+        ("raw_payloads_for_match", lambda store: store.raw_payloads_for_match("match_1"), []),
+        ("latest_analyses", lambda store: store.latest_analyses(date.today()), []),
+        ("provider_cursors", lambda store: store.provider_cursors(), []),
+        ("data_quality", lambda store: store.data_quality(), []),
+        ("agent_runs", lambda store: store.agent_runs(), []),
+        ("orders", lambda store: store.orders(), []),
+        ("paper_performance", lambda store: store.paper_performance(), None),
+        ("paper_performance_segments", lambda store: store._paper_performance_segments(), []),
+        ("training_examples", lambda store: store.training_examples(), []),
+        ("entity_conflicts", lambda store: store.entity_conflicts(), []),
+        ("get_backtest", lambda store: store.get_backtest("latest"), None),
+        ("calibration_report", lambda store: store.calibration_report("run_1"), None),
+        ("model_registry", lambda store: store.model_registry(), None),
+    ]
+
+    for operation, call, expected in cases:
+        store = _RaisingReadStore()
+
+        assert call(store) == expected
+        assert store.last_error is not None
+        assert store.last_error.startswith(f"{operation} failed:")
+        assert "relation provider_cursors does not exist" in store.last_error
+
+
+def test_provider_health_degrades_budget_providers_on_schema_drift() -> None:
+    store = _RaisingReadStore()
+
+    health = store.provider_health()
+
+    assert store.last_error is not None
+    assert store.last_error.startswith("provider_health failed:")
+    configured_budget = [
+        item
+        for item in health
+        if item.provider in {Provider.API_TENNIS, Provider.ODDS_API_IO, Provider.THE_ODDS_API}
+    ]
+    assert configured_budget
+    assert all(not item.healthy for item in configured_budget)
+    assert all("persistence unavailable" in item.status for item in configured_budget)
+
+
+def test_paper_performance_survives_segment_schema_drift() -> None:
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            if "count(*)::int AS orders" in query:
+                return self
+            raise RuntimeError("relation prediction_snapshots does not exist")
+
+        def fetchone(self):
+            return {
+                "orders": 2,
+                "settled_orders": 1,
+                "positive_clv_signals": 1,
+                "wins": 1,
+                "losses": 0,
+                "open_orders": 1,
+                "pnl": 12.0,
+                "staked": 100.0,
+                "clv": 0.015,
+            }
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            self.last_error = None
+            yield ConnStub()
+
+    store = StoreStub()
+    performance = store.paper_performance()
+
+    assert performance is not None
+    assert performance.orders == 2
+    assert performance.settled_orders == 1
+    assert performance.roi == 0.12
+    assert performance.segments == []
+    assert store.last_error is not None
+    assert store.last_error.startswith("paper_performance_segments failed:")
+
+
+def test_persisted_fallback_schema_drift_returns_empty_snapshot_with_store_error() -> None:
+    class StoreStub:
+        def __init__(self) -> None:
+            self.last_error = None
+
+        def latest_analyses(self, target_date: date):
+            raise RuntimeError("relation matches does not exist")
+
+        def _record_read_error(self, operation: str, exc: Exception) -> None:
+            self.last_error = f"{operation} failed: {exc}"
+
+    store = StoreStub()
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource([]),
+        _FakeArchiveSource(),
+        store,
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert snapshot.source == "empty"
+    assert snapshot.analyses == []
+    assert store.last_error == "latest_analyses failed: relation matches does not exist"
+
+
+def test_repository_dashboard_snapshot_survives_persisted_fallback_schema_drift() -> None:
+    class StoreStub:
+        def __init__(self) -> None:
+            self.last_error = None
+
+        def latest_analyses(self, target_date: date):
+            raise RuntimeError("relation matches does not exist")
+
+        def _record_read_error(self, operation: str, exc: Exception) -> None:
+            self.last_error = f"{operation} failed: {exc}"
+
+        def paper_performance(self):
+            return None
+
+        def orders(self):
+            return []
+
+        def provider_health(self):
+            return []
+
+        def provider_cursors(self):
+            return []
+
+        def data_quality(self):
+            return []
+
+        def ingestion_runs(self):
+            return []
+
+    settings = Settings(data_mode="live", persistence_enabled=True, database_url="postgresql://local/test")
+    repo = AnalysisRepository(settings)
+    store = StoreStub()
+    repo.store = store
+    repo.operational_state = OperationalStateService(settings, store)
+    repo.dashboard_read_model = LiveDashboardReadModel(repo.operational_state)
+    repo.ingestion = LiveIngestionPipeline(
+        _FakeMatchSource([]),
+        _FakeArchiveSource(),
+        store,
+        signal_gate=repo._gate_signals_for_match,
+        archive_augmenter=_same_matches,
+    )
+
+    snapshot = asyncio.run(repo.live_dashboard_snapshot(date.today()))
+
+    assert snapshot.matches == []
+    assert snapshot.metrics.matches == 0
+    assert snapshot.readiness.status == "blocked"
+    assert snapshot.readiness.can_generate_entries is False
+    assert store.last_error == "latest_analyses failed: relation matches does not exist"
 
 
 def test_raw_payloads_for_match_maps_persisted_rows_to_domain_payloads() -> None:

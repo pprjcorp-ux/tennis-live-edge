@@ -162,6 +162,9 @@ class PersistentStore:
             except Exception:
                 pass
 
+    def _record_read_error(self, operation: str, exc: Exception) -> None:
+        self.last_error = f"{operation} failed: {exc}"
+
     def save_analyses(self, analyses: Iterable[MatchAnalysis]) -> bool:
         analyses = list(analyses)
         if not self.enabled:
@@ -306,17 +309,21 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return []
-            with conn.cursor() as cur:
-                rows = cur.execute(
-                    """
-                    SELECT id, provider, payload_type, source_event_id, source_ts,
-                           ingested_at, checksum, payload
-                    FROM raw_provider_payloads
-                    WHERE source_event_id = %s
-                    ORDER BY source_ts ASC, ingested_at ASC
-                    """,
-                    (match_id,),
-                ).fetchall()
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
+                        """
+                        SELECT id, provider, payload_type, source_event_id, source_ts,
+                               ingested_at, checksum, payload
+                        FROM raw_provider_payloads
+                        WHERE source_event_id = %s
+                        ORDER BY source_ts ASC, ingested_at ASC
+                        """,
+                        (match_id,),
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("raw_payloads_for_match", exc)
+                return []
         return [
             RawProviderPayload(
                 id=row["id"],
@@ -337,83 +344,87 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return []
-            with conn.cursor() as cur:
-                rows = cur.execute(
-                    """
-                    SELECT
-                      m.*,
-                      p1.name AS p1_name, p1.provider_ids AS p1_provider_ids,
-                      p1.country AS p1_country, p1.ranking AS p1_ranking,
-                      p1.handedness AS p1_handedness, p1.elo_overall AS p1_elo_overall,
-                      p1.elo_clay AS p1_elo_clay, p1.elo_hard AS p1_elo_hard,
-                      p1.hold_rate AS p1_hold_rate, p1.break_rate AS p1_break_rate,
-                      p2.name AS p2_name, p2.provider_ids AS p2_provider_ids,
-                      p2.country AS p2_country, p2.ranking AS p2_ranking,
-                      p2.handedness AS p2_handedness, p2.elo_overall AS p2_elo_overall,
-                      p2.elo_clay AS p2_elo_clay, p2.elo_hard AS p2_elo_hard,
-                      p2.hold_rate AS p2_hold_rate, p2.break_rate AS p2_break_rate,
-                      st.raw_state AS latest_state,
-                      st.source_ts AS latest_score_source_ts,
-                      st.ingested_at AS latest_score_ingested_at
-                    FROM matches m
-                    JOIN players p1 ON p1.id = m.player1_id
-                    JOIN players p2 ON p2.id = m.player2_id
-                    LEFT JOIN LATERAL (
-                      SELECT raw_state, source_ts, ingested_at
-                      FROM score_ticks
-                      WHERE match_id = m.id
-                      ORDER BY source_ts DESC, ingested_at DESC
-                      LIMIT 1
-                    ) st ON TRUE
-                    WHERE m.scheduled_at::date = %s
-                    ORDER BY m.scheduled_at ASC
-                    """,
-                    (target_date,),
-                ).fetchall()
-                if not rows:
-                    return []
-                match_ids = [row["id"] for row in rows]
-                odds_rows = cur.execute(
-                    """
-                    SELECT DISTINCT ON (match_id, bookmaker, market, outcome_player_id)
-                      match_id, bookmaker, market, outcome_player_id, decimal_odds, source_ts, ingested_at
-                    FROM odds_ticks
-                    WHERE match_id = ANY(%s)
-                    ORDER BY match_id, bookmaker, market, outcome_player_id, source_ts DESC, ingested_at DESC
-                    """,
-                    (match_ids,),
-                ).fetchall()
-                prediction_rows = cur.execute(
-                    """
-                    SELECT DISTINCT ON (ps.match_id)
-                      ps.id, ps.match_id, ps.model_version_id, ps.mode,
-                      ps.p1_win_prob, ps.p2_win_prob, ps.raw_p1_win_prob,
-                      ps.raw_p2_win_prob, ps.confidence_interval, ps.confidence,
-                      ps.explanations, fs.values AS feature_values
-                    FROM prediction_snapshots ps
-                    LEFT JOIN feature_snapshots fs ON fs.id = ps.feature_snapshot_id
-                    WHERE ps.match_id = ANY(%s)
-                    ORDER BY ps.match_id, ps.created_at DESC
-                    """,
-                    (match_ids,),
-                ).fetchall()
-                prediction_ids = [row["id"] for row in prediction_rows]
-                signal_rows = []
-                if prediction_ids:
-                    signal_rows = cur.execute(
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
                         """
                         SELECT
-                          match_id, prediction_snapshot_id, outcome_player_id, status,
-                          p.name AS player_name,
-                          model_prob, market_prob, best_odds, edge, stake_fraction,
-                          risk, reason
-                        FROM signals
-                        LEFT JOIN players p ON p.id = outcome_player_id
-                        WHERE prediction_snapshot_id = ANY(%s)
-                        ORDER BY created_at DESC
+                          m.*,
+                          p1.name AS p1_name, p1.provider_ids AS p1_provider_ids,
+                          p1.country AS p1_country, p1.ranking AS p1_ranking,
+                          p1.handedness AS p1_handedness, p1.elo_overall AS p1_elo_overall,
+                          p1.elo_clay AS p1_elo_clay, p1.elo_hard AS p1_elo_hard,
+                          p1.hold_rate AS p1_hold_rate, p1.break_rate AS p1_break_rate,
+                          p2.name AS p2_name, p2.provider_ids AS p2_provider_ids,
+                          p2.country AS p2_country, p2.ranking AS p2_ranking,
+                          p2.handedness AS p2_handedness, p2.elo_overall AS p2_elo_overall,
+                          p2.elo_clay AS p2_elo_clay, p2.elo_hard AS p2_elo_hard,
+                          p2.hold_rate AS p2_hold_rate, p2.break_rate AS p2_break_rate,
+                          st.raw_state AS latest_state,
+                          st.source_ts AS latest_score_source_ts,
+                          st.ingested_at AS latest_score_ingested_at
+                        FROM matches m
+                        JOIN players p1 ON p1.id = m.player1_id
+                        JOIN players p2 ON p2.id = m.player2_id
+                        LEFT JOIN LATERAL (
+                          SELECT raw_state, source_ts, ingested_at
+                          FROM score_ticks
+                          WHERE match_id = m.id
+                          ORDER BY source_ts DESC, ingested_at DESC
+                          LIMIT 1
+                        ) st ON TRUE
+                        WHERE m.scheduled_at::date = %s
+                        ORDER BY m.scheduled_at ASC
                         """,
-                        (prediction_ids,),
+                        (target_date,),
                     ).fetchall()
+                    if not rows:
+                        return []
+                    match_ids = [row["id"] for row in rows]
+                    odds_rows = cur.execute(
+                        """
+                        SELECT DISTINCT ON (match_id, bookmaker, market, outcome_player_id)
+                          match_id, bookmaker, market, outcome_player_id, decimal_odds, source_ts, ingested_at
+                        FROM odds_ticks
+                        WHERE match_id = ANY(%s)
+                        ORDER BY match_id, bookmaker, market, outcome_player_id, source_ts DESC, ingested_at DESC
+                        """,
+                        (match_ids,),
+                    ).fetchall()
+                    prediction_rows = cur.execute(
+                        """
+                        SELECT DISTINCT ON (ps.match_id)
+                          ps.id, ps.match_id, ps.model_version_id, ps.mode,
+                          ps.p1_win_prob, ps.p2_win_prob, ps.raw_p1_win_prob,
+                          ps.raw_p2_win_prob, ps.confidence_interval, ps.confidence,
+                          ps.explanations, fs.values AS feature_values
+                        FROM prediction_snapshots ps
+                        LEFT JOIN feature_snapshots fs ON fs.id = ps.feature_snapshot_id
+                        WHERE ps.match_id = ANY(%s)
+                        ORDER BY ps.match_id, ps.created_at DESC
+                        """,
+                        (match_ids,),
+                    ).fetchall()
+                    prediction_ids = [row["id"] for row in prediction_rows]
+                    signal_rows = []
+                    if prediction_ids:
+                        signal_rows = cur.execute(
+                            """
+                            SELECT
+                              match_id, prediction_snapshot_id, outcome_player_id, status,
+                              p.name AS player_name,
+                              model_prob, market_prob, best_odds, edge, stake_fraction,
+                              risk, reason
+                            FROM signals
+                            LEFT JOIN players p ON p.id = outcome_player_id
+                            WHERE prediction_snapshot_id = ANY(%s)
+                            ORDER BY created_at DESC
+                            """,
+                            (prediction_ids,),
+                        ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("latest_analyses", exc)
+                return []
         odds_by_match: dict[str, list[OddsQuote]] = {}
         for row in odds_rows:
             odds_by_match.setdefault(row["match_id"], []).append(
@@ -507,37 +518,52 @@ class PersistentStore:
                     )
                     for item in base
                 ]
-            with conn.cursor() as cur:
-                latencies = cur.execute(
-                    """
-                    SELECT DISTINCT ON (provider, feed)
-                      provider, feed, latest_ingested_at, latency_ms, healthy
-                    FROM provider_latency
-                    ORDER BY provider, feed, ingested_at DESC
-                    """
-                ).fetchall()
-                call_rows = cur.execute(
-                    """
-                    SELECT provider, count(*)::int AS count
-                    FROM raw_provider_payloads
-                    WHERE ingested_at >= now() - interval '1 day'
-                    GROUP BY provider
-                    """
-                ).fetchall()
-                call_counts = {row["provider"]: row["count"] for row in call_rows}
-                self._ensure_ingestion_runs_table(cur)
-                score_run = cur.execute(
-                    """
-                    SELECT summary
-                    FROM ingestion_runs
-                    WHERE run_type = 'score_snapshot'
-                    ORDER BY completed_at DESC
-                    LIMIT 1
-                    """
-                ).fetchone()
-                score_warnings = _provider_warnings_from_summary(
-                    score_run["summary"] if score_run else {}
-                )
+            try:
+                with conn.cursor() as cur:
+                    latencies = cur.execute(
+                        """
+                        SELECT DISTINCT ON (provider, feed)
+                          provider, feed, latest_ingested_at, latency_ms, healthy
+                        FROM provider_latency
+                        ORDER BY provider, feed, ingested_at DESC
+                        """
+                    ).fetchall()
+                    call_rows = cur.execute(
+                        """
+                        SELECT provider, count(*)::int AS count
+                        FROM raw_provider_payloads
+                        WHERE ingested_at >= now() - interval '1 day'
+                        GROUP BY provider
+                        """
+                    ).fetchall()
+                    call_counts = {row["provider"]: row["count"] for row in call_rows}
+                    self._ensure_ingestion_runs_table(cur)
+                    score_run = cur.execute(
+                        """
+                        SELECT summary
+                        FROM ingestion_runs
+                        WHERE run_type = 'score_snapshot'
+                        ORDER BY completed_at DESC
+                        LIMIT 1
+                        """
+                    ).fetchone()
+                    score_warnings = _provider_warnings_from_summary(
+                        score_run["summary"] if score_run else {}
+                    )
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("provider_health", exc)
+                return [
+                    item.model_copy(
+                        update={
+                            "healthy": False
+                            if item.provider
+                            in {Provider.API_TENNIS, Provider.ODDS_API_IO, Provider.THE_ODDS_API}
+                            else item.healthy,
+                            "status": f"{item.status}; persistence unavailable: {self.last_error}",
+                        }
+                    )
+                    for item in base
+                ]
         by_provider: dict[str, list[dict[str, Any]]] = {}
         for row in latencies:
             by_provider.setdefault(row["provider"], []).append(row)
@@ -598,15 +624,19 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return []
-            with conn.cursor() as cur:
-                rows = cur.execute(
-                    """
-                    SELECT provider, stream, last_seq, expected_next_seq, status, gap_count,
-                           resync_required, last_message_at, last_resync_at, note
-                    FROM provider_cursors
-                    ORDER BY provider, stream
-                    """
-                ).fetchall()
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
+                        """
+                        SELECT provider, stream, last_seq, expected_next_seq, status, gap_count,
+                               resync_required, last_message_at, last_resync_at, note
+                        FROM provider_cursors
+                        ORDER BY provider, stream
+                        """
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("provider_cursors", exc)
+                return []
         cursors: list[ProviderCursor] = []
         for row in rows:
             cursors.append(
@@ -631,42 +661,46 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return []
-            with conn.cursor() as cur:
-                count_rows = cur.execute(
-                    """
-                    SELECT kind, count(*)::int AS count
-                    FROM (
-                      SELECT 'matches' AS kind FROM matches WHERE updated_at >= now() - interval '1 day'
-                      UNION ALL
-                      SELECT 'scores' AS kind FROM score_ticks WHERE ingested_at >= now() - interval '1 day'
-                      UNION ALL
-                      SELECT 'odds' AS kind FROM odds_ticks WHERE ingested_at >= now() - interval '1 day'
-                    ) x
-                    GROUP BY kind
-                    """
-                ).fetchall()
-                counts = {row["kind"]: row["count"] for row in count_rows}
-                cursor_rows = cur.execute(
-                    "SELECT count(*)::int AS gaps FROM provider_cursors WHERE resync_required = true"
-                ).fetchone()
-                latency_rows = cur.execute(
-                    """
-                    SELECT DISTINCT ON (provider, feed)
-                      provider, feed, latest_ingested_at, latency_ms, healthy
-                    FROM provider_latency
-                    ORDER BY provider, feed, ingested_at DESC
-                    """
-                ).fetchall()
-                self._ensure_ingestion_runs_table(cur)
-                score_run = cur.execute(
-                    """
-                    SELECT summary
-                    FROM ingestion_runs
-                    WHERE run_type = 'score_snapshot'
-                    ORDER BY completed_at DESC
-                    LIMIT 1
-                    """
-                ).fetchone()
+            try:
+                with conn.cursor() as cur:
+                    count_rows = cur.execute(
+                        """
+                        SELECT kind, count(*)::int AS count
+                        FROM (
+                          SELECT 'matches' AS kind FROM matches WHERE updated_at >= now() - interval '1 day'
+                          UNION ALL
+                          SELECT 'scores' AS kind FROM score_ticks WHERE ingested_at >= now() - interval '1 day'
+                          UNION ALL
+                          SELECT 'odds' AS kind FROM odds_ticks WHERE ingested_at >= now() - interval '1 day'
+                        ) x
+                        GROUP BY kind
+                        """
+                    ).fetchall()
+                    counts = {row["kind"]: row["count"] for row in count_rows}
+                    cursor_rows = cur.execute(
+                        "SELECT count(*)::int AS gaps FROM provider_cursors WHERE resync_required = true"
+                    ).fetchone()
+                    latency_rows = cur.execute(
+                        """
+                        SELECT DISTINCT ON (provider, feed)
+                          provider, feed, latest_ingested_at, latency_ms, healthy
+                        FROM provider_latency
+                        ORDER BY provider, feed, ingested_at DESC
+                        """
+                    ).fetchall()
+                    self._ensure_ingestion_runs_table(cur)
+                    score_run = cur.execute(
+                        """
+                        SELECT summary
+                        FROM ingestion_runs
+                        WHERE run_type = 'score_snapshot'
+                        ORDER BY completed_at DESC
+                        LIMIT 1
+                        """
+                    ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("data_quality", exc)
+                return []
         matches = max(1, counts.get("matches", 0))
         score_completeness = min(1.0, counts.get("scores", 0) / matches)
         odds_completeness = min(1.0, counts.get("odds", 0) / max(1, matches * 2))
@@ -716,16 +750,20 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return []
-            with conn.cursor() as cur:
-                rows = cur.execute(
-                    """
-                    SELECT id, entity_type, provider, canonical_id, candidate_id,
-                           confidence, similarity, reason, source_payload_ids, created_at
-                    FROM canonical_entity_conflicts
-                    WHERE resolved_at IS NULL
-                    ORDER BY created_at DESC, id ASC
-                    """
-                ).fetchall()
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
+                        """
+                        SELECT id, entity_type, provider, canonical_id, candidate_id,
+                               confidence, similarity, reason, source_payload_ids, created_at
+                        FROM canonical_entity_conflicts
+                        WHERE resolved_at IS NULL
+                        ORDER BY created_at DESC, id ASC
+                        """
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("entity_conflicts", exc)
+                return []
         return [
             CanonicalEntityConflict(
                 id=row["id"],
@@ -965,16 +1003,20 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return []
-            with conn.cursor() as cur:
-                rows = cur.execute(
-                    """
-                    SELECT id, run_type, source, model_routes, actions, summary, created_at
-                    FROM agent_runs
-                    ORDER BY created_at DESC
-                    LIMIT %s
-                    """,
-                    (limit,),
-                ).fetchall()
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
+                        """
+                        SELECT id, run_type, source, model_routes, actions, summary, created_at
+                        FROM agent_runs
+                        ORDER BY created_at DESC
+                        LIMIT %s
+                        """,
+                        (limit,),
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("agent_runs", exc)
+                return []
         return [
             AgentRun(
                 id=row["id"],
@@ -994,22 +1036,26 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return []
-            with conn.cursor() as cur:
-                rows = cur.execute(
-                    """
-                    SELECT
-                      po.external_order_ref, po.external_signal_id, po.match_id, po.player_id,
-                      p.name AS player_name, po.venue, po.customer_order_ref,
-                      po.requested_odds, po.accepted_odds, po.stake_fraction,
-                      po.stake_amount, po.matched_stake, po.average_price,
-                      po.risk_snapshot, po.rejection_reason, po.settlement_status,
-                      po.pnl, po.clv, po.status, po.audit, po.created_at
-                    FROM paper_orders po
-                    LEFT JOIN players p ON p.id = po.player_id
-                    ORDER BY po.created_at DESC
-                    LIMIT 500
-                    """
-                ).fetchall()
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
+                        """
+                        SELECT
+                          po.external_order_ref, po.external_signal_id, po.match_id, po.player_id,
+                          p.name AS player_name, po.venue, po.customer_order_ref,
+                          po.requested_odds, po.accepted_odds, po.stake_fraction,
+                          po.stake_amount, po.matched_stake, po.average_price,
+                          po.risk_snapshot, po.rejection_reason, po.settlement_status,
+                          po.pnl, po.clv, po.status, po.audit, po.created_at
+                        FROM paper_orders po
+                        LEFT JOIN players p ON p.id = po.player_id
+                        ORDER BY po.created_at DESC
+                        LIMIT 500
+                        """
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("orders", exc)
+                return []
         orders: list[ExecutionOrder] = []
         for row in rows:
             external_ref = row["external_order_ref"] or f"paper_{row['match_id']}_{row['player_id']}"
@@ -1185,23 +1231,27 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return None
-            with conn.cursor() as cur:
-                row = cur.execute(
-                    """
-                    SELECT
-                      count(*)::int AS orders,
-                      count(*) FILTER (WHERE status = 'settled')::int AS settled_orders,
-                      count(*) FILTER (WHERE status = 'settled' AND coalesce(clv, 0) > 0)::int AS positive_clv_signals,
-                      count(*) FILTER (WHERE status = 'settled' AND coalesce(pnl, 0) > 0)::int AS wins,
-                      count(*) FILTER (WHERE status = 'settled' AND coalesce(pnl, 0) <= 0)::int AS losses,
-                      count(*) FILTER (WHERE status = ANY(%s))::int AS open_orders,
-                      coalesce(sum(CASE WHEN status = 'settled' THEN pnl ELSE 0 END), 0)::float AS pnl,
-                      coalesce(sum(CASE WHEN status = 'settled' THEN coalesce(matched_stake, stake_amount) ELSE 0 END), 0)::float AS staked,
-                      avg(CASE WHEN status = 'settled' THEN clv ELSE NULL END)::float AS clv
-                    FROM paper_orders
-                    """,
-                    (list(PERSISTED_OPEN_ORDER_STATUSES),),
-                ).fetchone()
+            try:
+                with conn.cursor() as cur:
+                    row = cur.execute(
+                        """
+                        SELECT
+                          count(*)::int AS orders,
+                          count(*) FILTER (WHERE status = 'settled')::int AS settled_orders,
+                          count(*) FILTER (WHERE status = 'settled' AND coalesce(clv, 0) > 0)::int AS positive_clv_signals,
+                          count(*) FILTER (WHERE status = 'settled' AND coalesce(pnl, 0) > 0)::int AS wins,
+                          count(*) FILTER (WHERE status = 'settled' AND coalesce(pnl, 0) <= 0)::int AS losses,
+                          count(*) FILTER (WHERE status = ANY(%s))::int AS open_orders,
+                          coalesce(sum(CASE WHEN status = 'settled' THEN pnl ELSE 0 END), 0)::float AS pnl,
+                          coalesce(sum(CASE WHEN status = 'settled' THEN coalesce(matched_stake, stake_amount) ELSE 0 END), 0)::float AS staked,
+                          avg(CASE WHEN status = 'settled' THEN clv ELSE NULL END)::float AS clv
+                        FROM paper_orders
+                        """,
+                        (list(PERSISTED_OPEN_ORDER_STATUSES),),
+                    ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("paper_performance", exc)
+                return None
         if not row:
             return None
         pnl = round(float(row["pnl"] or 0), 2)
@@ -1243,30 +1293,34 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return []
-            with conn.cursor() as cur:
-                rows = cur.execute(
-                    """
-                    SELECT
-                      id, match_id, player_id, model_version, feature_snapshot_id,
-                      decision_ts, model_probability, market_probability,
-                      closing_probability, result_win, pnl, clv, stake_amount,
-                      calibration_bucket
-                    FROM training_examples
-                    WHERE model_version = %s
-                      AND result_win IS NOT NULL
-                      AND pnl IS NOT NULL
-                      AND (%s IS NULL OR decision_ts::date >= %s::date)
-                      AND (%s IS NULL OR decision_ts::date <= %s::date)
-                    ORDER BY decision_ts ASC
-                    """,
-                    (
-                        request.model_version,
-                        request.start_date,
-                        request.start_date,
-                        request.end_date,
-                        request.end_date,
-                    ),
-                ).fetchall()
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
+                        """
+                        SELECT
+                          id, match_id, player_id, model_version, feature_snapshot_id,
+                          decision_ts, model_probability, market_probability,
+                          closing_probability, result_win, pnl, clv, stake_amount,
+                          calibration_bucket
+                        FROM training_examples
+                        WHERE model_version = %s
+                          AND result_win IS NOT NULL
+                          AND pnl IS NOT NULL
+                          AND (%s IS NULL OR decision_ts::date >= %s::date)
+                          AND (%s IS NULL OR decision_ts::date <= %s::date)
+                        ORDER BY decision_ts ASC
+                        """,
+                        (
+                            request.model_version,
+                            request.start_date,
+                            request.start_date,
+                            request.end_date,
+                            request.end_date,
+                        ),
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("training_examples", exc)
+                return []
         examples: list[TrainingExample] = []
         for row in rows:
             examples.append(
@@ -1358,21 +1412,25 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return None
-            with conn.cursor() as cur:
-                if run_id == "latest":
-                    row = cur.execute(
-                        """
-                        SELECT metrics
-                        FROM backtests
-                        ORDER BY created_at DESC
-                        LIMIT 1
-                        """
-                    ).fetchone()
-                else:
-                    row = cur.execute(
-                        "SELECT metrics FROM backtests WHERE id = %s",
-                        (run_id,),
-                    ).fetchone()
+            try:
+                with conn.cursor() as cur:
+                    if run_id == "latest":
+                        row = cur.execute(
+                            """
+                            SELECT metrics
+                            FROM backtests
+                            ORDER BY created_at DESC
+                            LIMIT 1
+                            """
+                        ).fetchone()
+                    else:
+                        row = cur.execute(
+                            "SELECT metrics FROM backtests WHERE id = %s",
+                            (run_id,),
+                        ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("get_backtest", exc)
+                return None
         if not row:
             return None
         return BacktestMetrics(**row["metrics"])
@@ -1383,30 +1441,34 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return None
-            with conn.cursor() as cur:
-                row = cur.execute(
-                    """
-                    SELECT run_id, model_version, buckets, brier_score, log_loss,
-                           calibration_error, generated_at
-                    FROM calibration_reports
-                    WHERE run_id = %s
-                    """,
-                    (run_id,),
-                ).fetchone()
-                if row:
-                    return CalibrationReport(
-                        run_id=row["run_id"],
-                        model_version=row["model_version"],
-                        buckets=[CalibrationBucket(**bucket) for bucket in row["buckets"]],
-                        brier_score=float(row["brier_score"]),
-                        log_loss=float(row["log_loss"]),
-                        calibration_error=float(row["calibration_error"]),
-                        generated_at=row["generated_at"],
-                    )
-                backtest_row = cur.execute(
-                    "SELECT model_version_id, run_config FROM backtests WHERE id = %s",
-                    (run_id,),
-                ).fetchone()
+            try:
+                with conn.cursor() as cur:
+                    row = cur.execute(
+                        """
+                        SELECT run_id, model_version, buckets, brier_score, log_loss,
+                               calibration_error, generated_at
+                        FROM calibration_reports
+                        WHERE run_id = %s
+                        """,
+                        (run_id,),
+                    ).fetchone()
+                    if row:
+                        return CalibrationReport(
+                            run_id=row["run_id"],
+                            model_version=row["model_version"],
+                            buckets=[CalibrationBucket(**bucket) for bucket in row["buckets"]],
+                            brier_score=float(row["brier_score"]),
+                            log_loss=float(row["log_loss"]),
+                            calibration_error=float(row["calibration_error"]),
+                            generated_at=row["generated_at"],
+                        )
+                    backtest_row = cur.execute(
+                        "SELECT model_version_id, run_config FROM backtests WHERE id = %s",
+                        (run_id,),
+                    ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("calibration_report", exc)
+                return None
         if not backtest_row:
             return None
         run_config = backtest_row.get("run_config") if isinstance(backtest_row, dict) else None
@@ -1430,14 +1492,18 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return None
-            with conn.cursor() as cur:
-                rows = cur.execute(
-                    """
-                    SELECT id, model_type, training_window, metrics, promoted, created_at
-                    FROM model_versions
-                    ORDER BY promoted DESC, created_at DESC, id ASC
-                    """
-                ).fetchall()
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
+                        """
+                        SELECT id, model_type, training_window, metrics, promoted, created_at
+                        FROM model_versions
+                        ORDER BY promoted DESC, created_at DESC, id ASC
+                        """
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("model_registry", exc)
+                return None
         if not rows:
             return None
         entries: list[ModelRegistryEntry] = []
@@ -1666,49 +1732,53 @@ class PersistentStore:
         with self._connect() as conn:
             if conn is None:
                 return []
-            with conn.cursor() as cur:
-                rows = cur.execute(
-                    """
-                    WITH settled AS (
-                      SELECT
-                        po.id,
-                        po.pnl::float AS pnl,
-                        po.clv::float AS clv,
-                        coalesce(po.matched_stake, po.stake_amount)::float AS staked,
-                        coalesce(po.average_price, po.accepted_odds, po.requested_odds)::float AS odds,
-                        po.venue,
-                        m.surface,
-                        m.tour,
-                        ps.model_version_id AS model_version
-                      FROM paper_orders po
-                      JOIN signals s ON s.id = po.signal_id
-                      LEFT JOIN prediction_snapshots ps ON ps.id = s.prediction_snapshot_id
-                      LEFT JOIN matches m ON m.id = po.match_id
-                      WHERE po.status = 'settled'
-                    ),
-                    segmented AS (
-                      SELECT 'model' AS segment_type, coalesce(model_version, 'unknown') AS segment, * FROM settled
-                      UNION ALL
-                      SELECT 'odds_bucket', concat(floor(odds * 2) / 2, '-', floor(odds * 2) / 2 + 0.5), * FROM settled
-                      UNION ALL
-                      SELECT 'surface', coalesce(surface, 'unknown'), * FROM settled
-                      UNION ALL
-                      SELECT 'tour', coalesce(tour, 'unknown'), * FROM settled
-                      UNION ALL
-                      SELECT 'provider', coalesce(venue, 'unknown'), * FROM settled
-                    )
-                    SELECT
-                      segment_type,
-                      segment,
-                      count(*)::int AS settled_orders,
-                      coalesce(sum(pnl), 0)::float AS realized_pnl,
-                      coalesce(sum(staked), 0)::float AS staked,
-                      avg(clv)::float AS clv
-                    FROM segmented
-                    GROUP BY segment_type, segment
-                    ORDER BY segment_type, segment
-                    """
-                ).fetchall()
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
+                        """
+                        WITH settled AS (
+                          SELECT
+                            po.id,
+                            po.pnl::float AS pnl,
+                            po.clv::float AS clv,
+                            coalesce(po.matched_stake, po.stake_amount)::float AS staked,
+                            coalesce(po.average_price, po.accepted_odds, po.requested_odds)::float AS odds,
+                            po.venue,
+                            m.surface,
+                            m.tour,
+                            ps.model_version_id AS model_version
+                          FROM paper_orders po
+                          JOIN signals s ON s.id = po.signal_id
+                          LEFT JOIN prediction_snapshots ps ON ps.id = s.prediction_snapshot_id
+                          LEFT JOIN matches m ON m.id = po.match_id
+                          WHERE po.status = 'settled'
+                        ),
+                        segmented AS (
+                          SELECT 'model' AS segment_type, coalesce(model_version, 'unknown') AS segment, * FROM settled
+                          UNION ALL
+                          SELECT 'odds_bucket', concat(floor(odds * 2) / 2, '-', floor(odds * 2) / 2 + 0.5), * FROM settled
+                          UNION ALL
+                          SELECT 'surface', coalesce(surface, 'unknown'), * FROM settled
+                          UNION ALL
+                          SELECT 'tour', coalesce(tour, 'unknown'), * FROM settled
+                          UNION ALL
+                          SELECT 'provider', coalesce(venue, 'unknown'), * FROM settled
+                        )
+                        SELECT
+                          segment_type,
+                          segment,
+                          count(*)::int AS settled_orders,
+                          coalesce(sum(pnl), 0)::float AS realized_pnl,
+                          coalesce(sum(staked), 0)::float AS staked,
+                          avg(clv)::float AS clv
+                        FROM segmented
+                        GROUP BY segment_type, segment
+                        ORDER BY segment_type, segment
+                        """
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("paper_performance_segments", exc)
+                return []
         segments: list[PaperPerformanceSegment] = []
         for row in rows:
             staked = float(row["staked"] or 0)

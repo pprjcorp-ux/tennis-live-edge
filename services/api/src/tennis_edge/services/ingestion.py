@@ -88,7 +88,12 @@ class LiveIngestionPipeline:
         provider_warnings = _source_warnings(self.match_source)
         provider_matches, raw_payloads, score_source_ts_by_key = _split_provider_matches(matches)
         if not provider_matches:
-            persisted = self.store.latest_analyses(target_date)
+            try:
+                persisted = self.store.latest_analyses(target_date)
+            except Exception as exc:
+                if hasattr(self.store, "_record_read_error"):
+                    self.store._record_read_error("latest_analyses", exc)
+                persisted = []
             if persisted:
                 return OperationalSnapshot(
                     analyses=persisted,

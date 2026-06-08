@@ -169,6 +169,27 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
         if settings.runtime_profile == "enterprise_roi_clv"
         else "disabled by lean_atp profile"
     )
+    api_tennis_status = (
+        "score primary sample feed"
+        if sample
+        else "score primary configured"
+        if settings.api_tennis_key
+        else "score primary key missing"
+    )
+    odds_api_status = (
+        "odds websocket sample feed"
+        if sample
+        else "odds websocket primary configured"
+        if settings.odds_api_io_key
+        else "odds websocket key missing"
+    )
+    the_odds_api_status = (
+        "historical archive sample"
+        if sample
+        else "historical archive configured"
+        if settings.the_odds_api_key
+        else "historical archive key missing"
+    )
     return [
         ProviderHealth(
             provider=Provider.API_TENNIS,
@@ -176,7 +197,7 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
             healthy=bool(settings.api_tennis_key) or sample,
             latency_ms=900 if sample else None,
             last_message_at=now if sample else None,
-            status="score primary sample feed" if sample else "score primary configured",
+            status=api_tennis_status,
             cost_tier="$80/mo",
             coverage_scope="ATP main + men's/women's Grand Slam score/livescore",
             quota_used=0 if sample else None,
@@ -189,7 +210,7 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
             healthy=bool(settings.odds_api_io_key) or sample,
             latency_ms=740 if sample else None,
             last_message_at=now if sample else None,
-            status="odds websocket sample feed" if sample else "odds websocket primary",
+            status=odds_api_status,
             cost_tier="£198/mo Starter+WS",
             coverage_scope="Live/watchlist ML odds",
             quota_used=0 if sample else None,
@@ -202,7 +223,7 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
             healthy=bool(settings.the_odds_api_key) or sample,
             latency_ms=1100 if sample else None,
             last_message_at=now if sample else None,
-            status="historical archive sample" if sample else "historical archive configured",
+            status=the_odds_api_status,
             cost_tier="$99/mo Business",
             coverage_scope="Historical odds, archive and comparison",
             quota_used=0 if sample else None,

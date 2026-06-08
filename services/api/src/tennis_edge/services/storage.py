@@ -536,7 +536,7 @@ class PersistentStore:
                 updated.append(
                     item.model_copy(
                         update={
-                            "healthy": bool(row["healthy"]) and not score_degraded,
+                            "healthy": item.healthy and bool(row["healthy"]) and not score_degraded,
                             "latency_ms": row["latency_ms"],
                             "last_message_at": row["latest_ingested_at"],
                             "status": status,

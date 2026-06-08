@@ -636,6 +636,68 @@ def test_provider_health_surfaces_latest_score_ingestion_warning() -> None:
     assert warning in api_tennis.status
 
 
+def test_provider_health_does_not_mask_missing_key_with_persisted_latency() -> None:
+    generated_at = datetime(2026, 6, 8, 12, tzinfo=timezone.utc)
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.last_query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.last_query = query
+            return self
+
+        def fetchall(self):
+            if "FROM provider_latency" in self.last_query:
+                return [
+                    {
+                        "provider": Provider.API_TENNIS.value,
+                        "feed": "score/live",
+                        "latest_ingested_at": generated_at,
+                        "latency_ms": 900,
+                        "healthy": True,
+                    }
+                ]
+            if "FROM raw_provider_payloads" in self.last_query:
+                return [{"provider": Provider.API_TENNIS.value, "count": 4}]
+            return []
+
+        def fetchone(self):
+            if "FROM ingestion_runs" in self.last_query:
+                return {"summary": {"provider_warnings": []}}
+            return None
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", api_tennis_key=None))
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    health = StoreStub().provider_health()
+    api_tennis = next(item for item in health if item.provider == Provider.API_TENNIS)
+
+    assert api_tennis.configured is False
+    assert api_tennis.healthy is False
+    assert "key missing" in api_tennis.status
+    assert "persisted score/live" in api_tennis.status
+
+
 def test_data_quality_surfaces_latest_score_ingestion_warning() -> None:
     warning = "API-Tennis fixtures endpoint failed: TimeoutError"
 

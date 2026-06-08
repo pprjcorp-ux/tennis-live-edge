@@ -5,7 +5,7 @@ import pytest
 from tennis_edge.config import Settings
 from tennis_edge.domain import CompetitionLevel, Match, MatchState, SignalStatus, Surface, Tour
 from tennis_edge.sample_data import PLAYERS
-from tennis_edge.services.cost_profile import cost_profile, coverage_decision
+from tennis_edge.services.cost_profile import cost_profile, coverage_decision, provider_health_for
 from tennis_edge.services.repository import AnalysisRepository
 
 
@@ -46,6 +46,18 @@ def test_lean_atp_profile_stays_under_budget_and_defers_enterprise_feeds() -> No
     assert "grand_slam_men" in profile.coverage_scope
     assert "grand_slam_women" in profile.coverage_scope
     assert "txodds" in profile.disabled_providers
+
+
+def test_live_provider_health_reports_missing_budget_keys() -> None:
+    health = provider_health_for(Settings(data_mode="live"))
+
+    by_provider = {item.provider: item for item in health}
+
+    assert by_provider["api_tennis"].healthy is False
+    assert by_provider["api_tennis"].configured is False
+    assert by_provider["api_tennis"].status == "score primary key missing"
+    assert by_provider["odds_api_io"].healthy is False
+    assert by_provider["odds_api_io"].status == "odds websocket key missing"
 
 
 @pytest.mark.parametrize(

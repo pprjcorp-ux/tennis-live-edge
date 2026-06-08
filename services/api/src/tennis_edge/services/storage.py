@@ -93,6 +93,20 @@ def _provider_warnings_from_summary(summary: Any) -> list[str]:
     return [str(warning) for warning in warnings if warning]
 
 
+def _feed_age_ms(row: dict[str, Any]) -> int | None:
+    latest_ingested_at = row.get("latest_ingested_at")
+    if not isinstance(latest_ingested_at, datetime):
+        return None
+    return max(0, int((_now() - latest_ingested_at).total_seconds() * 1000))
+
+
+def _feed_stale(row: dict[str, Any], settings: Settings) -> bool:
+    age_ms = _feed_age_ms(row)
+    if age_ms is None:
+        return False
+    return age_ms > settings.max_odds_staleness_ms
+
+
 PERSISTED_OPEN_ORDER_STATUSES = tuple(status.value for status in OPEN_ORDER_STATUSES)
 PERSISTED_CANCELABLE_ORDER_STATUSES = tuple(status.value for status in CANCELABLE_ORDER_STATUSES)
 
@@ -531,12 +545,20 @@ class PersistentStore:
             score_degraded = item.provider == Provider.API_TENNIS and bool(score_warnings)
             if row:
                 status = f"{item.status}; persisted {row['feed']}"
+                feed_stale = _feed_stale(row, self.settings)
+                if feed_stale:
+                    status = f"{status}; stale persisted feed"
                 if score_degraded:
                     status = f"{status}; degraded: {'; '.join(score_warnings[:2])}"
                 updated.append(
                     item.model_copy(
                         update={
-                            "healthy": item.healthy and bool(row["healthy"]) and not score_degraded,
+                            "healthy": (
+                                item.healthy
+                                and bool(row["healthy"])
+                                and not feed_stale
+                                and not score_degraded
+                            ),
                             "latency_ms": row["latency_ms"],
                             "last_message_at": row["latest_ingested_at"],
                             "status": status,

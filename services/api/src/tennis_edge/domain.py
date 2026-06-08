@@ -328,7 +328,7 @@ class BacktestRunRequest(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     model_version: str = "prematch_ensemble_v1"
-    feature_set: str = "enterprise_v1"
+    feature_set: str = "live_budget_v1"
     walk_forward: bool = True
 
 

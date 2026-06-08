@@ -151,9 +151,11 @@ def test_training_example_count_uses_persisted_settled_rows_and_filters() -> Non
             return False
 
         def execute(self, query, params=None):
-            assert "FROM training_examples" in query
-            assert "result_win IS NOT NULL" in query
-            assert "pnl IS NOT NULL" in query
+            assert "FROM training_examples te" in query
+            assert "LEFT JOIN feature_snapshots fs" in query
+            assert "te.result_win IS NOT NULL" in query
+            assert "te.pnl IS NOT NULL" in query
+            assert "fs.feature_set = %s" in query
             self.params = params
             return self
 
@@ -161,6 +163,8 @@ def test_training_example_count_uses_persisted_settled_rows_and_filters() -> Non
             assert self.params == (
                 "prematch_ensemble_v1",
                 "prematch_ensemble_v1",
+                "live_budget_v1",
+                "live_budget_v1",
                 "2026-06-01",
                 "2026-06-01",
                 "2026-06-08",
@@ -196,12 +200,101 @@ def test_training_example_count_uses_persisted_settled_rows_and_filters() -> Non
     count = StoreStub().training_example_count(
         BacktestRunRequest(
             model_version="prematch_ensemble_v1",
+            feature_set="live_budget_v1",
             start_date="2026-06-01",
             end_date="2026-06-08",
         )
     )
 
     assert count == 7
+
+
+def test_training_examples_filter_by_feature_set_and_decision_window() -> None:
+    decision_ts = datetime(2026, 6, 3, 14, tzinfo=timezone.utc)
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            assert "FROM training_examples te" in query
+            assert "LEFT JOIN feature_snapshots fs" in query
+            assert "fs.feature_set = %s" in query
+            self.params = params
+            return self
+
+        def fetchall(self):
+            assert self.params == (
+                "prematch_ensemble_v1",
+                "live_budget_v1",
+                "live_budget_v1",
+                "2026-06-01",
+                "2026-06-01",
+                "2026-06-08",
+                "2026-06-08",
+            )
+            return [
+                {
+                    "id": "train_1",
+                    "match_id": "match_1",
+                    "player_id": "player_1",
+                    "model_version": "prematch_ensemble_v1",
+                    "feature_snapshot_id": 123,
+                    "decision_ts": decision_ts,
+                    "model_probability": 0.62,
+                    "market_probability": 0.58,
+                    "closing_probability": 0.6,
+                    "result_win": True,
+                    "pnl": 8.5,
+                    "clv": 0.02,
+                    "stake_amount": 50,
+                    "calibration_bucket": "0.6-0.7",
+                }
+            ]
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    examples = StoreStub().training_examples(
+        BacktestRunRequest(
+            model_version="prematch_ensemble_v1",
+            feature_set="live_budget_v1",
+            start_date="2026-06-01",
+            end_date="2026-06-08",
+        )
+    )
+
+    assert len(examples) == 1
+    assert examples[0].feature_snapshot_id == "123"
+    assert examples[0].decision_ts == decision_ts
 
 
 def test_operational_write_methods_degrade_on_schema_drift() -> None:

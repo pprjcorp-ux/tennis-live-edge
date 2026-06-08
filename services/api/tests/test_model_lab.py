@@ -333,6 +333,13 @@ def test_live_run_backtest_requires_persisted_training_examples() -> None:
     assert store.saved is False
 
 
+def test_budget_backtest_request_defaults_to_live_budget_feature_set() -> None:
+    request = BacktestRunRequest()
+
+    assert request.model_version == "prematch_ensemble_v1"
+    assert request.feature_set == "live_budget_v1"
+
+
 def test_live_model_registry_uses_unvalidated_runtime_default_without_persisted_metrics() -> None:
     class StoreStub:
         def model_registry(self):

@@ -1420,20 +1420,24 @@ class PersistentStore:
                     rows = cur.execute(
                         """
                         SELECT
-                          id, match_id, player_id, model_version, feature_snapshot_id,
-                          decision_ts, model_probability, market_probability,
-                          closing_probability, result_win, pnl, clv, stake_amount,
-                          calibration_bucket
-                        FROM training_examples
-                        WHERE model_version = %s
-                          AND result_win IS NOT NULL
-                          AND pnl IS NOT NULL
-                          AND (%s IS NULL OR decision_ts::date >= %s::date)
-                          AND (%s IS NULL OR decision_ts::date <= %s::date)
-                        ORDER BY decision_ts ASC
+                          te.id, te.match_id, te.player_id, te.model_version, te.feature_snapshot_id,
+                          te.decision_ts, te.model_probability, te.market_probability,
+                          te.closing_probability, te.result_win, te.pnl, te.clv, te.stake_amount,
+                          te.calibration_bucket
+                        FROM training_examples te
+                        LEFT JOIN feature_snapshots fs ON fs.id = te.feature_snapshot_id
+                        WHERE te.model_version = %s
+                          AND te.result_win IS NOT NULL
+                          AND te.pnl IS NOT NULL
+                          AND (%s IS NULL OR fs.feature_set = %s)
+                          AND (%s IS NULL OR te.decision_ts::date >= %s::date)
+                          AND (%s IS NULL OR te.decision_ts::date <= %s::date)
+                        ORDER BY te.decision_ts ASC
                         """,
                         (
                             request.model_version,
+                            request.feature_set,
+                            request.feature_set,
                             request.start_date,
                             request.start_date,
                             request.end_date,
@@ -1471,6 +1475,7 @@ class PersistentStore:
         if not self.enabled:
             return 0
         model_version = request.model_version if request else None
+        feature_set = request.feature_set if request else None
         start_date = request.start_date if request else None
         end_date = request.end_date if request else None
         with self._connect() as conn:
@@ -1481,16 +1486,20 @@ class PersistentStore:
                     row = cur.execute(
                         """
                         SELECT count(*)::int AS examples
-                        FROM training_examples
-                        WHERE result_win IS NOT NULL
-                          AND pnl IS NOT NULL
-                          AND (%s IS NULL OR model_version = %s)
-                          AND (%s IS NULL OR decision_ts::date >= %s::date)
-                          AND (%s IS NULL OR decision_ts::date <= %s::date)
+                        FROM training_examples te
+                        LEFT JOIN feature_snapshots fs ON fs.id = te.feature_snapshot_id
+                        WHERE te.result_win IS NOT NULL
+                          AND te.pnl IS NOT NULL
+                          AND (%s IS NULL OR te.model_version = %s)
+                          AND (%s IS NULL OR fs.feature_set = %s)
+                          AND (%s IS NULL OR te.decision_ts::date >= %s::date)
+                          AND (%s IS NULL OR te.decision_ts::date <= %s::date)
                         """,
                         (
                             model_version,
                             model_version,
+                            feature_set,
+                            feature_set,
                             start_date,
                             start_date,
                             end_date,

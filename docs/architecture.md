@@ -36,7 +36,9 @@ decide whether the system behaves as budget or enterprise.
    snapshots, settlement, CLV, ROI, segmented performance, and calibration
    buckets.
 11. Settled paper orders become `training_examples` keyed by model version and
-    decision timestamp.
+    decision timestamp. Budget live backtests use `live_budget_v1`, matching the
+    persisted `feature_snapshots.feature_set` written by the ingestion pipeline,
+    so Model Lab does not mix rows from different feature definitions.
 12. Model Lab backtests read persisted training examples first, compute
     walk-forward ROI, CLV, Brier, log loss, calibration error, and drawdown,
     then save model registry and calibration reports. Synthetic backtests remain

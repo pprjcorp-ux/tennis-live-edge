@@ -193,7 +193,7 @@ export async function runBacktest(adminToken: string): Promise<BacktestMetrics> 
     credentials: "include",
     body: JSON.stringify({
       model_version: "prematch_ensemble_v1",
-      feature_set: "enterprise_v1",
+      feature_set: "live_budget_v1",
       walk_forward: true
     })
   });

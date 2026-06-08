@@ -47,7 +47,6 @@ from tennis_edge.domain import (
     ReplayRunResult,
     Signal,
     SignalStatus,
-    CursorStatus,
     Provider,
 )
 from tennis_edge.services.agent_ops import (
@@ -62,10 +61,6 @@ from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.backtest import run_walk_forward_backtest
-from tennis_edge.services.cost_profile import (
-    apply_coverage_gate,
-    coverage_decision,
-)
 from tennis_edge.services.enterprise_analytics import (
     calibration_report,
     champion_model,
@@ -89,6 +84,7 @@ from tennis_edge.services.operational_state import OperationalStateService
 from tennis_edge.services.provider_cursor import mark_resynced
 from tennis_edge.services.ingestion import LiveIngestionPipeline
 from tennis_edge.services.replay_engine import ReplayEngine
+from tennis_edge.services.signal_gates import SignalGateService
 from tennis_edge.services.storage import PersistentStore
 
 
@@ -105,6 +101,11 @@ class AnalysisRepository:
         self.store = PersistentStore(settings)
         self.operational_state = OperationalStateService(settings, self.store)
         self.dashboard_read_model = LiveDashboardReadModel(self.operational_state)
+        self.signal_gate = SignalGateService(
+            settings,
+            provider_cursors=lambda: self.store.provider_cursors()
+            or self.operational_state.fallback_provider_cursors(),
+        )
         self.ingestion = LiveIngestionPipeline(
             self.api_tennis,
             self.the_odds_api,
@@ -172,37 +173,10 @@ class AnalysisRepository:
         return updated
 
     def _apply_provider_gates(self, signals: list[Signal]) -> list[Signal]:
-        if self.settings.data_mode == "sample" or not self.settings.odds_ws_resync_required_blocks_signals:
-            return signals
-        cursors = self.store.provider_cursors() or self.operational_state.fallback_provider_cursors()
-        odds_cursor = next(
-            (
-                cursor
-                for cursor in cursors
-                if cursor.provider == Provider.ODDS_API_IO
-                and cursor.status in {CursorStatus.GAP_DETECTED, CursorStatus.RESYNC_REQUIRED}
-            ),
-            None,
-        )
-        if not odds_cursor:
-            return signals
-        gated: list[Signal] = []
-        for signal in signals:
-            status = SignalStatus.BLOCKED if signal.status == SignalStatus.ENTRY else signal.status
-            gated.append(
-                signal.model_copy(
-                    update={
-                        "status": status,
-                        "stake_fraction": 0,
-                        "reason": f"Odds websocket cursor requires resync; blocking entries. {signal.reason}",
-                    }
-                )
-            )
-        return gated
+        return self.signal_gate.apply_provider_gates(signals)
 
     def _gate_signals_for_match(self, match, signals: list[Signal]) -> list[Signal]:
-        signals = apply_coverage_gate(signals, coverage_decision(match, self.settings))
-        return self._apply_provider_gates(signals)
+        return self.signal_gate.gate_signals_for_match(match, signals)
 
     async def live_signals(self, target_date: date) -> list[Signal]:
         analyses = await self.analyses_for_date(target_date)

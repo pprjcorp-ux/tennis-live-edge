@@ -53,6 +53,7 @@ class OperationalSnapshot:
     persisted: bool
     generated_at: datetime
     raw_payloads_saved: int = 0
+    provider_warnings: list[str] | None = None
 
 
 SignalGate = Callable[[Match, list[Signal]], list[Signal]]
@@ -84,6 +85,7 @@ class LiveIngestionPipeline:
 
     async def snapshot_for_date(self, target_date: date) -> OperationalSnapshot:
         matches = await self._fetch_matches(target_date)
+        provider_warnings = _source_warnings(self.match_source)
         provider_matches, raw_payloads, score_source_ts_by_key = _split_provider_matches(matches)
         if not provider_matches:
             persisted = self.store.latest_analyses(target_date)
@@ -94,6 +96,7 @@ class LiveIngestionPipeline:
                     persisted=True,
                     generated_at=_now(),
                     raw_payloads_saved=0,
+                    provider_warnings=provider_warnings,
                 )
             return OperationalSnapshot(
                 analyses=[],
@@ -101,6 +104,7 @@ class LiveIngestionPipeline:
                 persisted=False,
                 generated_at=_now(),
                 raw_payloads_saved=0,
+                provider_warnings=provider_warnings,
             )
 
         matches = await self.archive_augmenter(provider_matches, self.archive_source)
@@ -126,6 +130,7 @@ class LiveIngestionPipeline:
             persisted=persisted,
             generated_at=_now(),
             raw_payloads_saved=raw_payloads_saved,
+            provider_warnings=provider_warnings,
         )
 
     async def _fetch_matches(self, target_date: date) -> list[Match | ProviderMatchPayload]:
@@ -177,6 +182,13 @@ def _split_provider_matches(
         raw_payloads,
         {key: value[1] for key, value in source_timestamps_by_key.items()},
     )
+
+
+def _source_warnings(source: MatchSource) -> list[str]:
+    warnings = getattr(source, "last_warnings", [])
+    if not isinstance(warnings, list):
+        return []
+    return [str(warning) for warning in warnings]
 
 
 def _match_key(match: Match) -> str:

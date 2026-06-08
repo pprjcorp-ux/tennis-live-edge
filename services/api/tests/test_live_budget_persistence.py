@@ -573,6 +573,124 @@ def test_repository_ingests_odds_api_message_with_persisted_cursor() -> None:
     assert store.saved_latency[1] == "odds/tennis:moneyline"
 
 
+def test_provider_health_surfaces_latest_score_ingestion_warning() -> None:
+    warning = "API-Tennis livescore endpoint failed: TimeoutError"
+    generated_at = datetime(2026, 6, 8, 12, tzinfo=timezone.utc)
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.last_query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.last_query = query
+            return self
+
+        def fetchall(self):
+            if "FROM provider_latency" in self.last_query:
+                return [
+                    {
+                        "provider": Provider.API_TENNIS.value,
+                        "feed": "score/live",
+                        "latest_ingested_at": generated_at,
+                        "latency_ms": 1200,
+                        "healthy": True,
+                    }
+                ]
+            if "FROM raw_provider_payloads" in self.last_query:
+                return [{"provider": Provider.API_TENNIS.value, "count": 2}]
+            return []
+
+        def fetchone(self):
+            if "FROM ingestion_runs" in self.last_query:
+                return {"summary": {"provider_warnings": [warning]}}
+            return None
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", api_tennis_key="key"))
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    health = StoreStub().provider_health()
+    api_tennis = next(item for item in health if item.provider == Provider.API_TENNIS)
+
+    assert api_tennis.healthy is False
+    assert "degraded" in api_tennis.status
+    assert warning in api_tennis.status
+
+
+def test_data_quality_surfaces_latest_score_ingestion_warning() -> None:
+    warning = "API-Tennis fixtures endpoint failed: TimeoutError"
+
+    class CursorStub:
+        def __init__(self) -> None:
+            self.last_query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.last_query = query
+            return self
+
+        def fetchall(self):
+            if "SELECT kind" in self.last_query:
+                return [
+                    {"kind": "matches", "count": 2},
+                    {"kind": "scores", "count": 2},
+                    {"kind": "odds", "count": 4},
+                ]
+            return []
+
+        def fetchone(self):
+            if "provider_cursors" in self.last_query:
+                return {"gaps": 0}
+            if "FROM ingestion_runs" in self.last_query:
+                return {"summary": {"provider_warnings": [warning]}}
+            return None
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", api_tennis_key="key"))
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    quality = StoreStub().data_quality()[0]
+
+    assert quality.sequence_health == 0.7
+    assert quality.blocked_signals == 1
+    assert any(warning in note for note in quality.notes)
+
+
 def test_odds_api_io_resync_blocks_live_entry_signals() -> None:
     CURSORS.clear()
     ingest_odds_api_sequence({"type": "resync_required"}, stream="tennis:moneyline")
@@ -842,6 +960,9 @@ def test_api_tennis_match_source_keeps_livescore_when_fixture_endpoint_fails() -
     assert fake_client.livescore_called is True
     assert len(records) == 1
     assert records[0].raw_payload.payload_type == "score"
+    assert source.last_warnings == [
+        "API-Tennis fixtures endpoint failed: RuntimeError"
+    ]
 
 
 def test_live_ingestion_pipeline_persists_provider_snapshot() -> None:
@@ -919,6 +1040,61 @@ def test_live_ingestion_pipeline_merges_fixture_and_livescore_without_losing_raw
     assert snapshot.analyses[0].freshness.score_source_ts == score_source_ts
     assert snapshot.analyses[0].freshness.score_age_ms is not None
     assert snapshot.analyses[0].freshness.score_age_ms > 0
+
+
+def test_live_ingestion_pipeline_exposes_source_warnings() -> None:
+    class WarningSource:
+        last_warnings = ["API-Tennis livescore endpoint failed: TimeoutError"]
+
+        async def get_today_matches(self, target_date):
+            return []
+
+    pipeline = LiveIngestionPipeline(
+        WarningSource(),
+        _FakeArchiveSource(),
+        _FakeStore(),
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert snapshot.source == "empty"
+    assert snapshot.provider_warnings == [
+        "API-Tennis livescore endpoint failed: TimeoutError"
+    ]
+
+
+def test_repository_ingestion_run_records_provider_warnings_as_degraded() -> None:
+    class WarningSource:
+        last_warnings = ["API-Tennis fixtures endpoint failed: TimeoutError"]
+
+        async def get_today_matches(self, target_date):
+            return []
+
+    repo = AnalysisRepository(Settings(data_mode="live", persistence_enabled=False))
+    repo.ingestion = LiveIngestionPipeline(
+        WarningSource(),
+        _FakeArchiveSource(),
+        _FakeStore(),
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+    recorded = []
+
+    def record_run(run_type, summary, **kwargs):
+        recorded.append((run_type, summary))
+
+    repo.record_ingestion_run = record_run
+
+    result = asyncio.run(repo.run_ingestion())
+
+    assert result.provider_warnings == [
+        "API-Tennis fixtures endpoint failed: TimeoutError"
+    ]
+    assert recorded[0][0] == "score_snapshot"
+    assert recorded[0][1]["provider_warnings"] == result.provider_warnings
+    assert repo._ingestion_status(recorded[0][1]) == "degraded"
 
 
 def test_live_ingestion_pipeline_prefers_provider_raw_payload_over_canonical_proxy() -> None:

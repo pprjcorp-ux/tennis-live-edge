@@ -202,6 +202,7 @@ class AnalysisRepository:
             raw_payloads_saved=snapshot.raw_payloads_saved,
             signals_generated=len(signals),
             entry_signals=sum(1 for signal in signals if signal.status == SignalStatus.ENTRY),
+            provider_warnings=snapshot.provider_warnings or [],
             generated_at=snapshot.generated_at,
         )
         self.record_ingestion_run(
@@ -244,6 +245,8 @@ class AnalysisRepository:
     def _ingestion_status(summary: dict) -> Literal["completed", "degraded", "skipped", "failed"]:
         if summary.get("error"):
             return "failed"
+        if summary.get("provider_warnings"):
+            return "degraded"
         if summary.get("real_execution_hard_block") is False or summary.get("can_submit_real_orders") is True:
             return "degraded"
         if summary.get("source") == "provider_live" or summary.get("connected") is True:

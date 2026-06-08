@@ -84,6 +84,15 @@ def _json(value: Any) -> Any:
     return Jsonb(value)
 
 
+def _provider_warnings_from_summary(summary: Any) -> list[str]:
+    if not isinstance(summary, dict):
+        return []
+    warnings = summary.get("provider_warnings")
+    if not isinstance(warnings, list):
+        return []
+    return [str(warning) for warning in warnings if warning]
+
+
 PERSISTED_OPEN_ORDER_STATUSES = tuple(status.value for status in OPEN_ORDER_STATUSES)
 PERSISTED_CANCELABLE_ORDER_STATUSES = tuple(status.value for status in CANCELABLE_ORDER_STATUSES)
 
@@ -502,25 +511,52 @@ class PersistentStore:
                     """
                 ).fetchall()
                 call_counts = {row["provider"]: row["count"] for row in call_rows}
+                self._ensure_ingestion_runs_table(cur)
+                score_run = cur.execute(
+                    """
+                    SELECT summary
+                    FROM ingestion_runs
+                    WHERE run_type = 'score_snapshot'
+                    ORDER BY completed_at DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                score_warnings = _provider_warnings_from_summary(
+                    score_run["summary"] if score_run else {}
+                )
         by_provider = {row["provider"]: row for row in latencies}
         updated: list[ProviderHealth] = []
         for item in base:
             row = by_provider.get(item.provider.value)
+            score_degraded = item.provider == Provider.API_TENNIS and bool(score_warnings)
             if row:
+                status = f"{item.status}; persisted {row['feed']}"
+                if score_degraded:
+                    status = f"{status}; degraded: {'; '.join(score_warnings[:2])}"
                 updated.append(
                     item.model_copy(
                         update={
-                            "healthy": bool(row["healthy"]),
+                            "healthy": bool(row["healthy"]) and not score_degraded,
                             "latency_ms": row["latency_ms"],
                             "last_message_at": row["latest_ingested_at"],
-                            "status": f"{item.status}; persisted {row['feed']}",
+                            "status": status,
                             "quota_used": call_counts.get(item.provider.value, item.quota_used),
                             "last_billable_call_at": row["latest_ingested_at"],
                         }
                     )
                 )
             else:
-                updated.append(item)
+                if score_degraded:
+                    updated.append(
+                        item.model_copy(
+                            update={
+                                "healthy": False,
+                                "status": f"{item.status}; degraded: {'; '.join(score_warnings[:2])}",
+                            }
+                        )
+                    )
+                else:
+                    updated.append(item)
         return updated
 
     def provider_cursors(self) -> list[ProviderCursor]:
@@ -580,10 +616,32 @@ class PersistentStore:
                 cursor_rows = cur.execute(
                     "SELECT count(*)::int AS gaps FROM provider_cursors WHERE resync_required = true"
                 ).fetchone()
+                self._ensure_ingestion_runs_table(cur)
+                score_run = cur.execute(
+                    """
+                    SELECT summary
+                    FROM ingestion_runs
+                    WHERE run_type = 'score_snapshot'
+                    ORDER BY completed_at DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
         matches = max(1, counts.get("matches", 0))
         score_completeness = min(1.0, counts.get("scores", 0) / matches)
         odds_completeness = min(1.0, counts.get("odds", 0) / max(1, matches * 2))
         gaps = int(cursor_rows["gaps"] if cursor_rows else 0)
+        score_warnings = _provider_warnings_from_summary(
+            score_run["summary"] if score_run else {}
+        )
+        sequence_health = 0.35 if gaps else 1.0
+        if score_warnings:
+            sequence_health = min(sequence_health, 0.7)
+        notes = [
+            "Computed from persisted matches, score ticks, odds ticks and cursor state.",
+            "Signals should abstain when odds are incomplete, stale or resync_required.",
+        ]
+        if score_warnings:
+            notes.append(f"Latest score ingestion warnings: {'; '.join(score_warnings[:2])}.")
         return [
             DataQualitySnapshot(
                 id="dq_persisted_live_budget",
@@ -592,12 +650,9 @@ class PersistentStore:
                 score_completeness=round(score_completeness, 4),
                 odds_completeness=round(odds_completeness, 4),
                 entity_resolution_rate=1.0 if counts.get("matches", 0) else 0.0,
-                sequence_health=0.35 if gaps else 1.0,
-                blocked_signals=gaps,
-                notes=[
-                    "Computed from persisted matches, score ticks, odds ticks and cursor state.",
-                    "Signals should abstain when odds are incomplete, stale or resync_required.",
-                ],
+                sequence_health=sequence_health,
+                blocked_signals=gaps + len(score_warnings),
+                notes=notes,
             )
         ]
 

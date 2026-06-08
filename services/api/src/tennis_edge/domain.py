@@ -702,6 +702,7 @@ class IngestionRunResult(BaseModel):
     raw_payloads_saved: int
     signals_generated: int
     entry_signals: int
+    provider_warnings: list[str] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

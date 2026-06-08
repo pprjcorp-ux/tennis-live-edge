@@ -99,10 +99,11 @@ def ingest_odds_api_sequence(
     *,
     stream: str = "tennis:moneyline",
     current_cursor: ProviderCursor | None = None,
+    remember_in_process: bool = True,
 ) -> ProviderCursor:
     """Track Odds-API.io seq/lastSeq semantics without losing gap state."""
     key = cursor_key(Provider.ODDS_API_IO, stream)
-    current = current_cursor or CURSORS.get(key)
+    current = current_cursor or (CURSORS.get(key) if remember_in_process else None)
     seq = payload.get("seq")
     message_type = str(payload.get("type", "updated"))
     now = _now()
@@ -120,11 +121,12 @@ def ingest_odds_api_sequence(
             last_resync_at=current.last_resync_at if current else None,
             note="Provider requested REST resync before signals can trust odds state.",
         )
-        CURSORS[key] = cursor
+        if remember_in_process:
+            CURSORS[key] = cursor
         return cursor
 
     if not isinstance(seq, int):
-        cursor = current or seed_provider_cursor(
+        cursor = current or _provider_cursor(
             Provider.ODDS_API_IO,
             stream,
             last_seq=None,
@@ -140,7 +142,8 @@ def ingest_odds_api_sequence(
                 "note": "Missing seq in websocket payload.",
             }
         )
-        CURSORS[key] = cursor
+        if remember_in_process:
+            CURSORS[key] = cursor
         return cursor
 
     expected = current.expected_next_seq if current else None
@@ -170,11 +173,18 @@ def ingest_odds_api_sequence(
             last_resync_at=current.last_resync_at if current else None,
             note="Sequence accepted.",
         )
-    CURSORS[key] = cursor
+    if remember_in_process:
+        CURSORS[key] = cursor
     return cursor
 
 
-def mark_resynced(provider: Provider, stream: str, seq: int) -> ProviderCursor:
+def mark_resynced(
+    provider: Provider,
+    stream: str,
+    seq: int,
+    *,
+    remember_in_process: bool = True,
+) -> ProviderCursor:
     cursor = ProviderCursor(
         provider=provider,
         stream=stream,
@@ -187,5 +197,6 @@ def mark_resynced(provider: Provider, stream: str, seq: int) -> ProviderCursor:
         last_resync_at=_now(),
         note="REST snapshot applied; websocket can reconnect with lastSeq.",
     )
-    CURSORS[cursor_key(provider, stream)] = cursor
+    if remember_in_process:
+        CURSORS[cursor_key(provider, stream)] = cursor
     return cursor

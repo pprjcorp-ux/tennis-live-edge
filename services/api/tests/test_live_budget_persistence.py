@@ -9,7 +9,7 @@ from tennis_edge.config import Settings
 from tennis_edge.domain import CursorStatus
 from tennis_edge.domain import IngestionRunRecord
 from tennis_edge.domain import MatchFreshness
-from tennis_edge.domain import OddsMessageIngestionRequest
+from tennis_edge.domain import OddsMessageIngestionRequest, ProviderCursorResyncRequest
 from tennis_edge.domain import Provider
 from tennis_edge.domain import ProviderCursor
 from tennis_edge.domain import ProviderMatchPayload
@@ -572,6 +572,95 @@ def test_repository_ingests_odds_api_message_with_persisted_cursor() -> None:
     assert store.saved_cursor == result.cursor
     assert store.saved_latency[0] == Provider.ODDS_API_IO
     assert store.saved_latency[1] == "odds/tennis:moneyline"
+    assert CURSORS == {}
+
+
+def test_repository_provider_cursor_resync_does_not_write_process_cache() -> None:
+    class StoreStub:
+        def __init__(self) -> None:
+            self.saved_cursor = None
+
+        def save_provider_cursor(self, cursor):
+            self.saved_cursor = cursor
+            return True
+
+    CURSORS.clear()
+    repo = AnalysisRepository(Settings(data_mode="live", persistence_enabled=False))
+    store = StoreStub()
+    repo.store = store
+
+    result = asyncio.run(
+        repo.mark_provider_cursor_resynced(
+            ProviderCursorResyncRequest(last_seq=123),
+        )
+    )
+
+    assert result.persisted is True
+    assert result.cursor.last_seq == 123
+    assert result.cursor.expected_next_seq == 124
+    assert store.saved_cursor == result.cursor
+    assert CURSORS == {}
+
+
+def test_repository_odds_ingestion_does_not_read_process_cursor_cache() -> None:
+    class StoreStub:
+        def __init__(self) -> None:
+            self.saved_cursor = None
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        def provider_cursors(self):
+            return []
+
+        def save_raw_payloads(self, payloads):
+            return len(payloads)
+
+        def save_odds_quotes_for_event(self, provider, source_event_id, quotes):
+            return len(quotes)
+
+        def save_provider_cursor(self, cursor):
+            self.saved_cursor = cursor
+            return True
+
+        def record_provider_latency(self, provider, feed, *, latest_source_ts, latest_ingested_at):
+            return True
+
+    CURSORS.clear()
+    try:
+        mark_resynced(Provider.ODDS_API_IO, "tennis:moneyline", 88)
+        repo = AnalysisRepository(Settings(data_mode="live", persistence_enabled=False))
+        store = StoreStub()
+        repo.store = store
+
+        result = asyncio.run(
+            repo.ingest_odds_api_message(
+                OddsMessageIngestionRequest(
+                    payload={
+                        "event_id": "event-1",
+                        "seq": 1,
+                        "timestamp": "2026-06-07T20:00:00Z",
+                        "data": {
+                            "bookmaker": "SharpBook",
+                            "market": "ML",
+                            "selections": [
+                                {"player_id": "p1", "odds": 1.9},
+                                {"player_id": "p2", "odds": 1.95},
+                            ],
+                        },
+                    },
+                )
+            )
+        )
+
+        assert result.cursor.status == CursorStatus.HEALTHY
+        assert result.cursor.last_seq == 1
+        assert result.cursor.expected_next_seq == 2
+        assert store.saved_cursor == result.cursor
+        assert CURSORS[(Provider.ODDS_API_IO, "tennis:moneyline")].last_seq == 88
+    finally:
+        CURSORS.clear()
 
 
 def _provider_health_with_latency(

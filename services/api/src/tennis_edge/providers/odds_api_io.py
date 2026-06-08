@@ -74,11 +74,13 @@ class OddsApiIoClient:
         payload: dict[str, Any],
         current_cursor: ProviderCursor | None = None,
         stream: str = "tennis:moneyline",
+        remember_in_process: bool = True,
     ) -> list[OddsQuote]:
         quotes, _cursor = self.ingest_message(
             payload,
             current_cursor=current_cursor,
             stream=stream,
+            remember_in_process=remember_in_process,
         )
         return quotes
 
@@ -87,11 +89,13 @@ class OddsApiIoClient:
         payload: dict[str, Any],
         current_cursor: ProviderCursor | None = None,
         stream: str = "tennis:moneyline",
+        remember_in_process: bool = True,
     ) -> tuple[list[OddsQuote], ProviderCursor]:
         cursor = ingest_odds_api_sequence(
             payload,
             stream=stream,
             current_cursor=current_cursor,
+            remember_in_process=remember_in_process,
         )
         return self._quotes_from_payload(payload), cursor
 
@@ -238,8 +242,15 @@ class OddsApiIoClient:
         return safe or "tennis_moneyline"
 
 
-def parse_odds_api_io_moneyline(payload: RawProviderPayload) -> list[OddsQuote]:
-    quotes = OddsApiIoClient(api_key=None, data_mode="live").parse_message(payload.payload)
+def parse_odds_api_io_moneyline(
+    payload: RawProviderPayload,
+    *,
+    remember_in_process: bool = True,
+) -> list[OddsQuote]:
+    quotes = OddsApiIoClient(api_key=None, data_mode="live").parse_message(
+        payload.payload,
+        remember_in_process=remember_in_process,
+    )
     return [
         quote.model_copy(
             update={

@@ -275,6 +275,7 @@ class AnalysisRepository:
             request.payload,
             current_cursor=persisted_cursor,
             stream=request.stream,
+            remember_in_process=False,
         )
         raw_payloads_saved = self.store.save_raw_payloads([raw_payload])
         normalized_odds_saved = self.store.save_odds_quotes_for_event(
@@ -320,7 +321,12 @@ class AnalysisRepository:
         self,
         request: ProviderCursorResyncRequest,
     ) -> ProviderCursorResyncResult:
-        cursor = mark_resynced(request.provider, request.stream, request.last_seq)
+        cursor = mark_resynced(
+            request.provider,
+            request.stream,
+            request.last_seq,
+            remember_in_process=False,
+        )
         persisted = self.store.save_provider_cursor(cursor)
         return ProviderCursorResyncResult(cursor=cursor, persisted=persisted)
 

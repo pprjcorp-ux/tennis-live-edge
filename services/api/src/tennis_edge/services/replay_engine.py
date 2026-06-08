@@ -35,7 +35,9 @@ class ReplayEngine:
                 if score_tick is not None:
                     state.score_ticks.append(score_tick)
             elif payload.provider == Provider.ODDS_API_IO and payload.payload_type == "odds":
-                state.odds_quotes.extend(parse_odds_api_io_moneyline(payload))
+                state.odds_quotes.extend(
+                    parse_odds_api_io_moneyline(payload, remember_in_process=False)
+                )
             elif payload.provider == Provider.SPORTRADAR and payload.payload_type == "score":
                 state.score_ticks.append(parse_sportradar_score(payload))
             elif payload.provider == Provider.SPORTRADAR and payload.payload_type == "point":

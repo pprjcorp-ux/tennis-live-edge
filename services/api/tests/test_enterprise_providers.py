@@ -4,11 +4,12 @@ from datetime import date
 from tennis_edge.domain import Provider
 from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.providers.betradar_uof import parse_betradar_market_state
-from tennis_edge.providers.odds_api_io import OddsApiIoClient
+from tennis_edge.providers.odds_api_io import OddsApiIoClient, parse_odds_api_io_moneyline
 from tennis_edge.providers.sportradar import parse_sportradar_point, parse_sportradar_score
 from tennis_edge.providers.txodds import parse_txodds_moneyline
 from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.normalizer import dedupe_payloads, normalize_name, payload_checksum, similarity
+from tennis_edge.services.provider_cursor import CURSORS, mark_resynced
 from tennis_edge.services.replay_engine import ReplayEngine
 
 
@@ -199,6 +200,64 @@ def test_odds_api_io_message_parser_maps_moneyline_quotes() -> None:
     assert raw_payload.source_event_id == "event-1"
     assert raw_payload.source_ts.isoformat() == "2026-05-10T12:00:00+00:00"
     assert raw_payload.payload["stream"] == "tennis:moneyline"
+
+
+def test_odds_api_io_raw_payload_parser_writes_process_cursor_by_default() -> None:
+    CURSORS.clear()
+    try:
+        client = OddsApiIoClient(api_key="key", data_mode="live")
+        raw_payload = client.raw_payload_from_message(
+            {
+                "event_id": "event-1",
+                "seq": 1,
+                "data": {
+                    "bookmaker": "SharpBook",
+                    "market": "h2h",
+                    "timestamp": "2026-05-10T12:00:00Z",
+                    "selections": [
+                        {"player_id": "p1", "odds": 1.8},
+                        {"player_id": "p2", "odds": 2.1},
+                    ],
+                },
+            }
+        )
+
+        quotes = parse_odds_api_io_moneyline(raw_payload)
+
+        assert len(quotes) == 2
+        assert CURSORS[(Provider.ODDS_API_IO, "tennis:moneyline")].last_seq == 1
+    finally:
+        CURSORS.clear()
+
+
+def test_replay_engine_does_not_write_odds_api_process_cursor() -> None:
+    CURSORS.clear()
+    try:
+        mark_resynced(Provider.ODDS_API_IO, "tennis:moneyline", 88)
+        client = OddsApiIoClient(api_key="key", data_mode="live")
+        raw_payload = client.raw_payload_from_message(
+            {
+                "event_id": "event-1",
+                "seq": 1,
+                "data": {
+                    "bookmaker": "SharpBook",
+                    "market": "h2h",
+                    "timestamp": "2026-05-10T12:00:00Z",
+                    "selections": [
+                        {"player_id": "p1", "odds": 1.8},
+                        {"player_id": "p2", "odds": 2.1},
+                    ],
+                },
+            }
+        )
+
+        replay = ReplayEngine().replay([raw_payload])
+
+        assert len(replay.odds_quotes) == 2
+        assert [quote.player_id for quote in replay.odds_quotes] == ["p1", "p2"]
+        assert CURSORS[(Provider.ODDS_API_IO, "tennis:moneyline")].last_seq == 88
+    finally:
+        CURSORS.clear()
 
 
 def test_odds_api_io_ingest_message_returns_quotes_and_cursor_for_custom_stream() -> None:

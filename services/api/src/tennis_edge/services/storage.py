@@ -57,8 +57,6 @@ from tennis_edge.services.cost_profile import (
     cost_profile,
     provider_health_for,
 )
-from tennis_edge.services.feature_engine import build_features
-from tennis_edge.services.model_service import predict_match
 from tennis_edge.services.normalizer import normalize_name
 from tennis_edge.services.provider_cursor import default_provider_cursors
 from tennis_edge.services.provider_lineage import (
@@ -66,7 +64,6 @@ from tennis_edge.services.provider_lineage import (
     provider_lineage_for_ids,
     primary_provider_for_match,
 )
-from tennis_edge.services.signal_engine import build_signals
 
 
 def _now() -> datetime:
@@ -554,34 +551,33 @@ class PersistentStore:
             )
 
         analyses: list[MatchAnalysis] = []
+        skipped_incomplete = 0
         for row in rows:
+            prediction_row = predictions_by_match.get(row["id"])
+            if not prediction_row or not prediction_row["feature_values"]:
+                skipped_incomplete += 1
+                continue
             match = self._match_from_row(row, odds_by_match.get(row["id"], []))
-            prediction_row = predictions_by_match.get(match.id)
-            if prediction_row and prediction_row["feature_values"]:
-                features = FeatureVector(**prediction_row["feature_values"])
-                prediction = Prediction(
-                    match_id=match.id,
-                    p1_win_prob=float(prediction_row["p1_win_prob"]),
-                    p2_win_prob=float(prediction_row["p2_win_prob"]),
-                    raw_p1_win_prob=float(prediction_row["raw_p1_win_prob"])
-                    if prediction_row["raw_p1_win_prob"] is not None
-                    else None,
-                    raw_p2_win_prob=float(prediction_row["raw_p2_win_prob"])
-                    if prediction_row["raw_p2_win_prob"] is not None
-                    else None,
-                    confidence=Confidence(prediction_row["confidence"]),
-                    mode=prediction_row["mode"],
-                    model_version=prediction_row["model_version_id"],
-                    confidence_interval=tuple(prediction_row["confidence_interval"])
-                    if prediction_row["confidence_interval"]
-                    else None,
-                    explanations=prediction_row["explanations"] or [],
-                )
-                signals = signals_by_prediction.get(prediction_row["id"], [])
-            else:
-                features = build_features(match)
-                prediction = predict_match(match, features)
-                signals = build_signals(match, prediction, features)
+            features = FeatureVector(**prediction_row["feature_values"])
+            prediction = Prediction(
+                match_id=match.id,
+                p1_win_prob=float(prediction_row["p1_win_prob"]),
+                p2_win_prob=float(prediction_row["p2_win_prob"]),
+                raw_p1_win_prob=float(prediction_row["raw_p1_win_prob"])
+                if prediction_row["raw_p1_win_prob"] is not None
+                else None,
+                raw_p2_win_prob=float(prediction_row["raw_p2_win_prob"])
+                if prediction_row["raw_p2_win_prob"] is not None
+                else None,
+                confidence=Confidence(prediction_row["confidence"]),
+                mode=prediction_row["mode"],
+                model_version=prediction_row["model_version_id"],
+                confidence_interval=tuple(prediction_row["confidence_interval"])
+                if prediction_row["confidence_interval"]
+                else None,
+                explanations=prediction_row["explanations"] or [],
+            )
+            signals = signals_by_prediction.get(prediction_row["id"], [])
             analyses.append(
                 MatchAnalysis(
                     match=match,
@@ -593,6 +589,13 @@ class PersistentStore:
                         odds_by_match.get(row["id"], []),
                     ),
                 )
+            )
+        if skipped_incomplete:
+            self._record_read_error(
+                "latest_analyses",
+                RuntimeError(
+                    f"{skipped_incomplete} persisted matches missing prediction snapshots"
+                ),
             )
         return analyses
 

@@ -1134,6 +1134,57 @@ def test_latest_analyses_score_tick_lateral_selects_timestamps() -> None:
     assert "SELECT raw_state, source_ts, ingested_at" in query
 
 
+def test_latest_analyses_does_not_generate_unpersisted_predictions() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.queries = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.queries.append(query)
+            return self
+
+        def fetchall(self):
+            query = self.queries[-1]
+            if "FROM matches m" in query:
+                return [{"id": "match_missing_prediction"}]
+            return []
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+            self.conn = ConnStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            self.last_error = None
+            yield self.conn
+
+    store = StoreStub()
+
+    assert store.latest_analyses(date.today()) == []
+    assert store.last_error is not None
+    assert store.last_error.startswith("latest_analyses failed:")
+    assert "persisted matches missing prediction snapshots" in store.last_error
+    assert any("FROM prediction_snapshots" in query for query in store.conn.cursor_stub.queries)
+
+
 def test_ingestion_run_journal_creates_schema_and_maps_rows() -> None:
     started_at = datetime(2026, 6, 7, 20, tzinfo=timezone.utc)
     completed_at = datetime(2026, 6, 7, 20, 1, tzinfo=timezone.utc)

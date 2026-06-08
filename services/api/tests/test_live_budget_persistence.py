@@ -391,6 +391,73 @@ def test_save_analyses_persists_theoddsapi_archive_odds_with_archive_provider() 
     assert {params[1] for params in insert_params} == {Provider.THE_ODDS_API.value}
 
 
+def test_save_analyses_records_score_latency_for_primary_provider() -> None:
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+            self.latencies = []
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+        def provider_cursors(self):
+            return []
+
+        def _upsert_player(self, cur, player):
+            pass
+
+        def _upsert_match(self, cur, match):
+            pass
+
+        def _insert_score_tick(self, cur, match):
+            pass
+
+        def _insert_odds_ticks(self, cur, match):
+            pass
+
+        def _insert_feature_snapshot(self, cur, features):
+            return "feature_id"
+
+        def _insert_prediction_snapshot(self, cur, prediction, feature_id):
+            return "prediction_id"
+
+        def _insert_signals(self, cur, signals, prediction_id):
+            pass
+
+        def _record_latency(self, cur, provider, feed, match):
+            self.latencies.append((provider, feed))
+
+        def _upsert_provider_cursors(self, cur, existing_cursors=None):
+            pass
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    analysis = asyncio.run(repo.analyses_for_date(date.today()))[0]
+    match = analysis.match.model_copy(
+        update={"provider_ids": {"theoddsapi": "archive-only"}}
+    )
+    store = StoreStub()
+
+    assert store.save_analyses([analysis.model_copy(update={"match": match})]) is True
+    assert (Provider.THE_ODDS_API, "score/live") in store.latencies
+    assert (Provider.API_TENNIS, "score/live") not in store.latencies
+
+
 def test_repository_ingests_odds_api_message_with_persisted_cursor() -> None:
     class StoreStub:
         def __init__(self) -> None:

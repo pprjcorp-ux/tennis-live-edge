@@ -35,5 +35,9 @@ def provider_lineage_for_match(match: Match) -> list[Provider]:
     return provider_lineage_for_ids(match.provider_ids, has_odds=bool(match.odds))
 
 
+def primary_provider_for_match(match: Match) -> Provider:
+    return primary_provider_for_ids(match.provider_ids)
+
+
 def odds_provider_for_match(match: Match) -> Provider | None:
     return odds_provider_for_ids(match.provider_ids, has_odds=bool(match.odds))

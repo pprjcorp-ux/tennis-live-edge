@@ -63,6 +63,7 @@ from tennis_edge.services.provider_cursor import default_provider_cursors
 from tennis_edge.services.provider_lineage import (
     odds_provider_for_match,
     provider_lineage_for_ids,
+    primary_provider_for_match,
 )
 from tennis_edge.services.signal_engine import build_signals
 
@@ -160,7 +161,12 @@ class PersistentStore:
                         cur, analysis.prediction, feature_id
                     )
                     self._insert_signals(cur, analysis.signals, prediction_id)
-                    self._record_latency(cur, Provider.API_TENNIS, "score/live", analysis.match)
+                    self._record_latency(
+                        cur,
+                        primary_provider_for_match(analysis.match),
+                        "score/live",
+                        analysis.match,
+                    )
                     odds_provider = odds_provider_for_match(analysis.match)
                     if odds_provider is not None:
                         self._record_latency(

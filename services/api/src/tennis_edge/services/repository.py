@@ -71,6 +71,7 @@ from tennis_edge.services.enterprise_analytics import (
     entity_conflicts,
     model_registry,
     paper_performance,
+    settle_order,
 )
 from tennis_edge.services.execution_engine import (
     CANCELABLE_ORDER_STATUSES,
@@ -590,35 +591,10 @@ class AnalysisRepository:
         if request.order_id not in self._sample_orders:
             raise KeyError(request.order_id)
         order = self._sample_orders[request.order_id]
-        matched = order.matched_stake if order.matched_stake > 0 else order.stake_amount
-        average_price = order.average_price or order.requested_odds
-        gross = matched * (average_price - 1) if request.result_win else -matched
-        commission = max(0.0, gross) * 0.02
-        net = gross - commission
-        clv = (1 / request.closing_odds) - (1 / average_price)
-        settlement = PaperSettlement(
-            order_id=order.id,
-            status=OrderStatus.SETTLED,
-            result_win=request.result_win,
-            requested_odds=order.requested_odds,
-            average_price=average_price,
-            matched_stake=matched,
-            gross_pnl=round(gross, 2),
-            commission=round(commission, 2),
-            net_pnl=round(net, 2),
-            closing_odds=request.closing_odds,
-            clv=round(clv, 6),
-        )
-        self._sample_orders[order.id] = order.model_copy(
+        settlement, updated = settle_order(order, request)
+        self._sample_orders[order.id] = updated.model_copy(
             update={
-                "status": OrderStatus.SETTLED,
-                "matched_stake": matched,
-                "average_price": average_price,
-                "settlement_status": "settled",
-                "pnl": settlement.net_pnl,
-                "clv": settlement.clv,
-                "updated_at": self._now(),
-                "audit": [*order.audit, "Sample paper order settled with closing-line CLV."],
+                "audit": [*updated.audit, "Sample order cache updated after settlement."],
             }
         )
         return settlement

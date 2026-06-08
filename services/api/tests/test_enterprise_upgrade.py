@@ -1,9 +1,23 @@
+import pytest
+
 from tennis_edge.config import Settings
-from tennis_edge.domain import CursorStatus, Provider, ProviderCursor
+from tennis_edge.domain import (
+    CursorStatus,
+    ExecutionOrder,
+    ExecutionVenue,
+    OrderStatus,
+    PaperSettleRequest,
+    Provider,
+    ProviderCursor,
+)
 from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.sample_data import sample_matches
-from tennis_edge.services.enterprise_analytics import model_registry
-from tennis_edge.services.execution_engine import execution_status
+from tennis_edge.services.enterprise_analytics import (
+    model_registry,
+    paper_performance,
+    settle_paper_order,
+)
+from tennis_edge.services.execution_engine import ORDERS, execution_status
 from tennis_edge.services.provider_cursor import (
     CURSORS,
     default_provider_cursors,
@@ -113,6 +127,71 @@ def test_model_registry_has_baseline_and_challengers() -> None:
 
     assert {"baseline_v0", "prematch_ensemble_v1", "live_markov_v1"}.issubset(versions)
     assert any(entry.role == "champion" for entry in registry)
+
+
+def test_paper_performance_requires_explicit_order_snapshot() -> None:
+    ORDERS.clear()
+    memory_order = ExecutionOrder(
+        id="ord_memory_only",
+        signal_id="sig_memory",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.SETTLED,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=2.0,
+        pnl=98,
+        clv=0.02,
+    )
+    ORDERS[memory_order.id] = memory_order
+
+    performance = paper_performance(Settings(data_mode="sample"))
+    explicit_performance = paper_performance(
+        Settings(data_mode="sample"), orders=[memory_order]
+    )
+
+    assert performance.orders == 0
+    assert performance.realized_pnl == 0
+    assert explicit_performance.orders == 1
+    assert explicit_performance.roi == 0.98
+
+
+def test_settle_paper_order_requires_explicit_order_snapshot() -> None:
+    ORDERS.clear()
+    order = ExecutionOrder(
+        id="ord_settle_explicit",
+        signal_id="sig_explicit",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.PAPER,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=2.0,
+    )
+    ORDERS[order.id] = order
+    request = PaperSettleRequest(
+        order_id=order.id,
+        result_win=True,
+        closing_odds=1.95,
+    )
+
+    with pytest.raises(KeyError):
+        settle_paper_order(request)
+
+    settlement = settle_paper_order(request, orders=[order])
+
+    assert settlement.status == OrderStatus.SETTLED
+    assert settlement.net_pnl == 98
 
 
 def test_prediction_uses_enterprise_model_version_and_interval() -> None:

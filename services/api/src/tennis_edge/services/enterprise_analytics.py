@@ -11,6 +11,7 @@ from tennis_edge.domain import (
     CanonicalEntityConflict,
     Confidence,
     DataQualitySnapshot,
+    ExecutionOrder,
     ModelRegistryEntry,
     OrderStatus,
     PaperPerformance,
@@ -19,7 +20,7 @@ from tennis_edge.domain import (
     PaperSettleRequest,
     Provider,
 )
-from tennis_edge.services.execution_engine import ORDERS, OPEN_ORDER_STATUSES
+from tennis_edge.services.execution_engine import OPEN_ORDER_STATUSES
 from tennis_edge.services.provider_cursor import default_provider_cursors
 
 
@@ -221,10 +222,9 @@ def calibration_report(run_id: str) -> CalibrationReport:
     )
 
 
-def settle_paper_order(request: PaperSettleRequest) -> PaperSettlement:
-    if request.order_id not in ORDERS:
-        raise KeyError(request.order_id)
-    order = ORDERS[request.order_id]
+def settle_order(
+    order: ExecutionOrder, request: PaperSettleRequest
+) -> tuple[PaperSettlement, ExecutionOrder]:
     matched = order.matched_stake if order.matched_stake > 0 else order.stake_amount
     average_price = order.average_price or order.requested_odds
     gross = matched * (average_price - 1) if request.result_win else -matched
@@ -244,7 +244,7 @@ def settle_paper_order(request: PaperSettleRequest) -> PaperSettlement:
         closing_odds=request.closing_odds,
         clv=round(clv, 6),
     )
-    ORDERS[order.id] = order.model_copy(
+    updated = order.model_copy(
         update={
             "status": OrderStatus.SETTLED,
             "matched_stake": matched,
@@ -253,14 +253,24 @@ def settle_paper_order(request: PaperSettleRequest) -> PaperSettlement:
             "pnl": settlement.net_pnl,
             "clv": settlement.clv,
             "updated_at": _now(),
-            "audit": order.audit + ["Paper order settled with closing-line CLV."],
+            "audit": [*order.audit, "Paper order settled with closing-line CLV."],
         }
     )
+    return settlement, updated
+
+
+def settle_paper_order(
+    request: PaperSettleRequest, orders: list[ExecutionOrder] | None = None
+) -> PaperSettlement:
+    order = next((item for item in orders or [] if item.id == request.order_id), None)
+    if order is None:
+        raise KeyError(request.order_id)
+    settlement, _ = settle_order(order, request)
     return settlement
 
 
 def paper_performance(settings: Settings, orders: list[ExecutionOrder] | None = None) -> PaperPerformance:
-    orders = list(orders) if orders is not None else list(ORDERS.values())
+    orders = list(orders or [])
     settled = [order for order in orders if order.status == OrderStatus.SETTLED and order.pnl is not None]
     wins = sum(1 for order in settled if (order.pnl or 0) > 0)
     losses = sum(1 for order in settled if (order.pnl or 0) <= 0)

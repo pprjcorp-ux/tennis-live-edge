@@ -89,10 +89,26 @@ class OperationalStateService:
             cursor.provider == Provider.ODDS_API_IO and cursor.resync_required
             for cursor in operational_state.provider_cursors
         )
-        persistence_enabled = self.settings.persistence_enabled
+        persistence_error = getattr(self.store, "last_error", None)
+        persistence_ready = (
+            self.settings.persistence_enabled
+            and bool(self.settings.database_url)
+            and not persistence_error
+        )
+        if persistence_ready:
+            persistence_detail = None
+        elif persistence_error:
+            persistence_detail = persistence_error
+        elif self.settings.persistence_enabled:
+            persistence_detail = "DATABASE_URL is missing."
+        else:
+            persistence_detail = "TENNIS_EDGE_PERSISTENCE_ENABLED=false"
         can_analyze_live = data_mode_live and score_key_configured
         can_generate_entries = (
-            can_analyze_live and odds_key_configured and not odds_cursor_resync
+            can_analyze_live
+            and odds_key_configured
+            and not odds_cursor_resync
+            and persistence_ready
         )
         can_submit_real_orders = operational_state.execution_status.can_submit_real_orders
 
@@ -135,11 +151,11 @@ class OperationalStateService:
             ),
             LiveReadinessCheck(
                 name="persistence",
-                status="pass" if persistence_enabled else "warn",
-                summary="Persistence is enabled."
-                if persistence_enabled
-                else "Persistence is disabled; live truth will not survive restarts.",
-                detail=None,
+                status="pass" if persistence_ready else "fail",
+                summary="Postgres persistence is configured and healthy."
+                if persistence_ready
+                else "Postgres persistence is required for live operational truth.",
+                detail=persistence_detail,
             ),
             LiveReadinessCheck(
                 name="real_execution",

@@ -11,6 +11,7 @@ from tennis_edge.domain import (
 )
 from tennis_edge.services.operational_state import OperationalStateService
 from tennis_edge.services.provider_cursor import CURSORS, mark_resynced
+from tennis_edge.services.storage import PersistentStore
 
 
 class StoreStub:
@@ -20,10 +21,12 @@ class StoreStub:
         cursors: list[ProviderCursor] | None = None,
         data_quality: list[DataQualitySnapshot] | None = None,
         ingestion_runs: list[IngestionRunRecord] | None = None,
+        last_error: str | None = None,
     ) -> None:
         self._cursors = cursors or []
         self._data_quality = data_quality or []
         self._ingestion_runs = ingestion_runs or []
+        self.last_error = last_error
 
     def provider_health(self):
         return []
@@ -36,6 +39,45 @@ class StoreStub:
 
     def ingestion_runs(self) -> list[IngestionRunRecord]:
         return self._ingestion_runs
+
+
+def _healthy_odds_cursor() -> ProviderCursor:
+    return ProviderCursor(
+        provider=Provider.ODDS_API_IO,
+        stream="tennis:moneyline",
+        last_seq=42,
+        expected_next_seq=43,
+        status=CursorStatus.HEALTHY,
+        resync_required=False,
+        note="persisted healthy cursor",
+    )
+
+
+def _paper_performance() -> PaperPerformance:
+    return PaperPerformance(
+        orders=0,
+        settled_orders=0,
+        wins=0,
+        losses=0,
+        open_orders=0,
+        roi=None,
+        clv=None,
+        realized_pnl=0,
+        max_drawdown=0,
+        calibration_error=None,
+        readiness_status="collecting",
+        readiness_reasons=["test"],
+    )
+
+
+def _snapshot(service: OperationalStateService, generated_at: datetime):
+    return service.snapshot(
+        cost_report=service.daily_cost_report(
+            generated_at.date(),
+            [],
+            _paper_performance(),
+        )
+    )
 
 
 def test_operational_state_prefers_persisted_health_inputs() -> None:
@@ -68,33 +110,15 @@ def test_operational_state_prefers_persisted_health_inputs() -> None:
         completed_at=generated_at,
     )
     service = OperationalStateService(
-        Settings(data_mode="live"),
+        Settings(data_mode="live", database_url=None),
         StoreStub(cursors=[cursor], data_quality=[quality], ingestion_runs=[run]),
-    )
-    cost_report = service.daily_cost_report(
-        generated_at.date(),
-        [],
-        PaperPerformance(
-            orders=0,
-            settled_orders=0,
-            wins=0,
-            losses=0,
-            open_orders=0,
-            roi=None,
-            clv=None,
-            realized_pnl=0,
-            max_drawdown=0,
-            calibration_error=None,
-            readiness_status="collecting",
-            readiness_reasons=["test"],
-        ),
     )
 
     assert service.provider_cursors() == [cursor]
     assert service.data_quality() == [quality]
     assert service.ingestion_runs() == [run]
 
-    snapshot = service.snapshot(cost_report=cost_report)
+    snapshot = _snapshot(service, generated_at)
 
     assert snapshot.provider_cursors == [cursor]
     assert snapshot.data_quality == [quality]
@@ -109,6 +133,101 @@ def test_operational_state_prefers_persisted_health_inputs() -> None:
     assert readiness.can_submit_real_orders is False
     assert "API_TENNIS_KEY is missing." in readiness.blockers
     assert "ODDS_API_IO_KEY is missing." in readiness.blockers
+    assert "Postgres persistence is required for live operational truth." in readiness.blockers
+
+
+def test_live_readiness_blocks_entries_without_persistent_truth() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url=None,
+        ),
+        StoreStub(cursors=[_healthy_odds_cursor()]),
+    )
+
+    readiness = service.live_readiness(_snapshot(service, generated_at))
+
+    assert readiness.status == "degraded"
+    assert readiness.can_analyze_live is True
+    assert readiness.can_generate_entries is False
+    assert "Postgres persistence is required for live operational truth." in readiness.blockers
+    persistence_check = next(check for check in readiness.checks if check.name == "persistence")
+    assert persistence_check.status == "fail"
+    assert persistence_check.detail == "DATABASE_URL is missing."
+
+
+def test_live_readiness_blocks_entries_when_store_reports_error() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(cursors=[_healthy_odds_cursor()], last_error="connection refused"),
+    )
+
+    readiness = service.live_readiness(_snapshot(service, generated_at))
+
+    assert readiness.status == "degraded"
+    assert readiness.can_analyze_live is True
+    assert readiness.can_generate_entries is False
+    persistence_check = next(check for check in readiness.checks if check.name == "persistence")
+    assert persistence_check.status == "fail"
+    assert persistence_check.detail == "connection refused"
+
+
+def test_live_readiness_allows_entries_with_persistent_truth_and_trusted_cursor() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(cursors=[_healthy_odds_cursor()]),
+    )
+
+    readiness = service.live_readiness(_snapshot(service, generated_at))
+
+    assert readiness.status == "ready"
+    assert readiness.can_analyze_live is True
+    assert readiness.can_generate_entries is True
+    assert readiness.blockers == []
+    persistence_check = next(check for check in readiness.checks if check.name == "persistence")
+    assert persistence_check.status == "pass"
+    assert persistence_check.detail is None
+
+
+def test_live_readiness_blocks_entries_when_persistent_store_cannot_connect() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    settings = Settings(
+        data_mode="live",
+        api_tennis_key="score-key",
+        odds_api_io_key="odds-key",
+        persistence_enabled=True,
+        database_url="postgresql://tennis:tennis@127.0.0.1:1/tennis_edge?connect_timeout=1",
+    )
+    store = PersistentStore(settings)
+    service = OperationalStateService(settings, store)
+
+    readiness = service.live_readiness(_snapshot(service, generated_at))
+
+    assert store.last_error
+    assert readiness.status == "degraded"
+    assert readiness.can_analyze_live is True
+    assert readiness.can_generate_entries is False
+    persistence_check = next(check for check in readiness.checks if check.name == "persistence")
+    assert persistence_check.status == "fail"
+    assert persistence_check.detail == store.last_error
 
 
 def test_operational_state_falls_back_to_safe_runtime_defaults() -> None:

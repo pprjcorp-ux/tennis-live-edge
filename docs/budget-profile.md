@@ -15,6 +15,10 @@ plus men's/women's Grand Slam singles analytics at roughly `$500/mo`.
 - `EXECUTION_ENABLED=false`
 - `REAL_EXECUTION_HARD_BLOCK=true`
 
+Live budget mode is paper-first and persistence-first. `Entrada` signals remain
+blocked unless Postgres/Timescale is configured through `DATABASE_URL`, schema is
+applied, provider cursors are trusted, and the score/odds feeds are fresh.
+
 ## Vendor Shape
 
 - API-Tennis Business for fixtures, livescore, H2H, and rankings.

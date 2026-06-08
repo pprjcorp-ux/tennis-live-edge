@@ -45,8 +45,9 @@ TENNIS_EDGE_DATA_MODE=live npm run api:dev
 ```
 
 Live mode persists matches, score ticks, odds ticks, feature snapshots,
-predictions, signals, provider cursors, provider latency, and paper orders when
-`DATABASE_URL` is configured.
+predictions, signals, provider cursors, provider latency, and paper orders.
+Paper entries stay blocked until `TENNIS_EDGE_PERSISTENCE_ENABLED=true`,
+`DATABASE_URL` is configured, and the store reports no persistence error.
 
 ## Documentation
 

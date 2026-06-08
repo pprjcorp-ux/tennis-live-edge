@@ -54,6 +54,10 @@ Budget branch:
 - `EXECUTION_ENABLED=false`
 - `REAL_EXECUTION_HARD_BLOCK=true`
 
+Live paper entries require durable operational truth: in `TENNIS_EDGE_DATA_MODE=live`,
+`DATABASE_URL` must be configured and Postgres/Timescale must be healthy before
+`can_generate_entries=true`.
+
 ## Safety Rules
 
 - The system can abstain; no forced picks.

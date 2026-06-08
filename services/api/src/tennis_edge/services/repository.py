@@ -435,6 +435,7 @@ class AnalysisRepository:
             request,
             anomalies,
             orders=order_snapshot,
+            remember_in_process=False,
         )
         for order in result.created_orders:
             self.store.save_order(order)

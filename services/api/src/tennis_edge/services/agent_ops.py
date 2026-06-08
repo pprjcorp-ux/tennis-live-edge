@@ -510,6 +510,7 @@ def run_agent_autopilot(
     request: AgentAutopilotRequest,
     anomalies: list[AgentAnomaly],
     orders: Iterable[ExecutionOrder] | None = None,
+    remember_in_process: bool = True,
 ) -> AgentAutopilotResult:
     order_snapshot = _order_snapshot(orders)
     actions: list[AgentAction] = []
@@ -629,20 +630,20 @@ def run_agent_autopilot(
             )
         )
 
-    run = _remember_run(
-        AgentRun(
-            id=_run_id("agent"),
-            run_type=AgentRunType.AUTOPILOT_EVALUATE,
-            source=request.source,
-            model_routes=_model_routes(settings, critical=critical),
-            actions=actions,
-            summary=(
-                f"Autopilot evaluated {len(_entry_signals(analyses))} entry signals, "
-                f"created {paper_orders_created} paper orders and skipped {paper_orders_skipped}."
-            ),
-            created_at=_now(),
-        )
+    run = AgentRun(
+        id=_run_id("agent"),
+        run_type=AgentRunType.AUTOPILOT_EVALUATE,
+        source=request.source,
+        model_routes=_model_routes(settings, critical=critical),
+        actions=actions,
+        summary=(
+            f"Autopilot evaluated {len(_entry_signals(analyses))} entry signals, "
+            f"created {paper_orders_created} paper orders and skipped {paper_orders_skipped}."
+        ),
+        created_at=_now(),
     )
+    if remember_in_process:
+        run = _remember_run(run)
 
     return AgentAutopilotResult(
         run=run,

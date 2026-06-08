@@ -111,6 +111,7 @@ def test_agent_autopilot_persists_run_and_created_paper_orders() -> None:
     assert all(order.status == OrderStatus.PAPER for order in store.saved_orders)
     assert asyncio.run(repo.agent_runs())[0] == result.run
     assert ORDERS == {}
+    assert AGENT_RUNS == []
 
 
 def test_agent_autopilot_blocks_paper_orders_when_provider_latency_is_critical() -> None:

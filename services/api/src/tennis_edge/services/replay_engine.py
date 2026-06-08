@@ -10,7 +10,9 @@ from tennis_edge.domain import (
     ReplayRunResult,
     ScoreTick,
 )
+from tennis_edge.providers.api_tennis import parse_api_tennis_score
 from tennis_edge.providers.betradar_uof import parse_betradar_market_state
+from tennis_edge.providers.odds_api_io import parse_odds_api_io_moneyline
 from tennis_edge.providers.sportradar import parse_sportradar_point, parse_sportradar_score
 from tennis_edge.providers.txodds import parse_txodds_moneyline
 from tennis_edge.services.normalizer import dedupe_payloads
@@ -28,7 +30,13 @@ class ReplayEngine:
     def replay(self, payloads: list[RawProviderPayload]) -> ReplayState:
         state = ReplayState()
         for payload in dedupe_payloads(payloads):
-            if payload.provider == Provider.SPORTRADAR and payload.payload_type == "score":
+            if payload.provider == Provider.API_TENNIS and payload.payload_type == "score":
+                score_tick = parse_api_tennis_score(payload)
+                if score_tick is not None:
+                    state.score_ticks.append(score_tick)
+            elif payload.provider == Provider.ODDS_API_IO and payload.payload_type == "odds":
+                state.odds_quotes.extend(parse_odds_api_io_moneyline(payload))
+            elif payload.provider == Provider.SPORTRADAR and payload.payload_type == "score":
                 state.score_ticks.append(parse_sportradar_score(payload))
             elif payload.provider == Provider.SPORTRADAR and payload.payload_type == "point":
                 state.point_events.append(parse_sportradar_point(payload))

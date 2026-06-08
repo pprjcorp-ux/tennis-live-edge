@@ -11,6 +11,7 @@ from tennis_edge.domain import (
     Provider,
     ProviderMatchPayload,
     RawProviderPayload,
+    ScoreTick,
     Surface,
     Tour,
 )
@@ -345,3 +346,27 @@ class ApiTennisClient:
             if value not in (None, ""):
                 return value
         return None
+
+
+def parse_api_tennis_score(payload: RawProviderPayload) -> ScoreTick | None:
+    records = ApiTennisClient(api_key=None, data_mode="live")._parse_match_payloads(
+        {"result": [payload.payload]},
+        default_status="live",
+    )
+    if not records:
+        return None
+    match = records[0].match
+    state = match.state.model_copy(
+        update={
+            "source_latency_ms": int(
+                (payload.ingested_at - payload.source_ts).total_seconds() * 1000
+            )
+        }
+    )
+    return ScoreTick(
+        match_id=match.id,
+        provider=Provider.API_TENNIS,
+        state=state,
+        source_ts=payload.source_ts,
+        ingested_at=payload.ingested_at,
+    )

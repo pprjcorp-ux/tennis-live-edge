@@ -106,6 +106,63 @@ def test_api_tennis_parser_uses_provider_payload_not_sample_matches() -> None:
     assert records[0].raw_payload.payload["event_key"] == "42"
 
 
+def test_budget_provider_payloads_replay_to_score_and_odds_ticks() -> None:
+    api_client = ApiTennisClient(api_key="key", data_mode="live")
+    score_records = api_client._parse_match_payloads(
+        {
+            "result": [
+                {
+                    "event_key": "42",
+                    "event_date": date.today().isoformat(),
+                    "event_time": "13:30",
+                    "event_first_player": "Elena Rybakina",
+                    "event_second_player": "Ons Jabeur",
+                    "event_first_player_key": "101",
+                    "event_second_player_key": "102",
+                    "event_type_type": "WTA Singles",
+                    "tournament_name": "Wimbledon",
+                    "tournament_round": "R4",
+                    "tournament_surface": "Grass",
+                    "event_status": "Set 1",
+                    "event_game_result": "4 - 3",
+                    "event_point": "30 - 15",
+                    "event_serve": "First Player",
+                }
+            ]
+        },
+        default_status="live",
+    )
+    odds_raw = OddsApiIoClient(api_key="key", data_mode="live").raw_payload_from_message(
+        {
+            "event_id": "42",
+            "seq": 9,
+            "timestamp": "2026-05-10T12:00:00Z",
+            "data": {
+                "bookmaker": "SharpBook",
+                "market": "moneyline",
+                "selections": [
+                    {"player_id": "wta_api_tennis_101", "odds": 1.72},
+                    {"player_id": "wta_api_tennis_102", "odds": 2.18},
+                ],
+            },
+        }
+    )
+
+    replay = ReplayEngine().replay([score_records[0].raw_payload, odds_raw])
+
+    assert len(replay.score_ticks) == 1
+    assert replay.score_ticks[0].provider == Provider.API_TENNIS
+    assert replay.score_ticks[0].match_id == "api_tennis_42"
+    assert replay.score_ticks[0].state.p1_games == 4
+    assert replay.score_ticks[0].state.point_score == "30-15"
+    assert len(replay.odds_quotes) == 2
+    assert {quote.player_id for quote in replay.odds_quotes} == {
+        "wta_api_tennis_101",
+        "wta_api_tennis_102",
+    }
+    assert all(quote.ingested_at == odds_raw.ingested_at for quote in replay.odds_quotes)
+
+
 def test_api_tennis_live_without_key_returns_no_synthetic_matches() -> None:
     client = ApiTennisClient(api_key=None, data_mode="live")
 

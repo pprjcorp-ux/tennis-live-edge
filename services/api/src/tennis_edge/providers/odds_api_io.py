@@ -236,3 +236,16 @@ class OddsApiIoClient:
     def _safe_id(self, value: str) -> str:
         safe = re.sub(r"[^a-zA-Z0-9_.:-]+", "_", value).strip("_")
         return safe or "tennis_moneyline"
+
+
+def parse_odds_api_io_moneyline(payload: RawProviderPayload) -> list[OddsQuote]:
+    quotes = OddsApiIoClient(api_key=None, data_mode="live").parse_message(payload.payload)
+    return [
+        quote.model_copy(
+            update={
+                "source_ts": payload.source_ts,
+                "ingested_at": payload.ingested_at,
+            }
+        )
+        for quote in quotes
+    ]

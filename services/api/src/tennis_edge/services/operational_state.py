@@ -57,7 +57,13 @@ class OperationalStateService:
 
     def provider_cursors(self) -> list[ProviderCursor]:
         persisted = self.store.provider_cursors()
-        return persisted or self.fallback_provider_cursors()
+        defaults_by_key = {
+            (cursor.provider, cursor.stream): cursor
+            for cursor in self.fallback_provider_cursors()
+        }
+        for cursor in persisted:
+            defaults_by_key[(cursor.provider, cursor.stream)] = cursor
+        return sorted(defaults_by_key.values(), key=lambda item: (item.provider, item.stream))
 
     def fallback_provider_cursors(self) -> list[ProviderCursor]:
         return default_provider_cursors(

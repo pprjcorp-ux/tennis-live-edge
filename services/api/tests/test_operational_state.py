@@ -120,13 +120,18 @@ def test_operational_state_prefers_persisted_health_inputs() -> None:
         StoreStub(cursors=[cursor], data_quality=[quality], ingestion_runs=[run]),
     )
 
-    assert service.provider_cursors() == [cursor]
+    cursors = service.provider_cursors()
+    odds_cursor = next(item for item in cursors if item.provider == Provider.ODDS_API_IO)
+    sportradar_cursor = next(item for item in cursors if item.provider == Provider.SPORTRADAR)
+
+    assert odds_cursor == cursor
+    assert sportradar_cursor.resync_required is True
     assert service.data_quality() == [quality]
     assert service.ingestion_runs() == [run]
 
     snapshot = _snapshot(service, generated_at)
 
-    assert snapshot.provider_cursors == [cursor]
+    assert snapshot.provider_cursors == cursors
     assert snapshot.data_quality == [quality]
     assert snapshot.ingestion_runs == [run]
     assert snapshot.cost_profile.active_plan == "lean_atp"
@@ -164,6 +169,39 @@ def test_live_readiness_blocks_entries_without_persistent_truth() -> None:
     persistence_check = next(check for check in readiness.checks if check.name == "persistence")
     assert persistence_check.status == "fail"
     assert persistence_check.detail == "DATABASE_URL is missing."
+
+
+def test_live_readiness_blocks_entries_when_persisted_odds_cursor_is_missing() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    score_only_cursor = ProviderCursor(
+        provider=Provider.API_TENNIS,
+        stream="score/live",
+        status=CursorStatus.HEALTHY,
+        resync_required=False,
+        note="score cursor persisted",
+    )
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(cursors=[score_only_cursor]),
+    )
+
+    snapshot = _snapshot(service, generated_at)
+    readiness = service.live_readiness(snapshot)
+    odds_cursor = next(
+        cursor for cursor in snapshot.provider_cursors if cursor.provider == Provider.ODDS_API_IO
+    )
+
+    assert odds_cursor.status == CursorStatus.RESYNC_REQUIRED
+    assert odds_cursor.resync_required is True
+    assert readiness.status == "degraded"
+    assert readiness.can_generate_entries is False
+    assert "Odds websocket cursor requires resync before entries." in readiness.blockers
 
 
 def test_live_readiness_blocks_entries_when_store_reports_error() -> None:

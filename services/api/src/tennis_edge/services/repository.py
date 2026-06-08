@@ -107,8 +107,7 @@ class AnalysisRepository:
         self.dashboard_read_model = LiveDashboardReadModel(self.operational_state)
         self.signal_gate = SignalGateService(
             settings,
-            provider_cursors=lambda: self.store.provider_cursors()
-            or self.operational_state.fallback_provider_cursors(),
+            provider_cursors=self.operational_state.provider_cursors,
         )
         self.ingestion = LiveIngestionPipeline(
             self.api_tennis_source,

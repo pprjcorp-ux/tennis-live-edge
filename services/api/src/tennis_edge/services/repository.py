@@ -92,12 +92,10 @@ from tennis_edge.services.signal_gates import SignalGateService
 from tennis_edge.services.storage import PersistentStore
 
 
-BACKTESTS: dict[str, BacktestMetrics] = {}
-
-
 class AnalysisRepository:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self._sample_backtests: dict[str, BacktestMetrics] = {}
         self.api_tennis = ApiTennisClient(settings.api_tennis_key, settings.data_mode)
         self.api_tennis_source = ApiTennisMatchSource(self.api_tennis)
         self.odds_api_io = OddsApiIoClient(settings.odds_api_io_key, settings.data_mode)
@@ -611,7 +609,7 @@ class AnalysisRepository:
         metrics = self.store.backtest_metrics(request) or run_walk_forward_backtest(request)
         self.store.save_backtest(metrics, request)
         if self.settings.data_mode == "sample":
-            BACKTESTS[metrics.run_id] = metrics
+            self._sample_backtests[metrics.run_id] = metrics
         return metrics
 
     async def get_backtest(self, run_id: str) -> BacktestMetrics:
@@ -619,10 +617,10 @@ class AnalysisRepository:
         if persisted is not None:
             return persisted
         if self.settings.data_mode == "sample":
-            if run_id == "latest" and BACKTESTS:
-                return list(BACKTESTS.values())[-1]
-            if run_id in BACKTESTS:
-                return BACKTESTS[run_id]
+            if run_id == "latest" and self._sample_backtests:
+                return list(self._sample_backtests.values())[-1]
+            if run_id in self._sample_backtests:
+                return self._sample_backtests[run_id]
         raise KeyError(run_id)
 
     async def daily_metrics(self, target_date: date) -> DailyMetrics:

@@ -7,7 +7,6 @@ import pytest
 from tennis_edge.domain import BacktestRunRequest, OrderStatus, PaperSettlement, TrainingExample
 from tennis_edge.config import Settings
 from tennis_edge.services.repository import AnalysisRepository
-from tennis_edge.services.repository import BACKTESTS
 from tennis_edge.services.storage import PersistentStore
 from tennis_edge.services.model_lab import (
     calibration_from_training_examples,
@@ -315,7 +314,6 @@ def test_calibration_report_fallback_uses_persisted_backtest_run_config() -> Non
 
 
 def test_repository_latest_backtest_prefers_persisted_store_over_memory_cache() -> None:
-    BACKTESTS.clear()
     stale_metrics = walk_forward_from_training_examples(
         BacktestRunRequest(model_version="baseline_v0"),
         [
@@ -329,29 +327,25 @@ def test_repository_latest_backtest_prefers_persisted_store_over_memory_cache() 
             _example(3, 0.71, True, 0.6, 0.008),
         ],
     )
-    BACKTESTS[stale_metrics.run_id] = stale_metrics
-
     class StoreStub:
         def get_backtest(self, run_id):
             assert run_id == "latest"
             return persisted_metrics
 
     repo = AnalysisRepository(Settings(data_mode="sample"))
+    repo._sample_backtests[stale_metrics.run_id] = stale_metrics
     repo.store = StoreStub()
 
     assert asyncio.run(repo.get_backtest("latest")) == persisted_metrics
-    BACKTESTS.clear()
 
 
 def test_live_backtest_lookup_does_not_use_process_memory_cache() -> None:
-    BACKTESTS.clear()
     cached_metrics = walk_forward_from_training_examples(
         BacktestRunRequest(model_version="baseline_v0"),
         [
             _example(1, 0.52, False, -0.5, -0.01, model_version="baseline_v0"),
         ],
     )
-    BACKTESTS[cached_metrics.run_id] = cached_metrics
 
     class StoreStub:
         def get_backtest(self, run_id):
@@ -359,9 +353,31 @@ def test_live_backtest_lookup_does_not_use_process_memory_cache() -> None:
             return None
 
     repo = AnalysisRepository(Settings(data_mode="live", database_url=None))
+    repo._sample_backtests[cached_metrics.run_id] = cached_metrics
     repo.store = StoreStub()
 
     with pytest.raises(KeyError):
         asyncio.run(repo.get_backtest(cached_metrics.run_id))
 
-    BACKTESTS.clear()
+
+def test_sample_backtest_cache_is_repository_scoped() -> None:
+    class StoreStub:
+        def backtest_metrics(self, request):
+            return None
+
+        def save_backtest(self, metrics, request):
+            self.saved = (metrics, request)
+
+        def get_backtest(self, run_id):
+            return None
+
+    repo_one = AnalysisRepository(Settings(data_mode="sample"))
+    repo_two = AnalysisRepository(Settings(data_mode="sample"))
+    repo_one.store = StoreStub()
+    repo_two.store = StoreStub()
+
+    metrics = asyncio.run(repo_one.run_backtest(BacktestRunRequest(model_version="baseline_v0")))
+
+    assert asyncio.run(repo_one.get_backtest(metrics.run_id)) == metrics
+    with pytest.raises(KeyError):
+        asyncio.run(repo_two.get_backtest(metrics.run_id))

@@ -50,6 +50,8 @@ from tennis_edge.domain import (
 from tennis_edge.security import require_admin_token
 from tennis_edge.services.repository import AnalysisRepository
 
+_REPOSITORY_CACHE: dict[str, AnalysisRepository] = {}
+
 app = FastAPI(
     title="Tennis Live Edge API",
     version="0.1.0",
@@ -58,7 +60,10 @@ app = FastAPI(
 
 
 def repository(settings: Settings = Depends(get_settings)) -> AnalysisRepository:
-    return AnalysisRepository(settings)
+    cache_key = settings.model_dump_json()
+    if cache_key not in _REPOSITORY_CACHE:
+        _REPOSITORY_CACHE[cache_key] = AnalysisRepository(settings)
+    return _REPOSITORY_CACHE[cache_key]
 
 
 settings = get_settings()

@@ -62,6 +62,26 @@ def test_disabled_resync_gate_leaves_live_signals_unchanged() -> None:
     assert service.apply_provider_gates(signals) == signals
 
 
+def test_resync_required_boolean_blocks_even_with_inconsistent_cursor_status() -> None:
+    match, signals = _match_and_signals("match_gs_001")
+    inconsistent_cursor = ProviderCursor(
+        provider=Provider.ODDS_API_IO,
+        stream="tennis:moneyline",
+        status=CursorStatus.HEALTHY,
+        resync_required=True,
+        note="persisted cursor still requires resync",
+    )
+    service = SignalGateService(
+        Settings(data_mode="live", odds_ws_resync_required_blocks_signals=True),
+        provider_cursors=lambda: [inconsistent_cursor],
+    )
+
+    gated = service.gate_signals_for_match(match, signals)
+
+    assert all(signal.status != SignalStatus.ENTRY for signal in gated)
+    assert all(signal.stake_fraction == 0 for signal in gated)
+
+
 def test_coverage_gate_runs_before_provider_cursor_gate() -> None:
     match, signals = _match_and_signals("match_wta_002")
     service = SignalGateService(

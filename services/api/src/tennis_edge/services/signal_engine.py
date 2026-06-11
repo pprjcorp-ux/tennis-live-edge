@@ -67,6 +67,7 @@ def build_signals(
         if decision and decision.status == RiskDecisionStatus.BLOCK:
             status = SignalStatus.BLOCKED
             reason = " ".join(decision.reasons)
+            stake = 0
         elif edge >= threshold and stake > 0:
             status = SignalStatus.ENTRY
             reason = "Edge acima do threshold com stake Kelly positivo."

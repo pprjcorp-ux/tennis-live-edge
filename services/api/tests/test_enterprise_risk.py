@@ -47,6 +47,11 @@ def test_stale_live_odds_are_blocked() -> None:
     signals = build_signals(match, prediction, features)
 
     assert any("stale" in signal.reason for signal in signals)
+    assert all(
+        signal.stake_fraction == 0
+        for signal in signals
+        if signal.status == SignalStatus.BLOCKED
+    )
 
 
 def test_stale_live_score_is_blocked() -> None:
@@ -63,3 +68,21 @@ def test_stale_live_score_is_blocked() -> None:
 
     assert any("Live score feed is stale" in signal.reason for signal in signals)
     assert all(signal.status != SignalStatus.ENTRY for signal in signals)
+    assert all(signal.stake_fraction == 0 for signal in signals)
+
+
+def test_invalid_live_score_state_blocks_entries_and_zeroes_stake() -> None:
+    base_match = sample_matches()[1]
+    match = base_match.model_copy(
+        update={
+            "state": base_match.state.model_copy(update={"point_score": "15-X"})
+        }
+    )
+    features = build_features(match)
+    prediction = predict_match(match, features)
+
+    signals = build_signals(match, prediction, features)
+
+    assert any("Live score state is incomplete" in signal.reason for signal in signals)
+    assert all(signal.status != SignalStatus.ENTRY for signal in signals)
+    assert all(signal.stake_fraction == 0 for signal in signals)

@@ -63,7 +63,10 @@ class SignalGateService:
                 cursor
                 for cursor in cursors
                 if cursor.provider == Provider.ODDS_API_IO
-                and cursor.status in {CursorStatus.GAP_DETECTED, CursorStatus.RESYNC_REQUIRED}
+                and (
+                    cursor.resync_required
+                    or cursor.status in {CursorStatus.GAP_DETECTED, CursorStatus.RESYNC_REQUIRED}
+                )
             ),
             None,
         )

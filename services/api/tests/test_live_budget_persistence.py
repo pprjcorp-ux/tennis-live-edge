@@ -154,9 +154,12 @@ def test_training_example_count_uses_persisted_settled_rows_and_filters() -> Non
         def execute(self, query, params=None):
             assert "FROM training_examples te" in query
             assert "LEFT JOIN feature_snapshots fs" in query
+            assert "LEFT JOIN paper_orders po" in query
+            assert "FROM paper_settlements" in query
             assert "te.result_win IS NOT NULL" in query
             assert "te.pnl IS NOT NULL" in query
             assert "te.stake_amount > 0" in query
+            assert "te.decision_ts < latest_settlement.settled_at" in query
             assert "fs.feature_set = %s" in query
             self.params = params
             return self
@@ -520,7 +523,10 @@ def test_training_examples_filter_by_feature_set_and_decision_window() -> None:
         def execute(self, query, params=None):
             assert "FROM training_examples te" in query
             assert "LEFT JOIN feature_snapshots fs" in query
+            assert "LEFT JOIN paper_orders po" in query
+            assert "FROM paper_settlements" in query
             assert "fs.feature_set = %s" in query
+            assert "te.decision_ts < latest_settlement.settled_at" in query
             self.params = params
             return self
 
@@ -551,6 +557,7 @@ def test_training_examples_filter_by_feature_set_and_decision_window() -> None:
                     "clv": 0.02,
                     "stake_amount": 50,
                     "calibration_bucket": "0.6-0.7",
+                    "settled_at": datetime(2026, 6, 4, 20, tzinfo=timezone.utc),
                 }
             ]
 
@@ -592,6 +599,7 @@ def test_training_examples_filter_by_feature_set_and_decision_window() -> None:
     assert examples[0].feature_snapshot_id == 123
     assert examples[0].feature_set == "live_budget_v1"
     assert examples[0].decision_ts == decision_ts
+    assert examples[0].settled_at == datetime(2026, 6, 4, 20, tzinfo=timezone.utc)
 
 
 def test_training_examples_skip_legacy_zero_stake_rows() -> None:
@@ -604,6 +612,7 @@ def test_training_examples_skip_legacy_zero_stake_rows() -> None:
 
         def execute(self, query, params=None):
             assert "te.stake_amount > 0" in query
+            assert "te.decision_ts < latest_settlement.settled_at" in query
             return self
 
         def fetchall(self):

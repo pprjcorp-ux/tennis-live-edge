@@ -523,6 +523,7 @@ class TrainingExample(BaseModel):
     clv: float | None = None
     stake_amount: float = Field(default=1, gt=0)
     calibration_bucket: str
+    settled_at: datetime | None = None
 
 
 class ModelRegistryEntry(BaseModel):

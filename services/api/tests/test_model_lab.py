@@ -163,6 +163,44 @@ def test_walk_forward_ignores_invalid_zero_stake_examples() -> None:
     assert metrics.clv == 0.012
 
 
+def test_walk_forward_rejects_examples_decided_after_settlement() -> None:
+    valid_decision = datetime(2026, 5, 1, 12, tzinfo=timezone.utc)
+    settled_at = datetime(2026, 5, 2, 12, tzinfo=timezone.utc)
+    examples = [
+        _example(1, 0.62, True, 10, 0.012).model_copy(
+            update={
+                "stake_amount": 100,
+                "decision_ts": valid_decision,
+                "settled_at": settled_at,
+            }
+        ),
+        _example(2, 0.95, True, 500, 0.4).model_copy(
+            update={
+                "stake_amount": 100,
+                "decision_ts": settled_at,
+                "settled_at": settled_at,
+            }
+        ),
+        _example(3, 0.99, True, 999, 0.5).model_copy(
+            update={
+                "stake_amount": 100,
+                "decision_ts": settled_at + timedelta(minutes=1),
+                "settled_at": settled_at,
+            }
+        ),
+    ]
+
+    metrics = walk_forward_from_training_examples(
+        BacktestRunRequest(model_version="prematch_ensemble_v1"),
+        examples,
+    )
+
+    assert metrics.signals == 1
+    assert metrics.matches == 1
+    assert metrics.roi == 0.1
+    assert metrics.clv == 0.012
+
+
 def test_walk_forward_filters_training_examples_by_feature_set() -> None:
     examples = [
         _example(1, 0.62, True, 10, 0.012).model_copy(

@@ -1802,13 +1802,26 @@ class PersistentStore:
                           coalesce(fs.feature_set, 'unknown') AS feature_set,
                           te.decision_ts, te.model_probability, te.market_probability,
                           te.closing_probability, te.result_win, te.pnl, te.clv, te.stake_amount,
-                          te.calibration_bucket
+                          te.calibration_bucket,
+                          latest_settlement.settled_at
                         FROM training_examples te
                         LEFT JOIN feature_snapshots fs ON fs.id = te.feature_snapshot_id
+                        LEFT JOIN paper_orders po ON te.id = ('train_' || po.external_order_ref)
+                        LEFT JOIN LATERAL (
+                          SELECT settled_at
+                          FROM paper_settlements
+                          WHERE paper_order_id = po.id
+                          ORDER BY settled_at DESC, id DESC
+                          LIMIT 1
+                        ) latest_settlement ON TRUE
                         WHERE te.model_version = %s
                           AND te.result_win IS NOT NULL
                           AND te.pnl IS NOT NULL
                           AND te.stake_amount > 0
+                          AND (
+                            latest_settlement.settled_at IS NULL
+                            OR te.decision_ts < latest_settlement.settled_at
+                          )
                           AND (%s::text IS NULL OR fs.feature_set = %s::text)
                           AND (%s::date IS NULL OR te.decision_ts::date >= %s::date)
                           AND (%s::date IS NULL OR te.decision_ts::date <= %s::date)
@@ -1848,6 +1861,7 @@ class PersistentStore:
                     clv=float(row["clv"]) if row["clv"] is not None else None,
                     stake_amount=float(row["stake_amount"] or 1),
                     calibration_bucket=row["calibration_bucket"],
+                    settled_at=row.get("settled_at"),
                 )
             )
         return examples
@@ -1869,9 +1883,21 @@ class PersistentStore:
                         SELECT count(*)::int AS examples
                         FROM training_examples te
                         LEFT JOIN feature_snapshots fs ON fs.id = te.feature_snapshot_id
+                        LEFT JOIN paper_orders po ON te.id = ('train_' || po.external_order_ref)
+                        LEFT JOIN LATERAL (
+                          SELECT settled_at
+                          FROM paper_settlements
+                          WHERE paper_order_id = po.id
+                          ORDER BY settled_at DESC, id DESC
+                          LIMIT 1
+                        ) latest_settlement ON TRUE
                         WHERE te.result_win IS NOT NULL
                           AND te.pnl IS NOT NULL
                           AND te.stake_amount > 0
+                          AND (
+                            latest_settlement.settled_at IS NULL
+                            OR te.decision_ts < latest_settlement.settled_at
+                          )
                           AND (%s::text IS NULL OR te.model_version = %s::text)
                           AND (%s::text IS NULL OR fs.feature_set = %s::text)
                           AND (%s::date IS NULL OR te.decision_ts::date >= %s::date)

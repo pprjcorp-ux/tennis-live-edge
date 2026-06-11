@@ -2832,7 +2832,17 @@ class PersistentStore:
             hold_rate=float(row["p2_hold_rate"]),
             break_rate=float(row["p2_break_rate"]),
         )
-        raw_state = row["latest_state"] or {"status": row["status"]}
+        raw_state = dict(row["latest_state"] or {"status": row["status"]})
+        score_source_ts = row.get("latest_score_source_ts")
+        if (
+            raw_state.get("status") == "live"
+            and score_source_ts
+            and raw_state.get("source_latency_ms") is None
+        ):
+            raw_state["source_latency_ms"] = max(
+                0,
+                int((_now() - score_source_ts).total_seconds() * 1000),
+            )
         return Match(
             id=row["id"],
             provider_ids=row["provider_ids"] or {},

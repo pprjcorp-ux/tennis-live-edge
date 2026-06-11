@@ -221,6 +221,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_paper_performance_ignores_unmatched_settled_orders",
             "test_stale_live_odds_are_blocked",
             "test_invalid_live_score_state_blocks_entries_and_zeroes_stake",
+            "test_persisted_fallback_match_state_uses_latest_score_source_latency",
             "test_live_readiness_blocks_entries_when_critical_provider_health_is_unhealthy",
             "test_live_readiness_blocks_entries_when_data_quality_reports_stale_ticks",
             "test_direct_paper_order_blocks_when_live_readiness_cannot_generate_entries",

@@ -1808,6 +1808,55 @@ def test_latest_analyses_score_tick_lateral_selects_timestamps() -> None:
     assert "SELECT raw_state, source_ts, ingested_at" in query
 
 
+def test_persisted_fallback_match_state_uses_latest_score_source_latency() -> None:
+    base_match = sample_matches()[1]
+    score_source_ts = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(seconds=20)
+    raw_state = base_match.state.model_dump()
+    raw_state["source_latency_ms"] = None
+    row = {
+        "id": base_match.id,
+        "provider_ids": base_match.provider_ids,
+        "latest_score_source_ts": score_source_ts,
+        "player1_id": base_match.player1.id,
+        "p1_provider_ids": base_match.player1.provider_ids,
+        "p1_name": base_match.player1.name,
+        "p1_country": base_match.player1.country,
+        "p1_ranking": base_match.player1.ranking,
+        "p1_handedness": base_match.player1.handedness,
+        "p1_elo_overall": base_match.player1.elo_overall,
+        "p1_elo_clay": base_match.player1.elo_clay,
+        "p1_elo_hard": base_match.player1.elo_hard,
+        "p1_hold_rate": base_match.player1.hold_rate,
+        "p1_break_rate": base_match.player1.break_rate,
+        "player2_id": base_match.player2.id,
+        "p2_provider_ids": base_match.player2.provider_ids,
+        "p2_name": base_match.player2.name,
+        "p2_country": base_match.player2.country,
+        "p2_ranking": base_match.player2.ranking,
+        "p2_handedness": base_match.player2.handedness,
+        "p2_elo_overall": base_match.player2.elo_overall,
+        "p2_elo_clay": base_match.player2.elo_clay,
+        "p2_elo_hard": base_match.player2.elo_hard,
+        "p2_hold_rate": base_match.player2.hold_rate,
+        "p2_break_rate": base_match.player2.break_rate,
+        "tour": base_match.tour,
+        "status": base_match.state.status,
+        "latest_state": raw_state,
+        "tournament": base_match.tournament,
+        "round": base_match.round,
+        "competition_level": base_match.competition_level,
+        "surface": base_match.surface,
+        "indoor": base_match.indoor,
+        "best_of": base_match.best_of,
+        "scheduled_at": base_match.scheduled_at,
+    }
+
+    match = PersistentStore(Settings(data_mode="live"))._match_from_row(row, [])
+
+    assert match.state.source_latency_ms is not None
+    assert match.state.source_latency_ms >= 20_000
+
+
 def test_latest_analyses_does_not_generate_unpersisted_predictions() -> None:
     class CursorStub:
         def __init__(self) -> None:

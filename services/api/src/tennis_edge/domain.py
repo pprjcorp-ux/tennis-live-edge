@@ -573,13 +573,13 @@ class PaperSettlement(BaseModel):
     order_id: str
     status: OrderStatus
     result_win: bool
-    requested_odds: float
-    average_price: float
-    matched_stake: float
+    requested_odds: float = Field(gt=1)
+    average_price: float = Field(gt=1)
+    matched_stake: float = Field(ge=0)
     gross_pnl: float
     commission: float
     net_pnl: float
-    closing_odds: float
+    closing_odds: float = Field(gt=1)
     clv: float
     settled_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

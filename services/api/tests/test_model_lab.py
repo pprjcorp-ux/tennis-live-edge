@@ -1,10 +1,11 @@
 import asyncio
+import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from tennis_edge.domain import BacktestRunRequest, OrderStatus, PaperSettlement, TrainingExample
+from tennis_edge.domain import BacktestMetrics, BacktestRunRequest, OrderStatus, PaperSettlement, TrainingExample
 from tennis_edge.config import Settings
 from tennis_edge.services.repository import AnalysisRepository
 from tennis_edge.services.storage import PersistentStore
@@ -38,6 +39,14 @@ def _example(
         clv=clv,
         calibration_bucket=bucket,
     )
+
+
+def _json_param(value):
+    if hasattr(value, "obj"):
+        return value.obj
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
 
 
 def test_walk_forward_backtest_uses_settled_training_examples_only() -> None:
@@ -283,6 +292,124 @@ def test_training_example_uses_decision_timestamp_and_matched_stake() -> None:
         "created_at",
     ]:
         assert updated_row[immutable_column] == first_row[immutable_column]
+
+
+def test_training_example_skips_zero_matched_stake() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.inserted = False
+            self.source_row = {
+                "external_order_ref": "paper_unmatched",
+                "match_id": "match_1",
+                "player_id": "player_1",
+                "stake_amount": 100,
+                "matched_stake": 0,
+                "order_created_at": datetime(2026, 5, 1, 13, tzinfo=timezone.utc),
+                "model_prob": 0.62,
+                "market_prob": 0.58,
+                "model_version_id": "prematch_ensemble_v1",
+                "feature_snapshot_id": 123,
+                "prediction_created_at": datetime(2026, 5, 1, 14, tzinfo=timezone.utc),
+            }
+
+        def execute(self, query, params):
+            if "SELECT" in query:
+                return self
+            self.inserted = True
+            return self
+
+        def fetchone(self):
+            return self.source_row
+
+    cursor = CursorStub()
+    store = PersistentStore(Settings(data_mode="sample"))
+
+    store._insert_training_example(
+        cursor,
+        paper_order_id=1,
+        settlement=PaperSettlement(
+            order_id="paper_unmatched",
+            status=OrderStatus.SETTLED,
+            result_win=True,
+            requested_odds=2.0,
+            average_price=2.0,
+            matched_stake=0,
+            gross_pnl=0,
+            commission=0,
+            net_pnl=0,
+            closing_odds=1.95,
+            clv=0,
+        ),
+    )
+
+    assert cursor.inserted is False
+
+
+def test_save_backtest_persists_feature_set_in_model_training_window() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.model_training_window = None
+            self.backtest_run_config = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            if "INSERT INTO model_versions" in query:
+                self.model_training_window = _json_param(params[2])
+            if "INSERT INTO backtests" in query:
+                self.backtest_run_config = _json_param(params[2])
+            return self
+
+    class ConnStub:
+        def __init__(self, cursor) -> None:
+            self.cursor_stub = cursor
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="sample"))
+            self.cursor = CursorStub()
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub(self.cursor)
+
+        def training_examples(self, request=None):
+            return []
+
+    store = StoreStub()
+    metrics = BacktestMetrics(
+        run_id="bt_feature_set",
+        model_version="prematch_ensemble_v1",
+        matches=1,
+        signals=1,
+        roi=0.01,
+        clv=0.01,
+        brier_score=0.2,
+        log_loss=0.6,
+        calibration_error=0.1,
+        max_drawdown=0.02,
+    )
+    request = BacktestRunRequest(
+        model_version="prematch_ensemble_v1",
+        feature_set="enterprise_v1",
+    )
+
+    store.save_backtest(metrics, request)
+
+    assert store.cursor.model_training_window["feature_set"] == "enterprise_v1"
+    assert store.cursor.backtest_run_config["feature_set"] == "enterprise_v1"
+    assert store.last_error is None
 
 
 def test_repository_prefers_persisted_model_lab_reports() -> None:

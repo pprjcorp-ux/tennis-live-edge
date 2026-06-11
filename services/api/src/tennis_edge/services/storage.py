@@ -93,6 +93,15 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
+def _matched_stake_or_legacy_requested(
+    matched_stake: Any,
+    stake_amount: Any,
+) -> float:
+    if matched_stake is not None:
+        return float(matched_stake)
+    return float(stake_amount or 0)
+
+
 def _provider_warnings_from_summary(summary: Any) -> list[str]:
     if not isinstance(summary, dict):
         return []
@@ -1424,7 +1433,10 @@ class PersistentStore:
                 result_win=row["result_win"],
                 requested_odds=float(row["requested_odds"]),
                 average_price=float(row["average_price"] or row["requested_odds"]),
-                matched_stake=float(row["matched_stake"] or row["stake_amount"] or 0),
+                matched_stake=_matched_stake_or_legacy_requested(
+                    row["matched_stake"],
+                    row["stake_amount"],
+                ),
                 gross_pnl=float(row["gross_pnl"]),
                 commission=float(row["commission"]),
                 net_pnl=float(row["net_pnl"]),
@@ -1434,7 +1446,12 @@ class PersistentStore:
             )
         if row["status"] not in PERSISTED_OPEN_ORDER_STATUSES:
             return None
-        matched = float(row["matched_stake"] or row["stake_amount"] or 0)
+        matched = _matched_stake_or_legacy_requested(
+            row["matched_stake"],
+            row["stake_amount"],
+        )
+        if matched <= 0:
+            return None
         average_price = float(row["average_price"] or row["requested_odds"])
         gross = matched * (average_price - 1) if request.result_win else -matched
         commission = max(0.0, gross) * 0.02
@@ -1865,6 +1882,7 @@ class PersistentStore:
                                     {
                                         "start_date": request.start_date,
                                         "end_date": request.end_date,
+                                        "feature_set": request.feature_set,
                                         "walk_forward": request.walk_forward,
                                     }
                                 ),
@@ -2090,6 +2108,12 @@ class PersistentStore:
         ).fetchone()
         if not row or not row["match_id"] or not row["player_id"]:
             return
+        matched_stake = _matched_stake_or_legacy_requested(
+            row["matched_stake"],
+            row["stake_amount"],
+        )
+        if matched_stake <= 0:
+            return
         probability = float(row["model_prob"] or 0)
         bucket_lower = int(probability * 10) / 10
         calibration_bucket = f"{bucket_lower:.1f}-{bucket_lower + 0.1:.1f}"
@@ -2122,7 +2146,7 @@ class PersistentStore:
                 settlement.result_win,
                 settlement.net_pnl,
                 settlement.clv,
-                row["matched_stake"] or row["stake_amount"] or 1,
+                matched_stake,
                 calibration_bucket,
                 _now(),
             ),

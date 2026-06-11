@@ -223,7 +223,13 @@ class AnalysisRepository:
 
     def record_ingestion_run(
         self,
-        run_type: Literal["score_snapshot", "odds_message", "odds_stream", "live_budget_cycle"],
+        run_type: Literal[
+            "score_snapshot",
+            "odds_message",
+            "odds_stream",
+            "live_budget_cycle",
+            "replay_run",
+        ],
         summary: dict,
         *,
         source: Literal["api", "cli", "openclaw", "cron", "system"] = "system",
@@ -259,9 +265,11 @@ class AnalysisRepository:
             return "degraded"
         if summary.get("source") == "provider_live" or summary.get("connected") is True:
             return "completed"
-        if summary.get("source") == "persisted_fallback" or summary.get("timed_out") is True:
-            return "degraded"
         if summary.get("resync_required") is True:
+            return "degraded"
+        if summary.get("source") == "replay":
+            return "completed" if int(summary.get("events_replayed") or 0) > 0 else "skipped"
+        if summary.get("source") == "persisted_fallback" or summary.get("timed_out") is True:
             return "degraded"
         score = summary.get("score_ingestion")
         odds = summary.get("odds_ingestion")
@@ -732,12 +740,22 @@ class AnalysisRepository:
             signals=signal_count,
             state=state,
         )
-        return result.model_copy(
+        final_result = result.model_copy(
             update={
                 **persisted,
                 "final_status": "degraded" if result.resync_required else result.final_status,
             }
         )
+        self.record_ingestion_run(
+            "replay_run",
+            {
+                **final_result.model_dump(mode="json"),
+                "source": "replay",
+                "odds_scenario": request.odds_scenario,
+            },
+            source="api",
+        )
+        return final_result
 
     def _persist_replay_effects(
         self,

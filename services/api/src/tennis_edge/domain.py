@@ -738,6 +738,7 @@ class IngestionRunRecord(BaseModel):
         "odds_message",
         "odds_stream",
         "live_budget_cycle",
+        "replay_run",
     ]
     source: Literal["api", "cli", "openclaw", "cron", "system"] = "system"
     status: Literal["completed", "degraded", "skipped", "failed"]

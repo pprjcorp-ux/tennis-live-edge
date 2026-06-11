@@ -28,6 +28,18 @@ function summaryObject(value: unknown): Record<string, unknown> | null {
 
 function summaryText(run: IngestionRunRecord) {
   const summary = run.summary;
+  if (run.run_type === "replay_run") {
+    const scenario =
+      typeof summary.odds_scenario === "string" ? `${summary.odds_scenario} odds` : "replay";
+    const events =
+      typeof summary.events_replayed === "number" ? `${summary.events_replayed} events` : null;
+    const score =
+      typeof summary.score_ticks === "number" ? `${summary.score_ticks} score` : null;
+    const odds =
+      typeof summary.odds_ticks === "number" ? `${summary.odds_ticks} odds` : null;
+    const resync = summary.resync_required === true ? "resync required" : null;
+    return [scenario, events, score, odds, resync].filter(Boolean).join(" · ");
+  }
   const directReason = typeof summary.reason === "string" ? summary.reason : null;
   const error = typeof summary.error === "string" ? summary.error : null;
   const oddsIngestion = summaryObject(summary.odds_ingestion);

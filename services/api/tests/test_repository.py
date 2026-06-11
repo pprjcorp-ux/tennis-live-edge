@@ -538,6 +538,7 @@ def test_sample_replay_fallback_uses_budget_provider_payloads() -> None:
             self.odds_saves = []
             self.cursors_saved = []
             self.latencies = []
+            self.ingestion_runs_saved = []
 
         def __getattr__(self, name):
             return getattr(self.fallback, name)
@@ -573,6 +574,10 @@ def test_sample_replay_fallback_uses_budget_provider_payloads() -> None:
             self.latencies.append((provider, feed, latest_source_ts, latest_ingested_at))
             return True
 
+        def save_ingestion_run(self, run):
+            self.ingestion_runs_saved.append(run)
+            return True
+
     repo = AnalysisRepository(Settings(data_mode="sample"))
     store = StoreStub(repo.store)
     repo.store = store
@@ -595,6 +600,10 @@ def test_sample_replay_fallback_uses_budget_provider_payloads() -> None:
     }
     assert {provider for provider, *_ in store.latencies} == providers
     assert store.cursors_saved[0].last_seq == 1
+    assert store.ingestion_runs_saved[-1].run_type == "replay_run"
+    assert store.ingestion_runs_saved[-1].status == "completed"
+    assert store.ingestion_runs_saved[-1].summary["source"] == "replay"
+    assert store.ingestion_runs_saved[-1].summary["events_replayed"] == 3
 
 
 def test_replay_runner_persists_fake_provider_score_odds_and_cursor() -> None:
@@ -738,6 +747,7 @@ def test_replay_runner_exposes_gap_cursor_and_resync_notes() -> None:
         def __init__(self, fallback) -> None:
             self.fallback = fallback
             self.cursors_saved = []
+            self.ingestion_runs_saved = []
 
         def __getattr__(self, name):
             return getattr(self.fallback, name)
@@ -761,6 +771,10 @@ def test_replay_runner_exposes_gap_cursor_and_resync_notes() -> None:
         def record_provider_latency(self, *args, **kwargs):
             return True
 
+        def save_ingestion_run(self, run):
+            self.ingestion_runs_saved.append(run)
+            return True
+
     repo = AnalysisRepository(Settings(data_mode="sample"))
     store = StoreStub(repo.store)
     repo.store = store
@@ -774,6 +788,9 @@ def test_replay_runner_exposes_gap_cursor_and_resync_notes() -> None:
     assert replay.provider_cursors[0].expected_next_seq == 11
     assert replay.provider_cursors[0].resync_required is True
     assert replay.notes == ["Sequence gap detected: expected 11, received 12."]
+    assert store.ingestion_runs_saved[-1].run_type == "replay_run"
+    assert store.ingestion_runs_saved[-1].status == "degraded"
+    assert store.ingestion_runs_saved[-1].summary["resync_required"] is True
 
 
 def test_live_replay_without_persisted_payloads_does_not_use_sample_payloads() -> None:

@@ -56,6 +56,9 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(apiSource, /odds_scenario: oddsScenario/);
   assert.match(dataHealthSource, /Ingestion Journal/);
   assert.match(dataHealthSource, /Ultimos ciclos persistidos/);
+  assert.match(dataHealthSource, /run\.run_type === "replay_run"/);
+  assert.match(dataHealthSource, /events_replayed/);
+  assert.match(dataHealthSource, /resync required/);
   assert.match(dataHealthSource, /cursorStatusClass/);
   assert.match(dataHealthSource, /expected_next_seq/);
   assert.match(dataHealthSource, /resync_required/);

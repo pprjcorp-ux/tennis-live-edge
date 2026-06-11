@@ -217,7 +217,12 @@ export type DailyCostReport = {
 
 export type IngestionRunRecord = {
   id: string;
-  run_type: "score_snapshot" | "odds_message" | "odds_stream" | "live_budget_cycle";
+  run_type:
+    | "score_snapshot"
+    | "odds_message"
+    | "odds_stream"
+    | "live_budget_cycle"
+    | "replay_run";
   source: "api" | "cli" | "openclaw" | "cron" | "system";
   status: "completed" | "degraded" | "skipped" | "failed";
   summary: Record<string, unknown>;

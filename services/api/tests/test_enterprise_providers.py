@@ -1,7 +1,7 @@
 import asyncio
 from datetime import date
 
-from tennis_edge.domain import OddsTick, Provider, RawProviderPayload
+from tennis_edge.domain import OddsTick, Provider, RawProviderPayload, ScoreTick
 from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.providers.betradar_uof import parse_betradar_market_state
 from tennis_edge.providers.odds_api_io import OddsApiIoClient, parse_odds_api_io_moneyline
@@ -124,12 +124,22 @@ def test_score_adapter_returns_replayable_provider_match_payloads() -> None:
     client = ApiTennisClient(api_key=None, data_mode="sample")
 
     records = asyncio.run(client.get_livescore_payloads())
+    replay = ReplayEngine().replay([record.raw_payload for record in records])
+    latency = provider_latency_from_payload(records[0].raw_payload, feed="score/live")
 
     assert records
     assert all(record.raw_payload.provider == Provider.API_TENNIS for record in records)
     assert all(record.raw_payload.payload_type == "score" for record in records)
     assert all(record.raw_payload.source_event_id for record in records)
     assert all(record.match.id for record in records)
+    assert replay.score_ticks
+    assert all(isinstance(tick, ScoreTick) for tick in replay.score_ticks)
+    assert {tick.match_id for tick in replay.score_ticks}.issubset(
+        {record.match.id for record in records}
+    )
+    assert latency.provider == Provider.API_TENNIS
+    assert latency.feed == "score/live"
+    assert latency.latency_ms >= 0
 
 
 def test_odds_adapter_returns_raw_payload_odds_ticks_cursor_and_latency() -> None:

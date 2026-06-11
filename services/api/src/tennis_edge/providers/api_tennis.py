@@ -38,7 +38,7 @@ class ApiTennisClient:
                 ProviderMatchPayload(
                     match=match,
                     raw_payload=self._raw_payload_for_match(
-                        match.model_dump(mode="json"),
+                        self._sample_event_payload(match),
                         match,
                         payload_type="fixture" if match.state.status == "prematch" else "score",
                     ),
@@ -72,7 +72,7 @@ class ApiTennisClient:
                 ProviderMatchPayload(
                     match=match,
                     raw_payload=self._raw_payload_for_match(
-                        match.model_dump(mode="json"),
+                        self._sample_event_payload(match),
                         match,
                         payload_type="score",
                     ),
@@ -151,6 +151,39 @@ class ApiTennisClient:
             checksum=checksum,
         )
 
+    def _sample_event_payload(self, match: Match) -> dict[str, Any]:
+        status = match.state.status
+        if status == "prematch":
+            event_status = "Not Started"
+        elif status == "finished":
+            event_status = "Finished"
+        else:
+            event_status = "Set 1"
+        server = ""
+        if match.state.server_player_id == match.player1.id:
+            server = "First Player"
+        elif match.state.server_player_id == match.player2.id:
+            server = "Second Player"
+        return {
+            "canonical_match_id": match.id,
+            "event_key": match.provider_match_id or match.id,
+            "event_date": match.scheduled_at.date().isoformat(),
+            "event_time": match.scheduled_at.strftime("%H:%M:%S"),
+            "event_first_player": match.player1.name,
+            "event_second_player": match.player2.name,
+            "event_first_player_key": match.player1.provider_ids.get("api_tennis", match.player1.id),
+            "event_second_player_key": match.player2.provider_ids.get("api_tennis", match.player2.id),
+            "event_type_type": f"{match.tour.value} Singles",
+            "tournament_name": match.tournament,
+            "tournament_round": match.round,
+            "tournament_surface": match.surface.value.replace("_", " ").title(),
+            "event_status": event_status,
+            "event_final_result": f"{match.state.p1_sets} - {match.state.p2_sets}",
+            "event_game_result": f"{match.state.p1_games} - {match.state.p2_games}",
+            "event_point": match.state.point_score,
+            "event_serve": server,
+        }
+
     def _parse_event(self, event: dict[str, Any], default_status: str) -> Match | None:
         event_key = self._first(event, "event_key", "event_id", "id", "fixture_id")
         first_name = self._first(event, "event_first_player", "first_player", "home_team")
@@ -164,9 +197,10 @@ class ApiTennisClient:
         competition_level = self._competition_level(tour, tournament, event_type)
         player1 = self._player(event, "first", str(first_name), tour)
         player2 = self._player(event, "second", str(second_name), tour)
+        canonical_match_id = self._first(event, "canonical_match_id")
 
         return Match(
-            id=f"api_tennis_{event_key}",
+            id=str(canonical_match_id or f"api_tennis_{event_key}"),
             provider_ids={"api_tennis": str(event_key)},
             provider_match_id=str(event_key),
             tournament=tournament,

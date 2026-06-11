@@ -141,7 +141,12 @@ class AnalysisRepository:
         try:
             source = archive_source or self.the_odds_api
             events = await source.get_tennis_h2h_events()
-        except Exception:
+        except Exception as exc:
+            warnings = getattr(source, "last_warnings", None)
+            if isinstance(warnings, list):
+                warning = f"TheOddsAPI archive endpoint failed: {type(exc).__name__}"
+                if warning not in warnings:
+                    warnings.append(warning)
             return matches
 
         by_names = {event.name_key: event for event in events}

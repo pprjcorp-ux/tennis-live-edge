@@ -309,6 +309,29 @@ def test_archive_odds_augmentation_persists_theoddsapi_raw_payload() -> None:
     assert store.saved_payloads[0].source_event_id == "event-raw-1"
 
 
+def test_archive_odds_augmentation_records_theoddsapi_warning_on_failure() -> None:
+    match = sample_matches()[0]
+
+    class ArchiveSource:
+        def __init__(self) -> None:
+            self.last_warnings = []
+
+        async def get_tennis_h2h_events(self):
+            raise RuntimeError("archive unavailable")
+
+    source = ArchiveSource()
+    repo = AnalysisRepository(
+        Settings(data_mode="live", the_odds_api_key="key", persistence_enabled=False)
+    )
+
+    updated = asyncio.run(repo._augment_with_archive_odds([match], source))
+
+    assert updated == [match]
+    assert source.last_warnings == [
+        "TheOddsAPI archive endpoint failed: RuntimeError"
+    ]
+
+
 def test_entity_conflicts_prefers_persisted_store_over_sample_conflicts() -> None:
     persisted_conflicts = [
         CanonicalEntityConflict(

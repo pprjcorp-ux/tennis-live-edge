@@ -113,6 +113,10 @@ class LiveIngestionPipeline:
             )
 
         matches = await self.archive_augmenter(provider_matches, self.archive_source)
+        provider_warnings = [
+            *provider_warnings,
+            *_source_warnings(self.archive_source),
+        ]
         analyses = [
             self._analysis_for_match(
                 match,

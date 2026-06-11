@@ -31,30 +31,38 @@ class TheOddsApiClient:
     def __init__(self, api_key: str | None, data_mode: str = "sample") -> None:
         self.api_key = api_key
         self.data_mode = data_mode
+        self.last_warnings: list[str] = []
 
     async def get_tennis_h2h_events(self) -> list[TheOddsApiEvent]:
+        self.last_warnings = []
         if self.data_mode == "sample" or not self.api_key:
             return []
 
-        async with httpx.AsyncClient(timeout=20) as client:
-            sports = await self._active_tennis_sports(client)
-            events: list[TheOddsApiEvent] = []
-            for sport_key in sports:
-                response = await client.get(
-                    f"{self.base_url}/sports/{sport_key}/odds",
-                    params={
-                        "apiKey": self.api_key,
-                        "regions": "us,uk,eu",
-                        "markets": "h2h",
-                        "oddsFormat": "decimal",
-                        "dateFormat": "iso",
-                    },
-                )
-                response.raise_for_status()
-                payload = response.json()
-                if isinstance(payload, list):
-                    events.extend(self.parse_odds_payload(sport_key, payload))
-            return events
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                sports = await self._active_tennis_sports(client)
+                events: list[TheOddsApiEvent] = []
+                for sport_key in sports:
+                    response = await client.get(
+                        f"{self.base_url}/sports/{sport_key}/odds",
+                        params={
+                            "apiKey": self.api_key,
+                            "regions": "us,uk,eu",
+                            "markets": "h2h",
+                            "oddsFormat": "decimal",
+                            "dateFormat": "iso",
+                        },
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    if isinstance(payload, list):
+                        events.extend(self.parse_odds_payload(sport_key, payload))
+                return events
+        except Exception as exc:
+            self.last_warnings.append(
+                f"TheOddsAPI archive endpoint failed: {type(exc).__name__}"
+            )
+            return []
 
     async def _active_tennis_sports(self, client: httpx.AsyncClient) -> list[str]:
         response = await client.get(f"{self.base_url}/sports", params={"apiKey": self.api_key})

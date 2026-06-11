@@ -3086,6 +3086,38 @@ def test_live_ingestion_pipeline_marks_theoddsapi_archive_lineage() -> None:
     assert Provider.ODDS_API_IO not in lineage
 
 
+def test_live_ingestion_pipeline_exposes_theoddsapi_archive_warnings() -> None:
+    match = _live_provider_matches()[0]
+
+    class ArchiveSource:
+        def __init__(self) -> None:
+            self.last_warnings = []
+
+        async def get_tennis_h2h_events(self):
+            raise RuntimeError("archive unavailable")
+
+    repo = AnalysisRepository(
+        Settings(data_mode="live", the_odds_api_key="key", persistence_enabled=False)
+    )
+    store = _FakeStore()
+    archive_source = ArchiveSource()
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource([match]),
+        archive_source,
+        store,
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=repo._augment_with_archive_odds,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert snapshot.source == "provider_live"
+    assert len(snapshot.analyses) == 1
+    assert snapshot.provider_warnings == [
+        "TheOddsAPI archive endpoint failed: RuntimeError"
+    ]
+
+
 def test_live_ingestion_pipeline_does_not_claim_persistence_when_store_does_not_save() -> None:
     store = _FakeStore(saves_enabled=False)
     pipeline = LiveIngestionPipeline(

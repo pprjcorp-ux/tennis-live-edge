@@ -73,6 +73,8 @@ import type {
   Signal
 } from "@/lib/types";
 
+type FreshnessSource = NonNullable<MatchAnalysis["freshness"]>["source"];
+
 function pct(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
@@ -113,9 +115,23 @@ function providerModeClass(mode: OperationalStateSnapshot["provider_mode"]) {
 }
 
 function providerModeLabel(mode: OperationalStateSnapshot["provider_mode"]) {
-  if (mode === "live_with_keys") return "live with keys";
-  if (mode === "live_without_keys") return "live without keys";
   return mode;
+}
+
+function freshnessClass(source: FreshnessSource | undefined) {
+  if (source === "provider_live") return "status statusEntry";
+  if (source === "persisted_fallback") return "status statusMonitor";
+  if (source === "empty") return "status statusBlocked";
+  return "status statusMuted";
+}
+
+function cursorClass(cursor: ProviderCursor | undefined) {
+  if (!cursor) return "status statusBlocked";
+  if (cursor.resync_required || cursor.status === "gap_detected" || cursor.status === "resync_required") {
+    return "status statusBlocked";
+  }
+  if (cursor.status === "resynced") return "status statusMonitor";
+  return "status statusEntry";
 }
 
 function playerProbability(analysis: MatchAnalysis, playerId: string) {
@@ -424,6 +440,9 @@ export default function Page() {
         ? readiness.warnings
         : ["Paper-first readiness checks passing."];
   const readinessPanelMessages = [providerModeReason, ...readinessMessages].filter(Boolean);
+  const oddsCursor = providerCursors.find((cursor) => cursor.provider === "odds_api_io");
+  const selectedFreshness = selected?.freshness;
+  const selectedLineage = selectedFreshness?.provider_lineage.join(", ") || "-";
 
   return (
     <main className="shell">
@@ -479,6 +498,53 @@ export default function Page() {
           <CircleDollarSign size={18} />
           <span>Perfil custo</span>
           <strong>{costProfile ? usd(costProfile.estimated_monthly_spend_usd) : "-"}</strong>
+        </div>
+      </section>
+
+      <section className="operationalStrip" aria-label="Estado operacional dos dados">
+        <div className="opsCell">
+          <div>
+            <span>Provider mode</span>
+            <strong className={providerModeClass(providerMode)}>{providerModeLabel(providerMode)}</strong>
+          </div>
+          <p>{providerModeReason}</p>
+        </div>
+        <div className="opsCell">
+          <div>
+            <span>Readiness</span>
+            <strong className={preflightStatusClass(readiness?.status ?? "blocked")}>
+              {readiness?.status ?? "blocked"}
+            </strong>
+          </div>
+          <p>
+            analyze {readiness?.can_analyze_live ? "yes" : "no"} · entries{" "}
+            {readiness?.can_generate_entries ? "ready" : "blocked"} · real{" "}
+            {readiness?.can_submit_real_orders ? "enabled" : "hard-blocked"}
+          </p>
+        </div>
+        <div className="opsCell">
+          <div>
+            <span>Odds cursor</span>
+            <strong className={cursorClass(oddsCursor)}>
+              {oddsCursor?.status ?? "missing"}
+            </strong>
+          </div>
+          <p>
+            seq {oddsCursor?.last_seq ?? "none"} · next{" "}
+            {oddsCursor?.expected_next_seq ?? "none"} · gaps {oddsCursor?.gap_count ?? 0}
+          </p>
+        </div>
+        <div className="opsCell">
+          <div>
+            <span>Selected freshness</span>
+            <strong className={freshnessClass(selectedFreshness?.source)}>
+              {selectedFreshness?.source ?? "empty"}
+            </strong>
+          </div>
+          <p>
+            score {ageLabel(selectedFreshness?.score_age_ms)} · odds{" "}
+            {ageLabel(selectedFreshness?.odds_age_ms)} · {selectedLineage}
+          </p>
         </div>
       </section>
 

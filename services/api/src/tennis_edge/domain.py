@@ -509,7 +509,7 @@ class TrainingExample(BaseModel):
     match_id: str
     player_id: str
     model_version: str
-    feature_snapshot_id: str
+    feature_snapshot_id: int | None = None
     feature_set: str = "live_budget_v1"
     decision_ts: datetime
     model_probability: float = Field(ge=0, le=1)

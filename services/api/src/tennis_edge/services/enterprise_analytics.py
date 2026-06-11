@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import uuid4
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
@@ -341,6 +340,3 @@ def _segments_from_orders(
         )
     return segments
 
-
-def feature_snapshot_id() -> str:
-    return f"fs_{uuid4().hex[:12]}"

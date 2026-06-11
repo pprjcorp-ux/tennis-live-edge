@@ -28,7 +28,7 @@ def _example(
         match_id=f"match_{index}",
         player_id=f"player_{index}",
         model_version=model_version,
-        feature_snapshot_id=f"fs_{index}",
+        feature_snapshot_id=index,
         decision_ts=datetime(2026, 5, 1, tzinfo=timezone.utc) + timedelta(days=index),
         model_probability=probability,
         market_probability=max(0.05, probability - 0.04),

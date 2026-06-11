@@ -588,7 +588,7 @@ def test_training_examples_filter_by_feature_set_and_decision_window() -> None:
     )
 
     assert len(examples) == 1
-    assert examples[0].feature_snapshot_id == "123"
+    assert examples[0].feature_snapshot_id == 123
     assert examples[0].feature_set == "live_budget_v1"
     assert examples[0].decision_ts == decision_ts
 

@@ -1776,7 +1776,7 @@ class PersistentStore:
                     match_id=row["match_id"],
                     player_id=row["player_id"],
                     model_version=row["model_version"],
-                    feature_snapshot_id=str(row["feature_snapshot_id"] or ""),
+                    feature_snapshot_id=row["feature_snapshot_id"],
                     feature_set=str(row["feature_set"] or "unknown"),
                     decision_ts=row["decision_ts"],
                     model_probability=float(row["model_probability"]),

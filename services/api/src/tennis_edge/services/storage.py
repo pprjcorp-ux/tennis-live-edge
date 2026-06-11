@@ -2417,17 +2417,29 @@ class PersistentStore:
     ) -> None:
         source_ts = self._score_tick_source_ts(match, freshness)
         provider = self._score_tick_provider(match, freshness)
+        ingested_at = datetime.now(timezone.utc)
         cur.execute(
             """
             INSERT INTO score_ticks (match_id, provider, raw_state, source_ts, ingested_at)
-            VALUES (%s, %s, %s, %s, %s)
+            SELECT %s, %s, %s, %s, %s
+            WHERE NOT EXISTS (
+              SELECT 1 FROM score_ticks
+              WHERE match_id = %s
+                AND provider = %s
+                AND raw_state = %s
+                AND source_ts = %s
+            )
             """,
             (
                 match.id,
                 provider.value,
                 _json(match.state.model_dump(mode="json")),
                 source_ts,
-                _now(),
+                ingested_at,
+                match.id,
+                provider.value,
+                _json(match.state.model_dump(mode="json")),
+                source_ts,
             ),
         )
 

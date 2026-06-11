@@ -30,9 +30,12 @@ from tennis_edge.domain import (
     KillSwitchRequest,
     LearningPromotionRequest,
     LiveDashboardSnapshot,
+    Match,
     MatchAnalysis,
+    MatchState,
     ModelRegistryEntry,
     ModelPromotionDecision,
+    OddsQuote,
     OddsMessageIngestionRequest,
     OddsMessageIngestionResult,
     OrderRequest,
@@ -61,6 +64,7 @@ from tennis_edge.services.agent_ops import (
 from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
+from tennis_edge.sample_data import sample_matches
 from tennis_edge.services.api_tennis_source import ApiTennisMatchSource
 from tennis_edge.services.backtest import (
     enforce_champion_non_regression,
@@ -88,7 +92,7 @@ from tennis_edge.services.live_dashboard import LiveDashboardReadModel
 from tennis_edge.services.operational_state import OperationalStateService
 from tennis_edge.services.provider_cursor import mark_resynced
 from tennis_edge.services.ingestion import LiveIngestionPipeline
-from tennis_edge.services.replay_engine import ReplayEngine
+from tennis_edge.services.replay_engine import ReplayEngine, ReplayState
 from tennis_edge.services.signal_gates import SignalGateService
 from tennis_edge.services.storage import PersistentStore
 
@@ -759,12 +763,27 @@ class AnalysisRepository:
             state,
             payload_source=payload_source,
         )
+        materialized_analyses = self._materialize_replay_fixture_analyses(
+            request.match_id,
+            state,
+            payload_source=payload_source,
+        )
+        analyses_saved = self.store.save_analyses(materialized_analyses)
+        if materialized_analyses:
+            signal_count = sum(
+                1
+                for analysis in materialized_analyses
+                for signal in analysis.signals
+                if signal.status == SignalStatus.ENTRY
+            )
         notes = [*(state.notes or []), *(persisted.get("notes") or [])]
         if payload_source == "explicit_fixture_seed" and payloads:
             notes.insert(
                 0,
                 "Replay used explicit fixture seed; no live provider quota or live API payloads were consumed.",
             )
+            if analyses_saved:
+                notes.append("Replay fixture canonical analysis persisted for dashboard.")
         elif payload_source == "explicit_fixture_seed":
             notes.insert(0, "Fixture seed was requested but no sample fixture matched this match_id.")
         result = self.replay_engine.summarize(
@@ -840,7 +859,12 @@ class AnalysisRepository:
 
         self._record_replay_latency(payloads)
         if payloads and not raw_payloads_saved:
-            notes.append("Replay used already-persisted raw payloads or disabled persistence.")
+            if payload_source == "explicit_fixture_seed":
+                notes.append(
+                    "Replay fixture seed payloads were already persisted; fixture replay still ran from generated canonical payloads."
+                )
+            else:
+                notes.append("Replay used already-persisted raw payloads or disabled persistence.")
         return {
             "raw_payloads_saved": raw_payloads_saved,
             "score_ticks_saved": score_ticks_saved,
@@ -849,6 +873,126 @@ class AnalysisRepository:
             "resync_required": any(cursor.resync_required for cursor in state.provider_cursors),
             "notes": notes,
         }
+
+    def _materialize_replay_fixture_analyses(
+        self,
+        match_id: str,
+        state: ReplayState,
+        *,
+        payload_source: str,
+    ) -> list[MatchAnalysis]:
+        if payload_source != "explicit_fixture_seed":
+            return []
+        match = self._sample_match_for_replay(match_id)
+        if match is None:
+            return []
+
+        match = self._match_with_replay_state(match, state)
+        analysis = self.ingestion._analysis_for_match(
+            match,
+            score_source_ts=max(
+                (tick.source_ts for tick in state.score_ticks if tick.match_id == match.id),
+                default=None,
+            ),
+        )
+        analysis = analysis.model_copy(
+            update={
+                "signals": self._replay_monitor_only_signals(
+                    SignalGateService(
+                        self.settings,
+                        provider_cursors=lambda: state.provider_cursors,
+                    ).gate_signals_for_match(analysis.match, analysis.signals)
+                )
+            }
+        )
+        return [analysis]
+
+    @staticmethod
+    def _replay_monitor_only_signals(signals: list[Signal]) -> list[Signal]:
+        gated: list[Signal] = []
+        for signal in signals:
+            status = (
+                SignalStatus.MONITOR
+                if signal.status == SignalStatus.ENTRY
+                else signal.status
+            )
+            reason = signal.reason
+            if signal.status == SignalStatus.ENTRY:
+                reason = f"Replay fixture mode is monitor-only; {reason}"
+            gated.append(
+                signal.model_copy(
+                    update={
+                        "status": status,
+                        "stake_fraction": 0,
+                        "reason": reason,
+                    }
+                )
+            )
+        return gated
+
+    def _match_with_replay_state(self, match: Match, state: ReplayState) -> Match:
+        score_tick = max(
+            (tick for tick in state.score_ticks if tick.match_id == match.id),
+            key=lambda tick: tick.source_ts,
+            default=None,
+        )
+        provider_ids = {
+            **match.provider_ids,
+            "api_tennis": match.provider_match_id or match.id,
+            "odds_api_io": match.provider_match_id or match.id,
+        }
+        return match.model_copy(
+            update={
+                "provider_ids": provider_ids,
+                "state": self._remap_replay_state(match, score_tick.state)
+                if score_tick is not None
+                else match.state,
+                "odds": self._latest_replay_odds(match, state.odds_quotes) or match.odds,
+            }
+        )
+
+    def _remap_replay_state(self, match: Match, state: MatchState) -> MatchState:
+        player_ids = {match.player1.id, match.player2.id}
+
+        def remap(player_id: str | None) -> str | None:
+            if player_id is None or player_id in player_ids:
+                return player_id
+            if str(player_id).endswith(match.player1.id):
+                return match.player1.id
+            if str(player_id).endswith(match.player2.id):
+                return match.player2.id
+            return None
+
+        return state.model_copy(
+            update={
+                "server_player_id": remap(state.server_player_id),
+                "momentum_player_id": remap(state.momentum_player_id),
+            }
+        )
+
+    def _latest_replay_odds(self, match: Match, quotes: list[OddsQuote]) -> list[OddsQuote]:
+        valid_players = {match.player1.id, match.player2.id}
+        latest: dict[tuple[str, str, str], OddsQuote] = {}
+        for quote in quotes:
+            if quote.player_id not in valid_players:
+                continue
+            key = (quote.bookmaker, quote.market, quote.player_id)
+            current = latest.get(key)
+            if current is None or quote.source_ts > current.source_ts:
+                latest[key] = quote
+        return list(latest.values())
+
+    @staticmethod
+    def _sample_match_for_replay(match_id: str) -> Match | None:
+        for match in sample_matches():
+            candidates = {
+                match.id,
+                match.provider_match_id,
+                *match.provider_ids.values(),
+            }
+            if match_id in candidates:
+                return match
+        return None
 
     def _record_replay_latency(self, payloads: list[RawProviderPayload]) -> None:
         latest_by_feed: dict[tuple[Provider, str], RawProviderPayload] = {}
@@ -880,6 +1024,11 @@ class AnalysisRepository:
         odds_scenario: str = "healthy",
         use_fixture_seed: bool = False,
     ) -> tuple[list[RawProviderPayload], str]:
+        if use_fixture_seed:
+            return (
+                sample_budget_replay_payloads(match_id, odds_scenario=odds_scenario),
+                "explicit_fixture_seed",
+            )
         for candidate in self._raw_payload_id_candidates(match_id, analyses):
             payloads = self.store.raw_payloads_for_match(candidate)
             if payloads:
@@ -888,11 +1037,6 @@ class AnalysisRepository:
             return (
                 sample_budget_replay_payloads(match_id, odds_scenario=odds_scenario),
                 "sample_budget_replay_fixtures",
-            )
-        if use_fixture_seed:
-            return (
-                sample_budget_replay_payloads(match_id, odds_scenario=odds_scenario),
-                "explicit_fixture_seed",
             )
         return [], "none"
 

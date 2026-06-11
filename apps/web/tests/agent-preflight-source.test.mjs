@@ -53,11 +53,13 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(pageSource, /nextOperational\.api_onboarding/);
   assert.match(pageSource, /nextOperational\.model_lab/);
   assert.match(pageSource, /nextOperational\.replay_lab/);
+  assert.match(pageSource, /nextOperational\.provider_mode_matrix/);
   assert.match(pageSource, /budget_replay_fixtures/);
   assert.match(pageSource, /Live readiness/);
   assert.match(pageSource, /can_generate_entries/);
   assert.match(pageSource, /apiOnboarding=\{apiOnboarding\}/);
   assert.match(pageSource, /ingestionRuns=\{ingestionRuns\}/);
+  assert.match(pageSource, /providerModeMatrix=\{providerModeMatrix\}/);
   assert.match(pageSource, /replayLab=\{replayLab\}/);
   assert.match(apiSource, /\/api\/v1\/dashboard\/live-state/);
   assert.match(apiSource, /odds_scenario: oddsScenario/);
@@ -65,6 +67,9 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(dataHealthSource, /API Onboarding/);
   assert.match(dataHealthSource, /Core primeiro, providers por etapas/);
   assert.match(dataHealthSource, /Replay Contracts/);
+  assert.match(dataHealthSource, /Provider Mode Matrix/);
+  assert.match(dataHealthSource, /providerModeMatrix\.map/);
+  assert.match(dataHealthSource, /entries \{step\.entry_gate\}/);
   assert.match(dataHealthSource, /replayLab\.providers/);
   assert.match(dataHealthSource, /apiOnboarding\.steps/);
   assert.match(dataHealthSource, /Ultimos ciclos persistidos/);

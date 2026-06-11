@@ -849,6 +849,8 @@ class DailyCostReport(BaseModel):
 
 
 ProviderRuntimeMode = Literal["sample", "replay", "live_without_keys", "live_with_keys"]
+ProviderModeStatus = Literal["active", "ready", "blocked", "deferred"]
+ProviderModeEntryGate = Literal["allow", "monitor", "block"]
 ApiOnboardingStatus = Literal["configured", "ready_next", "blocked", "deferred"]
 ApiOnboardingCapability = Literal[
     "archive_odds",
@@ -856,6 +858,17 @@ ApiOnboardingCapability = Literal[
     "live_odds_websocket",
     "enterprise_feeds",
 ]
+
+
+class ProviderModeStep(BaseModel):
+    mode: ProviderRuntimeMode
+    active: bool
+    status: ProviderModeStatus
+    entry_gate: ProviderModeEntryGate
+    summary: str
+    evidence: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    next_action: str
 
 
 class ApiOnboardingStep(BaseModel):
@@ -916,6 +929,7 @@ class ReplayLabSnapshot(BaseModel):
 class OperationalStateSnapshot(BaseModel):
     provider_mode: ProviderRuntimeMode
     provider_mode_reason: str
+    provider_mode_matrix: list[ProviderModeStep]
     provider_health: list[ProviderHealth]
     cost_profile: CostProfile
     daily_cost_report: DailyCostReport

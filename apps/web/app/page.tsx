@@ -71,6 +71,7 @@ import type {
   PaperPerformance,
   ProviderCursor,
   ProviderHealth,
+  ProviderModeStep,
   ReplayLabSnapshot,
   ReplayOddsScenario,
   ReplayRunResult,
@@ -174,6 +175,7 @@ export default function Page() {
     can_run_live_backtest: false,
     reasons: ["Awaiting operational state."]
   });
+  const [providerModeMatrix, setProviderModeMatrix] = useState<ProviderModeStep[]>([]);
   const [replayLab, setReplayLab] = useState<ReplayLabSnapshot>({
     status: "collecting",
     source: "budget_replay_fixtures",
@@ -259,6 +261,7 @@ export default function Page() {
       setProviderCursors(nextOperational.provider_cursors);
       setApiOnboarding(nextOperational.api_onboarding);
       setModelLab(nextOperational.model_lab);
+      setProviderModeMatrix(nextOperational.provider_mode_matrix);
       setReplayLab(nextOperational.replay_lab);
       setProviderMode(nextOperational.provider_mode);
       setProviderModeReason(nextOperational.provider_mode_reason);
@@ -613,6 +616,7 @@ export default function Page() {
             apiOnboarding={apiOnboarding}
             dataQuality={dataQuality}
             ingestionRuns={ingestionRuns}
+            providerModeMatrix={providerModeMatrix}
             providerCursors={providerCursors}
             replayLab={replayLab}
           />

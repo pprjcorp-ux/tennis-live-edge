@@ -567,6 +567,7 @@ h2 {
 .qualityRows,
 .cursorRows,
 .apiOnboardingRows,
+.providerModeRows,
 .replayContractRows,
 .modelRows,
 .calibrationRows,
@@ -580,6 +581,7 @@ h2 {
 .qualityRow,
 .cursorRow,
 .apiOnboardingRow,
+.providerModeRow,
 .replayContractRow,
 .modelRow,
 .calibrationRow,
@@ -624,6 +626,15 @@ h2 {
   background: #f8fbff;
 }
 
+.providerModeRow {
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr);
+}
+
+.providerModeRow.active {
+  border-color: var(--green);
+  background: #f8fff9;
+}
+
 .replaySummary {
   display: flex;
   flex-wrap: wrap;
@@ -662,6 +673,8 @@ h2 {
 .cursorRow span,
 .apiOnboardingRow strong,
 .apiOnboardingRow span,
+.providerModeRow strong,
+.providerModeRow span,
 .replayContractRow strong,
 .replayContractRow span,
 .modelRow strong,
@@ -677,6 +690,7 @@ h2 {
 .qualityRow div span,
 .cursorRow div span,
 .apiOnboardingRow div span,
+.providerModeRow div span,
 .replayContractRow div span,
 .modelRow div span,
 .conflictRow div span,
@@ -689,6 +703,7 @@ h2 {
 
 .qualityRow > span,
 .cursorRow > span,
+.providerModeRow > span,
 .modelRow > span,
 .replayContractRow > span,
 .calibrationRow > span,

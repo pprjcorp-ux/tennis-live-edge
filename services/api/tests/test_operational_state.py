@@ -248,6 +248,50 @@ def test_operational_state_marks_live_with_keys_provider_mode() -> None:
     assert "keys are configured" in snapshot.provider_mode_reason
 
 
+def test_provider_mode_matrix_explains_replay_monitor_mode() -> None:
+    service = OperationalStateService(
+        Settings(data_mode="live", persistence_enabled=True),
+        StoreStub(replay_activity=True),
+    )
+
+    matrix = {step.mode: step for step in service.provider_mode_matrix(active_mode="replay")}
+
+    assert matrix["replay"].active is True
+    assert matrix["replay"].status == "active"
+    assert matrix["replay"].entry_gate == "monitor"
+    assert not matrix["replay"].blockers
+    assert matrix["live_without_keys"].entry_gate == "block"
+    assert "API_TENNIS_KEY missing" in matrix["live_without_keys"].blockers
+    assert "ODDS_API_IO_KEY missing" in matrix["live_without_keys"].blockers
+
+
+def test_provider_mode_matrix_blocks_live_with_keys_when_cursor_requires_resync() -> None:
+    resync_cursor = ProviderCursor(
+        provider=Provider.ODDS_API_IO,
+        stream="tennis:moneyline",
+        status=CursorStatus.RESYNC_REQUIRED,
+        resync_required=True,
+        note="Sequence gap needs REST resync.",
+    )
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(cursors=[resync_cursor]),
+    )
+
+    matrix = {step.mode: step for step in service.provider_mode_matrix(active_mode="live_with_keys")}
+
+    assert matrix["live_with_keys"].active is True
+    assert matrix["live_with_keys"].status == "active"
+    assert matrix["live_with_keys"].entry_gate == "block"
+    assert "provider cursor requires resync" in matrix["live_with_keys"].blockers
+
+
 def test_api_onboarding_guides_budget_provider_sequence_after_archive_key() -> None:
     service = OperationalStateService(
         Settings(

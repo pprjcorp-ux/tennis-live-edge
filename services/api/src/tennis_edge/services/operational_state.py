@@ -22,6 +22,7 @@ from tennis_edge.domain import (
     Provider,
     ProviderCursor,
     ProviderHealth,
+    ProviderModeStep,
     ReplayContractProvider,
     ReplayLabSnapshot,
 )
@@ -143,6 +144,108 @@ class OperationalStateService:
             "live_without_keys",
             "Live mode is selected, but required score or odds provider keys are missing; entries remain blocked.",
         )
+
+    def provider_mode_matrix(
+        self,
+        *,
+        active_mode: str | None = None,
+    ) -> list[ProviderModeStep]:
+        mode = active_mode or self.provider_mode()[0]
+        persistence_ready, persistence_error = self._persistence_ready()
+        replay_available = getattr(self.store, "has_replay_activity", lambda: False)()
+        score_key_configured = bool(self.settings.api_tennis_key)
+        odds_key_configured = bool(self.settings.odds_api_io_key)
+        cursor_resync = any(cursor.resync_required for cursor in self.provider_cursors())
+        live_key_blockers = []
+        if not score_key_configured:
+            live_key_blockers.append("API_TENNIS_KEY missing")
+        if not odds_key_configured:
+            live_key_blockers.append("ODDS_API_IO_KEY missing")
+        if not persistence_ready:
+            live_key_blockers.append(persistence_error or "persistent store unavailable")
+        if cursor_resync:
+            live_key_blockers.append("provider cursor requires resync")
+
+        sample_active = mode == "sample"
+        replay_active = mode == "replay"
+        live_without_keys_active = mode == "live_without_keys"
+        live_with_keys_active = mode == "live_with_keys"
+        live_with_keys_ready = not live_key_blockers
+
+        return [
+            ProviderModeStep(
+                mode="sample",
+                active=sample_active,
+                status="active" if sample_active else "deferred",
+                entry_gate="monitor",
+                summary="Bundled deterministic fixtures; no paid providers or live claims.",
+                evidence=[
+                    f"TENNIS_EDGE_DATA_MODE={self.settings.data_mode}",
+                    "Sample data is safe for UI/model smoke only.",
+                ],
+                blockers=[] if sample_active else ["Not the selected runtime mode."],
+                next_action="Use only for local development; do not treat sample signals as live.",
+            ),
+            ProviderModeStep(
+                mode="replay",
+                active=replay_active,
+                status="active" if replay_active else ("ready" if replay_available else "blocked"),
+                entry_gate="monitor",
+                summary="Persisted replay score/odds feeds validate provider contracts without live keys.",
+                evidence=[
+                    "Persisted replay activity found."
+                    if replay_available
+                    else "No persisted replay activity yet.",
+                    "Replay entries stay monitor-only until live providers are configured.",
+                ],
+                blockers=[] if replay_available else ["Run /api/v1/replay/run with use_fixture_seed=true."],
+                next_action=(
+                    "Review Replay Lab and cursor output before adding API keys."
+                    if replay_available
+                    else "Run an explicit fixture-seeded replay."
+                ),
+            ),
+            ProviderModeStep(
+                mode="live_without_keys",
+                active=live_without_keys_active,
+                status="active" if live_without_keys_active else "blocked",
+                entry_gate="block",
+                summary="Live mode selected, but budget score/odds keys are incomplete.",
+                evidence=[
+                    "API-Tennis key configured." if score_key_configured else "API-Tennis key missing.",
+                    "Odds-API.io key configured." if odds_key_configured else "Odds-API.io key missing.",
+                ],
+                blockers=[
+                    blocker
+                    for blocker in ["API_TENNIS_KEY missing", "ODDS_API_IO_KEY missing"]
+                    if blocker in live_key_blockers
+                ],
+                next_action="Add APIs one at a time after replay remains green.",
+            ),
+            ProviderModeStep(
+                mode="live_with_keys",
+                active=live_with_keys_active,
+                status=(
+                    "active"
+                    if live_with_keys_active
+                    else ("ready" if live_with_keys_ready else "blocked")
+                ),
+                entry_gate="allow" if live_with_keys_ready else "block",
+                summary="Budget live providers are configured; signal gates still enforce freshness and cursor health.",
+                evidence=[
+                    "API-Tennis key configured." if score_key_configured else "API-Tennis key missing.",
+                    "Odds-API.io key configured." if odds_key_configured else "Odds-API.io key missing.",
+                    "Postgres persistence ready." if persistence_ready else f"Persistence blocked: {persistence_error}",
+                    "Provider cursors trusted." if not cursor_resync else "At least one provider cursor requires resync.",
+                ],
+                blockers=live_key_blockers,
+                next_action=(
+                    "Run live ingestion and let signal gates decide Entrada."
+                    if live_with_keys_ready
+                    else "Clear missing keys, persistence, and cursor blockers before live entries."
+                ),
+            ),
+        ]
 
     def _persistence_ready(self) -> tuple[bool, str | None]:
         persistence_error = getattr(self.store, "last_error", None)
@@ -448,6 +551,7 @@ class OperationalStateService:
         return OperationalStateSnapshot(
             provider_mode=provider_mode,
             provider_mode_reason=provider_mode_reason,
+            provider_mode_matrix=self.provider_mode_matrix(active_mode=provider_mode),
             provider_health=self.provider_health(),
             cost_profile=self.cost_profile(),
             daily_cost_report=cost_report,

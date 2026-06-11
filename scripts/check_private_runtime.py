@@ -136,6 +136,9 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
         required=[
             'ProviderRuntimeMode = Literal["sample", "replay", "live_without_keys", "live_with_keys"]',
             '"sample" | "replay" | "live_without_keys" | "live_with_keys"',
+            "class ProviderModeStep",
+            "ProviderModeEntryGate",
+            "provider_mode_matrix",
             '"replay_run"',
             "class ApiOnboardingSnapshot",
             "ApiOnboardingStep",
@@ -204,6 +207,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_replay_lab_readiness_collects_until_replay_run_is_persisted",
             "test_live_replay_uses_fixture_seed_only_when_explicitly_requested",
             "test_v1_replay_accepts_explicit_fixture_seed",
+            "test_provider_mode_matrix_explains_replay_monitor_mode",
+            "test_provider_mode_matrix_blocks_live_with_keys_when_cursor_requires_resync",
         ],
     )
     _require_text(
@@ -212,6 +217,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
         text=data_health_panel,
         required=[
             "Replay Contracts",
+            "Provider Mode Matrix",
+            "providerModeMatrix.map",
             "replayLab.providers",
             "run.run_type === \"replay_run\"",
             "events_replayed",

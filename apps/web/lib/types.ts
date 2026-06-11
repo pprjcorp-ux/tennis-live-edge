@@ -216,11 +216,24 @@ export type DailyCostReport = {
 };
 
 export type ApiOnboardingStatus = "configured" | "ready_next" | "blocked" | "deferred";
+export type ProviderModeStatus = "active" | "ready" | "blocked" | "deferred";
+export type ProviderModeEntryGate = "allow" | "monitor" | "block";
 export type ApiOnboardingCapability =
   | "archive_odds"
   | "score_livescore"
   | "live_odds_websocket"
   | "enterprise_feeds";
+
+export type ProviderModeStep = {
+  mode: "sample" | "replay" | "live_without_keys" | "live_with_keys";
+  active: boolean;
+  status: ProviderModeStatus;
+  entry_gate: ProviderModeEntryGate;
+  summary: string;
+  evidence: string[];
+  blockers: string[];
+  next_action: string;
+};
 
 export type ApiOnboardingStep = {
   order: number;
@@ -295,6 +308,7 @@ export type IngestionRunRecord = {
 export type OperationalStateSnapshot = {
   provider_mode: "sample" | "replay" | "live_without_keys" | "live_with_keys";
   provider_mode_reason: string;
+  provider_mode_matrix: ProviderModeStep[];
   provider_health: ProviderHealth[];
   cost_profile: CostProfile;
   daily_cost_report: DailyCostReport;

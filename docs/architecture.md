@@ -56,7 +56,12 @@ decide whether the system behaves as budget or enterprise.
     It keeps provider setup ordered as TheOddsAPI REST/archive, API-Tennis
     score/livescore, Odds-API.io websocket, then deferred enterprise feeds, with
     each step blocked until the persisted core and prerequisites are healthy.
-16. Replay Lab readiness is a derived read-model inside
+16. Provider mode is exposed as a matrix inside `OperationalStateSnapshot`, not
+    just as a single label. The matrix lists `sample`, `replay`,
+    `live_without_keys`, and `live_with_keys`, with active status, entry gate,
+    evidence, blockers, and next action so the dashboard cannot confuse replay
+    rehearsal with live eligibility.
+17. Replay Lab readiness is a derived read-model inside
     `OperationalStateSnapshot`. It exposes `budget_replay_fixtures` as the fake
     API layer for ScoreProviderAdapter, OddsProviderAdapter, and
     ArchiveOddsProviderAdapter, including healthy/gap/resync scenarios, so live
@@ -64,13 +69,13 @@ decide whether the system behaves as budget or enterprise.
     In live mode, replay does not silently fall back to sample payloads; an
     admin replay request must set `use_fixture_seed=true` to seed fake provider
     payloads for rehearsal without consuming live provider quota.
-17. Live model registry reads persisted `model_versions`; without persisted
+18. Live model registry reads persisted `model_versions`; without persisted
     metrics it exposes only a clearly unvalidated runtime default instead of
     demo ROI/CLV.
-18. Live execution status derives kill-switch state from persisted
+19. Live execution status derives kill-switch state from persisted
     `execution_controls`; if that state cannot be read or written it fails
     closed instead of trusting process memory.
-19. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
+20. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
     paper orders are persisted so restart recovery includes the operational
     audit trail.
 

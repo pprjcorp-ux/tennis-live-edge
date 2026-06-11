@@ -5,6 +5,7 @@ import type {
   DataQualitySnapshot,
   IngestionRunRecord,
   ProviderCursor,
+  ProviderModeStep,
   ReplayLabSnapshot
 } from "@/lib/types";
 
@@ -36,6 +37,18 @@ function onboardingStatusClass(status: ApiOnboardingSnapshot["steps"][number]["s
 function replayStatusClass(status: ReplayLabSnapshot["status"] | ReplayLabSnapshot["providers"][number]["status"]) {
   if (status === "ready" || status === "covered") return "status statusEntry";
   if (status === "collecting") return "status statusMonitor";
+  return "status statusBlocked";
+}
+
+function modeStatusClass(status: ProviderModeStep["status"]) {
+  if (status === "active" || status === "ready") return "status statusEntry";
+  if (status === "deferred") return "status statusMuted";
+  return "status statusBlocked";
+}
+
+function entryGateClass(gate: ProviderModeStep["entry_gate"]) {
+  if (gate === "allow") return "status statusEntry";
+  if (gate === "monitor") return "status statusMonitor";
   return "status statusBlocked";
 }
 
@@ -78,17 +91,43 @@ export function DataHealthPanel({
   apiOnboarding,
   dataQuality,
   ingestionRuns,
+  providerModeMatrix,
   providerCursors,
   replayLab
 }: {
   apiOnboarding: ApiOnboardingSnapshot;
   dataQuality: DataQualitySnapshot[];
   ingestionRuns: IngestionRunRecord[];
+  providerModeMatrix: ProviderModeStep[];
   providerCursors: ProviderCursor[];
   replayLab: ReplayLabSnapshot;
 }) {
   return (
     <div className="enterpriseGrid">
+      <div className="panel wide">
+        <div className="panelHeader">
+          <div>
+            <p className="eyebrow">Provider Mode Matrix</p>
+            <h2>sample · replay · live_without_keys · live_with_keys</h2>
+          </div>
+          <DatabaseZap size={20} />
+        </div>
+        <div className="providerModeRows">
+          {providerModeMatrix.map((step) => (
+            <div className={step.active ? "providerModeRow active" : "providerModeRow"} key={step.mode}>
+              <div>
+                <strong>{step.mode}</strong>
+                <span>{step.summary}</span>
+              </div>
+              <span className={modeStatusClass(step.status)}>{step.status}</span>
+              <span className={entryGateClass(step.entry_gate)}>entries {step.entry_gate}</span>
+              <span>{step.evidence.slice(0, 2).join(" · ")}</span>
+              <span>{step.blockers.length ? step.blockers.join(", ") : "no blockers"}</span>
+              <span>{step.next_action}</span>
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="panel wide">
         <div className="panelHeader">
           <div>

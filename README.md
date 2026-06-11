@@ -60,7 +60,7 @@ python3 scripts/check_private_runtime.py
 `check_private_runtime.py` also verifies the API-last core contract: provider
 adapter protocols, budget replay fixtures, provider runtime modes, signal safety
 gates, paper settlement, Model Lab `training_examples` readiness, and the
-dashboard-visible Replay Lab/API onboarding sequence.
+dashboard-visible provider mode matrix plus Replay Lab/API onboarding sequence.
 
 ## Documentation
 

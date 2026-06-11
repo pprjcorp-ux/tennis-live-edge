@@ -9,6 +9,7 @@ from tennis_edge.providers.sportradar import parse_sportradar_point, parse_sport
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.providers.txodds import parse_txodds_moneyline
 from tennis_edge.sample_data import sample_raw_payloads
+from tennis_edge.services.budget_replay_fixtures import sample_budget_replay_payloads
 from tennis_edge.services.normalizer import dedupe_payloads, normalize_name, payload_checksum, similarity
 from tennis_edge.services.provider_adapters import (
     ArchiveOddsProviderAdapter,
@@ -249,6 +250,38 @@ def test_archive_odds_adapter_sample_snapshots_are_replayable() -> None:
     assert latency.provider == Provider.THE_ODDS_API
     assert latency.feed == "odds/archive"
     assert latency.latency_ms >= 0
+
+
+def test_budget_replay_fixtures_exercise_provider_contracts_without_keys() -> None:
+    payloads = sample_budget_replay_payloads("match_atp_002", odds_scenario="gap")
+    replay = ReplayEngine().replay(payloads)
+    latencies = [
+        provider_latency_from_payload(
+            payload,
+            feed="score/live" if payload.payload_type == "score" else "odds/replay",
+        )
+        for payload in payloads
+    ]
+
+    assert {payload.provider for payload in payloads} == {
+        Provider.API_TENNIS,
+        Provider.ODDS_API_IO,
+        Provider.THE_ODDS_API,
+    }
+    assert all(isinstance(payload, RawProviderPayload) for payload in payloads)
+    assert all(payload.source_event_id for payload in payloads)
+    assert replay.score_ticks
+    assert all(isinstance(tick, ScoreTick) for tick in replay.score_ticks)
+    assert replay.odds_quotes
+    assert all(isinstance(tick, OddsTick) for tick in replay.odds_quotes)
+    assert replay.provider_cursors
+    assert replay.provider_cursors[0].resync_required is True
+    assert all(latency.latency_ms >= 0 for latency in latencies)
+    assert {latency.provider for latency in latencies} == {
+        Provider.API_TENNIS,
+        Provider.ODDS_API_IO,
+        Provider.THE_ODDS_API,
+    }
 
 
 def test_budget_provider_payloads_replay_to_score_and_odds_ticks() -> None:

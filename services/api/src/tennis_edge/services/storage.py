@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
+    AutoPaperSettleRequest,
+    AutoPaperSettleResult,
     BacktestMetrics,
     BacktestRunRequest,
     AgentRun,
@@ -82,6 +84,13 @@ def _json(value: Any) -> Any:
     except ImportError:  # pragma: no cover - only used when optional dependency is absent.
         return json.dumps(value)
     return Jsonb(value)
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _provider_warnings_from_summary(summary: Any) -> list[str]:
@@ -1447,6 +1456,131 @@ class PersistentStore:
         if not self.save_settlement(settlement):
             return None
         return settlement
+
+    def auto_settle_paper_orders(
+        self,
+        request: AutoPaperSettleRequest | None = None,
+    ) -> AutoPaperSettleResult:
+        request = request or AutoPaperSettleRequest()
+        if not self.enabled:
+            return AutoPaperSettleResult(
+                evaluated_orders=0,
+                settled_orders=0,
+                skipped_orders=0,
+                reasons=["Persistence is disabled; auto-settlement requires persisted score and odds ticks."],
+            )
+        rows = self._auto_settlement_candidates(request)
+        settlements: list[PaperSettlement] = []
+        reasons: list[str] = []
+        for row in rows:
+            order_ref = str(row.get("external_order_ref") or "")
+            settle_request, reason = self._auto_settlement_request(row)
+            if settle_request is None:
+                reasons.append(f"{order_ref or 'unknown'}: {reason}")
+                continue
+            settlement = self.settle_paper_order(settle_request)
+            if settlement is None:
+                reasons.append(f"{order_ref}: settlement write failed or order is no longer open.")
+                continue
+            settlements.append(settlement)
+        return AutoPaperSettleResult(
+            evaluated_orders=len(rows),
+            settled_orders=len(settlements),
+            skipped_orders=len(rows) - len(settlements),
+            settlements=settlements,
+            reasons=reasons,
+        )
+
+    def _auto_settlement_candidates(
+        self,
+        request: AutoPaperSettleRequest,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            if conn is None:
+                return []
+            try:
+                with conn.cursor() as cur:
+                    rows = cur.execute(
+                        """
+                        WITH latest_scores AS (
+                          SELECT DISTINCT ON (match_id)
+                            match_id, raw_state, source_ts
+                          FROM score_ticks
+                          ORDER BY match_id, source_ts DESC, ingested_at DESC
+                        ),
+                        latest_moneyline AS (
+                          SELECT DISTINCT ON (match_id, outcome_player_id)
+                            match_id, outcome_player_id, decimal_odds, source_ts
+                          FROM odds_ticks
+                          WHERE market = 'ML'
+                          ORDER BY match_id, outcome_player_id, source_ts DESC, ingested_at DESC
+                        )
+                        SELECT
+                          po.external_order_ref,
+                          po.match_id,
+                          po.player_id,
+                          m.player1_id,
+                          m.player2_id,
+                          latest_scores.raw_state,
+                          latest_scores.source_ts AS score_source_ts,
+                          latest_moneyline.decimal_odds AS closing_odds,
+                          latest_moneyline.source_ts AS closing_odds_source_ts
+                        FROM paper_orders po
+                        JOIN matches m ON m.id = po.match_id
+                        JOIN latest_scores ON latest_scores.match_id = po.match_id
+                        LEFT JOIN latest_moneyline
+                          ON latest_moneyline.match_id = po.match_id
+                         AND latest_moneyline.outcome_player_id = po.player_id
+                        WHERE po.status = ANY(%s)
+                          AND (%s::text IS NULL OR po.match_id = %s)
+                        ORDER BY latest_scores.source_ts DESC, po.created_at ASC
+                        LIMIT %s
+                        """,
+                        (
+                            list(PERSISTED_OPEN_ORDER_STATUSES),
+                            request.match_id,
+                            request.match_id,
+                            request.max_orders,
+                        ),
+                    ).fetchall()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("auto_settle_paper_orders", exc)
+                return []
+        return list(rows)
+
+    def _auto_settlement_request(
+        self,
+        row: dict[str, Any],
+    ) -> tuple[PaperSettleRequest | None, str]:
+        order_ref = row.get("external_order_ref")
+        if not order_ref:
+            return None, "order is missing external_order_ref."
+        raw_state = row.get("raw_state") or {}
+        if isinstance(raw_state, str):
+            try:
+                raw_state = json.loads(raw_state)
+            except json.JSONDecodeError:
+                return None, "latest score state is not valid JSON."
+        if not isinstance(raw_state, dict):
+            return None, "latest score state is not a JSON object."
+        if raw_state.get("status") != "finished":
+            return None, "latest score state is not finished."
+        p1_sets = _safe_int(raw_state.get("p1_sets"))
+        p2_sets = _safe_int(raw_state.get("p2_sets"))
+        if p1_sets == p2_sets:
+            return None, "finished score has no inferable winner."
+        winner_player_id = row["player1_id"] if p1_sets > p2_sets else row["player2_id"]
+        closing_odds = row.get("closing_odds")
+        if closing_odds is None:
+            return None, "missing closing moneyline odds for order player."
+        return (
+            PaperSettleRequest(
+                order_id=str(order_ref),
+                result_win=winner_player_id == row["player_id"],
+                closing_odds=float(closing_odds),
+            ),
+            "ready",
+        )
 
     def save_settlement(self, settlement: PaperSettlement) -> bool:
         if not self.enabled:

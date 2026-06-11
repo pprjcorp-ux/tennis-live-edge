@@ -10,6 +10,7 @@ from types import ModuleType
 from tennis_edge.config import Settings
 from tennis_edge.domain import AgentRun
 from tennis_edge.domain import AgentRunType
+from tennis_edge.domain import AutoPaperSettleRequest
 from tennis_edge.domain import BacktestMetrics
 from tennis_edge.domain import BacktestRunRequest
 from tennis_edge.domain import CursorStatus
@@ -819,6 +820,160 @@ def test_settle_paper_order_returns_none_when_settlement_write_fails() -> None:
     assert store.last_error is not None
     assert store.last_error.startswith("save_settlement failed:")
     assert "relation paper_settlements does not exist" in store.last_error
+
+
+def test_auto_settle_paper_orders_uses_finished_score_and_closing_odds() -> None:
+    rows = [
+        {
+            "external_order_ref": "ord_auto_win",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "closing_odds": 1.8,
+        },
+        {
+            "external_order_ref": "ord_auto_loss",
+            "match_id": "match_auto",
+            "player_id": "p2",
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "closing_odds": 2.2,
+        },
+    ]
+
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.params = params
+            return self
+
+        def fetchall(self):
+            return rows
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+            self.requests: list[PaperSettleRequest] = []
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+        def settle_paper_order(self, request: PaperSettleRequest):
+            self.requests.append(request)
+            return PaperSettlement(
+                order_id=request.order_id,
+                status=OrderStatus.SETTLED,
+                result_win=request.result_win,
+                requested_odds=2.0,
+                average_price=2.0,
+                matched_stake=100,
+                gross_pnl=100 if request.result_win else -100,
+                commission=2 if request.result_win else 0,
+                net_pnl=98 if request.result_win else -100,
+                closing_odds=request.closing_odds,
+                clv=0.01,
+            )
+
+    store = StoreStub()
+
+    result = store.auto_settle_paper_orders(AutoPaperSettleRequest(max_orders=25))
+
+    assert result.evaluated_orders == 2
+    assert result.settled_orders == 2
+    assert result.skipped_orders == 0
+    assert [request.order_id for request in store.requests] == ["ord_auto_win", "ord_auto_loss"]
+    assert [request.result_win for request in store.requests] == [True, False]
+    assert [request.closing_odds for request in store.requests] == [1.8, 2.2]
+
+
+def test_auto_settle_paper_orders_skips_unsettleable_candidates() -> None:
+    rows = [
+        {
+            "external_order_ref": "ord_live",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {"status": "live", "p1_sets": 1, "p2_sets": 0},
+            "closing_odds": 1.8,
+        },
+        {
+            "external_order_ref": "ord_tied",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {"status": "finished", "p1_sets": 1, "p2_sets": 1},
+            "closing_odds": 1.8,
+        },
+        {
+            "external_order_ref": "ord_no_odds",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "closing_odds": None,
+        },
+    ]
+
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            return self
+
+        def fetchall(self):
+            return rows
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+        def settle_paper_order(self, request: PaperSettleRequest):
+            raise AssertionError("unsettleable rows must not reach settle_paper_order")
+
+    result = StoreStub().auto_settle_paper_orders()
+
+    assert result.evaluated_orders == 3
+    assert result.settled_orders == 0
+    assert result.skipped_orders == 3
+    assert any("not finished" in reason for reason in result.reasons)
+    assert any("no inferable winner" in reason for reason in result.reasons)
+    assert any("missing closing moneyline odds" in reason for reason in result.reasons)
 
 
 def test_settle_paper_order_blocks_non_open_persisted_order() -> None:

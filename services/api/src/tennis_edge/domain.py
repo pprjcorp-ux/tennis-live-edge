@@ -586,6 +586,19 @@ class PaperSettleRequest(BaseModel):
     closing_odds: float = Field(gt=1)
 
 
+class AutoPaperSettleRequest(BaseModel):
+    match_id: str | None = None
+    max_orders: int = Field(default=100, ge=1, le=500)
+
+
+class AutoPaperSettleResult(BaseModel):
+    evaluated_orders: int
+    settled_orders: int
+    skipped_orders: int
+    settlements: list[PaperSettlement] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
 class PaperPerformance(BaseModel):
     orders: int
     settled_orders: int

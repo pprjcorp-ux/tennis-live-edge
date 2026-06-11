@@ -444,6 +444,14 @@ export type PaperSettlement = {
   settled_at: string;
 };
 
+export type AutoPaperSettleResult = {
+  evaluated_orders: number;
+  settled_orders: number;
+  skipped_orders: number;
+  settlements: PaperSettlement[];
+  reasons: string[];
+};
+
 export type PaperPerformance = {
   orders: number;
   settled_orders: number;

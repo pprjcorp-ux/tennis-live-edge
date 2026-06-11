@@ -5,6 +5,7 @@ import type {
   AgentBriefing,
   AgentPreflight,
   AgentRun,
+  AutoPaperSettleResult,
   BacktestMetrics,
   BankrollSnapshot,
   CalibrationReport,
@@ -303,4 +304,24 @@ export async function settlePaperOrder(
     throw new Error(`Paper settlement failed: ${response.status}`);
   }
   return response.json() as Promise<PaperSettlement>;
+}
+
+export async function autoSettlePaperOrders(
+  adminToken: string,
+  matchId?: string,
+  maxOrders = 100
+): Promise<AutoPaperSettleResult> {
+  const response = await fetch(`${API_BASE}/api/v1/paper/settle-auto`, {
+    method: "POST",
+    headers: adminHeaders(adminToken),
+    credentials: "include",
+    body: JSON.stringify({
+      match_id: matchId ?? null,
+      max_orders: maxOrders
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`Auto paper settlement failed: ${response.status}`);
+  }
+  return response.json() as Promise<AutoPaperSettleResult>;
 }

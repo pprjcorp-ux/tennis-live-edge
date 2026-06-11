@@ -10,6 +10,8 @@ from tennis_edge.domain import (
     AgentBriefing,
     AgentPreflight,
     AgentRun,
+    AutoPaperSettleRequest,
+    AutoPaperSettleResult,
     BacktestMetrics,
     BacktestRunRequest,
     BankrollSnapshot,
@@ -532,6 +534,12 @@ class AnalysisRepository:
             raise
         self.store.save_settlement(settlement)
         return settlement
+
+    async def auto_settle_paper(
+        self,
+        request: AutoPaperSettleRequest,
+    ) -> AutoPaperSettleResult:
+        return self.store.auto_settle_paper_orders(request)
 
     async def execution_status(self) -> ExecutionStatus:
         return self.operational_state.execution_status()

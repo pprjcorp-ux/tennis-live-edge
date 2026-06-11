@@ -11,6 +11,8 @@ from tennis_edge.domain import (
     AgentBriefing,
     AgentPreflight,
     AgentRun,
+    AutoPaperSettleRequest,
+    AutoPaperSettleResult,
     BacktestMetrics,
     BacktestRunRequest,
     BankrollSnapshot,
@@ -283,6 +285,15 @@ async def v1_paper_settle(
         return await repo.settle_paper(request)
     except KeyError:
         raise HTTPException(status_code=404, detail="Order not found") from None
+
+
+@app.post("/api/v1/paper/settle-auto", response_model=AutoPaperSettleResult)
+async def v1_paper_settle_auto(
+    request: AutoPaperSettleRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> AutoPaperSettleResult:
+    return await repo.auto_settle_paper(request)
 
 
 @app.get("/api/v1/execution/status", response_model=ExecutionStatus)

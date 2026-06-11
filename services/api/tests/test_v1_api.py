@@ -7,6 +7,7 @@ os.environ["TENNIS_EDGE_DATA_MODE"] = "sample"
 os.environ["TENNIS_EDGE_PERSISTENCE_ENABLED"] = "false"
 
 from tennis_edge.config import get_settings
+from tennis_edge.domain import AutoPaperSettleResult
 
 get_settings.cache_clear()
 
@@ -339,6 +340,43 @@ def test_paper_settlement_requires_token_and_updates_performance() -> None:
         "odds_bucket",
         "provider",
     }
+
+
+def test_paper_auto_settlement_requires_token_and_calls_repository() -> None:
+    class RepoStub:
+        def __init__(self) -> None:
+            self.requests = []
+
+        async def auto_settle_paper(self, request):
+            self.requests.append(request)
+            return AutoPaperSettleResult(
+                evaluated_orders=1,
+                settled_orders=0,
+                skipped_orders=1,
+                reasons=["ord_live: latest score state is not finished."],
+            )
+
+    repo = RepoStub()
+    app.dependency_overrides[repository] = lambda: repo
+    try:
+        unauthorized = client.post(
+            "/api/v1/paper/settle-auto",
+            json={"match_id": "match_atp_001", "max_orders": 5},
+        )
+        response = client.post(
+            "/api/v1/paper/settle-auto",
+            headers=ADMIN_HEADERS,
+            json={"match_id": "match_atp_001", "max_orders": 5},
+        )
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["evaluated_orders"] == 1
+    assert response.json()["skipped_orders"] == 1
+    assert repo.requests[0].match_id == "match_atp_001"
+    assert repo.requests[0].max_orders == 5
 
 
 def test_unknown_backtest_returns_404() -> None:

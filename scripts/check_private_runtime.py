@@ -71,6 +71,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     data_health_panel = (
         root / "apps/web/app/components/data-health-panel.tsx"
     ).read_text()
+    web_page = (root / "apps/web/app/page.tsx").read_text()
+    web_api = (root / "apps/web/lib/api.ts").read_text()
 
     _require_text(
         errors,
@@ -170,7 +172,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     _require_text(
         errors,
         label="paper learning persistence",
-        text=storage + model_lab,
+        text=storage + model_lab + web_page + web_api,
         required=[
             "paper_settlements",
             "closing_line_snapshots",
@@ -178,6 +180,9 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "walk_forward_from_training_examples",
             "calibration_from_training_examples",
             "matched_stake <= 0",
+            "autoSettlePaperOrders",
+            "triggerAutoPaperSettlement",
+            "Auto-settle paper",
         ],
     )
     _require_text(

@@ -82,5 +82,10 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(pageSource, /Training Dataset/);
   assert.match(pageSource, /modelLab\.source/);
   assert.match(pageSource, /modelLab\.training_examples/);
+  assert.match(apiSource, /export async function autoSettlePaperOrders/);
+  assert.match(pageSource, /triggerAutoPaperSettlement/);
+  assert.match(pageSource, /autoSettlePaperOrders\(token, selectedMatchId \?\? undefined, 100\)/);
+  assert.match(pageSource, /Auto-settle paper/);
+  assert.match(pageSource, /autoSettlement\.evaluated_orders/);
   assert.match(pageSource, /\["Paper orders", String\(agentBriefing\?\.paper_orders \?\? 0\)\]/);
 });

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { DataHealthPanel } from "@/app/components/data-health-panel";
 import {
+  autoSettlePaperOrders,
   createPaperOrder,
   getAgentAnomalies,
   getAgentBriefing,
@@ -51,6 +52,7 @@ import type {
   AgentPreflight,
   AgentRun,
   ApiOnboardingSnapshot,
+  AutoPaperSettleResult,
   BacktestMetrics,
   BankrollSnapshot,
   CalibrationReport,
@@ -197,6 +199,7 @@ export default function Page() {
   const [championModel, setChampionModel] = useState<ModelRegistryEntry | null>(null);
   const [calibration, setCalibration] = useState<CalibrationReport | null>(null);
   const [paperPerformance, setPaperPerformance] = useState<PaperPerformance | null>(null);
+  const [autoSettlement, setAutoSettlement] = useState<AutoPaperSettleResult | null>(null);
   const [agentBriefing, setAgentBriefing] = useState<AgentBriefing | null>(null);
   const [agentPreflight, setAgentPreflight] = useState<AgentPreflight | null>(null);
   const [agentAnomalies, setAgentAnomalies] = useState<AgentAnomaly[]>([]);
@@ -454,6 +457,24 @@ export default function Page() {
       setPaperPerformance(await getPaperPerformance());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Paper settlement failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function triggerAutoPaperSettlement() {
+    const token = requireAdminToken();
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await autoSettlePaperOrders(token, selectedMatchId ?? undefined, 100);
+      setAutoSettlement(result);
+      setOrders(await getOrders());
+      setBankroll(await getBankroll());
+      setPaperPerformance(await getPaperPerformance());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Auto paper settlement failed");
     } finally {
       setBusy(false);
     }
@@ -723,6 +744,25 @@ export default function Page() {
                   <span key={reason}>{reason}</span>
                 ))}
               </div>
+              <div className="paperAutoSettle">
+                <button onClick={triggerAutoPaperSettlement} disabled={busy}>
+                  Auto-settle paper
+                </button>
+                <span>
+                  Uses persisted final score and pre-result closing odds for{" "}
+                  {selectedMatchId ? selectedMatchId : "all matches"}.
+                </span>
+              </div>
+              {autoSettlement ? (
+                <div className="autoSettlementResult">
+                  <span>evaluated {autoSettlement.evaluated_orders}</span>
+                  <span>settled {autoSettlement.settled_orders}</span>
+                  <span>skipped {autoSettlement.skipped_orders}</span>
+                  {autoSettlement.reasons.slice(0, 3).map((reason) => (
+                    <span key={reason}>{reason}</span>
+                  ))}
+                </div>
+              ) : null}
               <div className="segmentTable">
                 {(paperPerformance?.segments ?? []).slice(0, 12).map((segment) => (
                   <div className="segmentRow" key={`${segment.segment_type}-${segment.segment}`}>

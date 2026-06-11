@@ -33,8 +33,10 @@ decide whether the system behaves as budget or enterprise.
    Data-quality rows are likewise persisted-only in live mode; sample quality
    snapshots are demo-only.
 10. Paper execution records order decisions, deterministic fills, closing-line
-   snapshots, settlement, CLV, ROI, segmented performance, and calibration
-   buckets.
+    snapshots, settlement, CLV, ROI, segmented performance, and calibration
+   buckets. The dashboard exposes auto-settlement so persisted final scores and
+   pre-result closing odds can close paper orders and refresh performance without
+   manual win/loss marking.
 11. Settled paper orders become `training_examples` keyed by model version and
     decision timestamp. Budget live backtests use `live_budget_v1`, matching the
     persisted `feature_snapshots.feature_set` written by the ingestion pipeline,

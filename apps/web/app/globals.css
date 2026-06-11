@@ -735,6 +735,42 @@ h2 {
   font-weight: 800;
 }
 
+.paperAutoSettle,
+.autoSettlementResult {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 0 14px 12px;
+}
+
+.paperAutoSettle button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ink);
+  color: white;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.paperAutoSettle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.paperAutoSettle span,
+.autoSettlementResult span {
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f4f7fb;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .modelLabDataset {
   display: flex;
   flex-wrap: wrap;

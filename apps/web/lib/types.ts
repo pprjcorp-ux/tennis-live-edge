@@ -337,6 +337,13 @@ export type ReplayRunResult = {
   odds_ticks: number;
   signals_generated: number;
   final_status: string;
+  provider_cursors: ProviderCursor[];
+  raw_payloads_saved: number;
+  score_ticks_saved: number;
+  odds_ticks_saved: number;
+  cursors_saved: number;
+  resync_required: boolean;
+  notes: string[];
 };
 
 export type BacktestMetrics = {

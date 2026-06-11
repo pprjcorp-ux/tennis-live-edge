@@ -726,6 +726,7 @@ class AnalysisRepository:
             request.match_id,
             payloads,
             signals=signal_count,
+            state=state,
         )
         return result.model_copy(
             update={

@@ -82,8 +82,14 @@ class ReplayEngine:
         )
         return state
 
-    def summarize(self, match_id: str, payloads: list[RawProviderPayload], signals: int) -> ReplayRunResult:
-        state = self.replay(payloads)
+    def summarize(
+        self,
+        match_id: str,
+        payloads: list[RawProviderPayload],
+        signals: int,
+        state: ReplayState | None = None,
+    ) -> ReplayRunResult:
+        state = state or self.replay(payloads)
         return ReplayRunResult(
             run_id=f"replay_{uuid4().hex[:12]}",
             match_id=match_id,
@@ -92,5 +98,6 @@ class ReplayEngine:
             odds_ticks=len(state.odds_quotes),
             signals_generated=signals,
             final_status="completed",
+            provider_cursors=state.provider_cursors,
             resync_required=any(cursor.resync_required for cursor in state.provider_cursors),
         )

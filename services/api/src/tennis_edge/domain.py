@@ -310,6 +310,7 @@ class ReplayRunResult(BaseModel):
     odds_ticks: int
     signals_generated: int
     final_status: str
+    provider_cursors: list["ProviderCursor"] = Field(default_factory=list)
     raw_payloads_saved: int = 0
     score_ticks_saved: int = 0
     odds_ticks_saved: int = 0

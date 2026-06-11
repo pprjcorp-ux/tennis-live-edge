@@ -636,6 +636,77 @@ def test_replay_runner_persists_fake_provider_score_odds_and_cursor() -> None:
     }
 
 
+def test_replay_runner_exposes_gap_cursor_and_resync_notes() -> None:
+    client = OddsApiIoClient(api_key="key", data_mode="live")
+    payloads = [
+        client.raw_payload_from_message(
+            {
+                "event_id": "42",
+                "seq": 10,
+                "timestamp": "2026-05-10T12:00:00Z",
+                "data": {
+                    "bookmaker": "SharpBook",
+                    "market": "moneyline",
+                    "selections": [{"player_id": "p1", "odds": 1.8}],
+                },
+            }
+        ),
+        client.raw_payload_from_message(
+            {
+                "event_id": "42",
+                "seq": 12,
+                "timestamp": "2026-05-10T12:00:01Z",
+                "data": {
+                    "bookmaker": "SharpBook",
+                    "market": "moneyline",
+                    "selections": [{"player_id": "p1", "odds": 1.9}],
+                },
+            }
+        ),
+    ]
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.cursors_saved = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def raw_payloads_for_match(self, match_id):
+            return payloads if match_id == "42" else []
+
+        def save_raw_payloads(self, payloads_to_save):
+            return len(payloads_to_save)
+
+        def save_score_ticks(self, ticks):
+            return len(ticks)
+
+        def save_odds_quotes_for_event(self, provider, source_event_id, quotes):
+            return len(quotes)
+
+        def save_provider_cursor(self, cursor):
+            self.cursors_saved.append(cursor)
+            return True
+
+        def record_provider_latency(self, *args, **kwargs):
+            return True
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    replay = asyncio.run(repo.run_replay(ReplayRunRequest(match_id="42")))
+
+    assert replay.final_status == "degraded"
+    assert replay.resync_required is True
+    assert replay.provider_cursors == store.cursors_saved
+    assert replay.provider_cursors[0].last_seq == 10
+    assert replay.provider_cursors[0].expected_next_seq == 11
+    assert replay.provider_cursors[0].resync_required is True
+    assert replay.notes == ["Sequence gap detected: expected 11, received 12."]
+
+
 def test_live_replay_without_persisted_payloads_does_not_use_sample_payloads() -> None:
     class StoreStub:
         def __init__(self, fallback) -> None:

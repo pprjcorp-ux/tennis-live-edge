@@ -1141,6 +1141,25 @@ export default function Page() {
                   {replay.events_replayed} events · {replay.score_ticks} score ticks ·{" "}
                   {replay.odds_ticks} odds ticks
                 </span>
+                <span>
+                  persisted {replay.raw_payloads_saved} raw · {replay.score_ticks_saved} score ·{" "}
+                  {replay.odds_ticks_saved} odds · {replay.cursors_saved} cursors
+                </span>
+                <span
+                  className={
+                    replay.resync_required ? "status statusBlocked" : "status statusEntry"
+                  }
+                >
+                  {replay.final_status}
+                </span>
+                {replay.provider_cursors[0] ? (
+                  <span>
+                    {replay.provider_cursors[0].provider}/{replay.provider_cursors[0].stream}:{" "}
+                    {replay.provider_cursors[0].status} seq{" "}
+                    {replay.provider_cursors[0].last_seq ?? "none"}
+                  </span>
+                ) : null}
+                {replay.notes[0] ? <span>{replay.notes[0]}</span> : null}
               </div>
             ) : null}
             {backtest ? (

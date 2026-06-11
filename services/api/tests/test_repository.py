@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import date, datetime, timezone
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
@@ -11,6 +11,7 @@ from tennis_edge.domain import (
     ModelRegistryEntry,
     PaperPerformance,
     Provider,
+    RawProviderPayload,
 )
 from tennis_edge.domain import ExecutionVenue, OrderStatus
 from tennis_edge.domain import LearningPromotionRequest
@@ -792,6 +793,63 @@ def test_replay_runner_exposes_gap_cursor_and_resync_notes() -> None:
     assert store.ingestion_runs_saved[-1].run_type == "replay_run"
     assert store.ingestion_runs_saved[-1].status == "degraded"
     assert store.ingestion_runs_saved[-1].summary["resync_required"] is True
+
+
+def test_replay_runner_degrades_unparseable_provider_payloads() -> None:
+    malformed_archive_payload = RawProviderPayload(
+        id="raw_theoddsapi_bad_schema",
+        provider=Provider.THE_ODDS_API,
+        payload_type="odds",
+        source_event_id="event_bad_schema",
+        source_ts=datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc),
+        payload={"sport_key": "tennis_atp_french_open", "unexpected": "schema"},
+        checksum="bad-schema",
+    )
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.ingestion_runs_saved = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def raw_payloads_for_match(self, match_id):
+            return [malformed_archive_payload] if match_id == "event_bad_schema" else []
+
+        def save_raw_payloads(self, payloads_to_save):
+            return len(payloads_to_save)
+
+        def save_score_ticks(self, ticks):
+            return len(ticks)
+
+        def save_odds_quotes_for_event(self, provider, source_event_id, quotes):
+            return len(quotes)
+
+        def save_provider_cursor(self, cursor):
+            return True
+
+        def record_provider_latency(self, *args, **kwargs):
+            return True
+
+        def save_ingestion_run(self, run):
+            self.ingestion_runs_saved.append(run)
+            return True
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    replay = asyncio.run(repo.run_replay(ReplayRunRequest(match_id="event_bad_schema")))
+
+    assert replay.final_status == "degraded"
+    assert replay.events_replayed == 1
+    assert replay.odds_ticks == 0
+    assert replay.notes == [
+        "Replay payload theoddsapi/odds/event_bad_schema produced no odds ticks."
+    ]
+    assert store.ingestion_runs_saved[-1].status == "degraded"
+    assert store.ingestion_runs_saved[-1].summary["notes"] == replay.notes
 
 
 def test_live_replay_without_persisted_payloads_does_not_use_sample_payloads() -> None:

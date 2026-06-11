@@ -265,10 +265,14 @@ class AnalysisRepository:
             return "degraded"
         if summary.get("source") == "provider_live" or summary.get("connected") is True:
             return "completed"
+        if summary.get("source") == "replay":
+            if summary.get("final_status") == "degraded" or summary.get("resync_required") is True:
+                return "degraded"
+            if summary.get("notes"):
+                return "degraded"
+            return "completed" if int(summary.get("events_replayed") or 0) > 0 else "skipped"
         if summary.get("resync_required") is True:
             return "degraded"
-        if summary.get("source") == "replay":
-            return "completed" if int(summary.get("events_replayed") or 0) > 0 else "skipped"
         if summary.get("source") == "persisted_fallback" or summary.get("timed_out") is True:
             return "degraded"
         score = summary.get("score_ingestion")
@@ -735,7 +739,7 @@ class AnalysisRepository:
         )
         state = self.replay_engine.replay(payloads)
         persisted = self._persist_replay_effects(payloads, state)
-        notes = [*(persisted.get("notes") or [])]
+        notes = [*(state.notes or []), *(persisted.get("notes") or [])]
         if payload_source == "explicit_fixture_seed" and payloads:
             notes.insert(
                 0,
@@ -753,7 +757,11 @@ class AnalysisRepository:
             update={
                 **persisted,
                 "notes": notes,
-                "final_status": "degraded" if result.resync_required else result.final_status,
+                "final_status": (
+                    "degraded"
+                    if result.resync_required or state.notes
+                    else result.final_status
+                ),
             }
         )
         self.record_ingestion_run(

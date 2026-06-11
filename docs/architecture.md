@@ -70,7 +70,10 @@ decide whether the system behaves as budget or enterprise.
     provider keys are added only after the same contracts pass without cost.
     In live mode, replay does not silently fall back to sample payloads; an
     admin replay request must set `use_fixture_seed=true` to seed fake provider
-    payloads for rehearsal without consuming live provider quota.
+    payloads for rehearsal without consuming live provider quota. Replay runs
+    that receive unsupported or unparseable provider payloads are marked
+    degraded in both the API response and ingestion journal rather than
+    completing silently with zero useful ticks.
 18. Live model registry reads persisted `model_versions`; without persisted
     metrics it exposes only a clearly unvalidated runtime default instead of
     demo ROI/CLV.

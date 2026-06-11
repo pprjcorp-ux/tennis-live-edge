@@ -27,6 +27,7 @@ class ReplayState:
     odds_quotes: list[OddsQuote] = field(default_factory=list)
     market_states: list[MarketState] = field(default_factory=list)
     provider_cursors: list[ProviderCursor] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 class ReplayEngine:
@@ -38,6 +39,10 @@ class ReplayEngine:
                 score_tick = parse_api_tennis_score(payload)
                 if score_tick is not None:
                     state.score_ticks.append(score_tick)
+                else:
+                    state.notes.append(
+                        f"Replay payload {_payload_ref(payload)} produced no score tick."
+                    )
             elif payload.provider == Provider.ODDS_API_IO and payload.payload_type == "odds":
                 stream = str(payload.payload.get("stream") or "tennis:moneyline")
                 quotes, cursor = OddsApiIoClient(
@@ -56,11 +61,16 @@ class ReplayEngine:
                         for quote in quotes
                     ]
                 )
+                if not quotes and not cursor.resync_required:
+                    state.notes.append(
+                        f"Replay payload {_payload_ref(payload)} produced no odds ticks."
+                    )
             elif payload.provider == Provider.THE_ODDS_API and payload.payload_type == "odds":
                 events = TheOddsApiClient(api_key=None, data_mode="live").parse_odds_payload(
                     str(payload.payload.get("sport_key") or "tennis_unknown"),
                     [payload.payload],
                 )
+                before = len(state.odds_quotes)
                 for event in events:
                     state.odds_quotes.extend(
                         [
@@ -68,14 +78,27 @@ class ReplayEngine:
                             for quote in event.quotes
                         ]
                     )
+                if len(state.odds_quotes) == before:
+                    state.notes.append(
+                        f"Replay payload {_payload_ref(payload)} produced no odds ticks."
+                    )
             elif payload.provider == Provider.SPORTRADAR and payload.payload_type == "score":
                 state.score_ticks.append(parse_sportradar_score(payload))
             elif payload.provider == Provider.SPORTRADAR and payload.payload_type == "point":
                 state.point_events.append(parse_sportradar_point(payload))
             elif payload.provider == Provider.TXODDS and payload.payload_type == "odds":
-                state.odds_quotes.extend(parse_txodds_moneyline(payload))
+                quotes = parse_txodds_moneyline(payload)
+                state.odds_quotes.extend(quotes)
+                if not quotes:
+                    state.notes.append(
+                        f"Replay payload {_payload_ref(payload)} produced no odds ticks."
+                    )
             elif payload.provider == Provider.BETRADAR_UOF and payload.payload_type == "market_state":
                 state.market_states.append(parse_betradar_market_state(payload))
+            else:
+                state.notes.append(
+                    f"Replay payload {_payload_ref(payload)} is not supported by the replay engine."
+                )
         state.provider_cursors = sorted(
             odds_cursors.values(),
             key=lambda cursor: (cursor.provider.value, cursor.stream),
@@ -100,4 +123,9 @@ class ReplayEngine:
             final_status="completed",
             provider_cursors=state.provider_cursors,
             resync_required=any(cursor.resync_required for cursor in state.provider_cursors),
+            notes=state.notes,
         )
+
+
+def _payload_ref(payload: RawProviderPayload) -> str:
+    return f"{payload.provider.value}/{payload.payload_type}/{payload.source_event_id}"

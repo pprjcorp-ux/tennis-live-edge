@@ -200,6 +200,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
         ),
         required=[
             "test_budget_replay_fixtures_exercise_provider_contracts_without_keys",
+            "test_budget_adapter_contract_matrix_outputs_internal_formats_without_live_keys",
             "test_repository_regates_persisted_fallback_when_odds_cursor_requires_resync",
             "test_auto_settle_paper_orders_skips_unsettleable_candidates",
             "test_walk_forward_backtest_uses_settled_training_examples_only",

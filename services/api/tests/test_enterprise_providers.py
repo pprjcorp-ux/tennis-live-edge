@@ -1,7 +1,16 @@
 import asyncio
 from datetime import date
 
-from tennis_edge.domain import CanonicalMatch, OddsTick, Provider, RawProviderPayload, ScoreTick
+from tennis_edge.domain import (
+    CanonicalMatch,
+    OddsTick,
+    Provider,
+    ProviderCursor,
+    ProviderLatency,
+    ProviderMatchPayload,
+    RawProviderPayload,
+    ScoreTick,
+)
 from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.providers.betradar_uof import parse_betradar_market_state
 from tennis_edge.providers.odds_api_io import OddsApiIoClient, parse_odds_api_io_moneyline
@@ -120,6 +129,73 @@ def test_budget_provider_clients_satisfy_adapter_contracts() -> None:
     assert isinstance(ApiTennisClient(api_key=None, data_mode="sample"), ScoreProviderAdapter)
     assert isinstance(OddsApiIoClient(api_key=None, data_mode="sample"), OddsProviderAdapter)
     assert isinstance(TheOddsApiClient(api_key=None, data_mode="sample"), ArchiveOddsProviderAdapter)
+
+
+def test_budget_adapter_contract_matrix_outputs_internal_formats_without_live_keys() -> None:
+    score_adapter = ApiTennisClient(api_key=None, data_mode="sample")
+    odds_adapter = OddsApiIoClient(api_key=None, data_mode="sample")
+    archive_adapter = TheOddsApiClient(api_key=None, data_mode="sample")
+
+    score_records = asyncio.run(score_adapter.get_livescore_payloads())
+    assert score_records
+    score_replay = ReplayEngine().replay([record.raw_payload for record in score_records])
+    score_latency = provider_latency_from_payload(score_records[0].raw_payload, feed="score/live")
+
+    odds_message = {
+        "event_id": "contract-match-1",
+        "seq": 1,
+        "lastSeq": 0,
+        "timestamp": "2026-05-10T12:00:00Z",
+        "data": {
+            "bookmaker": "ContractBook",
+            "market": "moneyline",
+            "selections": [
+                {"player_id": "contract_p1", "odds": 1.9},
+                {"player_id": "contract_p2", "odds": 1.95},
+            ],
+        },
+    }
+    odds_raw_payload = odds_adapter.raw_payload_from_message(odds_message)
+    odds_ticks, odds_cursor = odds_adapter.ingest_message(
+        odds_message,
+        remember_in_process=False,
+    )
+    odds_latency = provider_latency_from_payload(
+        odds_raw_payload,
+        feed="odds/tennis:moneyline",
+    )
+
+    archive_events = asyncio.run(archive_adapter.get_tennis_h2h_events())
+    archive_payloads = [
+        event.raw_payload for event in archive_events if event.raw_payload is not None
+    ]
+    assert archive_payloads
+    archive_replay = ReplayEngine().replay(archive_payloads)
+    archive_latency = provider_latency_from_payload(archive_payloads[0], feed="odds/archive")
+
+    assert isinstance(score_records[0], ProviderMatchPayload)
+    assert isinstance(score_records[0].raw_payload, RawProviderPayload)
+    assert isinstance(canonical_match_from_provider_payload(score_records[0]), CanonicalMatch)
+    assert score_replay.notes == []
+    assert all(isinstance(tick, ScoreTick) for tick in score_replay.score_ticks)
+    assert isinstance(score_latency, ProviderLatency)
+    assert score_latency.provider == Provider.API_TENNIS
+    assert score_latency.feed == "score/live"
+
+    assert isinstance(odds_raw_payload, RawProviderPayload)
+    assert all(isinstance(tick, OddsTick) for tick in odds_ticks)
+    assert isinstance(odds_cursor, ProviderCursor)
+    assert odds_cursor.resync_required is False
+    assert isinstance(odds_latency, ProviderLatency)
+    assert odds_latency.provider == Provider.ODDS_API_IO
+    assert odds_latency.feed == "odds/tennis:moneyline"
+
+    assert all(isinstance(payload, RawProviderPayload) for payload in archive_payloads)
+    assert archive_replay.notes == []
+    assert all(isinstance(tick, OddsTick) for tick in archive_replay.odds_quotes)
+    assert isinstance(archive_latency, ProviderLatency)
+    assert archive_latency.provider == Provider.THE_ODDS_API
+    assert archive_latency.feed == "odds/archive"
 
 
 def test_score_adapter_returns_replayable_provider_match_payloads() -> None:

@@ -68,6 +68,10 @@ decide whether the system behaves as budget or enterprise.
     API layer for ScoreProviderAdapter, OddsProviderAdapter, and
     ArchiveOddsProviderAdapter, including healthy/gap/resync scenarios, so live
     provider keys are added only after the same contracts pass without cost.
+    A budget adapter contract matrix runs without live keys and requires each
+    adapter to output the canonical internal types: `RawProviderPayload`,
+    `CanonicalMatch`, `ScoreTick`, `OddsTick`, `ProviderCursor`, and
+    `ProviderLatency`.
     In live mode, replay does not silently fall back to sample payloads; an
     admin replay request must set `use_fixture_seed=true` to seed fake provider
     payloads for rehearsal without consuming live provider quota. Replay runs

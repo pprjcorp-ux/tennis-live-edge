@@ -528,6 +528,75 @@ def test_replay_falls_back_to_provider_match_id_for_persisted_raw_payloads() -> 
     assert replay.events_replayed == len(persisted_payloads)
 
 
+def test_sample_replay_fallback_uses_budget_provider_payloads() -> None:
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.requested_match_ids = []
+            self.raw_payloads_saved = []
+            self.score_ticks_saved = []
+            self.odds_saves = []
+            self.cursors_saved = []
+            self.latencies = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def raw_payloads_for_match(self, match_id):
+            self.requested_match_ids.append(match_id)
+            return []
+
+        def save_raw_payloads(self, payloads_to_save):
+            self.raw_payloads_saved.extend(payloads_to_save)
+            return len(payloads_to_save)
+
+        def save_score_ticks(self, ticks):
+            self.score_ticks_saved.extend(ticks)
+            return len(ticks)
+
+        def save_odds_quotes_for_event(self, provider, source_event_id, quotes):
+            self.odds_saves.append((provider, source_event_id, quotes))
+            return len(quotes)
+
+        def save_provider_cursor(self, cursor):
+            self.cursors_saved.append(cursor)
+            return True
+
+        def record_provider_latency(
+            self,
+            provider,
+            feed,
+            *,
+            latest_source_ts,
+            latest_ingested_at,
+        ):
+            self.latencies.append((provider, feed, latest_source_ts, latest_ingested_at))
+            return True
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    replay = asyncio.run(repo.run_replay(ReplayRunRequest(match_id="match_atp_002")))
+
+    providers = {payload.provider for payload in store.raw_payloads_saved}
+    assert replay.events_replayed == 3
+    assert replay.score_ticks == 1
+    assert replay.odds_ticks == 12
+    assert replay.cursors_saved == 1
+    assert providers == {Provider.API_TENNIS, Provider.ODDS_API_IO, Provider.THE_ODDS_API}
+    assert Provider.SPORTRADAR not in providers
+    assert Provider.TXODDS not in providers
+    assert Provider.BETRADAR_UOF not in providers
+    assert {tick.match_id for tick in store.score_ticks_saved} == {"match_atp_002"}
+    assert {provider for provider, *_ in store.odds_saves} == {
+        Provider.ODDS_API_IO,
+        Provider.THE_ODDS_API,
+    }
+    assert {provider for provider, *_ in store.latencies} == providers
+    assert store.cursors_saved[0].last_seq == 1
+
+
 def test_replay_runner_persists_fake_provider_score_odds_and_cursor() -> None:
     score_payload = ApiTennisClient(api_key="key", data_mode="live")._parse_match_payloads(
         {

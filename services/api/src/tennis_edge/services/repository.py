@@ -61,12 +61,12 @@ from tennis_edge.services.agent_ops import (
 from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
-from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.api_tennis_source import ApiTennisMatchSource
 from tennis_edge.services.backtest import (
     enforce_champion_non_regression,
     run_walk_forward_backtest,
 )
+from tennis_edge.services.budget_replay_fixtures import sample_budget_replay_payloads
 from tennis_edge.services.enterprise_analytics import (
     calibration_report,
     champion_model,
@@ -808,7 +808,7 @@ class AnalysisRepository:
             if payloads:
                 return payloads
         if self.settings.data_mode == "sample":
-            return sample_raw_payloads(match_id)
+            return sample_budget_replay_payloads(match_id)
         return []
 
     @staticmethod

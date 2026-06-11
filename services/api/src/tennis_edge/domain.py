@@ -300,6 +300,7 @@ class ReplayRunRequest(BaseModel):
     match_id: str = "match_atp_002"
     speed: float = Field(default=1.0, gt=0, le=100)
     include_market_suspensions: bool = True
+    odds_scenario: Literal["healthy", "gap", "resync_required"] = "healthy"
 
 
 class ReplayRunResult(BaseModel):

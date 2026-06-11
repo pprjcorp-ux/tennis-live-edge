@@ -228,6 +228,44 @@ def test_v1_replay_and_backtest() -> None:
     assert calibration.json()["buckets"]
 
 
+def test_v1_replay_can_simulate_odds_api_gap() -> None:
+    response = client.post(
+        "/api/v1/replay/run",
+        headers=ADMIN_HEADERS,
+        json={"match_id": "match_atp_002", "odds_scenario": "gap"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["final_status"] == "degraded"
+    assert body["resync_required"] is True
+    assert any(
+        cursor["provider"] == "odds_api_io"
+        and cursor["status"] == "gap_detected"
+        and cursor["expected_next_seq"] == 2
+        for cursor in body["provider_cursors"]
+    )
+
+
+def test_v1_replay_can_simulate_provider_resync_request() -> None:
+    response = client.post(
+        "/api/v1/replay/run",
+        headers=ADMIN_HEADERS,
+        json={"match_id": "match_atp_002", "odds_scenario": "resync_required"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["final_status"] == "degraded"
+    assert body["resync_required"] is True
+    assert any(
+        cursor["provider"] == "odds_api_io"
+        and cursor["status"] == "resync_required"
+        and "REST resync" in cursor["note"]
+        for cursor in body["provider_cursors"]
+    )
+
+
 def test_v1_live_backtest_without_training_examples_returns_409() -> None:
     class RepoStub:
         async def run_backtest(self, request):

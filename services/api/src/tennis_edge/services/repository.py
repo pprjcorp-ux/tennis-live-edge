@@ -719,7 +719,11 @@ class AnalysisRepository:
             for signal in analysis.signals
             if signal.status == SignalStatus.ENTRY
         )
-        payloads = self._raw_payloads_for_replay(request.match_id, analyses)
+        payloads = self._raw_payloads_for_replay(
+            request.match_id,
+            analyses,
+            odds_scenario=request.odds_scenario,
+        )
         state = self.replay_engine.replay(payloads)
         persisted = self._persist_replay_effects(payloads, state)
         result = self.replay_engine.summarize(
@@ -802,13 +806,15 @@ class AnalysisRepository:
         self,
         match_id: str,
         analyses: list[MatchAnalysis],
+        *,
+        odds_scenario: str = "healthy",
     ) -> list[RawProviderPayload]:
         for candidate in self._raw_payload_id_candidates(match_id, analyses):
             payloads = self.store.raw_payloads_for_match(candidate)
             if payloads:
                 return payloads
         if self.settings.data_mode == "sample":
-            return sample_budget_replay_payloads(match_id)
+            return sample_budget_replay_payloads(match_id, odds_scenario=odds_scenario)
         return []
 
     @staticmethod

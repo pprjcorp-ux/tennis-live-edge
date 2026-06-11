@@ -34,6 +34,157 @@ def duplicate_schema_columns(schema_text: str) -> list[str]:
     return duplicates
 
 
+def _require_text(
+    errors: list[str],
+    *,
+    label: str,
+    text: str,
+    required: list[str],
+) -> None:
+    for marker in required:
+        if marker not in text:
+            errors.append(f"{label} missing {marker}")
+
+
+def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
+    errors: list[str] = []
+    source = root / "services/api/src/tennis_edge"
+    tests = root / "services/api/tests"
+    provider_adapters = (source / "services/provider_adapters.py").read_text()
+    replay_engine = (source / "services/replay_engine.py").read_text()
+    replay_fixtures = (source / "services/budget_replay_fixtures.py").read_text()
+    repository = (source / "services/repository.py").read_text()
+    domain = (source / "domain.py").read_text()
+    signal_gates = (source / "services/signal_gates.py").read_text()
+    risk_engine = (source / "services/risk_engine.py").read_text()
+    model_lab = (source / "services/model_lab.py").read_text()
+    storage = (source / "services/storage.py").read_text()
+    provider_tests = (tests / "test_enterprise_providers.py").read_text()
+    persistence_tests = (tests / "test_live_budget_persistence.py").read_text()
+    risk_tests = (tests / "test_enterprise_risk.py").read_text()
+    model_tests = (tests / "test_model_lab.py").read_text()
+    web_types = (root / "apps/web/lib/types.ts").read_text()
+    data_health_panel = (
+        root / "apps/web/app/components/data-health-panel.tsx"
+    ).read_text()
+
+    _require_text(
+        errors,
+        label="provider adapter contract",
+        text=provider_adapters,
+        required=[
+            "class ScoreProviderAdapter",
+            "class OddsProviderAdapter",
+            "class ArchiveOddsProviderAdapter",
+            "RawProviderPayload",
+            "CanonicalMatch",
+            "ProviderCursor",
+            "ProviderLatency",
+            "ProviderMatchPayload",
+            "OddsTick",
+            "canonical_match_from_provider_payload",
+        ],
+    )
+    _require_text(
+        errors,
+        label="replay engine contract",
+        text=replay_engine,
+        required=[
+            "parse_api_tennis_score",
+            "OddsApiIoClient",
+            "TheOddsApiClient",
+            "ProviderCursor",
+            "ScoreTick",
+            "ReplayRunResult",
+            "resync_required",
+        ],
+    )
+    _require_text(
+        errors,
+        label="budget replay fixtures",
+        text=replay_fixtures,
+        required=[
+            'ReplayOddsScenario = Literal["healthy", "gap", "resync_required"]',
+            "_api_tennis_score_payload",
+            "_odds_api_io_payloads",
+            "_the_odds_api_payload",
+            '"resync_required"',
+            '"lastSeq"',
+        ],
+    )
+    _require_text(
+        errors,
+        label="repository replay journal",
+        text=repository,
+        required=[
+            '"replay_run"',
+            '"source": "replay"',
+            "self.record_ingestion_run(",
+            '"final_status": "degraded" if result.resync_required else result.final_status',
+        ],
+    )
+    _require_text(
+        errors,
+        label="provider runtime modes",
+        text=domain + web_types,
+        required=[
+            'ProviderRuntimeMode = Literal["sample", "replay", "live_without_keys", "live_with_keys"]',
+            '"sample" | "replay" | "live_without_keys" | "live_with_keys"',
+            '"replay_run"',
+        ],
+    )
+    _require_text(
+        errors,
+        label="signal safety gates",
+        text=signal_gates + risk_engine,
+        required=[
+            "odds_ws_resync_required_blocks_signals",
+            "Odds websocket cursor requires resync",
+            "Odds feed is stale for live decisioning.",
+            "Live score feed is stale for decisioning.",
+            "Live score state is incomplete.",
+        ],
+    )
+    _require_text(
+        errors,
+        label="paper learning persistence",
+        text=storage + model_lab,
+        required=[
+            "paper_settlements",
+            "closing_line_snapshots",
+            "training_examples",
+            "walk_forward_from_training_examples",
+            "calibration_from_training_examples",
+            "matched_stake <= 0",
+        ],
+    )
+    _require_text(
+        errors,
+        label="core contract tests",
+        text=provider_tests + persistence_tests + risk_tests + model_tests,
+        required=[
+            "test_budget_replay_fixtures_exercise_provider_contracts_without_keys",
+            "test_repository_regates_persisted_fallback_when_odds_cursor_requires_resync",
+            "test_auto_settle_paper_orders_skips_unsettleable_candidates",
+            "test_walk_forward_backtest_uses_settled_training_examples_only",
+            "test_stale_live_odds_are_blocked",
+            "test_invalid_live_score_state_blocks_entries_and_zeroes_stake",
+        ],
+    )
+    _require_text(
+        errors,
+        label="dashboard operational truth",
+        text=data_health_panel,
+        required=[
+            "run.run_type === \"replay_run\"",
+            "events_replayed",
+            "resync required",
+            "Ingestion Journal",
+        ],
+    )
+    return errors
+
+
 def main() -> int:
     config = ROOT / "infra/cloudflare/tunnel-config.example.yml"
     schema = ROOT / "infra/schema.sql"
@@ -60,6 +211,7 @@ def main() -> int:
     schema_text = schema.read_text()
     for duplicate_column in duplicate_schema_columns(schema_text):
         errors.append(f"Schema duplicate column {duplicate_column}")
+    errors.extend(validate_api_last_core_contract(ROOT))
     for table in [
         "raw_provider_payloads",
         "point_events",

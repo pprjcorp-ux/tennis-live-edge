@@ -28,6 +28,14 @@ def test_schema_duplicate_column_checker_accepts_current_schema() -> None:
     assert duplicates == []
 
 
+def test_api_last_core_contract_checker_accepts_current_repo() -> None:
+    checker = _load_private_runtime_checker()
+
+    errors = checker.validate_api_last_core_contract(ROOT)
+
+    assert errors == []
+
+
 def test_schema_duplicate_column_checker_reports_table_and_column() -> None:
     checker = _load_private_runtime_checker()
 
@@ -42,3 +50,17 @@ def test_schema_duplicate_column_checker_reports_table_and_column() -> None:
     )
 
     assert duplicates == ["model_versions.promoted"]
+
+
+def test_required_text_checker_reports_missing_marker() -> None:
+    checker = _load_private_runtime_checker()
+    errors = []
+
+    checker._require_text(
+        errors,
+        label="contract",
+        text="ScoreProviderAdapter",
+        required=["ScoreProviderAdapter", "OddsProviderAdapter"],
+    )
+
+    assert errors == ["contract missing OddsProviderAdapter"]

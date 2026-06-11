@@ -49,6 +49,18 @@ predictions, signals, provider cursors, provider latency, and paper orders.
 Paper entries stay blocked until `TENNIS_EDGE_PERSISTENCE_ENABLED=true`,
 `DATABASE_URL` is configured, and the store reports no persistence error.
 
+## Local Verification
+
+```bash
+npm run api:test
+npm --prefix apps/web run build
+python3 scripts/check_private_runtime.py
+```
+
+`check_private_runtime.py` also verifies the API-last core contract: provider
+adapter protocols, budget replay fixtures, provider runtime modes, signal safety
+gates, paper settlement, and Model Lab `training_examples` coverage.
+
 ## Documentation
 
 - [Common architecture](docs/architecture.md)

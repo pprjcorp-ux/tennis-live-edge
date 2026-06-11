@@ -1,7 +1,7 @@
 import asyncio
 from datetime import date
 
-from tennis_edge.domain import Provider
+from tennis_edge.domain import OddsTick, Provider, RawProviderPayload
 from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.providers.betradar_uof import parse_betradar_market_state
 from tennis_edge.providers.odds_api_io import OddsApiIoClient, parse_odds_api_io_moneyline
@@ -10,6 +10,12 @@ from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.providers.txodds import parse_txodds_moneyline
 from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.normalizer import dedupe_payloads, normalize_name, payload_checksum, similarity
+from tennis_edge.services.provider_adapters import (
+    ArchiveOddsProviderAdapter,
+    OddsProviderAdapter,
+    ScoreProviderAdapter,
+    provider_latency_from_payload,
+)
 from tennis_edge.services.provider_cursor import CURSORS, mark_resynced
 from tennis_edge.services.replay_engine import ReplayEngine
 
@@ -106,6 +112,92 @@ def test_api_tennis_parser_uses_provider_payload_not_sample_matches() -> None:
     assert records[0].raw_payload.payload_type == "score"
     assert records[0].raw_payload.source_event_id == "42"
     assert records[0].raw_payload.payload["event_key"] == "42"
+
+
+def test_budget_provider_clients_satisfy_adapter_contracts() -> None:
+    assert isinstance(ApiTennisClient(api_key=None, data_mode="sample"), ScoreProviderAdapter)
+    assert isinstance(OddsApiIoClient(api_key=None, data_mode="sample"), OddsProviderAdapter)
+    assert isinstance(TheOddsApiClient(api_key=None, data_mode="sample"), ArchiveOddsProviderAdapter)
+
+
+def test_score_adapter_returns_replayable_provider_match_payloads() -> None:
+    client = ApiTennisClient(api_key=None, data_mode="sample")
+
+    records = asyncio.run(client.get_livescore_payloads())
+
+    assert records
+    assert all(record.raw_payload.provider == Provider.API_TENNIS for record in records)
+    assert all(record.raw_payload.payload_type == "score" for record in records)
+    assert all(record.raw_payload.source_event_id for record in records)
+    assert all(record.match.id for record in records)
+
+
+def test_odds_adapter_returns_raw_payload_odds_ticks_cursor_and_latency() -> None:
+    client = OddsApiIoClient(api_key="key", data_mode="live")
+    payload = {
+        "event_id": "42",
+        "seq": 20,
+        "timestamp": "2026-05-10T12:00:00Z",
+        "data": {
+            "bookmaker": "SharpBook",
+            "market": "moneyline",
+            "selections": [
+                {"player_id": "p1", "odds": 1.8},
+                {"player_id": "p2", "odds": 2.1},
+            ],
+        },
+    }
+
+    raw_payload = client.raw_payload_from_message(payload)
+    odds_ticks, cursor = client.ingest_message(payload, remember_in_process=False)
+    latency = provider_latency_from_payload(raw_payload, feed="odds/tennis:moneyline")
+
+    assert isinstance(raw_payload, RawProviderPayload)
+    assert raw_payload.provider == Provider.ODDS_API_IO
+    assert all(isinstance(tick, OddsTick) for tick in odds_ticks)
+    assert {tick.player_id for tick in odds_ticks} == {"p1", "p2"}
+    assert cursor.last_seq == 20
+    assert latency.provider == Provider.ODDS_API_IO
+    assert latency.feed == "odds/tennis:moneyline"
+    assert latency.latency_ms >= 0
+
+
+def test_archive_odds_adapter_returns_replayable_snapshot_events() -> None:
+    events = TheOddsApiClient(api_key="key", data_mode="live").parse_odds_payload(
+        "tennis_atp_french_open",
+        [
+            {
+                "id": "event-archive-1",
+                "home_team": "Jannik Sinner",
+                "away_team": "Alexander Zverev",
+                "commence_time": "2026-05-19T12:00:00Z",
+                "bookmakers": [
+                    {
+                        "title": "Pinnacle",
+                        "last_update": "2026-05-19T11:55:00Z",
+                        "markets": [
+                            {
+                                "key": "h2h",
+                                "outcomes": [
+                                    {"name": "Jannik Sinner", "price": 1.72},
+                                    {"name": "Alexander Zverev", "price": 2.16},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    )
+
+    assert events
+    assert events[0].raw_payload is not None
+    assert events[0].raw_payload.provider == Provider.THE_ODDS_API
+    assert all(isinstance(tick, OddsTick) for tick in events[0].quotes)
+    assert {tick.player_id for tick in events[0].quotes} == {
+        "jannik sinner",
+        "alexander zverev",
+    }
 
 
 def test_budget_provider_payloads_replay_to_score_and_odds_ticks() -> None:

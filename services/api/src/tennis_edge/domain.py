@@ -133,6 +133,9 @@ class OddsQuote(BaseModel):
     ingested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+OddsTick = OddsQuote
+
+
 class Match(BaseModel):
     id: str
     provider_ids: dict[str, str] = Field(default_factory=dict)

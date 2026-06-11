@@ -12,6 +12,14 @@ function ingestionStatusClass(status: IngestionRunRecord["status"]) {
   return "status statusMonitor";
 }
 
+function cursorStatusClass(cursor: ProviderCursor) {
+  if (cursor.resync_required || cursor.status === "gap_detected" || cursor.status === "resync_required") {
+    return "status statusBlocked";
+  }
+  if (cursor.status === "resynced") return "status statusMonitor";
+  return "status statusEntry";
+}
+
 function summaryObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -84,11 +92,16 @@ export function DataHealthPanel({
                 <strong>{cursor.provider}</strong>
                 <span>{cursor.stream}</span>
               </div>
-              <span className={cursor.resync_required ? "status statusBlocked" : "status statusEntry"}>
+              <span className={cursorStatusClass(cursor)}>
                 {cursor.status}
               </span>
               <span>seq {cursor.last_seq ?? "-"}</span>
+              <span>next {cursor.expected_next_seq ?? "-"}</span>
               <span>gaps {cursor.gap_count}</span>
+              <span className={cursor.resync_required ? "status statusBlocked" : "status statusMuted"}>
+                {cursor.resync_required ? "resync" : "trusted"}
+              </span>
+              {cursor.note ? <span>{cursor.note}</span> : null}
             </div>
           ))}
         </div>

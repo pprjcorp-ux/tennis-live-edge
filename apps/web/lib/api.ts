@@ -26,6 +26,7 @@ import type {
   PaperSettlement,
   ProviderCursor,
   ProviderHealth,
+  ReplayOddsScenario,
   ReplayRunResult,
   Signal
 } from "@/lib/types";
@@ -174,12 +175,21 @@ function adminHeaders(adminToken: string) {
   };
 }
 
-export async function runReplay(matchId: string, adminToken: string): Promise<ReplayRunResult> {
+export async function runReplay(
+  matchId: string,
+  adminToken: string,
+  oddsScenario: ReplayOddsScenario = "healthy"
+): Promise<ReplayRunResult> {
   const response = await fetch(`${API_BASE}/api/v1/replay/run`, {
     method: "POST",
     headers: adminHeaders(adminToken),
     credentials: "include",
-    body: JSON.stringify({ match_id: matchId, speed: 1, include_market_suspensions: true })
+    body: JSON.stringify({
+      match_id: matchId,
+      speed: 1,
+      include_market_suspensions: true,
+      odds_scenario: oddsScenario
+    })
   });
   if (!response.ok) {
     throw new Error(`Replay request failed: ${response.status}`);

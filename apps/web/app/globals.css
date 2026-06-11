@@ -591,7 +591,10 @@ h2 {
   border-radius: 8px;
 }
 
-.cursorRow,
+.cursorRow {
+  grid-template-columns: minmax(0, 1.25fr) auto auto auto auto auto minmax(0, 0.9fr);
+}
+
 .calibrationRow {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
@@ -979,7 +982,8 @@ h2 {
   padding: 16px 16px 0;
 }
 
-.labActions input {
+.labActions input,
+.labActions select {
   min-width: min(100%, 220px);
   min-height: 38px;
   padding: 0 11px;

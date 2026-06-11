@@ -69,6 +69,7 @@ import type {
   PaperPerformance,
   ProviderCursor,
   ProviderHealth,
+  ReplayOddsScenario,
   ReplayRunResult,
   Signal
 } from "@/lib/types";
@@ -172,6 +173,7 @@ export default function Page() {
   const [health, setHealth] = useState<ProviderHealth[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [replayOddsScenario, setReplayOddsScenario] = useState<ReplayOddsScenario>("healthy");
   const [replay, setReplay] = useState<ReplayRunResult | null>(null);
   const [backtest, setBacktest] = useState<BacktestMetrics | null>(null);
   const [promotion, setPromotion] = useState<ModelPromotionDecision | null>(null);
@@ -254,7 +256,7 @@ export default function Page() {
     setBusy(true);
     setError(null);
     try {
-      setReplay(await runReplay(selectedMatchId, adminToken.trim()));
+      setReplay(await runReplay(selectedMatchId, adminToken.trim(), replayOddsScenario));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Replay failed");
     } finally {
@@ -1189,6 +1191,15 @@ export default function Page() {
               type="password"
               value={adminToken}
             />
+            <select
+              aria-label="Odds replay scenario"
+              onChange={(event) => setReplayOddsScenario(event.target.value as ReplayOddsScenario)}
+              value={replayOddsScenario}
+            >
+              <option value="healthy">healthy odds</option>
+              <option value="gap">odds gap</option>
+              <option value="resync_required">resync required</option>
+            </select>
             <button onClick={triggerReplay} disabled={busy || !selectedMatchId}>
               Run replay
             </button>
@@ -1222,10 +1233,14 @@ export default function Page() {
                   <span>
                     {replay.provider_cursors[0].provider}/{replay.provider_cursors[0].stream}:{" "}
                     {replay.provider_cursors[0].status} seq{" "}
-                    {replay.provider_cursors[0].last_seq ?? "none"}
+                    {replay.provider_cursors[0].last_seq ?? "none"} next{" "}
+                    {replay.provider_cursors[0].expected_next_seq ?? "none"} gaps{" "}
+                    {replay.provider_cursors[0].gap_count}
                   </span>
                 ) : null}
-                {replay.notes[0] ? <span>{replay.notes[0]}</span> : null}
+                {replay.notes.map((note) => (
+                  <span key={note}>{note}</span>
+                ))}
               </div>
             ) : null}
             {backtest ? (

@@ -11,6 +11,7 @@ export type Provider =
 export type CompetitionLevel = "ATP" | "WTA" | "Challenger" | "WTA125" | "ITF";
 export type ExecutionStage = "paper" | "tiny_real" | "scaled";
 export type CursorStatus = "healthy" | "gap_detected" | "resync_required" | "resynced";
+export type ReplayOddsScenario = "healthy" | "gap" | "resync_required";
 export type OrderStatus =
   | "paper"
   | "pending"

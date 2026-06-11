@@ -3234,6 +3234,68 @@ def test_live_ingestion_pipeline_uses_persisted_fallback_after_provider_failure(
     assert store.saved_payloads == []
 
 
+def test_repository_regates_persisted_fallback_when_odds_cursor_requires_resync() -> None:
+    persisted = asyncio.run(
+        LiveIngestionPipeline(
+            _FakeMatchSource(_live_provider_matches()),
+            _FakeArchiveSource(),
+            _FakeStore(),
+            signal_gate=lambda match, signals: signals,
+            archive_augmenter=_same_matches,
+        ).snapshot_for_date(date.today())
+    ).analyses
+    persisted = [
+        persisted[0].model_copy(
+            update={
+                "signals": [
+                    persisted[0].signals[0].model_copy(
+                        update={
+                            "status": SignalStatus.ENTRY,
+                            "stake_fraction": 0.01,
+                            "reason": "Persisted entry before cursor degraded.",
+                        }
+                    ),
+                    *persisted[0].signals[1:],
+                ]
+            }
+        ),
+        *persisted[1:],
+    ]
+    assert any(
+        signal.status == SignalStatus.ENTRY
+        for analysis in persisted
+        for signal in analysis.signals
+    )
+    repo = AnalysisRepository(
+        Settings(
+            data_mode="live",
+            persistence_enabled=False,
+            odds_ws_resync_required_blocks_signals=True,
+        )
+    )
+    repo.ingestion = LiveIngestionPipeline(
+        _FakeMatchSource(exc=RuntimeError("provider down")),
+        _FakeArchiveSource(),
+        _FakeStore(persisted=persisted),
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+
+    analyses = asyncio.run(repo.analyses_for_date(date.today()))
+
+    assert analyses
+    assert all(
+        signal.status != SignalStatus.ENTRY
+        for analysis in analyses
+        for signal in analysis.signals
+    )
+    assert any(
+        signal.reason.startswith("Odds websocket cursor requires resync")
+        for analysis in analyses
+        for signal in analysis.signals
+    )
+
+
 def test_live_ingestion_pipeline_labels_sample_snapshots_explicitly() -> None:
     store = _FakeStore()
     pipeline = LiveIngestionPipeline(

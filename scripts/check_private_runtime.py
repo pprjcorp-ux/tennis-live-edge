@@ -223,6 +223,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_invalid_live_score_state_blocks_entries_and_zeroes_stake",
             "test_live_readiness_blocks_entries_when_critical_provider_health_is_unhealthy",
             "test_live_readiness_blocks_entries_when_data_quality_reports_stale_ticks",
+            "test_direct_paper_order_blocks_when_live_readiness_cannot_generate_entries",
             "test_api_onboarding_guides_budget_provider_sequence_after_archive_key",
             "test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync",
             "test_model_lab_readiness_uses_persisted_training_examples_dataset",

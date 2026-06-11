@@ -586,10 +586,26 @@ class AnalysisRepository:
         return sorted(merged.values(), key=lambda order: order.created_at, reverse=True)
 
     async def create_paper_order(self, request: OrderRequest) -> ExecutionOrder:
+        target_date = date.today()
+        analyses = await self.analyses_for_date(target_date)
+        if self.settings.data_mode != "sample":
+            performance = await self.paper_performance()
+            operational_state = self.dashboard_read_model.operational_state_snapshot(
+                target_date,
+                analyses,
+                performance,
+            )
+            readiness = self.operational_state.live_readiness(operational_state)
+            if not readiness.can_generate_entries:
+                reasons = readiness.blockers or readiness.warnings or [readiness.status]
+                raise ValueError(
+                    "Paper order blocked: live readiness cannot generate entries. "
+                    + "; ".join(reasons)
+                )
         order_snapshot = await self.orders()
         order = create_order(
             self.settings,
-            await self.analyses_for_date(date.today()),
+            analyses,
             request,
             real=False,
             orders=order_snapshot,

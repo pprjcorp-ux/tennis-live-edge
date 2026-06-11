@@ -1,17 +1,24 @@
 import asyncio
 from datetime import date, datetime, timezone
 
+import pytest
+
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
     BacktestMetrics,
     CanonicalEntityConflict,
     Confidence,
+    CursorStatus,
     ExecutionOrder,
     KillSwitchRequest,
     ModelRegistryEntry,
+    OrderRequest,
     PaperPerformance,
     Provider,
+    ProviderCursor,
+    ProviderHealth,
     RawProviderPayload,
+    SignalStatus,
 )
 from tennis_edge.domain import ExecutionVenue, OrderStatus
 from tennis_edge.domain import LearningPromotionRequest
@@ -21,6 +28,7 @@ from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches, sample_raw_payloads
 from tennis_edge.services.execution_engine import KILL_SWITCH, ORDERS
+from tennis_edge.services.live_dashboard import LiveDashboardReadModel
 from tennis_edge.services.operational_state import OperationalStateService
 from tennis_edge.services.repository import AnalysisRepository
 
@@ -246,6 +254,101 @@ def test_daily_cost_report_uses_persisted_positive_clv_signals() -> None:
 
     assert report.cost_per_positive_clv_signal_usd == 7.17
     assert "positive-CLV" in report.note
+
+
+def test_direct_paper_order_blocks_when_live_readiness_cannot_generate_entries() -> None:
+    class StoreStub:
+        last_error = None
+
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.saved_orders = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def orders(self):
+            return []
+
+        def provider_health(self):
+            return [
+                ProviderHealth(
+                    provider=Provider.API_TENNIS,
+                    configured=True,
+                    healthy=False,
+                    status="stale persisted feed: score/live",
+                    cost_tier="$80/mo",
+                    coverage_scope="score",
+                ),
+                ProviderHealth(
+                    provider=Provider.ODDS_API_IO,
+                    configured=True,
+                    healthy=True,
+                    status="odds websocket primary configured",
+                    cost_tier="£198/mo Starter+WS",
+                    coverage_scope="odds",
+                ),
+            ]
+
+        def provider_cursors(self):
+            return [
+                ProviderCursor(
+                    provider=Provider.ODDS_API_IO,
+                    stream="tennis:moneyline",
+                    last_seq=42,
+                    expected_next_seq=43,
+                    status=CursorStatus.HEALTHY,
+                    resync_required=False,
+                    note="persisted healthy cursor",
+                )
+            ]
+
+        def data_quality(self):
+            return []
+
+        def paper_performance(self):
+            return None
+
+        def training_example_count(self, request=None):
+            return 0
+
+        def kill_switch_state(self):
+            return {"enabled": False, "reason": "not set"}
+
+        def save_order(self, order):
+            self.saved_orders.append(order)
+            raise AssertionError("paper order should not be saved when readiness blocks entries")
+
+    settings = Settings(
+        data_mode="live",
+        api_tennis_key="score-key",
+        odds_api_io_key="odds-key",
+        persistence_enabled=True,
+        database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+    )
+    sample_repo = AnalysisRepository(Settings(data_mode="sample"))
+    analyses = asyncio.run(sample_repo.analyses_for_date(date.today()))
+    entry = next(
+        signal
+        for analysis in analyses
+        for signal in analysis.signals
+        if signal.status == SignalStatus.ENTRY
+    )
+    repo = AnalysisRepository(settings)
+    store = StoreStub(repo.store)
+    repo.store = store
+    repo.operational_state = OperationalStateService(settings, store)
+    repo.dashboard_read_model = LiveDashboardReadModel(repo.operational_state)
+
+    async def fake_analyses_for_date(target_date):
+        return analyses
+
+    repo.analyses_for_date = fake_analyses_for_date
+
+    with pytest.raises(ValueError, match="live readiness cannot generate entries"):
+        asyncio.run(repo.create_paper_order(OrderRequest(signal_id=entry.id)))
+
+    assert store.saved_orders == []
 
 
 def test_archive_odds_augmentation_persists_theoddsapi_raw_payload() -> None:

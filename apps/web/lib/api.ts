@@ -188,7 +188,8 @@ export async function runReplay(
       match_id: matchId,
       speed: 1,
       include_market_suspensions: true,
-      odds_scenario: oddsScenario
+      odds_scenario: oddsScenario,
+      use_fixture_seed: true
     })
   });
   if (!response.ok) {

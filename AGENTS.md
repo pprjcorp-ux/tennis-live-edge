@@ -69,6 +69,9 @@ Replay Lab is the provider rehearsal surface. Keep
 adding or debugging paid APIs. It must expose `budget_replay_fixtures`, fake
 API-Tennis/Odds-API.io/TheOddsAPI contracts, and healthy/gap/resync scenarios
 without live keys or vendor quota.
+Live mode must not fall back to sample payloads implicitly; use
+`/api/v1/replay/run` with `use_fixture_seed=true` only for explicit admin
+rehearsal runs.
 
 ## API Onboarding
 

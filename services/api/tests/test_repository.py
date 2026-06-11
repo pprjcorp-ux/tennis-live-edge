@@ -603,6 +603,7 @@ def test_sample_replay_fallback_uses_budget_provider_payloads() -> None:
     assert store.ingestion_runs_saved[-1].run_type == "replay_run"
     assert store.ingestion_runs_saved[-1].status == "completed"
     assert store.ingestion_runs_saved[-1].summary["source"] == "replay"
+    assert store.ingestion_runs_saved[-1].summary["payload_source"] == "sample_budget_replay_fixtures"
     assert store.ingestion_runs_saved[-1].summary["events_replayed"] == 3
 
 
@@ -816,3 +817,63 @@ def test_live_replay_without_persisted_payloads_does_not_use_sample_payloads() -
     assert replay.events_replayed == 0
     assert replay.score_ticks == 0
     assert replay.odds_ticks == 0
+
+
+def test_live_replay_uses_fixture_seed_only_when_explicitly_requested() -> None:
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.raw_payloads_saved = []
+            self.score_ticks_saved = []
+            self.odds_saves = []
+            self.cursors_saved = []
+            self.ingestion_runs_saved = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def raw_payloads_for_match(self, match_id):
+            return []
+
+        def save_raw_payloads(self, payloads_to_save):
+            self.raw_payloads_saved.extend(payloads_to_save)
+            return len(payloads_to_save)
+
+        def save_score_ticks(self, ticks):
+            self.score_ticks_saved.extend(ticks)
+            return len(ticks)
+
+        def save_odds_quotes_for_event(self, provider, source_event_id, quotes):
+            self.odds_saves.append((provider, source_event_id, quotes))
+            return len(quotes)
+
+        def save_provider_cursor(self, cursor):
+            self.cursors_saved.append(cursor)
+            return True
+
+        def record_provider_latency(self, *args, **kwargs):
+            return True
+
+        def save_ingestion_run(self, run):
+            self.ingestion_runs_saved.append(run)
+            return True
+
+    repo = AnalysisRepository(Settings(data_mode="live", persistence_enabled=True))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    replay = asyncio.run(
+        repo.run_replay(
+            ReplayRunRequest(match_id="match_atp_002", use_fixture_seed=True)
+        )
+    )
+
+    providers = {payload.provider for payload in store.raw_payloads_saved}
+    assert replay.events_replayed == 3
+    assert replay.score_ticks == 1
+    assert replay.odds_ticks == 12
+    assert replay.raw_payloads_saved == 3
+    assert providers == {Provider.API_TENNIS, Provider.ODDS_API_IO, Provider.THE_ODDS_API}
+    assert replay.notes[0].startswith("Replay used explicit fixture seed")
+    assert store.ingestion_runs_saved[-1].summary["payload_source"] == "explicit_fixture_seed"
+    assert store.ingestion_runs_saved[-1].summary["use_fixture_seed"] is True

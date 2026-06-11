@@ -106,3 +106,7 @@ this same sequence from `/api/v1/dashboard/live-state`:
    gates are healthy.
 5. Sportradar/Betradar/TXODDS enterprise feeds, deferred until budget paper data
    proves a real coverage or latency bottleneck.
+
+In live mode, replay does not silently use sample data. The dashboard's Replay
+Lab sends `use_fixture_seed=true` explicitly when the operator wants to rehearse
+provider contracts without consuming live provider quota.

@@ -62,9 +62,11 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     storage = (source / "services/storage.py").read_text()
     provider_tests = (tests / "test_enterprise_providers.py").read_text()
     persistence_tests = (tests / "test_live_budget_persistence.py").read_text()
+    repository_tests = (tests / "test_repository.py").read_text()
     risk_tests = (tests / "test_enterprise_risk.py").read_text()
     model_tests = (tests / "test_model_lab.py").read_text()
     operational_tests = (tests / "test_operational_state.py").read_text()
+    v1_tests = (tests / "test_v1_api.py").read_text()
     web_types = (root / "apps/web/lib/types.ts").read_text()
     data_health_panel = (
         root / "apps/web/app/components/data-health-panel.tsx"
@@ -123,6 +125,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             '"source": "replay"',
             "self.record_ingestion_run(",
             '"final_status": "degraded" if result.resync_required else result.final_status',
+            '"payload_source": payload_source',
+            '"use_fixture_seed": request.use_fixture_seed',
         ],
     )
     _require_text(
@@ -141,6 +145,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "ReplayContractProvider",
             "replay_lab_readiness",
             "source=\"budget_replay_fixtures\"",
+            "use_fixture_seed: bool = False",
             "source=\"training_examples\"",
             "core_ready",
             "live_odds_websocket",
@@ -175,7 +180,15 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     _require_text(
         errors,
         label="core contract tests",
-        text=provider_tests + persistence_tests + risk_tests + model_tests + operational_tests,
+        text=(
+            provider_tests
+            + persistence_tests
+            + repository_tests
+            + risk_tests
+            + model_tests
+            + operational_tests
+            + v1_tests
+        ),
         required=[
             "test_budget_replay_fixtures_exercise_provider_contracts_without_keys",
             "test_repository_regates_persisted_fallback_when_odds_cursor_requires_resync",
@@ -189,6 +202,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_model_lab_readiness_blocks_without_persistent_truth",
             "test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys",
             "test_replay_lab_readiness_collects_until_replay_run_is_persisted",
+            "test_live_replay_uses_fixture_seed_only_when_explicitly_requested",
+            "test_v1_replay_accepts_explicit_fixture_seed",
         ],
     )
     _require_text(

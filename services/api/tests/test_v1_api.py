@@ -266,6 +266,20 @@ def test_v1_replay_can_simulate_provider_resync_request() -> None:
     )
 
 
+def test_v1_replay_accepts_explicit_fixture_seed() -> None:
+    response = client.post(
+        "/api/v1/replay/run",
+        headers=ADMIN_HEADERS,
+        json={"match_id": "match_atp_002", "use_fixture_seed": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["events_replayed"] >= 1
+    assert body["score_ticks"] >= 1
+    assert body["odds_ticks"] >= 1
+
+
 def test_v1_live_backtest_without_training_examples_returns_409() -> None:
     class RepoStub:
         async def run_backtest(self, request):

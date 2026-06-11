@@ -301,6 +301,7 @@ class ReplayRunRequest(BaseModel):
     speed: float = Field(default=1.0, gt=0, le=100)
     include_market_suspensions: bool = True
     odds_scenario: Literal["healthy", "gap", "resync_required"] = "healthy"
+    use_fixture_seed: bool = False
 
 
 class ReplayRunResult(BaseModel):

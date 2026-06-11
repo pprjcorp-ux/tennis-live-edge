@@ -48,6 +48,7 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(pageSource, /replayOddsScenario/);
   assert.match(pageSource, /setReplayOddsScenario/);
   assert.match(pageSource, /runReplay\(selectedMatchId, adminToken\.trim\(\), replayOddsScenario\)/);
+  assert.match(apiSource, /use_fixture_seed: true/);
   assert.match(pageSource, /nextOperational\.daily_cost_report/);
   assert.match(pageSource, /nextOperational\.api_onboarding/);
   assert.match(pageSource, /nextOperational\.model_lab/);

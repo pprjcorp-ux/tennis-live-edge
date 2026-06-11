@@ -727,13 +727,22 @@ class AnalysisRepository:
             for signal in analysis.signals
             if signal.status == SignalStatus.ENTRY
         )
-        payloads = self._raw_payloads_for_replay(
+        payloads, payload_source = self._raw_payloads_for_replay(
             request.match_id,
             analyses,
             odds_scenario=request.odds_scenario,
+            use_fixture_seed=request.use_fixture_seed,
         )
         state = self.replay_engine.replay(payloads)
         persisted = self._persist_replay_effects(payloads, state)
+        notes = [*(persisted.get("notes") or [])]
+        if payload_source == "explicit_fixture_seed" and payloads:
+            notes.insert(
+                0,
+                "Replay used explicit fixture seed; no live provider quota or live API payloads were consumed.",
+            )
+        elif payload_source == "explicit_fixture_seed":
+            notes.insert(0, "Fixture seed was requested but no sample fixture matched this match_id.")
         result = self.replay_engine.summarize(
             request.match_id,
             payloads,
@@ -743,6 +752,7 @@ class AnalysisRepository:
         final_result = result.model_copy(
             update={
                 **persisted,
+                "notes": notes,
                 "final_status": "degraded" if result.resync_required else result.final_status,
             }
         )
@@ -751,6 +761,8 @@ class AnalysisRepository:
             {
                 **final_result.model_dump(mode="json"),
                 "source": "replay",
+                "payload_source": payload_source,
+                "use_fixture_seed": request.use_fixture_seed,
                 "odds_scenario": request.odds_scenario,
             },
             source="api",
@@ -826,14 +838,23 @@ class AnalysisRepository:
         analyses: list[MatchAnalysis],
         *,
         odds_scenario: str = "healthy",
-    ) -> list[RawProviderPayload]:
+        use_fixture_seed: bool = False,
+    ) -> tuple[list[RawProviderPayload], str]:
         for candidate in self._raw_payload_id_candidates(match_id, analyses):
             payloads = self.store.raw_payloads_for_match(candidate)
             if payloads:
-                return payloads
+                return payloads, "persisted_raw_payloads"
         if self.settings.data_mode == "sample":
-            return sample_budget_replay_payloads(match_id, odds_scenario=odds_scenario)
-        return []
+            return (
+                sample_budget_replay_payloads(match_id, odds_scenario=odds_scenario),
+                "sample_budget_replay_fixtures",
+            )
+        if use_fixture_seed:
+            return (
+                sample_budget_replay_payloads(match_id, odds_scenario=odds_scenario),
+                "explicit_fixture_seed",
+            )
+        return [], "none"
 
     @staticmethod
     def _raw_payload_id_candidates(match_id: str, analyses: list[MatchAnalysis]) -> list[str]:

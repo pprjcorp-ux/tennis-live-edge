@@ -204,6 +204,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_repository_regates_persisted_fallback_when_odds_cursor_requires_resync",
             "test_auto_settle_paper_orders_skips_unsettleable_candidates",
             "test_walk_forward_backtest_uses_settled_training_examples_only",
+            "test_walk_forward_ignores_invalid_zero_stake_examples",
             "test_stale_live_odds_are_blocked",
             "test_invalid_live_score_state_blocks_entries_and_zeroes_stake",
             "test_api_onboarding_guides_budget_provider_sequence_after_archive_key",

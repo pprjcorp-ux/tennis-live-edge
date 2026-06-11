@@ -129,6 +129,8 @@ def _settled_examples(
             continue
         if example.result_win is None or example.pnl is None:
             continue
+        if example.stake_amount <= 0:
+            continue
         if start and decision_date < start:
             continue
         if end and decision_date > end:

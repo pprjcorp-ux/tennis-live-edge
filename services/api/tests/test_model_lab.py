@@ -146,6 +146,23 @@ def test_walk_forward_roi_uses_staked_exposure_when_available() -> None:
     assert metrics.roi == 0.033333
 
 
+def test_walk_forward_ignores_invalid_zero_stake_examples() -> None:
+    examples = [
+        _example(1, 0.62, True, 10, 0.012).model_copy(update={"stake_amount": 100}),
+        _example(2, 0.71, True, 999, 0.4).model_copy(update={"stake_amount": 0}),
+    ]
+
+    metrics = walk_forward_from_training_examples(
+        BacktestRunRequest(model_version="prematch_ensemble_v1"),
+        examples,
+    )
+
+    assert metrics.signals == 1
+    assert metrics.matches == 1
+    assert metrics.roi == 0.1
+    assert metrics.clv == 0.012
+
+
 def test_walk_forward_filters_training_examples_by_feature_set() -> None:
     examples = [
         _example(1, 0.62, True, 10, 0.012).model_copy(

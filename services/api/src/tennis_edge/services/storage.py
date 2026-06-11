@@ -1808,6 +1808,7 @@ class PersistentStore:
                         WHERE te.model_version = %s
                           AND te.result_win IS NOT NULL
                           AND te.pnl IS NOT NULL
+                          AND te.stake_amount > 0
                           AND (%s::text IS NULL OR fs.feature_set = %s::text)
                           AND (%s::date IS NULL OR te.decision_ts::date >= %s::date)
                           AND (%s::date IS NULL OR te.decision_ts::date <= %s::date)
@@ -1870,6 +1871,7 @@ class PersistentStore:
                         LEFT JOIN feature_snapshots fs ON fs.id = te.feature_snapshot_id
                         WHERE te.result_win IS NOT NULL
                           AND te.pnl IS NOT NULL
+                          AND te.stake_amount > 0
                           AND (%s::text IS NULL OR te.model_version = %s::text)
                           AND (%s::text IS NULL OR fs.feature_set = %s::text)
                           AND (%s::date IS NULL OR te.decision_ts::date >= %s::date)

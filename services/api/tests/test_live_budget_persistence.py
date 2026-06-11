@@ -156,6 +156,7 @@ def test_training_example_count_uses_persisted_settled_rows_and_filters() -> Non
             assert "LEFT JOIN feature_snapshots fs" in query
             assert "te.result_win IS NOT NULL" in query
             assert "te.pnl IS NOT NULL" in query
+            assert "te.stake_amount > 0" in query
             assert "fs.feature_set = %s" in query
             self.params = params
             return self
@@ -591,6 +592,46 @@ def test_training_examples_filter_by_feature_set_and_decision_window() -> None:
     assert examples[0].feature_snapshot_id == 123
     assert examples[0].feature_set == "live_budget_v1"
     assert examples[0].decision_ts == decision_ts
+
+
+def test_training_examples_skip_legacy_zero_stake_rows() -> None:
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            assert "te.stake_amount > 0" in query
+            return self
+
+        def fetchall(self):
+            return []
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    assert StoreStub().training_examples() == []
 
 
 def test_operational_write_methods_degrade_on_schema_drift() -> None:

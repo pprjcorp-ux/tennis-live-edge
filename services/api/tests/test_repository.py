@@ -15,6 +15,8 @@ from tennis_edge.domain import (
 from tennis_edge.domain import ExecutionVenue, OrderStatus
 from tennis_edge.domain import LearningPromotionRequest
 from tennis_edge.domain import ReplayRunRequest
+from tennis_edge.providers.api_tennis import ApiTennisClient
+from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches, sample_raw_payloads
 from tennis_edge.services.execution_engine import KILL_SWITCH, ORDERS
@@ -501,6 +503,114 @@ def test_replay_falls_back_to_provider_match_id_for_persisted_raw_payloads() -> 
 
     assert store.requested_match_ids[:2] == ["match_atp_002", "sample-api-tennis-002"]
     assert replay.events_replayed == len(persisted_payloads)
+
+
+def test_replay_runner_persists_fake_provider_score_odds_and_cursor() -> None:
+    score_payload = ApiTennisClient(api_key="key", data_mode="live")._parse_match_payloads(
+        {
+            "result": [
+                {
+                    "event_key": "42",
+                    "event_date": date.today().isoformat(),
+                    "event_time": "13:30",
+                    "event_first_player": "Elena Rybakina",
+                    "event_second_player": "Ons Jabeur",
+                    "event_first_player_key": "101",
+                    "event_second_player_key": "102",
+                    "event_type_type": "WTA Singles",
+                    "tournament_name": "Wimbledon",
+                    "tournament_round": "R4",
+                    "tournament_surface": "Grass",
+                    "event_status": "Set 1",
+                    "event_game_result": "4 - 3",
+                    "event_point": "30 - 15",
+                    "event_serve": "First Player",
+                }
+            ]
+        },
+        default_status="live",
+    )[0].raw_payload
+    odds_payload = OddsApiIoClient(api_key="key", data_mode="live").raw_payload_from_message(
+        {
+            "event_id": "42",
+            "seq": 1,
+            "timestamp": "2026-05-10T12:00:00Z",
+            "data": {
+                "bookmaker": "SharpBook",
+                "market": "moneyline",
+                "selections": [
+                    {"player_id": "wta_api_tennis_101", "odds": 1.72},
+                    {"player_id": "wta_api_tennis_102", "odds": 2.18},
+                ],
+            },
+        }
+    )
+    payloads = [score_payload, odds_payload]
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.raw_payloads_saved = []
+            self.score_ticks_saved = []
+            self.odds_saves = []
+            self.cursors_saved = []
+            self.latencies = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def raw_payloads_for_match(self, match_id):
+            return payloads if match_id == "api_tennis_42" else []
+
+        def save_raw_payloads(self, payloads_to_save):
+            self.raw_payloads_saved.extend(payloads_to_save)
+            return len(payloads_to_save)
+
+        def save_score_ticks(self, ticks):
+            self.score_ticks_saved.extend(ticks)
+            return len(ticks)
+
+        def save_odds_quotes_for_event(self, provider, source_event_id, quotes):
+            self.odds_saves.append((provider, source_event_id, quotes))
+            return len(quotes)
+
+        def save_provider_cursor(self, cursor):
+            self.cursors_saved.append(cursor)
+            return True
+
+        def record_provider_latency(
+            self,
+            provider,
+            feed,
+            *,
+            latest_source_ts,
+            latest_ingested_at,
+        ):
+            self.latencies.append((provider, feed, latest_source_ts, latest_ingested_at))
+            return True
+
+    repo = AnalysisRepository(Settings(data_mode="sample"))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    replay = asyncio.run(repo.run_replay(ReplayRunRequest(match_id="api_tennis_42")))
+
+    assert replay.events_replayed == 2
+    assert replay.score_ticks == 1
+    assert replay.odds_ticks == 2
+    assert replay.raw_payloads_saved == 2
+    assert replay.score_ticks_saved == 1
+    assert replay.odds_ticks_saved == 2
+    assert replay.cursors_saved == 1
+    assert replay.resync_required is False
+    assert store.score_ticks_saved[0].match_id == "api_tennis_42"
+    assert store.odds_saves[0][0] == Provider.ODDS_API_IO
+    assert store.odds_saves[0][1] == "42"
+    assert store.cursors_saved[0].last_seq == 1
+    assert {provider for provider, *_ in store.latencies} == {
+        Provider.API_TENNIS,
+        Provider.ODDS_API_IO,
+    }
 
 
 def test_live_replay_without_persisted_payloads_does_not_use_sample_payloads() -> None:

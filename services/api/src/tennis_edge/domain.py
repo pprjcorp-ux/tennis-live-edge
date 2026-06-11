@@ -307,6 +307,12 @@ class ReplayRunResult(BaseModel):
     odds_ticks: int
     signals_generated: int
     final_status: str
+    raw_payloads_saved: int = 0
+    score_ticks_saved: int = 0
+    odds_ticks_saved: int = 0
+    cursors_saved: int = 0
+    resync_required: bool = False
+    notes: list[str] = Field(default_factory=list)
 
 
 class BacktestMetrics(BaseModel):

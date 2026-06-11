@@ -6,6 +6,7 @@ from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.providers.betradar_uof import parse_betradar_market_state
 from tennis_edge.providers.odds_api_io import OddsApiIoClient, parse_odds_api_io_moneyline
 from tennis_edge.providers.sportradar import parse_sportradar_point, parse_sportradar_score
+from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.providers.txodds import parse_txodds_moneyline
 from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.normalizer import dedupe_payloads, normalize_name, payload_checksum, similarity
@@ -162,6 +163,87 @@ def test_budget_provider_payloads_replay_to_score_and_odds_ticks() -> None:
         "wta_api_tennis_102",
     }
     assert all(quote.ingested_at == odds_raw.ingested_at for quote in replay.odds_quotes)
+
+
+def test_replay_tracks_odds_api_sequence_gap_without_process_cursor() -> None:
+    CURSORS.clear()
+    try:
+        client = OddsApiIoClient(api_key="key", data_mode="live")
+        payloads = [
+            client.raw_payload_from_message(
+                {
+                    "event_id": "42",
+                    "seq": 10,
+                    "timestamp": "2026-05-10T12:00:00Z",
+                    "data": {
+                        "bookmaker": "SharpBook",
+                        "market": "moneyline",
+                        "selections": [{"player_id": "p1", "odds": 1.8}],
+                    },
+                }
+            ),
+            client.raw_payload_from_message(
+                {
+                    "event_id": "42",
+                    "seq": 12,
+                    "timestamp": "2026-05-10T12:00:01Z",
+                    "data": {
+                        "bookmaker": "SharpBook",
+                        "market": "moneyline",
+                        "selections": [{"player_id": "p1", "odds": 1.9}],
+                    },
+                }
+            ),
+        ]
+
+        replay = ReplayEngine().replay(payloads)
+
+        assert len(replay.odds_quotes) == 2
+        assert len(replay.provider_cursors) == 1
+        assert replay.provider_cursors[0].resync_required is True
+        assert replay.provider_cursors[0].last_seq == 10
+        assert replay.provider_cursors[0].expected_next_seq == 11
+        assert CURSORS == {}
+    finally:
+        CURSORS.clear()
+
+
+def test_replay_parses_theoddsapi_archive_snapshot() -> None:
+    raw_payload = TheOddsApiClient(api_key="key", data_mode="live").parse_odds_payload(
+        "tennis_atp_french_open",
+        [
+            {
+                "id": "event-1",
+                "home_team": "Jannik Sinner",
+                "away_team": "Alexander Zverev",
+                "commence_time": "2026-05-19T12:00:00Z",
+                "bookmakers": [
+                    {
+                        "title": "Pinnacle",
+                        "last_update": "2026-05-19T11:55:00Z",
+                        "markets": [
+                            {
+                                "key": "h2h",
+                                "outcomes": [
+                                    {"name": "Jannik Sinner", "price": 1.72},
+                                    {"name": "Alexander Zverev", "price": 2.16},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    )[0].raw_payload
+    assert raw_payload is not None
+
+    replay = ReplayEngine().replay([raw_payload])
+
+    assert len(replay.odds_quotes) == 2
+    assert {quote.player_id for quote in replay.odds_quotes} == {
+        "jannik sinner",
+        "alexander zverev",
+    }
 
 
 def test_api_tennis_live_without_key_returns_no_synthetic_matches() -> None:

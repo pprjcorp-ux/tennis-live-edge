@@ -41,6 +41,7 @@ from tennis_edge.domain import (
     ProviderCursor,
     ProviderHealth,
     RawProviderPayload,
+    ScoreTick,
     Signal,
     SignalStatus,
     TrainingExample,
@@ -425,6 +426,50 @@ class PersistentStore:
                 self._record_write_error("record_provider_latency", exc)
                 return False
         return True
+
+    def save_score_ticks(self, ticks: list[ScoreTick]) -> int:
+        if not self.enabled or not ticks:
+            return 0
+        inserted = 0
+        with self._connect() as conn:
+            if conn is None:
+                return 0
+            try:
+                with self._write_transaction(conn):
+                    with conn.cursor() as cur:
+                        for tick in ticks:
+                            cur.execute(
+                                """
+                                INSERT INTO score_ticks (
+                                  match_id, provider, raw_state, source_ts, ingested_at
+                                )
+                                SELECT %s, %s, %s, %s, %s
+                                WHERE NOT EXISTS (
+                                  SELECT 1
+                                  FROM score_ticks
+                                  WHERE match_id = %s
+                                    AND provider = %s
+                                    AND raw_state = %s
+                                    AND source_ts = %s
+                                )
+                                """,
+                                (
+                                    tick.match_id,
+                                    tick.provider.value,
+                                    _json(tick.state.model_dump(mode="json")),
+                                    tick.source_ts,
+                                    tick.ingested_at,
+                                    tick.match_id,
+                                    tick.provider.value,
+                                    _json(tick.state.model_dump(mode="json")),
+                                    tick.source_ts,
+                                ),
+                            )
+                            inserted += max(0, cur.rowcount)
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_write_error("save_score_ticks", exc)
+                return 0
+        return inserted
 
     def save_odds_quotes_for_event(
         self,

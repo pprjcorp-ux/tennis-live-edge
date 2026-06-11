@@ -707,7 +707,82 @@ class AnalysisRepository:
             if signal.status == SignalStatus.ENTRY
         )
         payloads = self._raw_payloads_for_replay(request.match_id, analyses)
-        return self.replay_engine.summarize(request.match_id, payloads, signals=signal_count)
+        state = self.replay_engine.replay(payloads)
+        persisted = self._persist_replay_effects(payloads, state)
+        result = self.replay_engine.summarize(
+            request.match_id,
+            payloads,
+            signals=signal_count,
+        )
+        return result.model_copy(
+            update={
+                **persisted,
+                "final_status": "degraded" if result.resync_required else result.final_status,
+            }
+        )
+
+    def _persist_replay_effects(
+        self,
+        payloads: list[RawProviderPayload],
+        state,
+    ) -> dict[str, object]:
+        raw_payloads_saved = self.store.save_raw_payloads(payloads)
+        score_ticks_saved = self.store.save_score_ticks(state.score_ticks)
+        odds_ticks_saved = 0
+        cursors_saved = 0
+        notes: list[str] = []
+
+        for payload in payloads:
+            if payload.payload_type != "odds":
+                continue
+            replayed = self.replay_engine.replay([payload])
+            if not replayed.odds_quotes:
+                continue
+            odds_ticks_saved += self.store.save_odds_quotes_for_event(
+                payload.provider,
+                payload.source_event_id,
+                replayed.odds_quotes,
+            )
+
+        for cursor in state.provider_cursors:
+            if self.store.save_provider_cursor(cursor):
+                cursors_saved += 1
+            if cursor.resync_required:
+                notes.append(cursor.note)
+
+        self._record_replay_latency(payloads)
+        if payloads and not raw_payloads_saved:
+            notes.append("Replay used already-persisted raw payloads or disabled persistence.")
+        return {
+            "raw_payloads_saved": raw_payloads_saved,
+            "score_ticks_saved": score_ticks_saved,
+            "odds_ticks_saved": odds_ticks_saved,
+            "cursors_saved": cursors_saved,
+            "resync_required": any(cursor.resync_required for cursor in state.provider_cursors),
+            "notes": notes,
+        }
+
+    def _record_replay_latency(self, payloads: list[RawProviderPayload]) -> None:
+        latest_by_feed: dict[tuple[Provider, str], RawProviderPayload] = {}
+        for payload in payloads:
+            if payload.payload_type == "score":
+                feed = "score/replay"
+            elif payload.payload_type == "odds":
+                stream = str(payload.payload.get("stream") or "snapshot")
+                feed = f"odds/replay/{stream}"
+            else:
+                continue
+            key = (payload.provider, feed)
+            current = latest_by_feed.get(key)
+            if current is None or payload.ingested_at > current.ingested_at:
+                latest_by_feed[key] = payload
+        for (provider, feed), payload in latest_by_feed.items():
+            self.store.record_provider_latency(
+                provider,
+                feed,
+                latest_source_ts=payload.source_ts,
+                latest_ingested_at=payload.ingested_at,
+            )
 
     def _raw_payloads_for_replay(
         self,

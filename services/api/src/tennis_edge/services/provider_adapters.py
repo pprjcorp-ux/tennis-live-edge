@@ -5,12 +5,14 @@ from datetime import date
 from typing import Any, Protocol, runtime_checkable
 
 from tennis_edge.domain import (
+    CanonicalMatch,
     OddsTick,
     ProviderCursor,
     ProviderLatency,
     ProviderMatchPayload,
     RawProviderPayload,
 )
+from tennis_edge.services.normalizer import canonical_match_from_match
 
 
 @runtime_checkable
@@ -92,3 +94,9 @@ def provider_latency_from_payload(
         latency_ms=latency_ms,
         healthy=healthy,
     )
+
+
+def canonical_match_from_provider_payload(
+    provider_payload: ProviderMatchPayload,
+) -> CanonicalMatch:
+    return canonical_match_from_match(provider_payload.match)

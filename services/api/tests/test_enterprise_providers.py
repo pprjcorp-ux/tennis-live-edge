@@ -1,7 +1,7 @@
 import asyncio
 from datetime import date
 
-from tennis_edge.domain import OddsTick, Provider, RawProviderPayload, ScoreTick
+from tennis_edge.domain import CanonicalMatch, OddsTick, Provider, RawProviderPayload, ScoreTick
 from tennis_edge.providers.api_tennis import ApiTennisClient
 from tennis_edge.providers.betradar_uof import parse_betradar_market_state
 from tennis_edge.providers.odds_api_io import OddsApiIoClient, parse_odds_api_io_moneyline
@@ -14,6 +14,7 @@ from tennis_edge.services.provider_adapters import (
     ArchiveOddsProviderAdapter,
     OddsProviderAdapter,
     ScoreProviderAdapter,
+    canonical_match_from_provider_payload,
     provider_latency_from_payload,
 )
 from tennis_edge.services.provider_cursor import CURSORS, mark_resynced
@@ -125,6 +126,7 @@ def test_score_adapter_returns_replayable_provider_match_payloads() -> None:
 
     records = asyncio.run(client.get_livescore_payloads())
     replay = ReplayEngine().replay([record.raw_payload for record in records])
+    canonical = canonical_match_from_provider_payload(records[0])
     latency = provider_latency_from_payload(records[0].raw_payload, feed="score/live")
 
     assert records
@@ -137,6 +139,11 @@ def test_score_adapter_returns_replayable_provider_match_payloads() -> None:
     assert {tick.match_id for tick in replay.score_ticks}.issubset(
         {record.match.id for record in records}
     )
+    assert isinstance(canonical, CanonicalMatch)
+    assert canonical.id == records[0].match.id
+    assert canonical.provider_ids["primary"] == records[0].match.provider_match_id
+    assert canonical.player1_id == records[0].match.player1.id
+    assert canonical.player2_id == records[0].match.player2.id
     assert latency.provider == Provider.API_TENNIS
     assert latency.feed == "score/live"
     assert latency.latency_ms >= 0

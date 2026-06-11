@@ -1038,3 +1038,71 @@ def test_live_replay_uses_fixture_seed_only_when_explicitly_requested() -> None:
     assert replay.notes[0].startswith("Replay used explicit fixture seed")
     assert store.ingestion_runs_saved[-1].summary["payload_source"] == "explicit_fixture_seed"
     assert store.ingestion_runs_saved[-1].summary["use_fixture_seed"] is True
+
+
+def test_live_fixture_seed_replay_preserves_existing_provider_cursor() -> None:
+    existing_cursor = ProviderCursor(
+        provider=Provider.ODDS_API_IO,
+        stream="tennis:moneyline",
+        last_seq=500,
+        expected_next_seq=501,
+        status=CursorStatus.HEALTHY,
+        resync_required=False,
+        note="trusted live cursor",
+    )
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.cursors_saved = []
+            self.ingestion_runs_saved = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def raw_payloads_for_match(self, match_id):
+            return []
+
+        def provider_cursors(self):
+            return [existing_cursor]
+
+        def save_raw_payloads(self, payloads_to_save):
+            return len(payloads_to_save)
+
+        def save_score_ticks(self, ticks):
+            return len(ticks)
+
+        def save_odds_quotes_for_event(self, provider, source_event_id, quotes):
+            return len(quotes)
+
+        def save_provider_cursor(self, cursor):
+            self.cursors_saved.append(cursor)
+            return True
+
+        def record_provider_latency(self, *args, **kwargs):
+            return True
+
+        def save_ingestion_run(self, run):
+            self.ingestion_runs_saved.append(run)
+            return True
+
+    repo = AnalysisRepository(Settings(data_mode="live", persistence_enabled=True))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    replay = asyncio.run(
+        repo.run_replay(
+            ReplayRunRequest(
+                match_id="match_atp_002",
+                odds_scenario="gap",
+                use_fixture_seed=True,
+            )
+        )
+    )
+
+    assert replay.resync_required is True
+    assert replay.cursors_saved == 0
+    assert store.cursors_saved == []
+    assert any("fixture cursor skipped" in note for note in replay.notes)
+    assert store.ingestion_runs_saved[-1].summary["payload_source"] == "explicit_fixture_seed"
+    assert store.ingestion_runs_saved[-1].summary["cursors_saved"] == 0

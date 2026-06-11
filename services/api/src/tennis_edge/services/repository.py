@@ -754,7 +754,11 @@ class AnalysisRepository:
             use_fixture_seed=request.use_fixture_seed,
         )
         state = self.replay_engine.replay(payloads)
-        persisted = self._persist_replay_effects(payloads, state)
+        persisted = self._persist_replay_effects(
+            payloads,
+            state,
+            payload_source=payload_source,
+        )
         notes = [*(state.notes or []), *(persisted.get("notes") or [])]
         if payload_source == "explicit_fixture_seed" and payloads:
             notes.insert(
@@ -797,6 +801,8 @@ class AnalysisRepository:
         self,
         payloads: list[RawProviderPayload],
         state,
+        *,
+        payload_source: str = "unknown",
     ) -> dict[str, object]:
         raw_payloads_saved = self.store.save_raw_payloads(payloads)
         score_ticks_saved = self.store.save_score_ticks(state.score_ticks)
@@ -816,7 +822,17 @@ class AnalysisRepository:
                 replayed.odds_quotes,
             )
 
+        existing_cursors = {
+            (cursor.provider, cursor.stream): cursor
+            for cursor in self.store.provider_cursors()
+        }
+        fixture_seed = payload_source == "explicit_fixture_seed"
         for cursor in state.provider_cursors:
+            if fixture_seed and (cursor.provider, cursor.stream) in existing_cursors:
+                notes.append(
+                    "Replay fixture cursor skipped; existing persisted provider cursor was preserved."
+                )
+                continue
             if self.store.save_provider_cursor(cursor):
                 cursors_saved += 1
             if cursor.resync_required:

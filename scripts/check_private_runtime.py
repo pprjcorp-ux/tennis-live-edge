@@ -232,6 +232,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys",
             "test_replay_lab_readiness_collects_until_replay_run_is_persisted",
             "test_live_replay_uses_fixture_seed_only_when_explicitly_requested",
+            "test_live_fixture_seed_replay_preserves_existing_provider_cursor",
             "test_replay_runner_degrades_unparseable_provider_payloads",
             "test_v1_replay_accepts_explicit_fixture_seed",
             "test_provider_mode_matrix_explains_replay_monitor_mode",

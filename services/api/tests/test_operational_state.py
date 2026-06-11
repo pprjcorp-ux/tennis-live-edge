@@ -502,6 +502,62 @@ def test_model_lab_readiness_fails_closed_when_dataset_count_sets_store_error() 
     assert any("connection refused" in reason for reason in model_lab.reasons)
 
 
+def test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(data_mode="live", persistence_enabled=True),
+        StoreStub(
+            ingestion_runs=[
+                IngestionRunRecord(
+                    id="ingest_replay_1",
+                    run_type="replay_run",
+                    source="api",
+                    status="degraded",
+                    summary={
+                        "events_replayed": 3,
+                        "score_ticks": 1,
+                        "odds_ticks": 12,
+                        "resync_required": True,
+                    },
+                    started_at=generated_at,
+                    completed_at=generated_at,
+                )
+            ]
+        ),
+    )
+
+    replay_lab = service.replay_lab_readiness()
+    providers = {provider.provider: provider for provider in replay_lab.providers}
+
+    assert replay_lab.status == "ready"
+    assert replay_lab.source == "budget_replay_fixtures"
+    assert replay_lab.can_validate_without_live_keys is True
+    assert replay_lab.last_replay_run_id == "ingest_replay_1"
+    assert replay_lab.last_replay_status == "degraded"
+    assert replay_lab.last_replay_events == 3
+    assert replay_lab.last_replay_score_ticks == 1
+    assert replay_lab.last_replay_odds_ticks == 12
+    assert replay_lab.last_replay_resync_required is True
+    assert replay_lab.scenarios == ["healthy", "gap", "resync_required"]
+    assert providers[Provider.API_TENNIS].adapter_contract == "ScoreProviderAdapter"
+    assert "ScoreTick" in providers[Provider.API_TENNIS].output_contracts
+    assert providers[Provider.ODDS_API_IO].adapter_contract == "OddsProviderAdapter"
+    assert "ProviderCursor" in providers[Provider.ODDS_API_IO].output_contracts
+    assert providers[Provider.THE_ODDS_API].adapter_contract == "ArchiveOddsProviderAdapter"
+    assert "RawProviderPayload" in providers[Provider.THE_ODDS_API].input_contracts
+
+
+def test_replay_lab_readiness_collects_until_replay_run_is_persisted() -> None:
+    service = OperationalStateService(Settings(data_mode="live"), StoreStub())
+
+    replay_lab = service.replay_lab_readiness()
+
+    assert replay_lab.status == "collecting"
+    assert replay_lab.last_replay_run_id is None
+    assert replay_lab.last_replay_events == 0
+    assert any("No persisted replay_run" in note for note in replay_lab.notes)
+
+
 def test_live_readiness_blocks_entries_when_persistent_store_cannot_connect() -> None:
     generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
     settings = Settings(

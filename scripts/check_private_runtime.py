@@ -137,6 +137,10 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "ApiOnboardingStep",
             "class ModelLabReadinessSnapshot",
             "model_lab_readiness",
+            "class ReplayLabSnapshot",
+            "ReplayContractProvider",
+            "replay_lab_readiness",
+            "source=\"budget_replay_fixtures\"",
             "source=\"training_examples\"",
             "core_ready",
             "live_odds_websocket",
@@ -183,6 +187,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync",
             "test_model_lab_readiness_uses_persisted_training_examples_dataset",
             "test_model_lab_readiness_blocks_without_persistent_truth",
+            "test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys",
+            "test_replay_lab_readiness_collects_until_replay_run_is_persisted",
         ],
     )
     _require_text(
@@ -190,6 +196,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
         label="dashboard operational truth",
         text=data_health_panel,
         required=[
+            "Replay Contracts",
+            "replayLab.providers",
             "run.run_type === \"replay_run\"",
             "events_replayed",
             "resync required",

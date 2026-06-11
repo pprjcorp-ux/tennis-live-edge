@@ -22,6 +22,8 @@ from tennis_edge.domain import (
     Provider,
     ProviderCursor,
     ProviderHealth,
+    ReplayContractProvider,
+    ReplayLabSnapshot,
 )
 from tennis_edge.services.cost_profile import (
     cost_profile,
@@ -206,6 +208,63 @@ class OperationalStateService:
             training_examples=examples,
             can_run_live_backtest=can_run,
             reasons=reasons,
+        )
+
+    def replay_lab_readiness(self) -> ReplayLabSnapshot:
+        replay_runs = [run for run in self.ingestion_runs() if run.run_type == "replay_run"]
+        last_run = replay_runs[0] if replay_runs else None
+        last_summary = last_run.summary if last_run else {}
+        providers = [
+            ReplayContractProvider(
+                provider=Provider.API_TENNIS,
+                adapter_contract="ScoreProviderAdapter",
+                fake_api="Simulated API-Tennis fixtures/livescore",
+                input_contracts=["RawProviderPayload", "CanonicalMatch"],
+                output_contracts=["ScoreTick", "ProviderLatency"],
+                scenarios=["score_snapshot", "live_score_state"],
+                status="covered",
+                notes=["Budget replay emits API-Tennis score payloads without provider quota."],
+            ),
+            ReplayContractProvider(
+                provider=Provider.ODDS_API_IO,
+                adapter_contract="OddsProviderAdapter",
+                fake_api="Simulated Odds-API.io websocket",
+                input_contracts=["RawProviderPayload", "seq", "lastSeq"],
+                output_contracts=["OddsTick", "ProviderCursor", "ProviderLatency"],
+                scenarios=["healthy", "gap", "resync_required"],
+                status="covered",
+                notes=["Replay validates cursor gaps and resync_required before live websocket keys."],
+            ),
+            ReplayContractProvider(
+                provider=Provider.THE_ODDS_API,
+                adapter_contract="ArchiveOddsProviderAdapter",
+                fake_api="Simulated TheOddsAPI REST snapshot",
+                input_contracts=["RawProviderPayload"],
+                output_contracts=["OddsTick", "ProviderLatency"],
+                scenarios=["archive_snapshot"],
+                status="covered",
+                notes=["Archive odds replay is used as fallback/comparison before live providers."],
+            ),
+        ]
+        notes = [
+            "Replay fixtures are the fake API layer; live provider keys are not required.",
+            "Run healthy, gap, and resync_required odds scenarios before enabling live websocket ingestion.",
+        ]
+        if last_run is None:
+            notes.append("No persisted replay_run has been recorded yet.")
+        return ReplayLabSnapshot(
+            status="ready" if last_run else "collecting",
+            source="budget_replay_fixtures",
+            providers=providers,
+            scenarios=["healthy", "gap", "resync_required"],
+            last_replay_run_id=last_run.id if last_run else None,
+            last_replay_status=last_run.status if last_run else None,
+            last_replay_events=int(last_summary.get("events_replayed") or 0),
+            last_replay_score_ticks=int(last_summary.get("score_ticks") or 0),
+            last_replay_odds_ticks=int(last_summary.get("odds_ticks") or 0),
+            last_replay_resync_required=bool(last_summary.get("resync_required") is True),
+            can_validate_without_live_keys=True,
+            notes=notes,
         )
 
     def api_onboarding(self) -> ApiOnboardingSnapshot:
@@ -398,6 +457,7 @@ class OperationalStateService:
             execution_status=self.execution_status(),
             api_onboarding=self.api_onboarding(),
             model_lab=self.model_lab_readiness(),
+            replay_lab=self.replay_lab_readiness(),
         )
 
     def live_readiness(

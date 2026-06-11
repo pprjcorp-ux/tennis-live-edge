@@ -4,7 +4,8 @@ import type {
   ApiOnboardingSnapshot,
   DataQualitySnapshot,
   IngestionRunRecord,
-  ProviderCursor
+  ProviderCursor,
+  ReplayLabSnapshot
 } from "@/lib/types";
 
 function pct(value: number) {
@@ -29,6 +30,12 @@ function onboardingStatusClass(status: ApiOnboardingSnapshot["steps"][number]["s
   if (status === "configured") return "status statusEntry";
   if (status === "ready_next") return "status statusMonitor";
   if (status === "deferred") return "status statusMuted";
+  return "status statusBlocked";
+}
+
+function replayStatusClass(status: ReplayLabSnapshot["status"] | ReplayLabSnapshot["providers"][number]["status"]) {
+  if (status === "ready" || status === "covered") return "status statusEntry";
+  if (status === "collecting") return "status statusMonitor";
   return "status statusBlocked";
 }
 
@@ -71,12 +78,14 @@ export function DataHealthPanel({
   apiOnboarding,
   dataQuality,
   ingestionRuns,
-  providerCursors
+  providerCursors,
+  replayLab
 }: {
   apiOnboarding: ApiOnboardingSnapshot;
   dataQuality: DataQualitySnapshot[];
   ingestionRuns: IngestionRunRecord[];
   providerCursors: ProviderCursor[];
+  replayLab: ReplayLabSnapshot;
 }) {
   return (
     <div className="enterpriseGrid">
@@ -114,6 +123,41 @@ export function DataHealthPanel({
               ) : (
                 <span>no prerequisites pending</span>
               )}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="panel wide">
+        <div className="panelHeader">
+          <div>
+            <p className="eyebrow">Replay Contracts</p>
+            <h2>{replayLab.source}</h2>
+          </div>
+          <Activity size={20} />
+        </div>
+        <div className="replaySummary">
+          <span className={replayStatusClass(replayLab.status)}>{replayLab.status}</span>
+          <span>{replayLab.can_validate_without_live_keys ? "no live keys required" : "live keys required"}</span>
+          <span>{replayLab.scenarios.join(", ")}</span>
+          <span>
+            last {replayLab.last_replay_run_id ?? "none"} · events {replayLab.last_replay_events} · score{" "}
+            {replayLab.last_replay_score_ticks} · odds {replayLab.last_replay_odds_ticks}
+          </span>
+          <span className={replayLab.last_replay_resync_required ? "status statusBlocked" : "status statusMuted"}>
+            {replayLab.last_replay_resync_required ? "last replay resync" : "last replay trusted"}
+          </span>
+        </div>
+        <div className="replayContractRows">
+          {replayLab.providers.map((provider) => (
+            <div className="replayContractRow" key={`${provider.provider}-${provider.adapter_contract}`}>
+              <div>
+                <strong>{provider.provider}</strong>
+                <span>{provider.fake_api}</span>
+              </div>
+              <span className={replayStatusClass(provider.status)}>{provider.status}</span>
+              <span>{provider.adapter_contract}</span>
+              <span>{provider.input_contracts.join(", ")}</span>
+              <span>{provider.output_contracts.join(", ")}</span>
             </div>
           ))}
         </div>

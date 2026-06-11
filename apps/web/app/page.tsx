@@ -71,6 +71,7 @@ import type {
   PaperPerformance,
   ProviderCursor,
   ProviderHealth,
+  ReplayLabSnapshot,
   ReplayOddsScenario,
   ReplayRunResult,
   Signal
@@ -173,6 +174,20 @@ export default function Page() {
     can_run_live_backtest: false,
     reasons: ["Awaiting operational state."]
   });
+  const [replayLab, setReplayLab] = useState<ReplayLabSnapshot>({
+    status: "collecting",
+    source: "budget_replay_fixtures",
+    providers: [],
+    scenarios: ["healthy", "gap", "resync_required"],
+    last_replay_run_id: null,
+    last_replay_status: null,
+    last_replay_events: 0,
+    last_replay_score_ticks: 0,
+    last_replay_odds_ticks: 0,
+    last_replay_resync_required: false,
+    can_validate_without_live_keys: true,
+    notes: ["Awaiting operational state."]
+  });
   const [providerMode, setProviderMode] =
     useState<OperationalStateSnapshot["provider_mode"]>("sample");
   const [providerModeReason, setProviderModeReason] = useState("Awaiting operational state.");
@@ -244,6 +259,7 @@ export default function Page() {
       setProviderCursors(nextOperational.provider_cursors);
       setApiOnboarding(nextOperational.api_onboarding);
       setModelLab(nextOperational.model_lab);
+      setReplayLab(nextOperational.replay_lab);
       setProviderMode(nextOperational.provider_mode);
       setProviderModeReason(nextOperational.provider_mode_reason);
       setModelRegistry(nextModelRegistry);
@@ -598,6 +614,7 @@ export default function Page() {
             dataQuality={dataQuality}
             ingestionRuns={ingestionRuns}
             providerCursors={providerCursors}
+            replayLab={replayLab}
           />
         ) : null}
 

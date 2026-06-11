@@ -251,6 +251,32 @@ export type ModelLabReadinessSnapshot = {
   reasons: string[];
 };
 
+export type ReplayContractProvider = {
+  provider: Provider;
+  adapter_contract: string;
+  fake_api: string;
+  input_contracts: string[];
+  output_contracts: string[];
+  scenarios: string[];
+  status: "covered" | "pending";
+  notes: string[];
+};
+
+export type ReplayLabSnapshot = {
+  status: "ready" | "collecting" | "blocked";
+  source: "budget_replay_fixtures";
+  providers: ReplayContractProvider[];
+  scenarios: string[];
+  last_replay_run_id: string | null;
+  last_replay_status: string | null;
+  last_replay_events: number;
+  last_replay_score_ticks: number;
+  last_replay_odds_ticks: number;
+  last_replay_resync_required: boolean;
+  can_validate_without_live_keys: boolean;
+  notes: string[];
+};
+
 export type IngestionRunRecord = {
   id: string;
   run_type:
@@ -278,6 +304,7 @@ export type OperationalStateSnapshot = {
   execution_status: ExecutionStatus;
   api_onboarding: ApiOnboardingSnapshot;
   model_lab: ModelLabReadinessSnapshot;
+  replay_lab: ReplayLabSnapshot;
   generated_at: string;
 };
 

@@ -64,16 +64,23 @@ The dashboard reads this from
 `/api/v1/dashboard/live-state -> operational_state.model_lab`; do not replace it
 with paper-order memory or synthetic sample metrics in live mode.
 
+Replay Lab is the provider rehearsal surface. Keep
+`/api/v1/dashboard/live-state -> operational_state.replay_lab` green before
+adding or debugging paid APIs. It must expose `budget_replay_fixtures`, fake
+API-Tennis/Odds-API.io/TheOddsAPI contracts, and healthy/gap/resync scenarios
+without live keys or vendor quota.
+
 ## API Onboarding
 
 Add external APIs only after the core remains green without live keys. The
 runtime exposes the current sequence through
 `/api/v1/dashboard/live-state -> operational_state.api_onboarding`:
 
-1. TheOddsAPI REST/archive and comparison.
-2. API-Tennis fixtures/livescore.
-3. Odds-API.io websocket live odds after cursor/replay/resync gates.
-4. Sportradar/Betradar/TXODDS enterprise feeds only after budget paper evidence.
+1. Budget replay fixtures as the fake API layer for provider contracts.
+2. TheOddsAPI REST/archive and comparison.
+3. API-Tennis fixtures/livescore.
+4. Odds-API.io websocket live odds after cursor/replay/resync gates.
+5. Sportradar/Betradar/TXODDS enterprise feeds only after budget paper evidence.
 
 If a provider fails, quota ends, odds are stale, moneyline is incomplete, or a
 cursor requires resync, keep the dashboard alive and abstain instead of forcing

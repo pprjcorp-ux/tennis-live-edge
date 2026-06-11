@@ -886,6 +886,32 @@ class ModelLabReadinessSnapshot(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class ReplayContractProvider(BaseModel):
+    provider: Provider
+    adapter_contract: str
+    fake_api: str
+    input_contracts: list[str]
+    output_contracts: list[str]
+    scenarios: list[str]
+    status: Literal["covered", "pending"]
+    notes: list[str] = Field(default_factory=list)
+
+
+class ReplayLabSnapshot(BaseModel):
+    status: Literal["ready", "collecting", "blocked"]
+    source: Literal["budget_replay_fixtures"]
+    providers: list[ReplayContractProvider]
+    scenarios: list[str]
+    last_replay_run_id: str | None = None
+    last_replay_status: str | None = None
+    last_replay_events: int = 0
+    last_replay_score_ticks: int = 0
+    last_replay_odds_ticks: int = 0
+    last_replay_resync_required: bool = False
+    can_validate_without_live_keys: bool
+    notes: list[str] = Field(default_factory=list)
+
+
 class OperationalStateSnapshot(BaseModel):
     provider_mode: ProviderRuntimeMode
     provider_mode_reason: str
@@ -898,6 +924,7 @@ class OperationalStateSnapshot(BaseModel):
     execution_status: ExecutionStatus
     api_onboarding: ApiOnboardingSnapshot
     model_lab: ModelLabReadinessSnapshot
+    replay_lab: ReplayLabSnapshot
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

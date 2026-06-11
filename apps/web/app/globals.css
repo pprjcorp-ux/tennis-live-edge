@@ -567,6 +567,7 @@ h2 {
 .qualityRows,
 .cursorRows,
 .apiOnboardingRows,
+.replayContractRows,
 .modelRows,
 .calibrationRows,
 .conflictRows,
@@ -579,6 +580,7 @@ h2 {
 .qualityRow,
 .cursorRow,
 .apiOnboardingRow,
+.replayContractRow,
 .modelRow,
 .calibrationRow,
 .conflictRow,
@@ -622,6 +624,26 @@ h2 {
   background: #f8fbff;
 }
 
+.replaySummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 14px 0;
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+.replaySummary span:not(.status) {
+  padding: 6px 8px;
+  background: #f4f7fb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.replayContractRow {
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 0.9fr) minmax(0, 1fr);
+}
+
 .calibrationRow {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
@@ -640,6 +662,8 @@ h2 {
 .cursorRow span,
 .apiOnboardingRow strong,
 .apiOnboardingRow span,
+.replayContractRow strong,
+.replayContractRow span,
 .modelRow strong,
 .modelRow span,
 .calibrationRow span,
@@ -653,6 +677,7 @@ h2 {
 .qualityRow div span,
 .cursorRow div span,
 .apiOnboardingRow div span,
+.replayContractRow div span,
 .modelRow div span,
 .conflictRow div span,
 .ingestionRow div span {
@@ -665,6 +690,7 @@ h2 {
 .qualityRow > span,
 .cursorRow > span,
 .modelRow > span,
+.replayContractRow > span,
 .calibrationRow > span,
 .conflictRow > span,
 .ingestionRow > span {

@@ -125,6 +125,8 @@ def _settled_examples(
         decision_date = example.decision_ts.date()
         if example.model_version != request.model_version:
             continue
+        if request.feature_set and example.feature_set != request.feature_set:
+            continue
         if example.result_win is None or example.pnl is None:
             continue
         if start and decision_date < start:

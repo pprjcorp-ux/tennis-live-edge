@@ -1540,6 +1540,7 @@ class PersistentStore:
                         """
                         SELECT
                           te.id, te.match_id, te.player_id, te.model_version, te.feature_snapshot_id,
+                          coalesce(fs.feature_set, 'unknown') AS feature_set,
                           te.decision_ts, te.model_probability, te.market_probability,
                           te.closing_probability, te.result_win, te.pnl, te.clv, te.stake_amount,
                           te.calibration_bucket
@@ -1575,6 +1576,7 @@ class PersistentStore:
                     player_id=row["player_id"],
                     model_version=row["model_version"],
                     feature_snapshot_id=str(row["feature_snapshot_id"] or ""),
+                    feature_set=str(row["feature_set"] or "unknown"),
                     decision_ts=row["decision_ts"],
                     model_probability=float(row["model_probability"]),
                     market_probability=float(row["market_probability"]),

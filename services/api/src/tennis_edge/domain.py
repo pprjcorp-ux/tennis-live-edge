@@ -501,6 +501,7 @@ class TrainingExample(BaseModel):
     player_id: str
     model_version: str
     feature_snapshot_id: str
+    feature_set: str = "live_budget_v1"
     decision_ts: datetime
     model_probability: float = Field(ge=0, le=1)
     market_probability: float = Field(ge=0, le=1)

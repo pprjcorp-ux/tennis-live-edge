@@ -207,6 +207,47 @@ def test_paper_performance_requires_explicit_order_snapshot() -> None:
     assert explicit_performance.roi == 0.98
 
 
+def test_paper_performance_ignores_unmatched_settled_orders() -> None:
+    matched_order = ExecutionOrder(
+        id="ord_matched",
+        signal_id="sig_matched",
+        match_id="match_atp_001",
+        player_id="atp_sinner",
+        player_name="Jannik Sinner",
+        venue=ExecutionVenue.BETFAIR,
+        status=OrderStatus.SETTLED,
+        requested_odds=2.0,
+        accepted_odds=2.0,
+        stake_fraction=0.01,
+        stake_amount=100,
+        matched_stake=100,
+        average_price=2.0,
+        pnl=12,
+        clv=0.015,
+    )
+    unmatched_order = matched_order.model_copy(
+        update={
+            "id": "ord_unmatched",
+            "signal_id": "sig_unmatched",
+            "matched_stake": 0,
+            "pnl": 500,
+            "clv": 0.4,
+        }
+    )
+
+    performance = paper_performance(
+        Settings(data_mode="sample"),
+        orders=[matched_order, unmatched_order],
+    )
+
+    assert performance.settled_orders == 1
+    assert performance.positive_clv_signals == 1
+    assert performance.realized_pnl == 12
+    assert performance.roi == 0.12
+    assert performance.clv == 0.015
+    assert all(segment.settled_orders == 1 for segment in performance.segments)
+
+
 def test_settle_paper_order_requires_explicit_order_snapshot() -> None:
     ORDERS.clear()
     order = ExecutionOrder(

@@ -1737,14 +1737,14 @@ class PersistentStore:
                         """
                         SELECT
                           count(*)::int AS orders,
-                          count(*) FILTER (WHERE status = 'settled')::int AS settled_orders,
-                          count(*) FILTER (WHERE status = 'settled' AND coalesce(clv, 0) > 0)::int AS positive_clv_signals,
-                          count(*) FILTER (WHERE status = 'settled' AND coalesce(pnl, 0) > 0)::int AS wins,
-                          count(*) FILTER (WHERE status = 'settled' AND coalesce(pnl, 0) <= 0)::int AS losses,
+                          count(*) FILTER (WHERE status = 'settled' AND matched_stake > 0)::int AS settled_orders,
+                          count(*) FILTER (WHERE status = 'settled' AND matched_stake > 0 AND coalesce(clv, 0) > 0)::int AS positive_clv_signals,
+                          count(*) FILTER (WHERE status = 'settled' AND matched_stake > 0 AND coalesce(pnl, 0) > 0)::int AS wins,
+                          count(*) FILTER (WHERE status = 'settled' AND matched_stake > 0 AND coalesce(pnl, 0) <= 0)::int AS losses,
                           count(*) FILTER (WHERE status = ANY(%s))::int AS open_orders,
-                          coalesce(sum(CASE WHEN status = 'settled' THEN pnl ELSE 0 END), 0)::float AS pnl,
-                          coalesce(sum(CASE WHEN status = 'settled' THEN coalesce(matched_stake, stake_amount) ELSE 0 END), 0)::float AS staked,
-                          avg(CASE WHEN status = 'settled' THEN clv ELSE NULL END)::float AS clv
+                          coalesce(sum(CASE WHEN status = 'settled' AND matched_stake > 0 THEN pnl ELSE 0 END), 0)::float AS pnl,
+                          coalesce(sum(CASE WHEN status = 'settled' AND matched_stake > 0 THEN matched_stake ELSE 0 END), 0)::float AS staked,
+                          avg(CASE WHEN status = 'settled' AND matched_stake > 0 THEN clv ELSE NULL END)::float AS clv
                         FROM paper_orders
                         """,
                         (list(PERSISTED_OPEN_ORDER_STATUSES),),
@@ -2312,7 +2312,7 @@ class PersistentStore:
                             po.id,
                             po.pnl::float AS pnl,
                             po.clv::float AS clv,
-                            coalesce(po.matched_stake, po.stake_amount)::float AS staked,
+                            po.matched_stake::float AS staked,
                             coalesce(po.average_price, po.accepted_odds, po.requested_odds)::float AS odds,
                             coalesce(
                               s.risk->>'odds_provider',
@@ -2328,7 +2328,7 @@ class PersistentStore:
                           JOIN signals s ON s.id = po.signal_id
                           LEFT JOIN prediction_snapshots ps ON ps.id = s.prediction_snapshot_id
                           LEFT JOIN matches m ON m.id = po.match_id
-                          WHERE po.status = 'settled'
+                          WHERE po.status = 'settled' AND po.matched_stake > 0
                         ),
                         segmented AS (
                           SELECT 'model' AS segment_type, coalesce(model_version, 'unknown') AS segment, * FROM settled

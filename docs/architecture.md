@@ -36,7 +36,9 @@ decide whether the system behaves as budget or enterprise.
     snapshots, settlement, CLV, ROI, segmented performance, and calibration
    buckets. The dashboard exposes auto-settlement so persisted final scores and
    pre-result closing odds can close paper orders and refresh performance without
-   manual win/loss marking.
+   manual win/loss marking. Paper performance counts only settled orders with
+   positive `matched_stake`, matching Model Lab's training dataset, so unmatched
+   or zero-exposure orders cannot inflate ROI, CLV, drawdown, or segment stats.
 11. Settled paper orders become `training_examples` keyed by model version and
     decision timestamp. Budget live backtests use `live_budget_v1`, matching the
     persisted `feature_snapshots.feature_set` written by the ingestion pipeline,

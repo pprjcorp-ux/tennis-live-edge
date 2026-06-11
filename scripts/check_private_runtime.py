@@ -61,6 +61,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     model_lab = (source / "services/model_lab.py").read_text()
     storage = (source / "services/storage.py").read_text()
     provider_tests = (tests / "test_enterprise_providers.py").read_text()
+    enterprise_tests = (tests / "test_enterprise_upgrade.py").read_text()
     persistence_tests = (tests / "test_live_budget_persistence.py").read_text()
     repository_tests = (tests / "test_repository.py").read_text()
     risk_tests = (tests / "test_enterprise_risk.py").read_text()
@@ -181,6 +182,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "walk_forward_from_training_examples",
             "calibration_from_training_examples",
             "matched_stake <= 0",
+            "matched_stake > 0",
+            "THEN matched_stake ELSE 0 END",
             "autoSettlePaperOrders",
             "triggerAutoPaperSettlement",
             "Auto-settle paper",
@@ -191,6 +194,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
         label="core contract tests",
         text=(
             provider_tests
+            + enterprise_tests
             + persistence_tests
             + repository_tests
             + risk_tests
@@ -205,6 +209,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_auto_settle_paper_orders_skips_unsettleable_candidates",
             "test_walk_forward_backtest_uses_settled_training_examples_only",
             "test_walk_forward_ignores_invalid_zero_stake_examples",
+            "test_paper_performance_uses_positive_matched_stake_only",
+            "test_paper_performance_ignores_unmatched_settled_orders",
             "test_stale_live_odds_are_blocked",
             "test_invalid_live_score_state_blocks_entries_and_zeroes_stake",
             "test_api_onboarding_guides_budget_provider_sequence_after_archive_key",

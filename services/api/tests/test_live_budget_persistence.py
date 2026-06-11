@@ -1506,6 +1506,66 @@ def test_paper_performance_survives_segment_schema_drift() -> None:
     assert store.last_error.startswith("paper_performance_segments failed:")
 
 
+def test_paper_performance_uses_positive_matched_stake_only() -> None:
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            if "count(*)::int AS orders" in query:
+                assert "status = 'settled' AND matched_stake > 0" in query
+                assert "THEN matched_stake ELSE 0 END" in query
+                return self
+            raise RuntimeError("segments not needed")
+
+        def fetchone(self):
+            return {
+                "orders": 2,
+                "settled_orders": 1,
+                "positive_clv_signals": 1,
+                "wins": 1,
+                "losses": 0,
+                "open_orders": 0,
+                "pnl": 12.0,
+                "staked": 100.0,
+                "clv": 0.015,
+            }
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+        def _paper_performance_segments(self):
+            return []
+
+    performance = StoreStub().paper_performance()
+
+    assert performance is not None
+    assert performance.settled_orders == 1
+    assert performance.roi == 0.12
+
+
 def test_paper_performance_segments_group_provider_by_signal_odds_provider() -> None:
     class CursorStub:
         def __enter__(self):
@@ -1518,6 +1578,7 @@ def test_paper_performance_segments_group_provider_by_signal_odds_provider() -> 
             assert "s.risk->>'odds_provider'" in query
             assert "po.risk_snapshot->>'odds_provider'" in query
             assert "po.venue" in query
+            assert "po.status = 'settled' AND po.matched_stake > 0" in query
             return self
 
         def fetchall(self):

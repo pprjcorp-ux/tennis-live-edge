@@ -270,10 +270,16 @@ def settle_paper_order(
 
 def paper_performance(settings: Settings, orders: list[ExecutionOrder] | None = None) -> PaperPerformance:
     orders = list(orders or [])
-    settled = [order for order in orders if order.status == OrderStatus.SETTLED and order.pnl is not None]
+    settled = [
+        order
+        for order in orders
+        if order.status == OrderStatus.SETTLED
+        and order.pnl is not None
+        and order.matched_stake > 0
+    ]
     wins = sum(1 for order in settled if (order.pnl or 0) > 0)
     losses = sum(1 for order in settled if (order.pnl or 0) <= 0)
-    staked = sum(order.matched_stake or order.stake_amount for order in settled)
+    staked = sum(order.matched_stake for order in settled)
     pnl = round(sum(order.pnl or 0 for order in settled), 2)
     clv_values = [order.clv for order in settled if order.clv is not None]
     model_segments: dict[str, list] = {}
@@ -326,7 +332,7 @@ def _segments_from_orders(
     segments: list[PaperPerformanceSegment] = []
     for name, orders in sorted(grouped.items()):
         pnl = round(sum(order.pnl or 0 for order in orders), 2)
-        staked = sum(order.matched_stake or order.stake_amount for order in orders)
+        staked = sum(order.matched_stake for order in orders)
         clv_values = [order.clv for order in orders if order.clv is not None]
         segments.append(
             PaperPerformanceSegment(
@@ -339,4 +345,3 @@ def _segments_from_orders(
             )
         )
     return segments
-

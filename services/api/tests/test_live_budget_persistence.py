@@ -823,24 +823,34 @@ def test_settle_paper_order_returns_none_when_settlement_write_fails() -> None:
 
 
 def test_auto_settle_paper_orders_uses_finished_score_and_closing_odds() -> None:
+    score_ts = datetime(2026, 6, 7, 20, 0, tzinfo=timezone.utc)
+    closing_ts = score_ts - timedelta(seconds=30)
     rows = [
         {
             "external_order_ref": "ord_auto_win",
             "match_id": "match_auto",
             "player_id": "p1",
+            "matched_stake": 100,
+            "stake_amount": 100,
             "player1_id": "p1",
             "player2_id": "p2",
             "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "score_source_ts": score_ts,
             "closing_odds": 1.8,
+            "closing_odds_source_ts": closing_ts,
         },
         {
             "external_order_ref": "ord_auto_loss",
             "match_id": "match_auto",
             "player_id": "p2",
+            "matched_stake": 100,
+            "stake_amount": 100,
             "player1_id": "p1",
             "player2_id": "p2",
             "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "score_source_ts": score_ts,
             "closing_odds": 2.2,
+            "closing_odds_source_ts": closing_ts,
         },
     ]
 
@@ -904,33 +914,86 @@ def test_auto_settle_paper_orders_uses_finished_score_and_closing_odds() -> None
 
 
 def test_auto_settle_paper_orders_skips_unsettleable_candidates() -> None:
+    score_ts = datetime(2026, 6, 7, 20, 0, tzinfo=timezone.utc)
+    closing_ts = score_ts - timedelta(seconds=30)
     rows = [
         {
             "external_order_ref": "ord_live",
             "match_id": "match_auto",
             "player_id": "p1",
+            "matched_stake": 100,
+            "stake_amount": 100,
             "player1_id": "p1",
             "player2_id": "p2",
             "raw_state": {"status": "live", "p1_sets": 1, "p2_sets": 0},
+            "score_source_ts": score_ts,
             "closing_odds": 1.8,
+            "closing_odds_source_ts": closing_ts,
         },
         {
             "external_order_ref": "ord_tied",
             "match_id": "match_auto",
             "player_id": "p1",
+            "matched_stake": 100,
+            "stake_amount": 100,
             "player1_id": "p1",
             "player2_id": "p2",
             "raw_state": {"status": "finished", "p1_sets": 1, "p2_sets": 1},
+            "score_source_ts": score_ts,
             "closing_odds": 1.8,
+            "closing_odds_source_ts": closing_ts,
         },
         {
             "external_order_ref": "ord_no_odds",
             "match_id": "match_auto",
             "player_id": "p1",
+            "matched_stake": 100,
+            "stake_amount": 100,
             "player1_id": "p1",
             "player2_id": "p2",
             "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "score_source_ts": score_ts,
             "closing_odds": None,
+            "closing_odds_source_ts": closing_ts,
+        },
+        {
+            "external_order_ref": "ord_no_exposure",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "matched_stake": 0,
+            "stake_amount": 0,
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "score_source_ts": score_ts,
+            "closing_odds": 1.8,
+            "closing_odds_source_ts": closing_ts,
+        },
+        {
+            "external_order_ref": "ord_post_result_odds",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "matched_stake": 100,
+            "stake_amount": 100,
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "score_source_ts": score_ts,
+            "closing_odds": 1.8,
+            "closing_odds_source_ts": score_ts + timedelta(seconds=1),
+        },
+        {
+            "external_order_ref": "ord_stale_closing",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "matched_stake": 100,
+            "stake_amount": 100,
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "score_source_ts": score_ts,
+            "closing_odds": 1.8,
+            "closing_odds_source_ts": score_ts - timedelta(minutes=30),
         },
     ]
 
@@ -968,12 +1031,15 @@ def test_auto_settle_paper_orders_skips_unsettleable_candidates() -> None:
 
     result = StoreStub().auto_settle_paper_orders()
 
-    assert result.evaluated_orders == 3
+    assert result.evaluated_orders == 6
     assert result.settled_orders == 0
-    assert result.skipped_orders == 3
+    assert result.skipped_orders == 6
     assert any("not finished" in reason for reason in result.reasons)
     assert any("no inferable winner" in reason for reason in result.reasons)
     assert any("missing closing moneyline odds" in reason for reason in result.reasons)
+    assert any("no matched stake" in reason for reason in result.reasons)
+    assert any("after the final score" in reason for reason in result.reasons)
+    assert any("too stale" in reason for reason in result.reasons)
 
 
 def test_settle_paper_order_blocks_non_open_persisted_order() -> None:

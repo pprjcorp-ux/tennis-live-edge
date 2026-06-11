@@ -102,6 +102,22 @@ def _matched_stake_or_legacy_requested(
     return float(stake_amount or 0)
 
 
+def _as_utc_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    return None
+
+
 def _provider_warnings_from_summary(summary: Any) -> list[str]:
     if not isinstance(summary, dict):
         return []
@@ -1536,6 +1552,8 @@ class PersistentStore:
                           po.external_order_ref,
                           po.match_id,
                           po.player_id,
+                          po.matched_stake,
+                          po.stake_amount,
                           m.player1_id,
                           m.player2_id,
                           latest_scores.raw_state,
@@ -1582,19 +1600,42 @@ class PersistentStore:
             return None, "latest score state is not a JSON object."
         if raw_state.get("status") != "finished":
             return None, "latest score state is not finished."
+        matched = _matched_stake_or_legacy_requested(
+            row.get("matched_stake"),
+            row.get("stake_amount"),
+        )
+        if matched <= 0:
+            return None, "paper order has no matched stake to settle."
         p1_sets = _safe_int(raw_state.get("p1_sets"))
         p2_sets = _safe_int(raw_state.get("p2_sets"))
         if p1_sets == p2_sets:
             return None, "finished score has no inferable winner."
         winner_player_id = row["player1_id"] if p1_sets > p2_sets else row["player2_id"]
+        score_source_ts = _as_utc_datetime(row.get("score_source_ts"))
+        if score_source_ts is None:
+            return None, "missing final score timestamp for settlement."
+        closing_odds_source_ts = _as_utc_datetime(row.get("closing_odds_source_ts"))
+        if closing_odds_source_ts is None:
+            return None, "missing closing moneyline odds timestamp for settlement."
+        if closing_odds_source_ts > score_source_ts:
+            return None, "closing moneyline odds are after the final score."
+        closing_age_ms = int((score_source_ts - closing_odds_source_ts).total_seconds() * 1000)
+        if closing_age_ms > self.settings.max_auto_settlement_closing_age_ms:
+            return None, "closing moneyline odds are too stale for settlement."
         closing_odds = row.get("closing_odds")
         if closing_odds is None:
             return None, "missing closing moneyline odds for order player."
+        try:
+            closing_odds_float = float(closing_odds)
+        except (TypeError, ValueError):
+            return None, "closing moneyline odds are not numeric."
+        if closing_odds_float <= 1:
+            return None, "closing moneyline odds are invalid."
         return (
             PaperSettleRequest(
                 order_id=str(order_ref),
                 result_win=winner_player_id == row["player_id"],
-                closing_odds=float(closing_odds),
+                closing_odds=closing_odds_float,
             ),
             "ready",
         )

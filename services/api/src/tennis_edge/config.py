@@ -257,6 +257,13 @@ class Settings(BaseSettings):
             "TENNIS_EDGE_MAX_ODDS_STALENESS_MS", "MAX_ODDS_STALENESS_MS"
         ),
     )
+    max_auto_settlement_closing_age_ms: int = Field(
+        default=600_000,
+        validation_alias=AliasChoices(
+            "TENNIS_EDGE_MAX_AUTO_SETTLEMENT_CLOSING_AGE_MS",
+            "MAX_AUTO_SETTLEMENT_CLOSING_AGE_MS",
+        ),
+    )
     cors_origin: str = Field(
         default="http://localhost:3000",
         validation_alias=AliasChoices("TENNIS_EDGE_CORS_ORIGIN", "CORS_ORIGIN"),

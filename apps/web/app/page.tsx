@@ -65,6 +65,7 @@ import type {
   MatchAnalysis,
   ModelRegistryEntry,
   ModelPromotionDecision,
+  OperationalStateSnapshot,
   PaperPerformance,
   ProviderCursor,
   ProviderHealth,
@@ -104,6 +105,19 @@ function preflightStatusClass(
   return "status statusBlocked";
 }
 
+function providerModeClass(mode: OperationalStateSnapshot["provider_mode"]) {
+  if (mode === "live_with_keys") return "status statusEntry";
+  if (mode === "replay") return "status statusMonitor";
+  if (mode === "live_without_keys") return "status statusBlocked";
+  return "status statusMuted";
+}
+
+function providerModeLabel(mode: OperationalStateSnapshot["provider_mode"]) {
+  if (mode === "live_with_keys") return "live with keys";
+  if (mode === "live_without_keys") return "live without keys";
+  return mode;
+}
+
 function playerProbability(analysis: MatchAnalysis, playerId: string) {
   return playerId === analysis.match.player1.id
     ? analysis.prediction.p1_win_prob
@@ -122,6 +136,9 @@ export default function Page() {
   const [dataQuality, setDataQuality] = useState<DataQualitySnapshot[]>([]);
   const [ingestionRuns, setIngestionRuns] = useState<IngestionRunRecord[]>([]);
   const [providerCursors, setProviderCursors] = useState<ProviderCursor[]>([]);
+  const [providerMode, setProviderMode] =
+    useState<OperationalStateSnapshot["provider_mode"]>("sample");
+  const [providerModeReason, setProviderModeReason] = useState("Awaiting operational state.");
   const [modelRegistry, setModelRegistry] = useState<ModelRegistryEntry[]>([]);
   const [championModel, setChampionModel] = useState<ModelRegistryEntry | null>(null);
   const [calibration, setCalibration] = useState<CalibrationReport | null>(null);
@@ -187,6 +204,8 @@ export default function Page() {
       setDataQuality(nextOperational.data_quality);
       setIngestionRuns(nextOperational.ingestion_runs);
       setProviderCursors(nextOperational.provider_cursors);
+      setProviderMode(nextOperational.provider_mode);
+      setProviderModeReason(nextOperational.provider_mode_reason);
       setModelRegistry(nextModelRegistry);
       setChampionModel(nextChampionModel);
       setPaperPerformance(nextPaperPerformance);
@@ -404,6 +423,7 @@ export default function Page() {
       : readiness?.warnings.length
         ? readiness.warnings
         : ["Paper-first readiness checks passing."];
+  const readinessPanelMessages = [providerModeReason, ...readinessMessages].filter(Boolean);
 
   return (
     <main className="shell">
@@ -900,9 +920,13 @@ export default function Page() {
               <strong className={preflightStatusClass(readiness?.status ?? "blocked")}>
                 {readiness?.status ?? "blocked"}
               </strong>
+              <span>Provider mode</span>
+              <strong className={providerModeClass(providerMode)}>
+                {providerModeLabel(providerMode)}
+              </strong>
             </div>
             <div className="executionWarnings">
-              {readinessMessages.slice(0, 4).map((reason) => (
+              {readinessPanelMessages.slice(0, 4).map((reason) => (
                 <span key={reason}>{reason}</span>
               ))}
             </div>

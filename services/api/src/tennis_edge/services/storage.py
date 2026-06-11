@@ -828,6 +828,28 @@ class PersistentStore:
                     updated.append(item)
         return updated
 
+    def has_replay_activity(self) -> bool:
+        if not self.enabled:
+            return False
+        with self._connect() as conn:
+            if conn is None:
+                return False
+            try:
+                with conn.cursor() as cur:
+                    row = cur.execute(
+                        """
+                        SELECT 1
+                        FROM provider_latency
+                        WHERE feed LIKE %s
+                        LIMIT 1
+                        """,
+                        ("%/replay%",),
+                    ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("has_replay_activity", exc)
+                return False
+        return row is not None
+
     def provider_cursors(self) -> list[ProviderCursor]:
         if not self.enabled:
             return []

@@ -25,6 +25,7 @@ class StoreStub:
         training_examples_count: int = 0,
         provider_usage_counts: dict[Provider, int] | None = None,
         odds_stream_usage: dict | None = None,
+        replay_activity: bool = False,
         last_error: str | None = None,
     ) -> None:
         self._cursors = cursors or []
@@ -33,6 +34,7 @@ class StoreStub:
         self._training_examples_count = training_examples_count
         self._provider_usage_counts = provider_usage_counts or {}
         self._odds_stream_usage = odds_stream_usage or {}
+        self._replay_activity = replay_activity
         self.last_error = last_error
 
     def provider_health(self):
@@ -55,6 +57,9 @@ class StoreStub:
 
     def odds_stream_usage(self, target_date) -> dict:
         return self._odds_stream_usage
+
+    def has_replay_activity(self) -> bool:
+        return self._replay_activity
 
 
 def _healthy_odds_cursor() -> ProviderCursor:
@@ -147,6 +152,7 @@ def test_operational_state_prefers_persisted_health_inputs() -> None:
     assert snapshot.cost_profile.active_plan == "lean_atp"
     assert snapshot.daily_cost_report.active_plan == "lean_atp"
     assert snapshot.execution_status.can_submit_real_orders is False
+    assert snapshot.provider_mode == "live_without_keys"
     readiness = service.live_readiness(snapshot)
     assert readiness.status == "blocked"
     assert readiness.can_analyze_live is False
@@ -200,6 +206,46 @@ def test_daily_cost_report_uses_persisted_provider_usage_counts() -> None:
     assert usage[Provider.API_TENNIS].api_calls == 14
     assert usage[Provider.ODDS_API_IO].quota_used == 9
     assert usage[Provider.THE_ODDS_API].api_calls == 2
+
+
+def test_operational_state_marks_sample_provider_mode() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(Settings(data_mode="sample"), StoreStub())
+
+    snapshot = _snapshot(service, generated_at)
+
+    assert snapshot.provider_mode == "sample"
+    assert "sample fixtures" in snapshot.provider_mode_reason
+
+
+def test_operational_state_marks_replay_provider_mode_when_persisted_replay_exists() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(data_mode="live", persistence_enabled=True),
+        StoreStub(replay_activity=True),
+    )
+
+    snapshot = _snapshot(service, generated_at)
+
+    assert snapshot.provider_mode == "replay"
+    assert "Persisted replay" in snapshot.provider_mode_reason
+
+
+def test_operational_state_marks_live_with_keys_provider_mode() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+        ),
+        StoreStub(replay_activity=True),
+    )
+
+    snapshot = _snapshot(service, generated_at)
+
+    assert snapshot.provider_mode == "live_with_keys"
+    assert "keys are configured" in snapshot.provider_mode_reason
 
 
 def test_daily_cost_report_uses_persisted_odds_stream_usage() -> None:

@@ -115,8 +115,33 @@ class OperationalStateService:
                 kill_switch_state = {"enabled": False, "reason": "not set"}
         return execution_status(self.settings, kill_switch_state)
 
+    def provider_mode(self) -> tuple[str, str]:
+        if self.settings.data_mode == "sample":
+            return (
+                "sample",
+                "Runtime uses bundled deterministic sample fixtures; no paid provider calls are required.",
+            )
+        if self.settings.api_tennis_key and self.settings.odds_api_io_key:
+            return (
+                "live_with_keys",
+                "API-Tennis and Odds-API.io keys are configured; live provider ingestion can run when cursors and persistence are healthy.",
+            )
+        has_replay_activity = getattr(self.store, "has_replay_activity", lambda: False)()
+        if has_replay_activity:
+            return (
+                "replay",
+                "Persisted replay score or odds feeds are available; dashboard can validate the pipeline without live provider keys.",
+            )
+        return (
+            "live_without_keys",
+            "Live mode is selected, but required score or odds provider keys are missing; entries remain blocked.",
+        )
+
     def snapshot(self, *, cost_report: DailyCostReport) -> OperationalStateSnapshot:
+        provider_mode, provider_mode_reason = self.provider_mode()
         return OperationalStateSnapshot(
+            provider_mode=provider_mode,
+            provider_mode_reason=provider_mode_reason,
             provider_health=self.provider_health(),
             cost_profile=self.cost_profile(),
             daily_cost_report=cost_report,

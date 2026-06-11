@@ -828,7 +828,12 @@ class DailyCostReport(BaseModel):
     note: str
 
 
+ProviderRuntimeMode = Literal["sample", "replay", "live_without_keys", "live_with_keys"]
+
+
 class OperationalStateSnapshot(BaseModel):
+    provider_mode: ProviderRuntimeMode
+    provider_mode_reason: str
     provider_health: list[ProviderHealth]
     cost_profile: CostProfile
     daily_cost_report: DailyCostReport

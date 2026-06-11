@@ -2170,6 +2170,45 @@ def _provider_health_with_latency(
     return StoreStub().provider_health()
 
 
+def test_has_replay_activity_reads_provider_latency_replay_feeds() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.params = params
+            return self
+
+        def fetchone(self):
+            if self.params == ("%/replay%",):
+                return {"exists": 1}
+            return None
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    assert StoreStub().has_replay_activity() is True
+
+
 def test_provider_health_surfaces_latest_score_ingestion_warning() -> None:
     warning = "API-Tennis livescore endpoint failed: TimeoutError"
     health = _provider_health_with_latency(

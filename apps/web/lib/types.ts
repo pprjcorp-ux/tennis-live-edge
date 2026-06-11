@@ -225,6 +225,8 @@ export type IngestionRunRecord = {
 };
 
 export type OperationalStateSnapshot = {
+  provider_mode: "sample" | "replay" | "live_without_keys" | "live_with_keys";
+  provider_mode_reason: string;
   provider_health: ProviderHealth[];
   cost_profile: CostProfile;
   daily_cost_report: DailyCostReport;

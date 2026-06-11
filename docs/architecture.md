@@ -66,7 +66,9 @@ decide whether the system behaves as budget or enterprise.
     just as a single label. The matrix lists `sample`, `replay`,
     `live_without_keys`, and `live_with_keys`, with active status, entry gate,
     evidence, blockers, and next action so the dashboard cannot confuse replay
-    rehearsal with live eligibility.
+    rehearsal with live eligibility. `replay` is an offline provider mode:
+    budget adapters use fake fixtures/snapshots and must not spend quota or open
+    live websockets even when keys are present.
 17. Replay Lab readiness is a derived read-model inside
     `OperationalStateSnapshot`. It exposes `budget_replay_fixtures` as the fake
     API layer for ScoreProviderAdapter, OddsProviderAdapter, and

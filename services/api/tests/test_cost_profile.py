@@ -65,6 +65,21 @@ def test_live_provider_health_reports_missing_budget_keys() -> None:
     assert by_provider["odds_api_io"].status == "odds websocket key missing"
 
 
+def test_replay_provider_health_reports_fake_feeds_without_configured_keys() -> None:
+    health = provider_health_for(Settings(data_mode="replay"))
+
+    by_provider = {item.provider: item for item in health}
+
+    assert by_provider[Provider.API_TENNIS].configured is False
+    assert by_provider[Provider.API_TENNIS].healthy is True
+    assert by_provider[Provider.API_TENNIS].quota_used == 0
+    assert by_provider[Provider.API_TENNIS].status == "score primary replay fixture feed"
+    assert by_provider[Provider.ODDS_API_IO].healthy is True
+    assert by_provider[Provider.ODDS_API_IO].status == "odds websocket replay fixture feed"
+    assert by_provider[Provider.THE_ODDS_API].healthy is True
+    assert by_provider[Provider.THE_ODDS_API].status == "historical archive replay snapshot"
+
+
 @pytest.mark.parametrize(
     "tournament",
     ["Australian Open", "Roland Garros", "French Open", "Wimbledon", "US Open"],

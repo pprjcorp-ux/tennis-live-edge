@@ -33,7 +33,11 @@ npm run dev
 Backend: `http://localhost:8000`  
 Dashboard: `http://localhost:3000`
 
-Without paid keys the system runs in `TENNIS_EDGE_DATA_MODE=sample`.
+Without paid keys the system runs in `TENNIS_EDGE_DATA_MODE=sample` for demo
+fixtures or `TENNIS_EDGE_DATA_MODE=replay` for fake-provider rehearsal. In
+`replay`, budget providers use local fixture/snapshot contracts only; they do
+not spend quota, call REST endpoints, or open live websockets even if keys are
+present.
 
 For live budget mode, keep Docker running and use Postgres/Timescale as the
 operational cache:

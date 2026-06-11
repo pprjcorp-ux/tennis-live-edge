@@ -17,6 +17,7 @@ from tennis_edge.domain import (
     SignalStatus,
     Tour,
 )
+from tennis_edge.runtime_modes import uses_offline_provider_fixtures
 
 
 GRAND_SLAMS = {
@@ -164,6 +165,8 @@ def should_escalate_polling(analysis: MatchAnalysis) -> bool:
 def provider_health_for(settings: Settings) -> list[ProviderHealth]:
     now = datetime.now(timezone.utc).replace(microsecond=0)
     sample = settings.data_mode == "sample"
+    replay = settings.data_mode == "replay"
+    offline_provider_mode = uses_offline_provider_fixtures(settings.data_mode)
     enterprise_status = (
         "enterprise adapter contract-gated"
         if settings.runtime_profile == "enterprise_roi_clv"
@@ -172,6 +175,8 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
     api_tennis_status = (
         "score primary sample feed"
         if sample
+        else "score primary replay fixture feed"
+        if replay
         else "score primary configured"
         if settings.api_tennis_key
         else "score primary key missing"
@@ -179,6 +184,8 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
     odds_api_status = (
         "odds websocket sample feed"
         if sample
+        else "odds websocket replay fixture feed"
+        if replay
         else "odds websocket primary configured"
         if settings.odds_api_io_key
         else "odds websocket key missing"
@@ -186,6 +193,8 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
     the_odds_api_status = (
         "historical archive sample"
         if sample
+        else "historical archive replay snapshot"
+        if replay
         else "historical archive configured"
         if settings.the_odds_api_key
         else "historical archive key missing"
@@ -194,49 +203,55 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
         ProviderHealth(
             provider=Provider.API_TENNIS,
             configured=bool(settings.api_tennis_key),
-            healthy=bool(settings.api_tennis_key) or sample,
-            latency_ms=900 if sample else None,
-            last_message_at=now if sample else None,
+            healthy=bool(settings.api_tennis_key) or offline_provider_mode,
+            latency_ms=900 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
             status=api_tennis_status,
             cost_tier="$80/mo",
             coverage_scope="ATP main + men's/women's Grand Slam score/livescore",
-            quota_used=0 if sample else None,
+            quota_used=0 if offline_provider_mode else None,
             quota_limit=200000,
             last_billable_call_at=None,
         ),
         ProviderHealth(
             provider=Provider.ODDS_API_IO,
             configured=bool(settings.odds_api_io_key),
-            healthy=bool(settings.odds_api_io_key) or sample,
-            latency_ms=740 if sample else None,
-            last_message_at=now if sample else None,
+            healthy=bool(settings.odds_api_io_key) or offline_provider_mode,
+            latency_ms=740 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
             status=odds_api_status,
             cost_tier="£198/mo Starter+WS",
             coverage_scope="Live/watchlist ML odds",
-            quota_used=0 if sample else None,
+            quota_used=0 if offline_provider_mode else None,
             quota_limit=5000,
             last_billable_call_at=None,
         ),
         ProviderHealth(
             provider=Provider.THE_ODDS_API,
             configured=bool(settings.the_odds_api_key),
-            healthy=bool(settings.the_odds_api_key) or sample,
-            latency_ms=1100 if sample else None,
-            last_message_at=now if sample else None,
+            healthy=bool(settings.the_odds_api_key) or offline_provider_mode,
+            latency_ms=1100 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
             status=the_odds_api_status,
             cost_tier="$99/mo Business",
             coverage_scope="Historical odds, archive and comparison",
-            quota_used=0 if sample else None,
+            quota_used=0 if offline_provider_mode else None,
             quota_limit=200000,
             last_billable_call_at=None,
         ),
         ProviderHealth(
             provider=Provider.SPORTRADAR,
             configured=bool(settings.sportradar_api_key),
-            healthy=bool(settings.sportradar_api_key) or sample,
-            latency_ms=520 if sample else None,
-            last_message_at=now if sample else None,
-            status="score/live-state sample adapter" if sample else enterprise_status,
+            healthy=bool(settings.sportradar_api_key) or offline_provider_mode,
+            latency_ms=520 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
+            status=(
+                "score/live-state sample adapter"
+                if sample
+                else "score/live-state replay contract-gated"
+                if replay
+                else enterprise_status
+            ),
             cost_tier="enterprise quote estimate $2.5k/mo",
             coverage_scope="ATP/WTA/Challenger/ITF score, timeline, delay/retirement",
             quota_used=0,
@@ -245,10 +260,16 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
         ProviderHealth(
             provider=Provider.BETRADAR_UOF,
             configured=bool(settings.betradar_uof_token),
-            healthy=bool(settings.betradar_uof_token) or sample,
-            latency_ms=600 if sample else None,
-            last_message_at=now if sample else None,
-            status="market-state sample adapter" if sample else enterprise_status,
+            healthy=bool(settings.betradar_uof_token) or offline_provider_mode,
+            latency_ms=600 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
+            status=(
+                "market-state sample adapter"
+                if sample
+                else "market-state replay contract-gated"
+                if replay
+                else enterprise_status
+            ),
             cost_tier="enterprise quote estimate $1.2k/mo",
             coverage_scope="Market state, betstop, suspension and settlement status",
             quota_used=0,
@@ -257,10 +278,16 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
         ProviderHealth(
             provider=Provider.TXODDS,
             configured=bool(settings.txodds_user and settings.txodds_password),
-            healthy=bool(settings.txodds_user and settings.txodds_password) or sample,
-            latency_ms=480 if sample else None,
-            last_message_at=now if sample else None,
-            status="in-running odds sample adapter" if sample else enterprise_status,
+            healthy=bool(settings.txodds_user and settings.txodds_password) or offline_provider_mode,
+            latency_ms=480 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
+            status=(
+                "in-running odds sample adapter"
+                if sample
+                else "in-running odds replay contract-gated"
+                if replay
+                else enterprise_status
+            ),
             cost_tier="enterprise quote estimate $1k/mo",
             coverage_scope="Low-latency independent in-running tennis odds",
             quota_used=0,

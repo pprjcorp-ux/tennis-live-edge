@@ -129,6 +129,39 @@ def test_budget_provider_clients_satisfy_adapter_contracts() -> None:
     assert isinstance(ApiTennisClient(api_key=None, data_mode="sample"), ScoreProviderAdapter)
     assert isinstance(OddsApiIoClient(api_key=None, data_mode="sample"), OddsProviderAdapter)
     assert isinstance(TheOddsApiClient(api_key=None, data_mode="sample"), ArchiveOddsProviderAdapter)
+    assert isinstance(ApiTennisClient(api_key=None, data_mode="replay"), ScoreProviderAdapter)
+    assert isinstance(OddsApiIoClient(api_key=None, data_mode="replay"), OddsProviderAdapter)
+    assert isinstance(TheOddsApiClient(api_key=None, data_mode="replay"), ArchiveOddsProviderAdapter)
+
+
+def test_replay_mode_provider_clients_use_fake_api_without_live_calls() -> None:
+    async def collect_odds_messages() -> list[dict]:
+        return [
+            message
+            async for message in OddsApiIoClient(
+                api_key="configured-but-offline",
+                data_mode="replay",
+            ).stream_live_messages()
+        ]
+
+    score_records = asyncio.run(
+        ApiTennisClient(
+            api_key="configured-but-offline",
+            data_mode="replay",
+        ).get_livescore_payloads()
+    )
+    archive_events = asyncio.run(
+        TheOddsApiClient(
+            api_key="configured-but-offline",
+            data_mode="replay",
+        ).get_tennis_h2h_events()
+    )
+
+    assert score_records
+    assert all(record.raw_payload.provider == Provider.API_TENNIS for record in score_records)
+    assert archive_events
+    assert all(event.raw_payload is not None for event in archive_events)
+    assert asyncio.run(collect_odds_messages()) == []
 
 
 def test_budget_adapter_contract_matrix_outputs_internal_formats_without_live_keys() -> None:

@@ -51,6 +51,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     source = root / "services/api/src/tennis_edge"
     tests = root / "services/api/tests"
     provider_adapters = (source / "services/provider_adapters.py").read_text()
+    runtime_modes = (source / "runtime_modes.py").read_text()
     replay_engine = (source / "services/replay_engine.py").read_text()
     replay_fixtures = (source / "services/budget_replay_fixtures.py").read_text()
     repository = (source / "services/repository.py").read_text()
@@ -62,6 +63,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     storage = (source / "services/storage.py").read_text()
     provider_tests = (tests / "test_enterprise_providers.py").read_text()
     enterprise_tests = (tests / "test_enterprise_upgrade.py").read_text()
+    cost_tests = (tests / "test_cost_profile.py").read_text()
     persistence_tests = (tests / "test_live_budget_persistence.py").read_text()
     repository_tests = (tests / "test_repository.py").read_text()
     risk_tests = (tests / "test_enterprise_risk.py").read_text()
@@ -78,11 +80,13 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     _require_text(
         errors,
         label="provider adapter contract",
-        text=provider_adapters,
+        text=provider_adapters + runtime_modes,
         required=[
             "class ScoreProviderAdapter",
             "class OddsProviderAdapter",
             "class ArchiveOddsProviderAdapter",
+            'OFFLINE_PROVIDER_MODES = frozenset({"sample", "replay"})',
+            "uses_offline_provider_fixtures",
             "RawProviderPayload",
             "CanonicalMatch",
             "ProviderCursor",
@@ -195,6 +199,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
         text=(
             provider_tests
             + enterprise_tests
+            + cost_tests
             + persistence_tests
             + repository_tests
             + risk_tests
@@ -205,6 +210,9 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
         required=[
             "test_budget_replay_fixtures_exercise_provider_contracts_without_keys",
             "test_budget_adapter_contract_matrix_outputs_internal_formats_without_live_keys",
+            "test_replay_mode_provider_clients_use_fake_api_without_live_calls",
+            "test_replay_provider_health_reports_fake_feeds_without_configured_keys",
+            "test_operational_state_marks_explicit_replay_mode_without_live_keys",
             "test_repository_regates_persisted_fallback_when_odds_cursor_requires_resync",
             "test_auto_settle_paper_orders_skips_unsettleable_candidates",
             "test_walk_forward_backtest_uses_settled_training_examples_only",
@@ -213,6 +221,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_paper_performance_ignores_unmatched_settled_orders",
             "test_stale_live_odds_are_blocked",
             "test_invalid_live_score_state_blocks_entries_and_zeroes_stake",
+            "test_live_readiness_blocks_entries_when_critical_provider_health_is_unhealthy",
+            "test_live_readiness_blocks_entries_when_data_quality_reports_stale_ticks",
             "test_api_onboarding_guides_budget_provider_sequence_after_archive_key",
             "test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync",
             "test_model_lab_readiness_uses_persisted_training_examples_dataset",

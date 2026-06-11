@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from tennis_edge.domain import Match, OddsQuote, Provider, RawProviderPayload
+from tennis_edge.runtime_modes import uses_offline_provider_fixtures
 from tennis_edge.sample_data import sample_matches
 from tennis_edge.services.normalizer import normalize_name, payload_checksum
 
@@ -36,7 +37,7 @@ class TheOddsApiClient:
 
     async def get_tennis_h2h_events(self) -> list[TheOddsApiEvent]:
         self.last_warnings = []
-        if self.data_mode == "sample":
+        if uses_offline_provider_fixtures(self.data_mode):
             return self._sample_h2h_events()
         if not self.api_key:
             return []

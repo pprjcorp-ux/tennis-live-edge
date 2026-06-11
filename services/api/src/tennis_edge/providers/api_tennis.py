@@ -16,6 +16,7 @@ from tennis_edge.domain import (
     Tour,
 )
 from tennis_edge.sample_data import sample_matches
+from tennis_edge.runtime_modes import uses_offline_provider_fixtures
 from tennis_edge.services.normalizer import canonical_player_id, payload_checksum
 
 
@@ -27,13 +28,13 @@ class ApiTennisClient:
         self.data_mode = data_mode
 
     async def get_today_matches(self, target_date: date) -> list[Match]:
-        if self.data_mode == "sample":
+        if uses_offline_provider_fixtures(self.data_mode):
             return sample_matches()
         records = await self.get_today_match_payloads(target_date)
         return [record.match for record in records]
 
     async def get_today_match_payloads(self, target_date: date) -> list[ProviderMatchPayload]:
-        if self.data_mode == "sample":
+        if uses_offline_provider_fixtures(self.data_mode):
             return [
                 ProviderMatchPayload(
                     match=match,
@@ -61,13 +62,13 @@ class ApiTennisClient:
         return self._parse_match_payloads(response.json(), default_status="prematch")
 
     async def get_livescore(self) -> list[Match]:
-        if self.data_mode == "sample":
+        if uses_offline_provider_fixtures(self.data_mode):
             return sample_matches()
         records = await self.get_livescore_payloads()
         return [record.match for record in records]
 
     async def get_livescore_payloads(self) -> list[ProviderMatchPayload]:
-        if self.data_mode == "sample":
+        if uses_offline_provider_fixtures(self.data_mode):
             return [
                 ProviderMatchPayload(
                     match=match,

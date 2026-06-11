@@ -129,6 +129,11 @@ class OperationalStateService:
                 "sample",
                 "Runtime uses bundled deterministic sample fixtures; no paid provider calls are required.",
             )
+        if self.settings.data_mode == "replay":
+            return (
+                "replay",
+                "Replay mode is selected; budget replay fixtures act as fake provider APIs and no paid provider calls are allowed.",
+            )
         if self.settings.api_tennis_key and self.settings.odds_api_io_key:
             return (
                 "live_with_keys",
@@ -152,7 +157,8 @@ class OperationalStateService:
     ) -> list[ProviderModeStep]:
         mode = active_mode or self.provider_mode()[0]
         persistence_ready, persistence_error = self._persistence_ready()
-        replay_available = getattr(self.store, "has_replay_activity", lambda: False)()
+        explicit_replay = self.settings.data_mode == "replay"
+        replay_available = explicit_replay or getattr(self.store, "has_replay_activity", lambda: False)()
         score_key_configured = bool(self.settings.api_tennis_key)
         odds_key_configured = bool(self.settings.odds_api_io_key)
         cursor_resync = any(cursor.resync_required for cursor in self.provider_cursors())
@@ -193,9 +199,13 @@ class OperationalStateService:
                 entry_gate="monitor",
                 summary="Persisted replay score/odds feeds validate provider contracts without live keys.",
                 evidence=[
-                    "Persisted replay activity found."
-                    if replay_available
-                    else "No persisted replay activity yet.",
+                    (
+                        "Replay runtime selected; fixture-backed provider contracts are available without live keys."
+                        if explicit_replay
+                        else "Persisted replay activity found."
+                        if replay_available
+                        else "No persisted replay activity yet."
+                    ),
                     "Replay entries stay monitor-only until live providers are configured.",
                 ],
                 blockers=[] if replay_available else ["Run /api/v1/replay/run with use_fixture_seed=true."],
@@ -575,6 +585,21 @@ class OperationalStateService:
             cursor.provider == Provider.ODDS_API_IO and cursor.resync_required
             for cursor in operational_state.provider_cursors
         )
+        critical_provider_health = [
+            health
+            for health in operational_state.provider_health
+            if health.provider in {Provider.API_TENNIS, Provider.ODDS_API_IO}
+        ]
+        provider_health_failures = [
+            health for health in critical_provider_health if not health.healthy
+        ]
+        data_quality_failures = [
+            snapshot
+            for snapshot in operational_state.data_quality
+            if snapshot.stale_ticks > 0 or snapshot.blocked_signals > 0
+        ]
+        provider_health_ok = not provider_health_failures
+        data_quality_ok = not data_quality_failures
         persistence_ready, persistence_error = self._persistence_ready()
         training_examples_count = 0
         if persistence_ready:
@@ -596,6 +621,8 @@ class OperationalStateService:
             and odds_key_configured
             and not odds_cursor_resync
             and persistence_ready
+            and provider_health_ok
+            and data_quality_ok
         )
         can_submit_real_orders = operational_state.execution_status.can_submit_real_orders
 
@@ -643,6 +670,40 @@ class OperationalStateService:
                 if persistence_ready
                 else "Postgres persistence is required for live operational truth.",
                 detail=persistence_detail,
+            ),
+            LiveReadinessCheck(
+                name="provider_health",
+                status="pass" if provider_health_ok else "fail",
+                summary=(
+                    "Critical budget providers are healthy."
+                    if provider_health_ok
+                    else "Critical budget provider health is unhealthy or stale."
+                ),
+                detail=(
+                    None
+                    if provider_health_ok
+                    else "; ".join(
+                        f"{health.provider}: {health.status}"
+                        for health in provider_health_failures
+                    )
+                ),
+            ),
+            LiveReadinessCheck(
+                name="data_quality",
+                status="pass" if data_quality_ok else "fail",
+                summary=(
+                    "Persisted data quality has no stale or blocking ticks."
+                    if data_quality_ok
+                    else "Persisted data quality reports stale or blocking provider ticks."
+                ),
+                detail=(
+                    None
+                    if data_quality_ok
+                    else "; ".join(
+                        f"{snapshot.provider}/{snapshot.feed}: stale_ticks={snapshot.stale_ticks}, blocked_signals={snapshot.blocked_signals}"
+                        for snapshot in data_quality_failures
+                    )
+                ),
             ),
             LiveReadinessCheck(
                 name="model_learning_dataset",

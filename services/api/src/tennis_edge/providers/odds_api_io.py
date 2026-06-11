@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from tennis_edge.domain import OddsQuote, Provider, ProviderCursor, RawProviderPayload
+from tennis_edge.runtime_modes import uses_offline_provider_fixtures
 from tennis_edge.services.normalizer import payload_checksum
 from tennis_edge.services.provider_cursor import ingest_odds_api_sequence
 
@@ -28,7 +29,7 @@ class OddsApiIoClient:
         last_seq: int | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream raw Odds-API.io messages so operational ingestion can persist lineage."""
-        if self.data_mode == "sample" or not self.api_key:
+        if uses_offline_provider_fixtures(self.data_mode) or not self.api_key:
             if False:
                 yield {}
             return

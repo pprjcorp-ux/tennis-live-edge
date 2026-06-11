@@ -8,6 +8,7 @@ from tennis_edge.domain import (
     PaperPerformance,
     Provider,
     ProviderCursor,
+    ProviderHealth,
 )
 from tennis_edge.services.operational_state import OperationalStateService
 from tennis_edge.services.execution_engine import KILL_SWITCH
@@ -23,6 +24,7 @@ class StoreStub:
         data_quality: list[DataQualitySnapshot] | None = None,
         ingestion_runs: list[IngestionRunRecord] | None = None,
         training_examples_count: int = 0,
+        provider_health: list[ProviderHealth] | None = None,
         provider_usage_counts: dict[Provider, int] | None = None,
         odds_stream_usage: dict | None = None,
         replay_activity: bool = False,
@@ -32,13 +34,14 @@ class StoreStub:
         self._data_quality = data_quality or []
         self._ingestion_runs = ingestion_runs or []
         self._training_examples_count = training_examples_count
+        self._provider_health = provider_health or []
         self._provider_usage_counts = provider_usage_counts or {}
         self._odds_stream_usage = odds_stream_usage or {}
         self._replay_activity = replay_activity
         self.last_error = last_error
 
     def provider_health(self):
-        return []
+        return self._provider_health
 
     def provider_cursors(self) -> list[ProviderCursor]:
         return self._cursors
@@ -229,6 +232,25 @@ def test_operational_state_marks_replay_provider_mode_when_persisted_replay_exis
 
     assert snapshot.provider_mode == "replay"
     assert "Persisted replay" in snapshot.provider_mode_reason
+
+
+def test_operational_state_marks_explicit_replay_mode_without_live_keys() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(data_mode="replay", persistence_enabled=True),
+        StoreStub(replay_activity=False),
+    )
+
+    snapshot = _snapshot(service, generated_at)
+    matrix = {step.mode: step for step in snapshot.provider_mode_matrix}
+
+    assert snapshot.provider_mode == "replay"
+    assert "no paid provider calls" in snapshot.provider_mode_reason
+    assert matrix["replay"].active is True
+    assert matrix["replay"].status == "active"
+    assert matrix["replay"].entry_gate == "monitor"
+    assert not matrix["replay"].blockers
+    assert "fixture-backed provider contracts" in matrix["replay"].evidence[0]
 
 
 def test_operational_state_marks_live_with_keys_provider_mode() -> None:
@@ -451,6 +473,90 @@ def test_live_readiness_allows_entries_with_persistent_truth_and_trusted_cursor(
     )
     assert dataset_check.status == "warn"
     assert "No settled persisted training examples" in dataset_check.summary
+
+
+def test_live_readiness_blocks_entries_when_critical_provider_health_is_unhealthy() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(
+            cursors=[_healthy_odds_cursor()],
+            provider_health=[
+                ProviderHealth(
+                    provider=Provider.API_TENNIS,
+                    configured=True,
+                    healthy=False,
+                    status="stale persisted feed: score/live",
+                    cost_tier="$80/mo",
+                    coverage_scope="score",
+                ),
+                ProviderHealth(
+                    provider=Provider.ODDS_API_IO,
+                    configured=True,
+                    healthy=True,
+                    status="odds websocket primary configured",
+                    cost_tier="£198/mo Starter+WS",
+                    coverage_scope="odds",
+                ),
+            ],
+        ),
+    )
+
+    readiness = service.live_readiness(_snapshot(service, generated_at))
+    provider_check = next(check for check in readiness.checks if check.name == "provider_health")
+
+    assert readiness.status == "degraded"
+    assert readiness.can_analyze_live is True
+    assert readiness.can_generate_entries is False
+    assert provider_check.status == "fail"
+    assert "stale persisted feed" in (provider_check.detail or "")
+    assert "Critical budget provider health is unhealthy or stale." in readiness.blockers
+
+
+def test_live_readiness_blocks_entries_when_data_quality_reports_stale_ticks() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(
+            cursors=[_healthy_odds_cursor()],
+            data_quality=[
+                DataQualitySnapshot(
+                    id="dq_stale_odds",
+                    provider=Provider.ODDS_API_IO,
+                    feed="odds/tennis:moneyline",
+                    score_completeness=1,
+                    odds_completeness=1,
+                    entity_resolution_rate=1,
+                    sequence_health=1,
+                    stale_ticks=2,
+                    blocked_signals=2,
+                    generated_at=generated_at,
+                )
+            ],
+        ),
+    )
+
+    readiness = service.live_readiness(_snapshot(service, generated_at))
+    data_quality_check = next(check for check in readiness.checks if check.name == "data_quality")
+
+    assert readiness.status == "degraded"
+    assert readiness.can_analyze_live is True
+    assert readiness.can_generate_entries is False
+    assert data_quality_check.status == "fail"
+    assert "stale_ticks=2" in (data_quality_check.detail or "")
+    assert "Persisted data quality reports stale or blocking provider ticks." in readiness.blockers
 
 
 def test_live_readiness_reports_persisted_training_examples() -> None:

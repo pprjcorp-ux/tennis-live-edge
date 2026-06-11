@@ -50,6 +50,7 @@ import type {
   AgentBriefing,
   AgentPreflight,
   AgentRun,
+  ApiOnboardingSnapshot,
   BacktestMetrics,
   BankrollSnapshot,
   CalibrationReport,
@@ -153,6 +154,12 @@ export default function Page() {
   const [dataQuality, setDataQuality] = useState<DataQualitySnapshot[]>([]);
   const [ingestionRuns, setIngestionRuns] = useState<IngestionRunRecord[]>([]);
   const [providerCursors, setProviderCursors] = useState<ProviderCursor[]>([]);
+  const [apiOnboarding, setApiOnboarding] = useState<ApiOnboardingSnapshot>({
+    core_ready: false,
+    current_step: "loading",
+    steps: [],
+    warnings: ["Awaiting operational state."]
+  });
   const [providerMode, setProviderMode] =
     useState<OperationalStateSnapshot["provider_mode"]>("sample");
   const [providerModeReason, setProviderModeReason] = useState("Awaiting operational state.");
@@ -222,6 +229,7 @@ export default function Page() {
       setDataQuality(nextOperational.data_quality);
       setIngestionRuns(nextOperational.ingestion_runs);
       setProviderCursors(nextOperational.provider_cursors);
+      setApiOnboarding(nextOperational.api_onboarding);
       setProviderMode(nextOperational.provider_mode);
       setProviderModeReason(nextOperational.provider_mode_reason);
       setModelRegistry(nextModelRegistry);
@@ -572,6 +580,7 @@ export default function Page() {
       <section className="enterprisePanel">
         {activeDesk === "data" ? (
           <DataHealthPanel
+            apiOnboarding={apiOnboarding}
             dataQuality={dataQuality}
             ingestionRuns={ingestionRuns}
             providerCursors={providerCursors}

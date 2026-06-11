@@ -58,6 +58,21 @@ Live paper entries require durable operational truth: in `TENNIS_EDGE_DATA_MODE=
 `DATABASE_URL` must be configured and Postgres/Timescale must be healthy before
 `can_generate_entries=true`.
 
+## API Onboarding
+
+Add external APIs only after the core remains green without live keys. The
+runtime exposes the current sequence through
+`/api/v1/dashboard/live-state -> operational_state.api_onboarding`:
+
+1. TheOddsAPI REST/archive and comparison.
+2. API-Tennis fixtures/livescore.
+3. Odds-API.io websocket live odds after cursor/replay/resync gates.
+4. Sportradar/Betradar/TXODDS enterprise feeds only after budget paper evidence.
+
+If a provider fails, quota ends, odds are stale, moneyline is incomplete, or a
+cursor requires resync, keep the dashboard alive and abstain instead of forcing
+`Entrada`.
+
 ## Safety Rules
 
 - The system can abstain; no forced picks.

@@ -215,6 +215,32 @@ export type DailyCostReport = {
   note: string;
 };
 
+export type ApiOnboardingStatus = "configured" | "ready_next" | "blocked" | "deferred";
+export type ApiOnboardingCapability =
+  | "archive_odds"
+  | "score_livescore"
+  | "live_odds_websocket"
+  | "enterprise_feeds";
+
+export type ApiOnboardingStep = {
+  order: number;
+  provider: Provider;
+  capability: ApiOnboardingCapability;
+  status: ApiOnboardingStatus;
+  configured: boolean;
+  current: boolean;
+  required_before_enable: string[];
+  next_action: string;
+  notes: string[];
+};
+
+export type ApiOnboardingSnapshot = {
+  core_ready: boolean;
+  current_step: string;
+  steps: ApiOnboardingStep[];
+  warnings: string[];
+};
+
 export type IngestionRunRecord = {
   id: string;
   run_type:
@@ -240,6 +266,7 @@ export type OperationalStateSnapshot = {
   provider_cursors: ProviderCursor[];
   ingestion_runs: IngestionRunRecord[];
   execution_status: ExecutionStatus;
+  api_onboarding: ApiOnboardingSnapshot;
   generated_at: string;
 };
 

@@ -1,6 +1,11 @@
-import { Activity, DatabaseZap, Timer } from "lucide-react";
+import { Activity, DatabaseZap, GitCompareArrows, Timer } from "lucide-react";
 
-import type { DataQualitySnapshot, IngestionRunRecord, ProviderCursor } from "@/lib/types";
+import type {
+  ApiOnboardingSnapshot,
+  DataQualitySnapshot,
+  IngestionRunRecord,
+  ProviderCursor
+} from "@/lib/types";
 
 function pct(value: number) {
   return `${(value * 100).toFixed(1)}%`;
@@ -18,6 +23,13 @@ function cursorStatusClass(cursor: ProviderCursor) {
   }
   if (cursor.status === "resynced") return "status statusMonitor";
   return "status statusEntry";
+}
+
+function onboardingStatusClass(status: ApiOnboardingSnapshot["steps"][number]["status"]) {
+  if (status === "configured") return "status statusEntry";
+  if (status === "ready_next") return "status statusMonitor";
+  if (status === "deferred") return "status statusMuted";
+  return "status statusBlocked";
 }
 
 function summaryObject(value: unknown): Record<string, unknown> | null {
@@ -56,16 +68,56 @@ function summaryText(run: IngestionRunRecord) {
 }
 
 export function DataHealthPanel({
+  apiOnboarding,
   dataQuality,
   ingestionRuns,
   providerCursors
 }: {
+  apiOnboarding: ApiOnboardingSnapshot;
   dataQuality: DataQualitySnapshot[];
   ingestionRuns: IngestionRunRecord[];
   providerCursors: ProviderCursor[];
 }) {
   return (
     <div className="enterpriseGrid">
+      <div className="panel wide">
+        <div className="panelHeader">
+          <div>
+            <p className="eyebrow">API Onboarding</p>
+            <h2>Core primeiro, providers por etapas</h2>
+          </div>
+          <GitCompareArrows size={20} />
+        </div>
+        <div className="apiOnboardingSummary">
+          <span className={apiOnboarding.core_ready ? "status statusEntry" : "status statusBlocked"}>
+            core {apiOnboarding.core_ready ? "ready" : "blocked"}
+          </span>
+          <span>next {apiOnboarding.current_step}</span>
+          {apiOnboarding.warnings.slice(0, 2).map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+        </div>
+        <div className="apiOnboardingRows">
+          {apiOnboarding.steps.map((step) => (
+            <div className={step.current ? "apiOnboardingRow current" : "apiOnboardingRow"} key={`${step.order}-${step.provider}`}>
+              <div>
+                <strong>
+                  {step.order}. {step.provider}
+                </strong>
+                <span>{step.capability.replaceAll("_", " ")}</span>
+              </div>
+              <span className={onboardingStatusClass(step.status)}>{step.status}</span>
+              <span>{step.configured ? "key/config ready" : "missing"}</span>
+              <span>{step.next_action}</span>
+              {step.required_before_enable.length ? (
+                <span>needs {step.required_before_enable.join(", ")}</span>
+              ) : (
+                <span>no prerequisites pending</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="panel">
         <div className="panelHeader">
           <div>

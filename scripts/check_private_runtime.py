@@ -55,6 +55,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     replay_fixtures = (source / "services/budget_replay_fixtures.py").read_text()
     repository = (source / "services/repository.py").read_text()
     domain = (source / "domain.py").read_text()
+    operational_state = (source / "services/operational_state.py").read_text()
     signal_gates = (source / "services/signal_gates.py").read_text()
     risk_engine = (source / "services/risk_engine.py").read_text()
     model_lab = (source / "services/model_lab.py").read_text()
@@ -63,6 +64,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     persistence_tests = (tests / "test_live_budget_persistence.py").read_text()
     risk_tests = (tests / "test_enterprise_risk.py").read_text()
     model_tests = (tests / "test_model_lab.py").read_text()
+    operational_tests = (tests / "test_operational_state.py").read_text()
     web_types = (root / "apps/web/lib/types.ts").read_text()
     data_health_panel = (
         root / "apps/web/app/components/data-health-panel.tsx"
@@ -126,11 +128,16 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     _require_text(
         errors,
         label="provider runtime modes",
-        text=domain + web_types,
+        text=domain + web_types + operational_state,
         required=[
             'ProviderRuntimeMode = Literal["sample", "replay", "live_without_keys", "live_with_keys"]',
             '"sample" | "replay" | "live_without_keys" | "live_with_keys"',
             '"replay_run"',
+            "class ApiOnboardingSnapshot",
+            "ApiOnboardingStep",
+            "core_ready",
+            "live_odds_websocket",
+            "budget_stack_configured_enterprise_deferred",
         ],
     )
     _require_text(
@@ -161,7 +168,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     _require_text(
         errors,
         label="core contract tests",
-        text=provider_tests + persistence_tests + risk_tests + model_tests,
+        text=provider_tests + persistence_tests + risk_tests + model_tests + operational_tests,
         required=[
             "test_budget_replay_fixtures_exercise_provider_contracts_without_keys",
             "test_repository_regates_persisted_fallback_when_odds_cursor_requires_resync",
@@ -169,6 +176,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_walk_forward_backtest_uses_settled_training_examples_only",
             "test_stale_live_odds_are_blocked",
             "test_invalid_live_score_state_blocks_entries_and_zeroes_stake",
+            "test_api_onboarding_guides_budget_provider_sequence_after_archive_key",
+            "test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync",
         ],
     )
     _require_text(

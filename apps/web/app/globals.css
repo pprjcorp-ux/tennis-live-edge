@@ -566,6 +566,7 @@ h2 {
 
 .qualityRows,
 .cursorRows,
+.apiOnboardingRows,
 .modelRows,
 .calibrationRows,
 .conflictRows,
@@ -577,6 +578,7 @@ h2 {
 
 .qualityRow,
 .cursorRow,
+.apiOnboardingRow,
 .modelRow,
 .calibrationRow,
 .conflictRow,
@@ -595,6 +597,31 @@ h2 {
   grid-template-columns: minmax(0, 1.25fr) auto auto auto auto auto minmax(0, 0.9fr);
 }
 
+.apiOnboardingSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 14px 0;
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+.apiOnboardingSummary span:not(.status) {
+  padding: 6px 8px;
+  background: #f4f7fb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.apiOnboardingRow {
+  grid-template-columns: minmax(0, 0.85fr) auto auto minmax(0, 1.4fr) minmax(0, 1fr);
+}
+
+.apiOnboardingRow.current {
+  border-color: var(--blue);
+  background: #f8fbff;
+}
+
 .calibrationRow {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
@@ -611,6 +638,8 @@ h2 {
 .qualityRow span,
 .cursorRow strong,
 .cursorRow span,
+.apiOnboardingRow strong,
+.apiOnboardingRow span,
 .modelRow strong,
 .modelRow span,
 .calibrationRow span,
@@ -623,6 +652,7 @@ h2 {
 
 .qualityRow div span,
 .cursorRow div span,
+.apiOnboardingRow div span,
 .modelRow div span,
 .conflictRow div span,
 .ingestionRow div span {

@@ -59,7 +59,8 @@ python3 scripts/check_private_runtime.py
 
 `check_private_runtime.py` also verifies the API-last core contract: provider
 adapter protocols, budget replay fixtures, provider runtime modes, signal safety
-gates, paper settlement, and Model Lab `training_examples` coverage.
+gates, paper settlement, Model Lab `training_examples` coverage, and the
+dashboard-visible API onboarding sequence.
 
 ## Documentation
 
@@ -91,3 +92,15 @@ Use `.env.example` as the contract. The important budget defaults are:
 The system is analytical software, not betting advice or a profit guarantee.
 No browser automation, scraping, geolocation bypass, or direct LLM-initiated
 betting is allowed.
+
+## API Onboarding Order
+
+Keep the core frozen before adding live APIs. The dashboard Data Health tab shows
+this same sequence from `/api/v1/dashboard/live-state`:
+
+1. TheOddsAPI REST/archive and comparison.
+2. API-Tennis fixtures/livescore.
+3. Odds-API.io websocket live odds, only after `seq`/`lastSeq` replay and resync
+   gates are healthy.
+4. Sportradar/Betradar/TXODDS enterprise feeds, deferred until budget paper data
+   proves a real coverage or latency bottleneck.

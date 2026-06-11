@@ -248,6 +248,63 @@ def test_operational_state_marks_live_with_keys_provider_mode() -> None:
     assert "keys are configured" in snapshot.provider_mode_reason
 
 
+def test_api_onboarding_guides_budget_provider_sequence_after_archive_key() -> None:
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            the_odds_api_key="archive-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(),
+    )
+
+    onboarding = service.api_onboarding()
+    steps = {step.provider: step for step in onboarding.steps}
+
+    assert onboarding.core_ready is True
+    assert onboarding.current_step == "2. api_tennis:score_livescore"
+    assert steps[Provider.THE_ODDS_API].status == "configured"
+    assert steps[Provider.API_TENNIS].status == "ready_next"
+    assert steps[Provider.API_TENNIS].current is True
+    assert steps[Provider.ODDS_API_IO].status == "blocked"
+    assert "API-Tennis score/livescore configured" in steps[Provider.ODDS_API_IO].required_before_enable
+    assert steps[Provider.SPORTRADAR].status == "deferred"
+
+
+def test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync() -> None:
+    resync_cursor = ProviderCursor(
+        provider=Provider.ODDS_API_IO,
+        stream="tennis:moneyline",
+        last_seq=7,
+        expected_next_seq=8,
+        status=CursorStatus.RESYNC_REQUIRED,
+        gap_count=1,
+        resync_required=True,
+        note="gap before live entries",
+    )
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            the_odds_api_key="archive-key",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(cursors=[resync_cursor]),
+    )
+
+    onboarding = service.api_onboarding()
+    odds_step = next(step for step in onboarding.steps if step.provider == Provider.ODDS_API_IO)
+
+    assert onboarding.current_step == "3. odds_api_io:live_odds_websocket"
+    assert odds_step.configured is True
+    assert odds_step.status == "blocked"
+    assert odds_step.current is True
+    assert any("cursor requires resync" in warning for warning in onboarding.warnings)
+
+
 def test_daily_cost_report_uses_persisted_odds_stream_usage() -> None:
     generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
     service = OperationalStateService(

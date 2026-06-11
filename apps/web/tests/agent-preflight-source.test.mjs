@@ -49,12 +49,17 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(pageSource, /setReplayOddsScenario/);
   assert.match(pageSource, /runReplay\(selectedMatchId, adminToken\.trim\(\), replayOddsScenario\)/);
   assert.match(pageSource, /nextOperational\.daily_cost_report/);
+  assert.match(pageSource, /nextOperational\.api_onboarding/);
   assert.match(pageSource, /Live readiness/);
   assert.match(pageSource, /can_generate_entries/);
+  assert.match(pageSource, /apiOnboarding=\{apiOnboarding\}/);
   assert.match(pageSource, /ingestionRuns=\{ingestionRuns\}/);
   assert.match(apiSource, /\/api\/v1\/dashboard\/live-state/);
   assert.match(apiSource, /odds_scenario: oddsScenario/);
   assert.match(dataHealthSource, /Ingestion Journal/);
+  assert.match(dataHealthSource, /API Onboarding/);
+  assert.match(dataHealthSource, /Core primeiro, providers por etapas/);
+  assert.match(dataHealthSource, /apiOnboarding\.steps/);
   assert.match(dataHealthSource, /Ultimos ciclos persistidos/);
   assert.match(dataHealthSource, /run\.run_type === "replay_run"/);
   assert.match(dataHealthSource, /events_replayed/);

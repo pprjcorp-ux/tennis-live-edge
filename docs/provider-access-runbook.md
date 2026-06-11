@@ -139,8 +139,14 @@ Pedro
 
 ## Activation Order
 
-1. Finish low-cost live stack first: API-Tennis and Odds-API.io.
-2. Keep Betfair in delayed/paper validation until model performance is proven.
-3. Defer Sportradar/Betradar/TXODDS until paper trading shows positive CLV/ROI
+1. Finish the API-last core first: Postgres/Timescale persistence, replay fake
+   APIs, signal gates, paper settlement, and Model Lab `training_examples`.
+2. Add TheOddsAPI first because it is REST/archive/comparison and cannot by
+   itself create live entries.
+3. Add API-Tennis second for fixtures/livescore and score freshness.
+4. Add Odds-API.io websocket third, only after replay/resync tests prove
+   `seq`/`lastSeq`, gaps, stale odds and incomplete moneyline gates.
+5. Keep Betfair in delayed/paper validation until model performance is proven.
+6. Defer Sportradar/Betradar/TXODDS until paper trading shows positive CLV/ROI
    or the current feeds become the bottleneck.
-4. Never disable `REAL_EXECUTION_HARD_BLOCK` in this onboarding task.
+7. Never disable `REAL_EXECUTION_HARD_BLOCK` in this onboarding task.

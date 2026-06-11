@@ -848,6 +848,32 @@ class DailyCostReport(BaseModel):
 
 
 ProviderRuntimeMode = Literal["sample", "replay", "live_without_keys", "live_with_keys"]
+ApiOnboardingStatus = Literal["configured", "ready_next", "blocked", "deferred"]
+ApiOnboardingCapability = Literal[
+    "archive_odds",
+    "score_livescore",
+    "live_odds_websocket",
+    "enterprise_feeds",
+]
+
+
+class ApiOnboardingStep(BaseModel):
+    order: int
+    provider: Provider
+    capability: ApiOnboardingCapability
+    status: ApiOnboardingStatus
+    configured: bool
+    current: bool = False
+    required_before_enable: list[str] = Field(default_factory=list)
+    next_action: str
+    notes: list[str] = Field(default_factory=list)
+
+
+class ApiOnboardingSnapshot(BaseModel):
+    core_ready: bool
+    current_step: str
+    steps: list[ApiOnboardingStep]
+    warnings: list[str] = Field(default_factory=list)
 
 
 class OperationalStateSnapshot(BaseModel):
@@ -860,6 +886,7 @@ class OperationalStateSnapshot(BaseModel):
     provider_cursors: list[ProviderCursor]
     ingestion_runs: list[IngestionRunRecord]
     execution_status: ExecutionStatus
+    api_onboarding: ApiOnboardingSnapshot
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

@@ -4,6 +4,9 @@ from datetime import date
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
+    ApiOnboardingSnapshot,
+    ApiOnboardingStep,
+    ApiOnboardingStatus,
     CostProfile,
     DailyCostReport,
     DataQualitySnapshot,
@@ -137,6 +140,187 @@ class OperationalStateService:
             "Live mode is selected, but required score or odds provider keys are missing; entries remain blocked.",
         )
 
+    def api_onboarding(self) -> ApiOnboardingSnapshot:
+        persistence_error = getattr(self.store, "last_error", None)
+        core_ready = (
+            self.settings.persistence_enabled
+            and bool(self.settings.database_url)
+            and not persistence_error
+        )
+        warnings: list[str] = []
+        if not core_ready:
+            warnings.append(
+                "Postgres/Timescale operational truth must be healthy before enabling more provider calls."
+            )
+            if persistence_error:
+                warnings.append(persistence_error)
+
+        odds_cursor_resync = any(
+            cursor.provider == Provider.ODDS_API_IO and cursor.resync_required
+            for cursor in self.provider_cursors()
+        )
+        if odds_cursor_resync:
+            warnings.append(
+                "Odds-API.io websocket cursor requires resync; keep entries blocked until replay/resync passes."
+            )
+
+        the_odds_api_configured = bool(self.settings.the_odds_api_key)
+        api_tennis_configured = bool(self.settings.api_tennis_key)
+        odds_api_io_configured = bool(self.settings.odds_api_io_key)
+        enterprise_configured = (
+            bool(self.settings.sportradar_api_key)
+            and bool(self.settings.betradar_uof_token)
+            and bool(self.settings.txodds_user)
+            and bool(self.settings.txodds_password)
+        )
+
+        def setup_status(
+            *,
+            configured: bool,
+            prerequisites_met: bool,
+            deferred: bool = False,
+        ) -> ApiOnboardingStatus:
+            if deferred:
+                return "deferred"
+            if configured:
+                return "configured"
+            if core_ready and prerequisites_met:
+                return "ready_next"
+            return "blocked"
+
+        steps = [
+            ApiOnboardingStep(
+                order=1,
+                provider=Provider.THE_ODDS_API,
+                capability="archive_odds",
+                configured=the_odds_api_configured,
+                status=setup_status(
+                    configured=the_odds_api_configured,
+                    prerequisites_met=True,
+                ),
+                required_before_enable=[]
+                if core_ready
+                else ["Healthy Postgres/Timescale persistence"],
+                next_action=(
+                    "Keep as REST archive/comparison and never override fresher persisted live odds."
+                    if the_odds_api_configured
+                    else "Set THE_ODDS_API_KEY and run an archive snapshot smoke check."
+                ),
+                notes=[
+                    "Lowest-risk paid provider to connect first because it is REST/archive, not live decisioning."
+                ],
+            ),
+            ApiOnboardingStep(
+                order=2,
+                provider=Provider.API_TENNIS,
+                capability="score_livescore",
+                configured=api_tennis_configured,
+                status=setup_status(
+                    configured=api_tennis_configured,
+                    prerequisites_met=the_odds_api_configured,
+                ),
+                required_before_enable=[
+                    requirement
+                    for requirement, satisfied in [
+                        ("Healthy Postgres/Timescale persistence", core_ready),
+                        ("TheOddsAPI archive/comparison configured", the_odds_api_configured),
+                    ]
+                    if not satisfied
+                ],
+                next_action=(
+                    "Run API-Tennis fixtures/livescore ingestion and verify score ticks plus freshness."
+                    if api_tennis_configured
+                    else "Set API_TENNIS_KEY after archive odds are stable; keep signals monitor-only until score state is valid."
+                ),
+                notes=[
+                    "Score/livescore becomes the primary match state feed for ATP main and Grand Slam singles."
+                ],
+            ),
+            ApiOnboardingStep(
+                order=3,
+                provider=Provider.ODDS_API_IO,
+                capability="live_odds_websocket",
+                configured=odds_api_io_configured,
+                status=(
+                    "blocked"
+                    if odds_api_io_configured and odds_cursor_resync
+                    else setup_status(
+                        configured=odds_api_io_configured,
+                        prerequisites_met=the_odds_api_configured and api_tennis_configured,
+                    )
+                ),
+                required_before_enable=[
+                    requirement
+                    for requirement, satisfied in [
+                        ("Healthy Postgres/Timescale persistence", core_ready),
+                        ("TheOddsAPI archive/comparison configured", the_odds_api_configured),
+                        ("API-Tennis score/livescore configured", api_tennis_configured),
+                    ]
+                    if not satisfied
+                ],
+                next_action=(
+                    "Run websocket replay/resync smoke before allowing live entries."
+                    if odds_api_io_configured
+                    else "Set ODDS_API_IO_KEY last among budget feeds; validate seq/lastSeq, gaps and stale odds gates."
+                ),
+                notes=[
+                    "Most fragile budget feed because entries depend on fresh moneyline odds and trusted cursor state."
+                ],
+            ),
+            ApiOnboardingStep(
+                order=4,
+                provider=Provider.SPORTRADAR,
+                capability="enterprise_feeds",
+                configured=enterprise_configured,
+                status=setup_status(
+                    configured=enterprise_configured,
+                    prerequisites_met=(
+                        the_odds_api_configured
+                        and api_tennis_configured
+                        and odds_api_io_configured
+                    ),
+                    deferred=not self.settings.enterprise_feeds_enabled,
+                ),
+                required_before_enable=[
+                    requirement
+                    for requirement, satisfied in [
+                        ("Enable ENTERPRISE_FEEDS_ENABLED only after budget paper proof", self.settings.enterprise_feeds_enabled),
+                        ("TheOddsAPI archive/comparison configured", the_odds_api_configured),
+                        ("API-Tennis score/livescore configured", api_tennis_configured),
+                        ("Odds-API.io websocket configured", odds_api_io_configured),
+                    ]
+                    if not satisfied
+                ],
+                next_action=(
+                    "Keep Sportradar/Betradar/TXODDS deferred until budget paper data proves a latency or coverage bottleneck."
+                    if not self.settings.enterprise_feeds_enabled
+                    else "Validate enterprise contracts through the same provider adapter and replay contracts."
+                ),
+                notes=[
+                    "Enterprise feeds must enter through the same RawProviderPayload, tick and cursor contracts."
+                ],
+            ),
+        ]
+
+        current = next(
+            (step for step in steps if step.status in {"ready_next", "blocked"}),
+            None,
+        )
+        steps = [
+            step.model_copy(update={"current": bool(current and step.order == current.order)})
+            for step in steps
+        ]
+        return ApiOnboardingSnapshot(
+            core_ready=core_ready,
+            current_step=(
+                f"{current.order}. {current.provider}:{current.capability}"
+                if current
+                else "budget_stack_configured_enterprise_deferred"
+            ),
+            steps=steps,
+            warnings=warnings,
+        )
+
     def snapshot(self, *, cost_report: DailyCostReport) -> OperationalStateSnapshot:
         provider_mode, provider_mode_reason = self.provider_mode()
         return OperationalStateSnapshot(
@@ -149,6 +333,7 @@ class OperationalStateService:
             provider_cursors=self.provider_cursors(),
             ingestion_runs=self.ingestion_runs(),
             execution_status=self.execution_status(),
+            api_onboarding=self.api_onboarding(),
         )
 
     def live_readiness(

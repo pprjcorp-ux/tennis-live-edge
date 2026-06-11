@@ -26,6 +26,18 @@ applied, provider cursors are trusted, and the score/odds feeds are fresh.
 - TheOddsAPI Business for archive/comparison.
 - Cloudflare Tunnel + Access on free tier plus domain cost.
 
+## API Activation Order
+
+The budget vendor stack is not activated all at once. The dashboard exposes the
+current API onboarding state from persisted operational truth:
+
+1. Configure TheOddsAPI first for REST archive/comparison.
+2. Configure API-Tennis second for fixtures/livescore.
+3. Configure Odds-API.io websocket third, after replay tests prove sequence,
+   resync, stale odds, and moneyline completeness gates.
+4. Keep enterprise feeds disabled until paper trading proves that the budget
+   feeds are the bottleneck.
+
 Sportradar, Betradar UOF, and TXODDS stay documented but disabled until the
 model proves value and the budget moves to enterprise.
 

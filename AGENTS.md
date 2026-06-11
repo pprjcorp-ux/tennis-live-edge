@@ -58,6 +58,12 @@ Live paper entries require durable operational truth: in `TENNIS_EDGE_DATA_MODE=
 `DATABASE_URL` must be configured and Postgres/Timescale must be healthy before
 `can_generate_entries=true`.
 
+Model Lab must stay dataset-first: live backtests and calibration reports use
+persisted `training_examples` for the active `model_version` and `feature_set`.
+The dashboard reads this from
+`/api/v1/dashboard/live-state -> operational_state.model_lab`; do not replace it
+with paper-order memory or synthetic sample metrics in live mode.
+
 ## API Onboarding
 
 Add external APIs only after the core remains green without live keys. The

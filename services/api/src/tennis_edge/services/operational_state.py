@@ -7,6 +7,7 @@ from tennis_edge.domain import (
     ApiOnboardingSnapshot,
     ApiOnboardingStep,
     ApiOnboardingStatus,
+    BacktestRunRequest,
     CostProfile,
     DailyCostReport,
     DataQualitySnapshot,
@@ -15,6 +16,7 @@ from tennis_edge.domain import (
     LiveReadinessCheck,
     LiveReadinessSnapshot,
     MatchAnalysis,
+    ModelLabReadinessSnapshot,
     OperationalStateSnapshot,
     PaperPerformance,
     Provider,
@@ -140,13 +142,74 @@ class OperationalStateService:
             "Live mode is selected, but required score or odds provider keys are missing; entries remain blocked.",
         )
 
-    def api_onboarding(self) -> ApiOnboardingSnapshot:
+    def _persistence_ready(self) -> tuple[bool, str | None]:
         persistence_error = getattr(self.store, "last_error", None)
-        core_ready = (
+        ready = (
             self.settings.persistence_enabled
             and bool(self.settings.database_url)
             and not persistence_error
         )
+        if ready:
+            return True, None
+        if persistence_error:
+            return False, persistence_error
+        if self.settings.persistence_enabled:
+            return False, "DATABASE_URL is missing."
+        return False, "TENNIS_EDGE_PERSISTENCE_ENABLED=false"
+
+    def _training_example_count(
+        self,
+        request: BacktestRunRequest | None = None,
+    ) -> int:
+        counter = getattr(
+            self.store,
+            "training_example_count",
+            lambda *_args, **_kwargs: 0,
+        )
+        try:
+            return int(counter(request))
+        except TypeError:
+            return int(counter())
+
+    def model_lab_readiness(self) -> ModelLabReadinessSnapshot:
+        default_request = BacktestRunRequest()
+        request = BacktestRunRequest(
+            model_version=(
+                self.settings.model_champion_version
+                if self.settings.model_champion_version != "baseline_v0"
+                else default_request.model_version
+            ),
+            feature_set=default_request.feature_set,
+        )
+        persistence_ready, persistence_detail = self._persistence_ready()
+        examples = self._training_example_count(request) if persistence_ready else 0
+        if persistence_ready:
+            persistence_detail = getattr(self.store, "last_error", None)
+            if persistence_detail:
+                persistence_ready = False
+                examples = 0
+        reasons: list[str] = []
+        if not persistence_ready:
+            reasons.append(
+                f"Postgres persistence is required before live Model Lab backtests. {persistence_detail}"
+            )
+        if examples <= 0:
+            reasons.append(
+                "No settled persisted training_examples are available for this model_version/feature_set."
+            )
+        can_run = persistence_ready and examples > 0
+        return ModelLabReadinessSnapshot(
+            status="ready" if can_run else "collecting" if persistence_ready else "blocked",
+            source="training_examples",
+            model_version=request.model_version,
+            feature_set=request.feature_set,
+            training_examples=examples,
+            can_run_live_backtest=can_run,
+            reasons=reasons,
+        )
+
+    def api_onboarding(self) -> ApiOnboardingSnapshot:
+        core_ready, persistence_error = self._persistence_ready()
         warnings: list[str] = []
         if not core_ready:
             warnings.append(
@@ -334,6 +397,7 @@ class OperationalStateService:
             ingestion_runs=self.ingestion_runs(),
             execution_status=self.execution_status(),
             api_onboarding=self.api_onboarding(),
+            model_lab=self.model_lab_readiness(),
         )
 
     def live_readiness(
@@ -347,19 +411,10 @@ class OperationalStateService:
             cursor.provider == Provider.ODDS_API_IO and cursor.resync_required
             for cursor in operational_state.provider_cursors
         )
-        persistence_error = getattr(self.store, "last_error", None)
-        persistence_ready = (
-            self.settings.persistence_enabled
-            and bool(self.settings.database_url)
-            and not persistence_error
-        )
+        persistence_ready, persistence_error = self._persistence_ready()
         training_examples_count = 0
         if persistence_ready:
-            training_examples_count = getattr(
-                self.store,
-                "training_example_count",
-                lambda *_args, **_kwargs: 0,
-            )()
+            training_examples_count = self._training_example_count()
             persistence_error = getattr(self.store, "last_error", None)
             if persistence_error:
                 persistence_ready = False

@@ -64,6 +64,7 @@ import type {
   IngestionRunRecord,
   LiveReadinessSnapshot,
   MatchAnalysis,
+  ModelLabReadinessSnapshot,
   ModelRegistryEntry,
   ModelPromotionDecision,
   OperationalStateSnapshot,
@@ -102,10 +103,13 @@ function statusClass(status: Signal["status"]) {
 }
 
 function preflightStatusClass(
-  status: AgentPreflight["status"] | AgentPreflight["checks"][number]["status"]
+  status:
+    | AgentPreflight["status"]
+    | AgentPreflight["checks"][number]["status"]
+    | ModelLabReadinessSnapshot["status"]
 ) {
   if (status === "ready" || status === "pass") return "status statusEntry";
-  if (status === "degraded" || status === "warn") return "status statusMonitor";
+  if (status === "degraded" || status === "warn" || status === "collecting") return "status statusMonitor";
   return "status statusBlocked";
 }
 
@@ -159,6 +163,15 @@ export default function Page() {
     current_step: "loading",
     steps: [],
     warnings: ["Awaiting operational state."]
+  });
+  const [modelLab, setModelLab] = useState<ModelLabReadinessSnapshot>({
+    status: "blocked",
+    source: "training_examples",
+    model_version: "prematch_ensemble_v1",
+    feature_set: "live_budget_v1",
+    training_examples: 0,
+    can_run_live_backtest: false,
+    reasons: ["Awaiting operational state."]
   });
   const [providerMode, setProviderMode] =
     useState<OperationalStateSnapshot["provider_mode"]>("sample");
@@ -230,6 +243,7 @@ export default function Page() {
       setIngestionRuns(nextOperational.ingestion_runs);
       setProviderCursors(nextOperational.provider_cursors);
       setApiOnboarding(nextOperational.api_onboarding);
+      setModelLab(nextOperational.model_lab);
       setProviderMode(nextOperational.provider_mode);
       setProviderModeReason(nextOperational.provider_mode_reason);
       setModelRegistry(nextModelRegistry);
@@ -589,6 +603,29 @@ export default function Page() {
 
         {activeDesk === "models" ? (
           <div className="enterpriseGrid">
+            <div className="panel wide">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Training Dataset</p>
+                  <h2>{modelLab.source}</h2>
+                </div>
+                <DatabaseZap size={20} />
+              </div>
+              <div className="modelLabDataset">
+                <span className={preflightStatusClass(modelLab.status)}>{modelLab.status}</span>
+                <span>{modelLab.training_examples} settled examples</span>
+                <span>{modelLab.model_version}</span>
+                <span>{modelLab.feature_set}</span>
+                <span>{modelLab.can_run_live_backtest ? "live backtest ready" : "live backtest blocked"}</span>
+              </div>
+              <div className="executionWarnings">
+                {modelLab.reasons.length ? (
+                  modelLab.reasons.map((reason) => <span key={reason}>{reason}</span>)
+                ) : (
+                  <span>Model Lab is reading persisted training_examples for this feature set.</span>
+                )}
+              </div>
+            </div>
             <div className="panel">
               <div className="panelHeader">
                 <div>

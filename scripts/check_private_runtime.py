@@ -135,6 +135,9 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             '"replay_run"',
             "class ApiOnboardingSnapshot",
             "ApiOnboardingStep",
+            "class ModelLabReadinessSnapshot",
+            "model_lab_readiness",
+            "source=\"training_examples\"",
             "core_ready",
             "live_odds_websocket",
             "budget_stack_configured_enterprise_deferred",
@@ -178,6 +181,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_invalid_live_score_state_blocks_entries_and_zeroes_stake",
             "test_api_onboarding_guides_budget_provider_sequence_after_archive_key",
             "test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync",
+            "test_model_lab_readiness_uses_persisted_training_examples_dataset",
+            "test_model_lab_readiness_blocks_without_persistent_truth",
         ],
     )
     _require_text(

@@ -694,6 +694,22 @@ h2 {
   font-weight: 800;
 }
 
+.modelLabDataset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 14px 0;
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+.modelLabDataset span:not(.status) {
+  padding: 6px 8px;
+  background: #f4f7fa;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
 .agentStats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

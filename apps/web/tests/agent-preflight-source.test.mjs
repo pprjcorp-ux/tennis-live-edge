@@ -50,6 +50,7 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(pageSource, /runReplay\(selectedMatchId, adminToken\.trim\(\), replayOddsScenario\)/);
   assert.match(pageSource, /nextOperational\.daily_cost_report/);
   assert.match(pageSource, /nextOperational\.api_onboarding/);
+  assert.match(pageSource, /nextOperational\.model_lab/);
   assert.match(pageSource, /Live readiness/);
   assert.match(pageSource, /can_generate_entries/);
   assert.match(pageSource, /apiOnboarding=\{apiOnboarding\}/);
@@ -67,5 +68,8 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(dataHealthSource, /cursorStatusClass/);
   assert.match(dataHealthSource, /expected_next_seq/);
   assert.match(dataHealthSource, /resync_required/);
+  assert.match(pageSource, /Training Dataset/);
+  assert.match(pageSource, /modelLab\.source/);
+  assert.match(pageSource, /modelLab\.training_examples/);
   assert.match(pageSource, /\["Paper orders", String\(agentBriefing\?\.paper_orders \?\? 0\)\]/);
 });

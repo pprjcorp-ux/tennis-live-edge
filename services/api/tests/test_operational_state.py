@@ -433,6 +433,75 @@ def test_live_readiness_reports_persisted_training_examples() -> None:
     assert dataset_check.detail is None
 
 
+def test_model_lab_readiness_uses_persisted_training_examples_dataset() -> None:
+    class StoreWithRequest(StoreStub):
+        def __init__(self) -> None:
+            super().__init__(cursors=[_healthy_odds_cursor()], training_examples_count=42)
+            self.request_seen = None
+
+        def training_example_count(self, request=None) -> int:
+            self.request_seen = request
+            return self._training_examples_count
+
+    store = StoreWithRequest()
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        store,
+    )
+
+    model_lab = service.model_lab_readiness()
+
+    assert store.request_seen is not None
+    assert store.request_seen.model_version == "prematch_ensemble_v1"
+    assert store.request_seen.feature_set == "live_budget_v1"
+    assert model_lab.status == "ready"
+    assert model_lab.source == "training_examples"
+    assert model_lab.training_examples == 42
+    assert model_lab.can_run_live_backtest is True
+    assert model_lab.reasons == []
+
+
+def test_model_lab_readiness_blocks_without_persistent_truth() -> None:
+    service = OperationalStateService(
+        Settings(data_mode="live", persistence_enabled=True, database_url=None),
+        StoreStub(training_examples_count=42),
+    )
+
+    model_lab = service.model_lab_readiness()
+
+    assert model_lab.status == "blocked"
+    assert model_lab.training_examples == 0
+    assert model_lab.can_run_live_backtest is False
+    assert any("Postgres persistence is required" in reason for reason in model_lab.reasons)
+
+
+def test_model_lab_readiness_fails_closed_when_dataset_count_sets_store_error() -> None:
+    class ErroringStore(StoreStub):
+        def training_example_count(self, request=None) -> int:
+            self.last_error = "training_example_count failed: connection refused"
+            return 0
+
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        ErroringStore(),
+    )
+
+    model_lab = service.model_lab_readiness()
+
+    assert model_lab.status == "blocked"
+    assert model_lab.training_examples == 0
+    assert model_lab.can_run_live_backtest is False
+    assert any("connection refused" in reason for reason in model_lab.reasons)
+
+
 def test_live_readiness_blocks_entries_when_persistent_store_cannot_connect() -> None:
     generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
     settings = Settings(

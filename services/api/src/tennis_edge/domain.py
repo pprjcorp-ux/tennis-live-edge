@@ -876,6 +876,16 @@ class ApiOnboardingSnapshot(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ModelLabReadinessSnapshot(BaseModel):
+    status: Literal["ready", "collecting", "blocked"]
+    source: Literal["training_examples"]
+    model_version: str
+    feature_set: str
+    training_examples: int
+    can_run_live_backtest: bool
+    reasons: list[str] = Field(default_factory=list)
+
+
 class OperationalStateSnapshot(BaseModel):
     provider_mode: ProviderRuntimeMode
     provider_mode_reason: str
@@ -887,6 +897,7 @@ class OperationalStateSnapshot(BaseModel):
     ingestion_runs: list[IngestionRunRecord]
     execution_status: ExecutionStatus
     api_onboarding: ApiOnboardingSnapshot
+    model_lab: ModelLabReadinessSnapshot
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

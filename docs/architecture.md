@@ -48,17 +48,21 @@ decide whether the system behaves as budget or enterprise.
 13. Live readiness reads the persisted settled `training_examples` count and
     surfaces Model Lab readiness as a warning/pass check, rather than discovering
     missing datasets only when a backtest is requested.
-14. API onboarding is a derived read-model inside `OperationalStateSnapshot`.
+14. Model Lab readiness is a derived read-model inside
+    `OperationalStateSnapshot`; it exposes `training_examples` as the dataset
+    source, the active model/feature set, settled example count, and whether a
+    live backtest can run without synthetic fallback.
+15. API onboarding is a derived read-model inside `OperationalStateSnapshot`.
     It keeps provider setup ordered as TheOddsAPI REST/archive, API-Tennis
     score/livescore, Odds-API.io websocket, then deferred enterprise feeds, with
     each step blocked until the persisted core and prerequisites are healthy.
-15. Live model registry reads persisted `model_versions`; without persisted
+16. Live model registry reads persisted `model_versions`; without persisted
     metrics it exposes only a clearly unvalidated runtime default instead of
     demo ROI/CLV.
-16. Live execution status derives kill-switch state from persisted
+17. Live execution status derives kill-switch state from persisted
     `execution_controls`; if that state cannot be read or written it fails
     closed instead of trusting process memory.
-17. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
+18. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
     paper orders are persisted so restart recovery includes the operational
     audit trail.
 

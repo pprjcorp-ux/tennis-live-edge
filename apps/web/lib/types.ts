@@ -241,6 +241,16 @@ export type ApiOnboardingSnapshot = {
   warnings: string[];
 };
 
+export type ModelLabReadinessSnapshot = {
+  status: "ready" | "collecting" | "blocked";
+  source: "training_examples";
+  model_version: string;
+  feature_set: string;
+  training_examples: number;
+  can_run_live_backtest: boolean;
+  reasons: string[];
+};
+
 export type IngestionRunRecord = {
   id: string;
   run_type:
@@ -267,6 +277,7 @@ export type OperationalStateSnapshot = {
   ingestion_runs: IngestionRunRecord[];
   execution_status: ExecutionStatus;
   api_onboarding: ApiOnboardingSnapshot;
+  model_lab: ModelLabReadinessSnapshot;
   generated_at: string;
 };
 

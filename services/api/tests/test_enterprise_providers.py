@@ -210,6 +210,40 @@ def test_archive_odds_adapter_returns_replayable_snapshot_events() -> None:
     }
 
 
+def test_archive_odds_adapter_sample_snapshots_are_replayable() -> None:
+    client = TheOddsApiClient(api_key=None, data_mode="sample")
+
+    events = asyncio.run(client.get_tennis_h2h_events())
+    assert events
+    assert all(event.raw_payload is not None for event in events)
+
+    replay = ReplayEngine().replay(
+        [event.raw_payload for event in events if event.raw_payload is not None]
+    )
+    raw_payload = events[0].raw_payload
+    assert raw_payload is not None
+    latency = provider_latency_from_payload(raw_payload, feed="odds/archive")
+
+    assert all(
+        event.raw_payload.provider == Provider.THE_ODDS_API
+        for event in events
+        if event.raw_payload
+    )
+    assert all(
+        event.raw_payload.payload_type == "odds"
+        for event in events
+        if event.raw_payload
+    )
+    assert replay.odds_quotes
+    assert len(replay.odds_quotes) == sum(len(event.quotes) for event in events)
+    assert {"jannik sinner", "alexander zverev"}.issubset(
+        {quote.player_id for quote in replay.odds_quotes}
+    )
+    assert latency.provider == Provider.THE_ODDS_API
+    assert latency.feed == "odds/archive"
+    assert latency.latency_ms >= 0
+
+
 def test_budget_provider_payloads_replay_to_score_and_odds_ticks() -> None:
     api_client = ApiTennisClient(api_key="key", data_mode="live")
     score_records = api_client._parse_match_payloads(

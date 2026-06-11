@@ -6,7 +6,8 @@ from typing import Any
 
 import httpx
 
-from tennis_edge.domain import OddsQuote, Provider, RawProviderPayload
+from tennis_edge.domain import Match, OddsQuote, Provider, RawProviderPayload
+from tennis_edge.sample_data import sample_matches
 from tennis_edge.services.normalizer import normalize_name, payload_checksum
 
 
@@ -35,7 +36,9 @@ class TheOddsApiClient:
 
     async def get_tennis_h2h_events(self) -> list[TheOddsApiEvent]:
         self.last_warnings = []
-        if self.data_mode == "sample" or not self.api_key:
+        if self.data_mode == "sample":
+            return self._sample_h2h_events()
+        if not self.api_key:
             return []
 
         try:
@@ -63,6 +66,60 @@ class TheOddsApiClient:
                 f"TheOddsAPI archive endpoint failed: {type(exc).__name__}"
             )
             return []
+
+    def _sample_h2h_events(self) -> list[TheOddsApiEvent]:
+        payload = [
+            self._sample_event_payload(match)
+            for match in sample_matches()
+            if match.odds
+        ]
+        return self.parse_odds_payload("tennis_sample_h2h", payload)
+
+    def _sample_event_payload(self, match: Match) -> dict[str, Any]:
+        bookmakers: dict[str, list[dict[str, Any]]] = {}
+        player_names = {
+            match.player1.id: match.player1.name,
+            match.player2.id: match.player2.name,
+        }
+        for quote in match.odds:
+            player_name = player_names.get(quote.player_id)
+            if not player_name:
+                continue
+            bookmakers.setdefault(quote.bookmaker, []).append(
+                {
+                    "name": player_name,
+                    "price": quote.decimal_odds,
+                }
+            )
+        return {
+            "id": match.provider_ids.get("the_odds_api_event_id", match.id),
+            "home_team": match.player1.name,
+            "away_team": match.player2.name,
+            "commence_time": match.scheduled_at.isoformat(),
+            "last_update": max(quote.source_ts for quote in match.odds).isoformat(),
+            "bookmakers": [
+                {
+                    "title": bookmaker,
+                    "last_update": max(
+                        quote.source_ts
+                        for quote in match.odds
+                        if quote.bookmaker == bookmaker
+                    ).isoformat(),
+                    "markets": [
+                        {
+                            "key": "h2h",
+                            "last_update": max(
+                                quote.source_ts
+                                for quote in match.odds
+                                if quote.bookmaker == bookmaker
+                            ).isoformat(),
+                            "outcomes": outcomes,
+                        }
+                    ],
+                }
+                for bookmaker, outcomes in sorted(bookmakers.items())
+            ],
+        }
 
     async def _active_tennis_sports(self, client: httpx.AsyncClient) -> list[str]:
         response = await client.get(f"{self.base_url}/sports", params={"apiKey": self.api_key})

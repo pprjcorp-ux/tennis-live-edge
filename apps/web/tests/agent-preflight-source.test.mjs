@@ -80,6 +80,8 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(pageSource, /ingestionRuns=\{ingestionRuns\}/);
   assert.match(pageSource, /providerModeMatrix=\{providerModeMatrix\}/);
   assert.match(pageSource, /providerModeReason=\{providerModeReason\}/);
+  assert.match(pageSource, /sourceSummary=\{sourceSummary\}/);
+  assert.match(pageSource, /readiness=\{readiness\}/);
   assert.match(pageSource, /replayLab=\{replayLab\}/);
   assert.match(apiSource, /\/api\/v1\/dashboard\/live-state/);
   assert.match(apiSource, /odds_scenario: oddsScenario/);
@@ -101,8 +103,15 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(dataHealthSource, /Operational Truth/);
   assert.match(dataHealthSource, /Modo, cursor e replay contract/);
   assert.match(dataHealthSource, /activeMode/);
+  assert.match(dataHealthSource, /Source truth/);
+  assert.match(dataHealthSource, /sourceSummary\.persisted_matches/);
+  assert.match(dataHealthSource, /sourceSummary\.volatile_matches/);
+  assert.match(dataHealthSource, /Readiness gate/);
+  assert.match(dataHealthSource, /readiness\?\.can_generate_entries/);
+  assert.match(dataHealthSource, /Cursor\/freshness blocks/);
+  assert.match(dataHealthSource, /stale feeds/);
   assert.match(dataHealthSource, /contractStatusLabel/);
-  assert.match(dataHealthSource, /sourceSummary/);
+  assert.match(dataHealthSource, /ingestionRunSummary/);
   assert.match(dataHealthSource, /missing blocks Entrada/);
   assert.match(dataHealthSource, /providerModeMatrix\.map/);
   assert.match(dataHealthSource, /entries \{step\.entry_gate\}/);

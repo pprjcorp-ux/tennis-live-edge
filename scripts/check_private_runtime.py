@@ -273,6 +273,11 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
         required=[
             "Replay Contracts",
             "Provider Mode Matrix",
+            "Source truth",
+            "Readiness gate",
+            "Cursor/freshness blocks",
+            "sourceSummary.persisted_matches",
+            "readiness?.can_generate_entries",
             "providerModeMatrix.map",
             "replayLab.providers",
             "run.run_type === \"replay_run\"",

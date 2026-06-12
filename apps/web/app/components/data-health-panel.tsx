@@ -5,6 +5,8 @@ import type {
   DailyOperationalRunResult,
   DataQualitySnapshot,
   IngestionRunRecord,
+  LiveReadinessSnapshot,
+  OperationalSourceSummary,
   ProviderCursor,
   ProviderModeStep,
   ReplayLabSnapshot
@@ -50,6 +52,12 @@ function dailyOpsStatusClass(
   return "status statusBlocked";
 }
 
+function readinessStatusClass(status: LiveReadinessSnapshot["status"] | "pending") {
+  if (status === "ready") return "status statusEntry";
+  if (status === "degraded" || status === "pending") return "status statusMonitor";
+  return "status statusBlocked";
+}
+
 function modeStatusClass(status: ProviderModeStep["status"]) {
   if (status === "active" || status === "ready") return "status statusEntry";
   if (status === "deferred") return "status statusMuted";
@@ -74,7 +82,7 @@ function contractStatusLabel(replayLab: ReplayLabSnapshot) {
   return "contract pending";
 }
 
-function sourceSummary(run: IngestionRunRecord | undefined) {
+function ingestionRunSummary(run: IngestionRunRecord | undefined) {
   if (!run) return "no persisted run";
   return `${run.run_type.replaceAll("_", " ")} · ${run.source} · ${run.status}`;
 }
@@ -154,8 +162,10 @@ export function DataHealthPanel({
   providerModeMatrix,
   providerModeReason,
   providerCursors,
+  readiness,
   replayContractBusy,
-  replayLab
+  replayLab,
+  sourceSummary
 }: {
   apiOnboarding: ApiOnboardingSnapshot;
   dataQuality: DataQualitySnapshot[];
@@ -167,11 +177,30 @@ export function DataHealthPanel({
   providerModeMatrix: ProviderModeStep[];
   providerModeReason: string;
   providerCursors: ProviderCursor[];
+  readiness: LiveReadinessSnapshot | null;
   replayContractBusy: boolean;
   replayLab: ReplayLabSnapshot;
+  sourceSummary: OperationalSourceSummary;
 }) {
   const activeMode = providerModeMatrix.find((step) => step.active) ?? providerModeMatrix[0];
   const oddsCursor = providerCursors.find((cursor) => cursor.provider === "odds_api_io");
+  const blockedCursors = providerCursors.filter(
+    (cursor) => cursor.resync_required || cursor.status === "gap_detected" || cursor.status === "resync_required"
+  );
+  const staleFeeds = dataQuality.filter((snapshot) => snapshot.stale_ticks > 0);
+  const sourceCountsText = Object.entries(sourceSummary.source_counts)
+    .map(([source, count]) => `${source} ${count}`)
+    .join(" · ");
+  const sourceTruthClass =
+    sourceSummary.total_matches === 0
+      ? "status statusBlocked"
+      : sourceSummary.volatile_matches > 0
+        ? "status statusMonitor"
+        : "status statusEntry";
+  const readinessClass = readinessStatusClass(readiness?.status ?? "pending");
+  const readinessGate = readiness?.can_generate_entries ? "entries ready" : "entries blocked";
+  const readinessReason =
+    readiness?.blockers[0] ?? readiness?.warnings[0] ?? "Paper-first readiness checks passing.";
   const latestRun = ingestionRuns[0];
   const latestDailyOpsRun = ingestionRuns.find((run) => run.run_type === "daily_operational_run");
   const latestDailyOpsSummary = summaryObject(latestDailyOpsRun?.summary);
@@ -258,6 +287,24 @@ export function DataHealthPanel({
             </p>
           </div>
           <div className="operationalTruthRow">
+            <span>Source truth</span>
+            <strong className={sourceTruthClass}>
+              {sourceSummary.persisted_matches}/{sourceSummary.total_matches} persisted
+            </strong>
+            <p>
+              {sourceCountsText || "empty"} · volatile {sourceSummary.volatile_matches} ·{" "}
+              {sourceSummary.note}
+            </p>
+          </div>
+          <div className="operationalTruthRow">
+            <span>Readiness gate</span>
+            <strong className={readinessClass}>{readiness?.status ?? "pending"}</strong>
+            <p>
+              analyze {readiness?.can_analyze_live ? "yes" : "no"} · {readinessGate} · real{" "}
+              {readiness?.can_submit_real_orders ? "enabled" : "hard-blocked"} · {readinessReason}
+            </p>
+          </div>
+          <div className="operationalTruthRow">
             <span>Replay contract</span>
             <strong className={contractStatusClass(replayLab)}>{contractStatusLabel(replayLab)}</strong>
             <p>
@@ -281,11 +328,21 @@ export function DataHealthPanel({
             </p>
           </div>
           <div className="operationalTruthRow">
+            <span>Cursor/freshness blocks</span>
+            <strong className={blockedCursors.length || staleFeeds.length ? "status statusBlocked" : "status statusEntry"}>
+              {blockedCursors.length + staleFeeds.length} blockers
+            </strong>
+            <p>
+              cursors {blockedCursors.length} · stale feeds {staleFeeds.length} ·{" "}
+              {blockedCursors[0]?.note || staleFeeds[0]?.notes[0] || "freshness gates clean"}
+            </p>
+          </div>
+          <div className="operationalTruthRow">
             <span>Latest persisted run</span>
             <strong className={latestRun ? ingestionStatusClass(latestRun.status) : "status statusBlocked"}>
               {latestRun?.status ?? "missing"}
             </strong>
-            <p>{sourceSummary(latestRun)}</p>
+            <p>{ingestionRunSummary(latestRun)}</p>
           </div>
         </div>
       </div>

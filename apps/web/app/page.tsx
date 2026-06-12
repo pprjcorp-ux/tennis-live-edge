@@ -760,8 +760,10 @@ export default function Page() {
             providerModeMatrix={providerModeMatrix}
             providerModeReason={providerModeReason}
             providerCursors={providerCursors}
+            readiness={readiness}
             replayContractBusy={replayContractBusy}
             replayLab={replayLab}
+            sourceSummary={sourceSummary}
           />
         ) : null}
 

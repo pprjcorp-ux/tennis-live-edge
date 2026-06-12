@@ -237,6 +237,7 @@ class AnalysisRepository:
             "live_budget_cycle",
             "replay_run",
             "replay_contract_run",
+            "daily_operational_run",
         ],
         summary: dict,
         *,
@@ -264,7 +265,15 @@ class AnalysisRepository:
         return datetime.now(timezone.utc).replace(microsecond=0)
 
     @staticmethod
-    def _ingestion_status(summary: dict) -> Literal["completed", "degraded", "skipped", "failed"]:
+    def _ingestion_status(
+        summary: dict,
+    ) -> Literal["completed", "collecting", "degraded", "skipped", "failed"]:
+        if summary.get("run_kind") == "daily_operational_run":
+            status = summary.get("status")
+            if status in {"completed", "collecting", "degraded"}:
+                return status
+            if status == "failed":
+                return "failed"
         if summary.get("error"):
             return "failed"
         if summary.get("provider_warnings"):

@@ -302,9 +302,10 @@ export type IngestionRunRecord = {
     | "odds_stream"
     | "live_budget_cycle"
     | "replay_run"
-    | "replay_contract_run";
+    | "replay_contract_run"
+    | "daily_operational_run";
   source: "api" | "cli" | "openclaw" | "cron" | "system";
-  status: "completed" | "degraded" | "skipped" | "failed";
+  status: "completed" | "collecting" | "degraded" | "skipped" | "failed";
   summary: Record<string, unknown>;
   started_at: string;
   completed_at: string;

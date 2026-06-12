@@ -41,9 +41,12 @@ function replayStatusClass(status: ReplayLabSnapshot["status"] | ReplayLabSnapsh
   return "status statusBlocked";
 }
 
-function dailyOpsStatusClass(status: DailyOperationalRunResult["status"]) {
+function dailyOpsStatusClass(
+  status: DailyOperationalRunResult["status"] | "failed" | "pending" | "skipped"
+) {
   if (status === "completed") return "status statusEntry";
   if (status === "collecting") return "status statusMonitor";
+  if (status === "pending" || status === "skipped") return "status statusMonitor";
   return "status statusBlocked";
 }
 
@@ -82,6 +85,14 @@ function summaryObject(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function summaryString(value: unknown) {
+  return typeof value === "string" ? value : null;
+}
+
+function summaryNumber(value: unknown) {
+  return typeof value === "number" ? value : null;
+}
+
 function summaryText(run: IngestionRunRecord) {
   const summary = run.summary;
   if (run.run_type === "replay_run") {
@@ -102,6 +113,20 @@ function summaryText(run: IngestionRunRecord) {
       ? `${summary.scenarios.length} scenarios`
       : null;
     return [passed, scenarios].filter(Boolean).join(" · ");
+  }
+  if (run.run_type === "daily_operational_run") {
+    const model = summaryObject(summary.model_lab_backtest);
+    const status = summaryString(summary.status) ?? run.status;
+    const liveCalls =
+      typeof summary.live_api_calls === "number" ? `live calls ${summary.live_api_calls}` : null;
+    const match = summaryString(summary.match_id);
+    const modelStatus = model ? summaryString(model.status) : null;
+    return [
+      status,
+      liveCalls,
+      match ? `match ${match}` : null,
+      modelStatus ? `model ${modelStatus}` : null
+    ].filter(Boolean).join(" · ");
   }
   const directReason = typeof summary.reason === "string" ? summary.reason : null;
   const error = typeof summary.error === "string" ? summary.error : null;
@@ -148,6 +173,51 @@ export function DataHealthPanel({
   const activeMode = providerModeMatrix.find((step) => step.active) ?? providerModeMatrix[0];
   const oddsCursor = providerCursors.find((cursor) => cursor.provider === "odds_api_io");
   const latestRun = ingestionRuns[0];
+  const latestDailyOpsRun = ingestionRuns.find((run) => run.run_type === "daily_operational_run");
+  const latestDailyOpsSummary = summaryObject(latestDailyOpsRun?.summary);
+  const latestDailyReplaySummary = summaryObject(latestDailyOpsSummary?.replay_contracts);
+  const latestDailyPaperSummary = summaryObject(latestDailyOpsSummary?.paper_auto_settlement);
+  const latestDailyModelSummary = summaryObject(latestDailyOpsSummary?.model_lab_backtest);
+  const latestDailyExecutionSummary = summaryObject(latestDailyOpsSummary?.execution);
+  const persistedDailyStatus = summaryString(latestDailyOpsSummary?.status) ?? latestDailyOpsRun?.status;
+  const dailyStatus =
+    dailyOperationalRun?.status ??
+    (persistedDailyStatus === "completed" ||
+    persistedDailyStatus === "collecting" ||
+    persistedDailyStatus === "degraded" ||
+    persistedDailyStatus === "failed" ||
+    persistedDailyStatus === "skipped"
+      ? persistedDailyStatus
+      : "pending");
+  const dailyLiveApiCalls =
+    dailyOperationalRun?.live_api_calls ?? summaryNumber(latestDailyOpsSummary?.live_api_calls) ?? 0;
+  const dailyMatchId =
+    dailyOperationalRun?.match_id ?? summaryString(latestDailyOpsSummary?.match_id) ?? "not run";
+  const dailyReplayPassed =
+    dailyOperationalRun?.replay_contracts.passed ?? (latestDailyReplaySummary?.passed === true);
+  const dailySettledOrders =
+    dailyOperationalRun?.paper_auto_settlement.settled_orders ??
+    summaryNumber(latestDailyPaperSummary?.settled_orders) ??
+    0;
+  const dailyTrainingExamples =
+    dailyOperationalRun?.paper_auto_settlement.training_examples_ready ??
+    summaryNumber(latestDailyPaperSummary?.training_examples_ready) ??
+    0;
+  const dailyModelStatus =
+    dailyOperationalRun?.model_lab_backtest.status ??
+    summaryString(latestDailyModelSummary?.status) ??
+    "pending";
+  const dailyExecutionCanSubmit =
+    dailyOperationalRun?.execution.can_submit_real_orders ??
+    (latestDailyExecutionSummary?.can_submit_real_orders === true);
+  const dailyOpsNote =
+    dailyOperationalRun?.model_lab_backtest.reason ??
+    dailyOperationalRun?.model_lab_backtest.run_id ??
+    summaryString(latestDailyModelSummary?.reason) ??
+    summaryString(latestDailyModelSummary?.run_id) ??
+    (latestDailyOpsRun
+      ? `persisted ${latestDailyOpsRun.source} run ${latestDailyOpsRun.id}`
+      : "Awaiting daily ops run.");
 
   return (
     <div className="enterpriseGrid">
@@ -227,30 +297,24 @@ export function DataHealthPanel({
           </button>
         </div>
         <div className="replaySummary">
-          <span className={dailyOperationalRun ? dailyOpsStatusClass(dailyOperationalRun.status) : "status statusMonitor"}>
-            {dailyOperationalRun?.status ?? "pending"}
+          <span className={dailyOpsStatusClass(dailyStatus)}>
+            {dailyStatus}
           </span>
-          <span>live calls {dailyOperationalRun?.live_api_calls ?? 0}</span>
-          <span>match {dailyOperationalRun?.match_id ?? "not run"}</span>
-          <span className={dailyOperationalRun?.replay_contracts.passed ? "status statusEntry" : "status statusMonitor"}>
-            replay {dailyOperationalRun?.replay_contracts.passed ? "passed" : "pending"}
-          </span>
-          <span>
-            paper settled {dailyOperationalRun?.paper_auto_settlement.settled_orders ?? 0} · examples{" "}
-            {dailyOperationalRun?.paper_auto_settlement.training_examples_ready ?? 0}
-          </span>
-          <span className={dailyOperationalRun?.model_lab_backtest.status === "completed" ? "status statusEntry" : "status statusMonitor"}>
-            model {dailyOperationalRun?.model_lab_backtest.status ?? "pending"}
+          <span>live calls {dailyLiveApiCalls}</span>
+          <span>match {dailyMatchId}</span>
+          <span className={dailyReplayPassed ? "status statusEntry" : "status statusMonitor"}>
+            replay {dailyReplayPassed ? "passed" : "pending"}
           </span>
           <span>
-            execution{" "}
-            {dailyOperationalRun?.execution.can_submit_real_orders ? "real enabled" : "paper locked"}
+            paper settled {dailySettledOrders} · examples {dailyTrainingExamples}
+          </span>
+          <span className={dailyModelStatus === "completed" ? "status statusEntry" : "status statusMonitor"}>
+            model {dailyModelStatus}
           </span>
           <span>
-            {dailyOperationalRun?.model_lab_backtest.reason ??
-              dailyOperationalRun?.model_lab_backtest.run_id ??
-              "Awaiting daily ops run."}
+            execution {dailyExecutionCanSubmit ? "real enabled" : "paper locked"}
           </span>
+          <span>{dailyOpsNote}</span>
         </div>
       </div>
       <div className="panel wide">

@@ -82,10 +82,12 @@ async def run_daily_operational_loop(
     feature_set: str = "live_budget_v1",
     source: Literal["api", "cli", "openclaw", "cron", "system"] = "cli",
 ) -> DailyOperationalRunResult:
+    started_at = datetime.now(timezone.utc)
     replay = await run_replay_contracts(
         repo,
         match_id=match_id,
         scenarios=scenarios,
+        source=source,
     )
     settlement = await repo.auto_settle_paper(
         AutoPaperSettleRequest(match_id=settle_match_id, max_orders=max_orders)
@@ -123,7 +125,7 @@ async def run_daily_operational_loop(
     if backtest_status.status == "skipped":
         status = "collecting" if replay.passed else "degraded"
 
-    return DailyOperationalRunResult(
+    result = DailyOperationalRunResult(
         status=status,
         generated_at=datetime.now(timezone.utc),
         source=source,
@@ -138,6 +140,17 @@ async def run_daily_operational_loop(
             stage=execution.stage,
         ),
     )
+    repo.record_ingestion_run(
+        "daily_operational_run",
+        {
+            **result.model_dump(mode="json"),
+            "run_kind": "daily_operational_run",
+            "trigger_source": source,
+        },
+        source=source,
+        started_at=started_at,
+    )
+    return result
 
 
 async def _run(argv: list[str] | None = None) -> int:

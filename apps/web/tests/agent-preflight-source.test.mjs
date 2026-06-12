@@ -84,6 +84,9 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(dataHealthSource, /Core primeiro, providers por etapas/);
   assert.match(dataHealthSource, /Replay Contracts/);
   assert.match(dataHealthSource, /Daily Ops/);
+  assert.match(dataHealthSource, /latestDailyOpsRun/);
+  assert.match(dataHealthSource, /run\.run_type === "daily_operational_run"/);
+  assert.match(dataHealthSource, /persisted \$/);
   assert.match(dataHealthSource, /live calls/);
   assert.match(dataHealthSource, /model_lab_backtest/);
   assert.match(dataHealthSource, /onRunDailyOperational/);

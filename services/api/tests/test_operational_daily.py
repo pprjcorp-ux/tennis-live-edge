@@ -71,6 +71,7 @@ class RepoStub:
         self.replay_source: str | None = None
         self.auto_settle_request = None
         self.backtest_request = None
+        self.ingestion_run_calls = []
 
     async def run_replay_contracts(self, request, *, source):
         self.replay_request = request
@@ -95,6 +96,16 @@ class RepoStub:
 
     async def execution_status(self):
         return _execution_status()
+
+    def record_ingestion_run(self, run_type, summary, *, source="system", started_at=None):
+        self.ingestion_run_calls.append(
+            {
+                "run_type": run_type,
+                "summary": summary,
+                "source": source,
+                "started_at": started_at,
+            }
+        )
 
 
 def test_daily_operational_loop_runs_replay_settlement_and_backtest() -> None:
@@ -127,12 +138,25 @@ def test_daily_operational_loop_runs_replay_settlement_and_backtest() -> None:
     assert repo.auto_settle_request.match_id == "match_atp_002"
     assert repo.auto_settle_request.max_orders == 7
     assert repo.backtest_request.feature_set == "live_budget_v1"
+    assert len(repo.ingestion_run_calls) == 1
+    ingestion_run = repo.ingestion_run_calls[0]
+    assert ingestion_run["run_type"] == "daily_operational_run"
+    assert ingestion_run["source"] == "cli"
+    assert ingestion_run["started_at"] is not None
+    assert ingestion_run["summary"]["run_kind"] == "daily_operational_run"
+    assert ingestion_run["summary"]["trigger_source"] == "cli"
+    assert ingestion_run["summary"]["status"] == "completed"
+    assert ingestion_run["summary"]["live_api_calls"] == 0
+    assert ingestion_run["summary"]["replay_contracts"]["passed"] is True
+    assert ingestion_run["summary"]["execution"]["can_submit_real_orders"] is False
+    assert ingestion_run["summary"]["execution"]["real_execution_hard_block"] is True
 
 
 def test_daily_operational_loop_collects_when_training_examples_are_missing() -> None:
+    repo = RepoStub(backtest_available=False)
     result = asyncio.run(
         run_daily_operational_loop(
-            RepoStub(backtest_available=False),
+            repo,
             match_id="match_atp_002",
         )
     )
@@ -142,6 +166,7 @@ def test_daily_operational_loop_collects_when_training_examples_are_missing() ->
     assert result.model_lab_backtest.status == "skipped"
     assert result.model_lab_backtest.reason is not None
     assert "No persisted training examples" in result.model_lab_backtest.reason
+    assert repo.ingestion_run_calls[0]["summary"]["status"] == "collecting"
 
 
 def test_daily_operational_cli_exit_codes(monkeypatch, capsys) -> None:

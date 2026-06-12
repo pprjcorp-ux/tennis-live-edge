@@ -817,9 +817,10 @@ class IngestionRunRecord(BaseModel):
         "live_budget_cycle",
         "replay_run",
         "replay_contract_run",
+        "daily_operational_run",
     ]
     source: Literal["api", "cli", "openclaw", "cron", "system"] = "system"
-    status: Literal["completed", "degraded", "skipped", "failed"]
+    status: Literal["completed", "collecting", "degraded", "skipped", "failed"]
     summary: dict[str, Any] = Field(default_factory=dict)
     started_at: datetime
     completed_at: datetime

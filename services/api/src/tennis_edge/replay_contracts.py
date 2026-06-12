@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from typing import Literal
 
 from tennis_edge.config import get_settings
 from tennis_edge.domain import (
@@ -46,11 +47,12 @@ async def run_replay_contracts(
     *,
     match_id: str,
     scenarios: list[ReplayContractScenario] | None = None,
+    source: Literal["api", "cli", "openclaw", "cron", "system"] = "cli",
 ) -> ReplayContractRunResult:
     request = ReplayContractRunRequest(match_id=match_id)
     if scenarios:
         request.scenarios = scenarios
-    return await repo.run_replay_contracts(request, source="cli")
+    return await repo.run_replay_contracts(request, source=source)
 
 
 async def _run(argv: list[str] | None = None) -> int:

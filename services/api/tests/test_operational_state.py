@@ -749,8 +749,45 @@ def test_live_readiness_reports_persisted_training_examples() -> None:
         check for check in readiness.checks if check.name == "model_learning_dataset"
     )
     assert dataset_check.status == "pass"
-    assert dataset_check.summary == "42 settled persisted training examples available."
+    assert (
+        dataset_check.summary
+        == "42 settled production training examples available for prematch_ensemble_v1/live_budget_v1."
+    )
     assert dataset_check.detail is None
+
+
+def test_live_readiness_warns_when_only_rehearsal_training_examples_exist() -> None:
+    class RehearsalOnlyStore(StoreStub):
+        def __init__(self) -> None:
+            super().__init__(cursors=[_healthy_odds_cursor()], training_examples_count=0)
+
+        def training_example_lineage_counts(self) -> dict[str, int]:
+            return {"total": 3, "production": 0, "rehearsal": 3}
+
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        RehearsalOnlyStore(),
+    )
+
+    readiness = service.live_readiness(_snapshot(service, generated_at))
+    dataset_check = next(
+        check for check in readiness.checks if check.name == "model_learning_dataset"
+    )
+
+    assert readiness.status == "ready"
+    assert readiness.can_generate_entries is True
+    assert dataset_check.status == "warn"
+    assert dataset_check.summary == (
+        "Only rehearsal training examples are available (3); production Model Lab is still collecting."
+    )
+    assert "rehearsal training_examples" in (dataset_check.detail or "")
 
 
 def test_model_lab_readiness_uses_persisted_training_examples_dataset() -> None:

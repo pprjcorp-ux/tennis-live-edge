@@ -747,11 +747,10 @@ class OperationalStateService:
         provider_health_ok = not provider_health_failures
         data_quality_ok = not data_quality_failures
         persistence_ready, persistence_error = self._persistence_ready()
-        training_examples_count = 0
+        model_lab = operational_state.model_lab
         if persistence_ready:
-            training_examples_count = self._training_example_count()
             persistence_error = getattr(self.store, "last_error", None)
-            if persistence_error:
+            if persistence_error or model_lab.status == "blocked":
                 persistence_ready = False
         if persistence_ready:
             persistence_detail = None
@@ -853,16 +852,29 @@ class OperationalStateService:
             ),
             LiveReadinessCheck(
                 name="model_learning_dataset",
-                status="pass" if training_examples_count > 0 else "warn",
+                status=(
+                    "pass"
+                    if model_lab.can_run_live_backtest
+                    else "fail"
+                    if model_lab.status == "blocked"
+                    else "warn"
+                ),
                 summary=(
-                    f"{training_examples_count} settled persisted training examples available."
-                    if training_examples_count > 0
+                    f"{model_lab.training_examples} settled production training examples available for {model_lab.model_version}/{model_lab.feature_set}."
+                    if model_lab.can_run_live_backtest
+                    else f"Only rehearsal training examples are available ({model_lab.rehearsal_training_examples}); production Model Lab is still collecting."
+                    if model_lab.rehearsal_training_examples > 0
+                    and model_lab.production_training_examples <= 0
+                    else f"{model_lab.total_training_examples} settled training examples exist, but none match {model_lab.model_version}/{model_lab.feature_set}."
+                    if model_lab.total_training_examples > 0
                     else "No settled persisted training examples are available yet."
                 ),
                 detail=(
                     None
-                    if training_examples_count > 0
-                    else "Live backtests and model promotion require settled paper orders; /api/v1/backtests/run will return 409 until examples exist."
+                    if model_lab.can_run_live_backtest
+                    else "; ".join(model_lab.reasons)
+                    if model_lab.reasons
+                    else "Live backtests and model promotion require settled production paper orders; /api/v1/backtests/run will return 409 until examples exist."
                     if persistence_ready and data_mode_live
                     else "Dataset count is unavailable until live persistence is healthy."
                 ),

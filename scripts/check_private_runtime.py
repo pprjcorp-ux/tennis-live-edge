@@ -285,6 +285,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_api_onboarding_guides_budget_provider_sequence_after_archive_key",
             "test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync",
             "test_model_lab_readiness_uses_persisted_training_examples_dataset",
+            "test_live_readiness_warns_when_only_rehearsal_training_examples_exist",
             "test_model_lab_readiness_excludes_rehearsal_examples_from_production",
             "test_model_lab_readiness_blocks_without_persistent_truth",
             "test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys",

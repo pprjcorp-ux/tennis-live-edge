@@ -241,6 +241,15 @@ export type OperationalSourceSummary = {
   volatile_matches: number;
   source_counts: Record<string, number>;
   provider_lineage: Provider[];
+  match_freshness: {
+    match_id: string;
+    source: "provider_live" | "persisted_fallback" | "sample" | "empty";
+    persisted: boolean;
+    score_age_ms: number | null;
+    odds_age_ms: number | null;
+    provider_lineage: Provider[];
+    note: string;
+  }[];
   note: string;
 };
 

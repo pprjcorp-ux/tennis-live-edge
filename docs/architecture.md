@@ -70,18 +70,22 @@ decide whether the system behaves as budget or enterprise.
     `OperationalStateSnapshot`; it exposes `training_examples` as the dataset
     source, the active model/feature set, settled example count, and whether a
     live backtest can run without synthetic fallback.
-15. API onboarding is a derived read-model inside `OperationalStateSnapshot`.
+15. `OperationalStateSnapshot.source_summary` includes aggregate source counts
+    plus per-match `match_freshness` evidence, so dashboard/OpenClaw can verify
+    whether each match came from live providers, persisted fallback, replay, or
+    runtime-only sample state before trusting a signal.
+16. API onboarding is a derived read-model inside `OperationalStateSnapshot`.
     It keeps provider setup ordered as TheOddsAPI REST/archive, API-Tennis
     score/livescore, Odds-API.io websocket, then deferred enterprise feeds, with
     each step blocked until the persisted core and prerequisites are healthy.
-16. Provider mode is exposed as a matrix inside `OperationalStateSnapshot`, not
+17. Provider mode is exposed as a matrix inside `OperationalStateSnapshot`, not
     just as a single label. The matrix lists `sample`, `replay`,
     `live_without_keys`, and `live_with_keys`, with active status, entry gate,
     evidence, blockers, and next action so the dashboard cannot confuse replay
     rehearsal with live eligibility. `replay` is an offline provider mode:
     budget adapters use fake fixtures/snapshots and must not spend quota or open
     live websockets even when keys are present.
-17. Replay Lab readiness is a derived read-model inside
+18. Replay Lab readiness is a derived read-model inside
     `OperationalStateSnapshot`. It exposes `budget_replay_fixtures` as the fake
     API layer for ScoreProviderAdapter, OddsProviderAdapter, and
     ArchiveOddsProviderAdapter, including healthy/gap/resync scenarios, so live

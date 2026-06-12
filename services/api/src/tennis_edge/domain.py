@@ -1067,12 +1067,23 @@ class ReplayLabSnapshot(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class OperationalMatchFreshness(BaseModel):
+    match_id: str
+    source: Literal["provider_live", "persisted_fallback", "sample", "empty"] = "sample"
+    persisted: bool = False
+    score_age_ms: int | None = None
+    odds_age_ms: int | None = None
+    provider_lineage: list[Provider] = Field(default_factory=list)
+    note: str = ""
+
+
 class OperationalSourceSummary(BaseModel):
     total_matches: int = 0
     persisted_matches: int = 0
     volatile_matches: int = 0
     source_counts: dict[str, int] = Field(default_factory=dict)
     provider_lineage: list[Provider] = Field(default_factory=list)
+    match_freshness: list[OperationalMatchFreshness] = Field(default_factory=list)
     note: str = "No matches loaded yet."
 
 

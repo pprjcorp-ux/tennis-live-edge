@@ -220,6 +220,7 @@ export default function Page() {
       volatile_matches: 0,
       source_counts: {},
       provider_lineage: [],
+      match_freshness: [],
       note: "Awaiting operational state."
     });
   const [modelRegistry, setModelRegistry] = useState<ModelRegistryEntry[]>([]);

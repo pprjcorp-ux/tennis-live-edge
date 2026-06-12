@@ -203,6 +203,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "model_lab_readiness",
             "class ReplayLabSnapshot",
             "class OperationalSourceSummary",
+            "class OperationalMatchFreshness",
+            "match_freshness",
             "source_summary",
             "ReplayContractProvider",
             "replay_lab_readiness",

@@ -23,6 +23,9 @@ def test_live_dashboard_read_model_builds_dashboard_snapshot_from_inputs() -> No
     assert snapshot.operational_state.cost_profile.active_plan == "lean_atp"
     assert snapshot.operational_state.source_summary.total_matches == len(analyses)
     assert snapshot.operational_state.source_summary.source_counts == {"sample": len(analyses)}
+    assert len(snapshot.operational_state.source_summary.match_freshness) == len(analyses)
+    assert snapshot.operational_state.source_summary.match_freshness[0].match_id == analyses[0].match.id
+    assert snapshot.operational_state.source_summary.match_freshness[0].source == "sample"
     assert snapshot.readiness.can_submit_real_orders is False
 
 
@@ -74,4 +77,15 @@ def test_operational_source_summary_counts_persisted_and_runtime_sources() -> No
         Provider.SAMPLE,
         Provider.THE_ODDS_API,
     ]
+    assert [row.match_id for row in summary.match_freshness] == [
+        analyses[0].match.id,
+        analyses[1].match.id,
+        analyses[2].match.id,
+    ]
+    assert [row.source for row in summary.match_freshness] == [
+        "provider_live",
+        "persisted_fallback",
+        "sample",
+    ]
+    assert [row.persisted for row in summary.match_freshness] == [True, True, False]
     assert "2/3 matches" in summary.note

@@ -209,6 +209,12 @@ Implementation direction:
 
 Goal: make persisted state the source of truth.
 
+Current implementation status: persisted/replay source truth is enforced by
+runtime checks. `OperationalStateSnapshot.source_summary` now exposes
+per-match `match_freshness` rows, not just aggregate counts, so dashboard and
+OpenClaw can audit whether each match is persisted, replay-backed, live, or
+runtime-only before any signal is trusted.
+
 Tasks:
 
 - add ingestion job/service entrypoints for API-Tennis and TheOddsAPI;

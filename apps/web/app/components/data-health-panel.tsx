@@ -113,6 +113,12 @@ function summaryArrayLength(value: unknown) {
   return Array.isArray(value) ? value.length : null;
 }
 
+function ageText(value: number | null | undefined) {
+  if (value === null || value === undefined) return "-";
+  if (value < 1000) return `${value}ms`;
+  return `${Math.round(value / 1000)}s`;
+}
+
 function summaryText(run: IngestionRunRecord) {
   const summary = run.summary;
   if (run.run_type === "replay_run") {
@@ -203,6 +209,7 @@ export function DataHealthPanel({
   const sourceCountsText = Object.entries(sourceSummary.source_counts)
     .map(([source, count]) => `${source} ${count}`)
     .join(" · ");
+  const matchFreshnessPreview = (sourceSummary.match_freshness ?? []).slice(0, 4);
   const sourceTruthClass =
     sourceSummary.total_matches === 0
       ? "status statusBlocked"
@@ -314,6 +321,24 @@ export function DataHealthPanel({
             <p>
               {sourceCountsText || "empty"} · volatile {sourceSummary.volatile_matches} ·{" "}
               {sourceSummary.note}
+            </p>
+          </div>
+          <div className="operationalTruthRow">
+            <span>Match freshness</span>
+            <strong className={matchFreshnessPreview.length ? "status statusMonitor" : "status statusBlocked"}>
+              {matchFreshnessPreview.length} listed
+            </strong>
+            <p>
+              {matchFreshnessPreview.length
+                ? matchFreshnessPreview
+                    .map(
+                      (item) =>
+                        `${item.match_id}: ${item.source} · score ${ageText(
+                          item.score_age_ms
+                        )} · odds ${ageText(item.odds_age_ms)}`
+                    )
+                    .join(" | ")
+                : "No per-match freshness evidence loaded."}
             </p>
           </div>
           <div className="operationalTruthRow">

@@ -713,6 +713,7 @@ class OperationalStateService:
         source_counts: dict[str, int] = {}
         provider_values: set[Provider] = set()
         persisted_matches = 0
+        match_freshness = []
         for analysis in analyses:
             freshness = analysis.freshness
             source = freshness.source if freshness else "sample"
@@ -721,6 +722,17 @@ class OperationalStateService:
                 persisted_matches += 1
             if freshness:
                 provider_values.update(freshness.provider_lineage)
+            match_freshness.append(
+                {
+                    "match_id": analysis.match.id,
+                    "source": source,
+                    "persisted": bool(freshness and freshness.persisted),
+                    "score_age_ms": freshness.score_age_ms if freshness else None,
+                    "odds_age_ms": freshness.odds_age_ms if freshness else None,
+                    "provider_lineage": freshness.provider_lineage if freshness else [],
+                    "note": freshness.note if freshness else "No freshness metadata was attached.",
+                }
+            )
 
         total_matches = len(analyses)
         volatile_matches = max(0, total_matches - persisted_matches)
@@ -739,6 +751,7 @@ class OperationalStateService:
             volatile_matches=volatile_matches,
             source_counts=source_counts,
             provider_lineage=sorted(provider_values, key=lambda provider: provider.value),
+            match_freshness=match_freshness,
             note=note,
         )
 

@@ -264,19 +264,38 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
             for item in replay_persistence
         ],
     )
+    freshness_rows = operational.source_summary.match_freshness
+    freshness_complete = (
+        operational.source_summary.total_matches > 0
+        and len(freshness_rows) == operational.source_summary.total_matches
+        and all(row.persisted for row in freshness_rows)
+    )
     _add(
         checks,
         "dashboard_persisted_source",
         operational.source_summary.total_matches > 0
-        and operational.source_summary.persisted_matches == operational.source_summary.total_matches,
+        and operational.source_summary.persisted_matches == operational.source_summary.total_matches
+        and freshness_complete,
         (
             "Dashboard matches are coming from persisted canonical state."
             if operational.source_summary.total_matches > 0
             and operational.source_summary.persisted_matches == operational.source_summary.total_matches
+            and freshness_complete
             else "Dashboard still has volatile or empty match state."
         ),
         total_matches=operational.source_summary.total_matches,
         persisted_matches=operational.source_summary.persisted_matches,
+        match_freshness_rows=len(freshness_rows),
+        match_freshness_preview=[
+            {
+                "match_id": row.match_id,
+                "source": row.source,
+                "persisted": row.persisted,
+                "score_age_ms": row.score_age_ms,
+                "odds_age_ms": row.odds_age_ms,
+            }
+            for row in freshness_rows[:3]
+        ],
         source_counts=operational.source_summary.source_counts,
     )
     _add(

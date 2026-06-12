@@ -36,7 +36,9 @@ current API onboarding state from persisted operational truth:
 2. Configure TheOddsAPI first for REST archive/comparison, then run protected
    `POST /api/v1/ingestion/the-odds-api/archive-sync` before touching score or
    websocket providers.
-3. Configure API-Tennis second for fixtures/livescore.
+3. Configure API-Tennis second for fixtures/livescore, then run protected
+   `POST /api/v1/ingestion/api-tennis/score-sync` as a score-only smoke before
+   enabling combined live-budget cycles.
 4. Configure Odds-API.io websocket third, after replay tests prove sequence,
    resync, stale odds, and moneyline completeness gates.
 5. Keep enterprise feeds disabled until paper trading proves that the budget

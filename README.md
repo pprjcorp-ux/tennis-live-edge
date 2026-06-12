@@ -117,7 +117,10 @@ this same sequence from `/api/v1/dashboard/live-state`:
    `POST /api/v1/ingestion/the-odds-api/archive-sync` smoke first; it persists
    archive raw payloads and `odds/archive` latency, but it cannot create live
    entries by itself. Local CLI equivalent: `npm run api:ingest:archive-odds -- --pretty`.
-3. API-Tennis fixtures/livescore.
+3. API-Tennis fixtures/livescore. Use protected
+   `POST /api/v1/ingestion/api-tennis/score-sync` as the score-only smoke; it
+   persists fixture/score payloads and canonical state without calling archive
+   odds. Local CLI equivalent: `npm run api:ingest:api-tennis -- --pretty`.
 4. Odds-API.io websocket live odds, only after `seq`/`lastSeq` replay and resync
    gates are healthy.
 5. Sportradar/Betradar/TXODDS enterprise feeds, deferred until budget paper data

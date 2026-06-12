@@ -220,6 +220,9 @@ The first real-provider hook is now isolated as
 `POST /api/v1/ingestion/the-odds-api/archive-sync`: it persists TheOddsAPI
 archive raw payloads and `odds/archive` latency evidence without producing live
 entries or depending on score/live providers.
+The second hook is `POST /api/v1/ingestion/api-tennis/score-sync`, a
+score-only API-Tennis smoke that persists fixture/livescore payload evidence and
+canonical state without calling archive odds.
 
 Tasks:
 

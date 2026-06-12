@@ -53,6 +53,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     provider_adapters = (source / "services/provider_adapters.py").read_text()
     runtime_modes = (source / "runtime_modes.py").read_text()
     replay_engine = (source / "services/replay_engine.py").read_text()
+    api_tennis_cli = (source / "ingest_api_tennis_scores.py").read_text()
     archive_cli = (source / "ingest_archive_odds.py").read_text()
     ingestion_pipeline = (source / "services/ingestion.py").read_text()
     replay_fixtures = (source / "services/budget_replay_fixtures.py").read_text()
@@ -198,6 +199,22 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_archive_odds_sync_persists_theoddsapi_payloads_and_latency",
             "test_archive_odds_sync_records_provider_failure_without_raising",
             "test_v1_the_odds_api_archive_sync_requires_token_and_skips_without_key",
+        ],
+    )
+    _require_text(
+        errors,
+        label="api tennis score sync",
+        text=domain + repository + main_api + api_tennis_cli + package_json + repository_tests + v1_tests,
+        required=[
+            "ScoreSyncResult",
+            "sync_api_tennis_scores",
+            "api_tennis_score_sync",
+            "/api/v1/ingestion/api-tennis/score-sync",
+            "api:ingest:api-tennis",
+            "API_TENNIS_KEY is missing; score sync skipped.",
+            "test_api_tennis_score_sync_persists_score_payloads_without_archive_odds",
+            "test_api_tennis_score_sync_skips_without_key",
+            "test_v1_api_tennis_score_sync_requires_token_and_skips_without_key",
         ],
     )
     _require_text(

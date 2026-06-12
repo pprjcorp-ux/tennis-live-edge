@@ -52,6 +52,7 @@ from tennis_edge.domain import (
     ReplayContractRunResult,
     ReplayRunRequest,
     ReplayRunResult,
+    ScoreSyncResult,
     Signal,
 )
 from tennis_edge.operational_daily import run_daily_operational_loop
@@ -196,6 +197,15 @@ async def v1_ingestion_runs(
     repo: AnalysisRepository = Depends(repository),
 ) -> list[IngestionRunRecord]:
     return await repo.ingestion_runs()
+
+
+@app.post("/api/v1/ingestion/api-tennis/score-sync", response_model=ScoreSyncResult)
+async def v1_sync_api_tennis_scores(
+    request: IngestionRunRequest | None = Body(default=None),
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ScoreSyncResult:
+    return await repo.sync_api_tennis_scores(request, source="api")
 
 
 @app.post("/api/v1/ingestion/the-odds-api/archive-sync", response_model=ArchiveOddsSyncResult)

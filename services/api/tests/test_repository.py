@@ -473,6 +473,122 @@ def test_archive_odds_augmentation_records_theoddsapi_warning_on_failure() -> No
     ]
 
 
+def test_api_tennis_score_sync_persists_score_payloads_without_archive_odds() -> None:
+    event = {
+        "event_key": "api-score-1",
+        "event_date": date.today().isoformat(),
+        "event_time": "13:00:00",
+        "event_first_player": "Jannik Sinner",
+        "event_second_player": "Lorenzo Musetti",
+        "event_first_player_key": "101",
+        "event_second_player_key": "102",
+        "event_type_type": "ATP Singles",
+        "tournament_name": "Roland Garros",
+        "tournament_round": "R1",
+        "tournament_surface": "Clay",
+        "event_status": "Set 1",
+        "event_final_result": "0 - 0",
+        "event_game_result": "2 - 1",
+        "event_point": "30-15",
+        "event_serve": "First Player",
+    }
+    client = ApiTennisClient(api_key="key", data_mode="live")
+    payloads = [
+        *client._parse_match_payloads(
+            {"result": [event | {"event_status": "Not Started"}]},
+            default_status="prematch",
+        ),
+        *client._parse_match_payloads({"result": [event]}, default_status="live"),
+    ]
+
+    class ScoreSource:
+        last_warnings = []
+
+        async def get_today_matches(self, target_date):
+            return payloads
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.saved_payloads = []
+            self.saved_analyses = []
+            self.ingestion_runs_saved = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def latest_analyses(self, target_date):
+            return []
+
+        def save_raw_payloads(self, payloads_to_save):
+            self.saved_payloads.extend(payloads_to_save)
+            return len(payloads_to_save)
+
+        def save_analyses(self, analyses):
+            self.saved_analyses.extend(analyses)
+            return True
+
+        def save_ingestion_run(self, run):
+            self.ingestion_runs_saved.append(run)
+            return True
+
+    repo = AnalysisRepository(
+        Settings(data_mode="live", api_tennis_key="key", persistence_enabled=True)
+    )
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    result = asyncio.run(
+        repo.sync_api_tennis_scores(score_source=ScoreSource(), source="cli")
+    )
+
+    assert result.provider == Provider.API_TENNIS
+    assert result.configured is True
+    assert result.source == "provider_live"
+    assert result.persisted is True
+    assert result.matches == 1
+    assert result.fixture_payloads == 1
+    assert result.score_payloads == 1
+    assert result.raw_payloads_saved == 2
+    assert result.live_api_calls == 0
+    assert store.saved_payloads == [payload.raw_payload for payload in payloads]
+    assert store.saved_analyses[0].match.provider_ids == {"api_tennis": "api-score-1"}
+    assert store.saved_analyses[0].match.odds == []
+    assert store.ingestion_runs_saved[-1].run_type == "score_snapshot"
+    assert store.ingestion_runs_saved[-1].status == "completed"
+    assert store.ingestion_runs_saved[-1].summary["run_kind"] == "api_tennis_score_sync"
+
+
+def test_api_tennis_score_sync_skips_without_key() -> None:
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.ingestion_runs_saved = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def save_ingestion_run(self, run):
+            self.ingestion_runs_saved.append(run)
+            return True
+
+    repo = AnalysisRepository(Settings(data_mode="live", api_tennis_key=None))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    result = asyncio.run(repo.sync_api_tennis_scores(source="cli"))
+
+    assert result.configured is False
+    assert result.source == "skipped"
+    assert result.matches == 0
+    assert result.live_api_calls == 0
+    assert result.provider_warnings == [
+        "API_TENNIS_KEY is missing; score sync skipped."
+    ]
+    assert store.ingestion_runs_saved[-1].run_type == "score_snapshot"
+    assert store.ingestion_runs_saved[-1].status == "skipped"
+
+
 def test_archive_odds_sync_persists_theoddsapi_payloads_and_latency() -> None:
     events = asyncio.run(
         TheOddsApiClient(api_key=None, data_mode="sample").get_tennis_h2h_events()

@@ -860,6 +860,23 @@ class IngestionRunResult(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ScoreSyncResult(BaseModel):
+    provider: Provider = Provider.API_TENNIS
+    configured: bool
+    target_date: date
+    source: Literal["provider_live", "persisted_fallback", "sample", "empty", "skipped"]
+    persisted: bool = False
+    matches: int = 0
+    fixture_payloads: int = 0
+    score_payloads: int = 0
+    raw_payloads_saved: int = 0
+    signals_generated: int = 0
+    entry_signals: int = 0
+    provider_warnings: list[str] = Field(default_factory=list)
+    live_api_calls: int = 0
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ArchiveOddsSyncResult(BaseModel):
     provider: Provider = Provider.THE_ODDS_API
     configured: bool

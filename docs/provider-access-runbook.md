@@ -146,7 +146,10 @@ Pedro
    `POST /api/v1/ingestion/the-odds-api/archive-sync` and verify it records an
    `archive_odds_sync` ingestion run with raw payload and `odds/archive`
    latency evidence.
-3. Add API-Tennis second for fixtures/livescore and score freshness.
+3. Add API-Tennis second for fixtures/livescore and score freshness. After
+   setting `API_TENNIS_KEY`, run protected
+   `POST /api/v1/ingestion/api-tennis/score-sync` and verify it records an
+   `api_tennis_score_sync` summary with fixture/score payload counts.
 4. Add Odds-API.io websocket third, only after replay/resync tests prove
    `seq`/`lastSeq`, gaps, stale odds and incomplete moneyline gates.
 5. Keep Betfair in delayed/paper validation until model performance is proven.

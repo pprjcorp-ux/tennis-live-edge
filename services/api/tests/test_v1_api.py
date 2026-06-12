@@ -276,6 +276,31 @@ def test_v1_the_odds_api_archive_sync_requires_token_and_skips_without_key() -> 
     assert "THE_ODDS_API_KEY is missing" in body["provider_warnings"][0]
 
 
+def test_v1_api_tennis_score_sync_requires_token_and_skips_without_key() -> None:
+    repo = AnalysisRepository(
+        Settings(data_mode="live", api_tennis_key=None, persistence_enabled=False)
+    )
+    app.dependency_overrides[repository] = lambda: repo
+    try:
+        unauthorized = client.post("/api/v1/ingestion/api-tennis/score-sync")
+        response = client.post(
+            "/api/v1/ingestion/api-tennis/score-sync",
+            headers=ADMIN_HEADERS,
+        )
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert unauthorized.status_code in {401, 403}
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "api_tennis"
+    assert body["configured"] is False
+    assert body["source"] == "skipped"
+    assert body["matches"] == 0
+    assert body["live_api_calls"] == 0
+    assert "API_TENNIS_KEY is missing" in body["provider_warnings"][0]
+
+
 def test_v1_replay_can_simulate_odds_api_gap() -> None:
     response = client.post(
         "/api/v1/replay/run",

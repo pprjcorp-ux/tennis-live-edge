@@ -61,6 +61,7 @@ from tennis_edge.domain import (
     ReplayProviderContractEvidence,
     ReplayRunRequest,
     ReplayRunResult,
+    ScoreSyncResult,
     Signal,
     SignalStatus,
     Provider,
@@ -110,6 +111,32 @@ from tennis_edge.services.storage import PersistentStore
 
 
 _REPLAY_PROTOCOL_FIELDS = {"seq", "lastSeq"}
+
+
+class _RecordingScoreSource:
+    def __init__(self, source) -> None:
+        self.source = source
+        self.records = []
+
+    @property
+    def last_warnings(self) -> list[str]:
+        warnings = getattr(self.source, "last_warnings", [])
+        return warnings if isinstance(warnings, list) else []
+
+    async def get_today_matches(self, target_date: date):
+        self.records = await self.source.get_today_matches(target_date)
+        return self.records
+
+
+class _NoArchiveSource:
+    last_warnings: list[str] = []
+
+    async def get_tennis_h2h_events(self):
+        return []
+
+
+async def _no_archive_augmenter(matches: list[Match], _archive_source) -> list[Match]:
+    return matches
 
 
 class AnalysisRepository:
@@ -234,6 +261,82 @@ class AnalysisRepository:
         )
         return result
 
+    async def sync_api_tennis_scores(
+        self,
+        request: IngestionRunRequest | None = None,
+        *,
+        score_source=None,
+        source: Literal["api", "cli", "openclaw", "cron", "system"] = "system",
+    ) -> ScoreSyncResult:
+        started_at = self._now()
+        target_date = request.target_date if request and request.target_date else date.today()
+        if not self.settings.api_tennis_key and score_source is None:
+            result = ScoreSyncResult(
+                configured=False,
+                target_date=target_date,
+                source="skipped",
+                provider_warnings=[
+                    "API_TENNIS_KEY is missing; score sync skipped."
+                ],
+                live_api_calls=0,
+                generated_at=self._now(),
+            )
+            self.record_ingestion_run(
+                "score_snapshot",
+                {
+                    **result.model_dump(mode="json"),
+                    "run_kind": "api_tennis_score_sync",
+                },
+                source=source,
+                started_at=started_at,
+            )
+            return result
+
+        recording_source = _RecordingScoreSource(score_source or self.api_tennis_source)
+        pipeline = LiveIngestionPipeline(
+            recording_source,
+            _NoArchiveSource(),
+            self.store,
+            signal_gate=self._gate_signals_for_match,
+            archive_augmenter=_no_archive_augmenter,
+        )
+        snapshot = await pipeline.snapshot_for_date(target_date)
+        signals = [signal for analysis in snapshot.analyses for signal in analysis.signals]
+        raw_payloads = [
+            record.raw_payload
+            for record in recording_source.records
+            if hasattr(record, "raw_payload")
+        ]
+        result = ScoreSyncResult(
+            configured=bool(self.settings.api_tennis_key or score_source),
+            target_date=target_date,
+            source=snapshot.source,
+            persisted=snapshot.persisted,
+            matches=len(snapshot.analyses),
+            fixture_payloads=sum(
+                1 for payload in raw_payloads if payload.payload_type == "fixture"
+            ),
+            score_payloads=sum(
+                1 for payload in raw_payloads if payload.payload_type == "score"
+            ),
+            raw_payloads_saved=snapshot.raw_payloads_saved,
+            signals_generated=len(signals),
+            entry_signals=sum(1 for signal in signals if signal.status == SignalStatus.ENTRY),
+            provider_warnings=snapshot.provider_warnings or [],
+            live_api_calls=2 if self.settings.api_tennis_key and score_source is None else 0,
+            generated_at=snapshot.generated_at,
+        )
+        self.record_ingestion_run(
+            "score_snapshot",
+            {
+                **result.model_dump(mode="json"),
+                "run_kind": "api_tennis_score_sync",
+            },
+            source=source,
+            started_at=started_at,
+        )
+        return result
+
     async def sync_archive_odds(
         self,
         *,
@@ -352,6 +455,16 @@ class AnalysisRepository:
             if summary.get("provider_warnings"):
                 return "degraded"
             return "completed" if int(summary.get("events") or 0) > 0 else "collecting"
+        if summary.get("run_kind") == "api_tennis_score_sync":
+            if summary.get("source") == "skipped":
+                return "skipped"
+            if summary.get("provider_warnings"):
+                return "degraded"
+            if summary.get("source") == "provider_live":
+                return "completed"
+            if summary.get("source") == "persisted_fallback":
+                return "degraded"
+            return "collecting"
         if summary.get("error"):
             return "failed"
         if summary.get("provider_warnings"):

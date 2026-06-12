@@ -42,7 +42,10 @@ def build_signals(
     if not {match.player1.id, match.player2.id}.issubset(best):
         return []
 
-    market_probs = consensus_market_probability(match)
+    try:
+        market_probs = consensus_market_probability(match)
+    except (KeyError, ValueError, ZeroDivisionError):
+        return []
     if features is None:
         threshold = threshold_for(match)
     else:

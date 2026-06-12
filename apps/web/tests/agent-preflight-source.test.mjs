@@ -29,6 +29,7 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
     pageSource.indexOf("} from \"@/lib/api\";") + 1
   );
 
+  assert.match(apiSource, /NEXT_PUBLIC_API_BASE_URL\?\.trim\(\) \|\| "http:\/\/localhost:8000"/);
   assert.match(importBlock, /getAgentPreflightSafe/);
   assert.match(importBlock, /getLiveDashboard/);
   assert.doesNotMatch(importBlock, /getAgentPreflight,/);
@@ -42,6 +43,7 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(pageSource, /getLiveDashboard\(\)/);
   assert.match(pageSource, /const auxiliaryResultsPromise = Promise\.allSettled/);
   assert.match(pageSource, /const nextDashboard = await getLiveDashboard\(\)/);
+  assert.match(pageSource, /setLoading\(false\);[\s\S]*void auxiliaryResultsPromise\.then/);
   assert.match(pageSource, /Estado operacional carregado; painel auxiliar indisponivel/);
   assert.match(pageSource, /Estado operacional indisponivel/);
   assert.match(pageSource, /nextDashboard\.operational_state/);
@@ -116,6 +118,9 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(dataHealthSource, /providerModeMatrix\.map/);
   assert.match(dataHealthSource, /entries \{step\.entry_gate\}/);
   assert.match(dataHealthSource, /replayLab\.providers/);
+  assert.match(dataHealthSource, /replayLab\.last_contract_persistence/);
+  assert.match(dataHealthSource, /raw_payloads_saved/);
+  assert.match(dataHealthSource, /provider_latency_saved/);
   assert.match(dataHealthSource, /apiOnboarding\.steps/);
   assert.match(dataHealthSource, /Ultimos ciclos persistidos/);
   assert.match(dataHealthSource, /run\.run_type === "replay_run"/);

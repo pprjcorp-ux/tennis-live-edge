@@ -82,6 +82,14 @@ function contractStatusLabel(replayLab: ReplayLabSnapshot) {
   return "contract pending";
 }
 
+function contractEvidenceStatusClass(
+  evidence: ReplayLabSnapshot["last_contract_persistence"][number]
+) {
+  if (!evidence.passed) return "status statusBlocked";
+  if (evidence.resync_required) return "status statusMonitor";
+  return "status statusEntry";
+}
+
 function ingestionRunSummary(run: IngestionRunRecord | undefined) {
   if (!run) return "no persisted run";
   return `${run.run_type.replaceAll("_", " ")} · ${run.source} · ${run.status}`;
@@ -493,6 +501,9 @@ export function DataHealthPanel({
               : "no scenarios"}
           </span>
           <span>
+            persisted evidence {replayLab.last_contract_persistence.length} scenarios
+          </span>
+          <span>
             last {replayLab.last_replay_run_id ?? "none"} · events {replayLab.last_replay_events} · score{" "}
             {replayLab.last_replay_score_ticks} · odds {replayLab.last_replay_odds_ticks}
           </span>
@@ -500,6 +511,33 @@ export function DataHealthPanel({
             {replayLab.last_replay_resync_required ? "last replay resync" : "last replay trusted"}
           </span>
         </div>
+        {replayLab.last_contract_persistence.length ? (
+          <div className="replayContractRows" aria-label="Replay contract persistence evidence">
+            {replayLab.last_contract_persistence.map((evidence) => (
+              <div className="replayContractRow" key={`evidence-${evidence.scenario}`}>
+                <div>
+                  <strong>{evidence.scenario}</strong>
+                  <span>
+                    {evidence.final_status} ·{" "}
+                    {evidence.resync_required ? "resync persisted" : "cursor trusted"}
+                  </span>
+                </div>
+                <span className={contractEvidenceStatusClass(evidence)}>
+                  {evidence.passed ? "pass" : "block"}
+                </span>
+                <span>raw_payloads_saved {evidence.raw_payloads_saved}</span>
+                <span>
+                  score_ticks_saved {evidence.score_ticks_saved} · odds_ticks_saved{" "}
+                  {evidence.odds_ticks_saved}
+                </span>
+                <span>
+                  cursors_saved {evidence.cursors_saved} · provider_latency_saved{" "}
+                  {evidence.provider_latency_saved}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="replayContractRows">
           {replayLab.providers.map((provider) => (
             <div className="replayContractRow" key={`${provider.provider}-${provider.adapter_contract}`}>

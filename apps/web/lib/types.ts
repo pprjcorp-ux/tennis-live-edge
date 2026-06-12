@@ -287,6 +287,18 @@ export type ReplayContractProvider = {
   notes: string[];
 };
 
+export type ReplayContractScenarioEvidence = {
+  scenario: ReplayOddsScenario;
+  final_status: string;
+  passed: boolean;
+  raw_payloads_saved: number;
+  score_ticks_saved: number;
+  odds_ticks_saved: number;
+  cursors_saved: number;
+  provider_latency_saved: number;
+  resync_required: boolean;
+};
+
 export type ReplayLabSnapshot = {
   status: "ready" | "collecting" | "blocked";
   source: "budget_replay_fixtures";
@@ -296,6 +308,7 @@ export type ReplayLabSnapshot = {
   last_contract_status: string | null;
   last_contract_passed: boolean;
   last_contract_scenarios: string[];
+  last_contract_persistence: ReplayContractScenarioEvidence[];
   last_replay_run_id: string | null;
   last_replay_status: string | null;
   last_replay_events: number;

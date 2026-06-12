@@ -229,6 +229,36 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
         modes=sorted(matrix_modes),
         reason=operational.provider_mode_reason,
     )
+    replay_persistence = operational.replay_lab.last_contract_persistence
+    replay_persistence_complete = (
+        len(replay_persistence) == 3
+        and all(item.raw_payloads_saved > 0 for item in replay_persistence)
+        and all(item.score_ticks_saved > 0 for item in replay_persistence)
+        and all(item.odds_ticks_saved > 0 for item in replay_persistence)
+        and all(item.provider_latency_saved > 0 for item in replay_persistence)
+    )
+    _add(
+        checks,
+        "dashboard_replay_persistence_evidence",
+        replay_persistence_complete,
+        (
+            "Dashboard Replay Lab exposes persisted contract evidence by scenario."
+            if replay_persistence_complete
+            else "Dashboard Replay Lab is missing persisted contract evidence."
+        ),
+        scenarios=[
+            {
+                "scenario": item.scenario,
+                "raw_payloads_saved": item.raw_payloads_saved,
+                "score_ticks_saved": item.score_ticks_saved,
+                "odds_ticks_saved": item.odds_ticks_saved,
+                "cursors_saved": item.cursors_saved,
+                "provider_latency_saved": item.provider_latency_saved,
+                "resync_required": item.resync_required,
+            }
+            for item in replay_persistence
+        ],
+    )
     _add(
         checks,
         "dashboard_persisted_source",

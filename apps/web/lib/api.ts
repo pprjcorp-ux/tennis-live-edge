@@ -33,7 +33,7 @@ import type {
   Signal
 } from "@/lib/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:8000";
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {

@@ -100,7 +100,11 @@ decide whether the system behaves as budget or enterprise.
     expose persistence evidence (`raw_payloads_saved`, `score_ticks_saved`,
     `odds_ticks_saved`, `cursors_saved`, and `provider_latency_saved`) separately
     from adapter output contracts, so fixture tests can prove both canonical
-    formats and Postgres materialization without live API calls.
+    formats and Postgres materialization without live API calls. The dashboard
+    Replay Lab reads the persisted `replay_contract_run` summary back through
+    `ReplayLabSnapshot.last_contract_persistence`, so operators can inspect
+    per-scenario materialization proof after restart instead of trusting a
+    transient contract response.
 18. Live model registry reads persisted `model_versions`; without persisted
     metrics it exposes only a clearly unvalidated runtime default instead of
     demo ROI/CLV.

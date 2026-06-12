@@ -66,6 +66,9 @@ npm run api:check:operational-truth -- --pretty
 adapter protocols, budget replay fixtures, provider runtime modes, signal safety
 gates, paper settlement, Model Lab `training_examples` readiness, and the
 dashboard-visible provider mode matrix plus Replay Lab/API onboarding sequence.
+Replay Lab also has to surface per-scenario persistence evidence from the last
+`replay_contract_run`, including raw payload, score tick, odds tick, cursor, and
+provider latency counts.
 `api:check:operational-truth` is the integrated local runtime proof: it uses the
 repo venv automatically, validates the Postgres schema, runs fake-provider
 replay contracts, checks the dashboard persisted source summary, confirms real

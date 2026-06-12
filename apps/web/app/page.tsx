@@ -200,6 +200,7 @@ export default function Page() {
     last_contract_status: null,
     last_contract_passed: false,
     last_contract_scenarios: [],
+    last_contract_persistence: [],
     last_replay_run_id: null,
     last_replay_status: null,
     last_replay_events: 0,
@@ -294,8 +295,9 @@ export default function Page() {
       setSignals(nextDashboard.signals);
       setSelectedMatchId((current) => current ?? nextDashboard.matches[0]?.match.id ?? null);
       setUpdatedAt(new Date());
+      setLoading(false);
 
-      const [
+      void auxiliaryResultsPromise.then(([
         modelRegistryResult,
         championModelResult,
         paperPerformanceResult,
@@ -306,40 +308,40 @@ export default function Page() {
         entityConflictsResult,
         bankrollResult,
         ordersResult
-      ] = await auxiliaryResultsPromise;
-      if (modelRegistryResult.status === "fulfilled") setModelRegistry(modelRegistryResult.value);
-      if (championModelResult.status === "fulfilled") setChampionModel(championModelResult.value);
-      if (paperPerformanceResult.status === "fulfilled") setPaperPerformance(paperPerformanceResult.value);
-      if (agentBriefingResult.status === "fulfilled") setAgentBriefing(agentBriefingResult.value);
-      if (agentPreflightResult.status === "fulfilled") setAgentPreflight(agentPreflightResult.value);
-      if (agentAnomaliesResult.status === "fulfilled") setAgentAnomalies(agentAnomaliesResult.value);
-      if (agentRunsResult.status === "fulfilled") setAgentRuns(agentRunsResult.value);
-      if (entityConflictsResult.status === "fulfilled") setEntityConflicts(entityConflictsResult.value);
-      if (bankrollResult.status === "fulfilled") setBankroll(bankrollResult.value);
-      if (ordersResult.status === "fulfilled") setOrders(ordersResult.value);
+      ]) => {
+        if (modelRegistryResult.status === "fulfilled") setModelRegistry(modelRegistryResult.value);
+        if (championModelResult.status === "fulfilled") setChampionModel(championModelResult.value);
+        if (paperPerformanceResult.status === "fulfilled") setPaperPerformance(paperPerformanceResult.value);
+        if (agentBriefingResult.status === "fulfilled") setAgentBriefing(agentBriefingResult.value);
+        if (agentPreflightResult.status === "fulfilled") setAgentPreflight(agentPreflightResult.value);
+        if (agentAnomaliesResult.status === "fulfilled") setAgentAnomalies(agentAnomaliesResult.value);
+        if (agentRunsResult.status === "fulfilled") setAgentRuns(agentRunsResult.value);
+        if (entityConflictsResult.status === "fulfilled") setEntityConflicts(entityConflictsResult.value);
+        if (bankrollResult.status === "fulfilled") setBankroll(bankrollResult.value);
+        if (ordersResult.status === "fulfilled") setOrders(ordersResult.value);
 
-      const auxiliaryErrors = [
-        settledError("model registry", modelRegistryResult),
-        settledError("champion model", championModelResult),
-        settledError("paper performance", paperPerformanceResult),
-        settledError("agent briefing", agentBriefingResult),
-        settledError("agent preflight", agentPreflightResult),
-        settledError("agent anomalies", agentAnomaliesResult),
-        settledError("agent runs", agentRunsResult),
-        settledError("entity conflicts", entityConflictsResult),
-        settledError("bankroll", bankrollResult),
-        settledError("orders", ordersResult)
-      ].filter(Boolean);
-      if (auxiliaryErrors.length) {
-        setError(`Estado operacional carregado; painel auxiliar indisponivel: ${auxiliaryErrors.join(" · ")}`);
-      }
+        const auxiliaryErrors = [
+          settledError("model registry", modelRegistryResult),
+          settledError("champion model", championModelResult),
+          settledError("paper performance", paperPerformanceResult),
+          settledError("agent briefing", agentBriefingResult),
+          settledError("agent preflight", agentPreflightResult),
+          settledError("agent anomalies", agentAnomaliesResult),
+          settledError("agent runs", agentRunsResult),
+          settledError("entity conflicts", entityConflictsResult),
+          settledError("bankroll", bankrollResult),
+          settledError("orders", ordersResult)
+        ].filter(Boolean);
+        if (auxiliaryErrors.length) {
+          setError(`Estado operacional carregado; painel auxiliar indisponivel: ${auxiliaryErrors.join(" · ")}`);
+        }
+      });
     } catch (err) {
       setError(
         err instanceof Error
           ? `Estado operacional indisponivel: ${err.message}`
           : "Estado operacional indisponivel"
       );
-    } finally {
       setLoading(false);
     }
   }

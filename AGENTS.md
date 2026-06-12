@@ -80,6 +80,10 @@ Live mode must not fall back to sample payloads implicitly; use
 rehearsal runs. Use `POST /api/v1/replay/contracts/run` before adding or
 debugging paid provider keys; it runs healthy, gap, and `resync_required`
 fixture scenarios and must pass without consuming live quota.
+The dashboard must also surface
+`operational_state.replay_lab.last_contract_persistence` so each scenario shows
+persisted raw payload, score tick, odds tick, cursor, and provider latency
+counts after restart.
 
 ## API Onboarding
 

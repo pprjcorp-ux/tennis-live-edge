@@ -115,9 +115,39 @@ def _replay_contract_run(
         summary={
             "passed": passed,
             "scenarios": [
-                {"scenario": "healthy", "passed": passed},
-                {"scenario": "gap", "passed": passed},
-                {"scenario": "resync_required", "passed": passed},
+                {
+                    "scenario": "healthy",
+                    "final_status": "completed",
+                    "passed": passed,
+                    "raw_payloads_saved": 3,
+                    "score_ticks_saved": 1,
+                    "odds_ticks_saved": 4,
+                    "cursors_saved": 1,
+                    "provider_latency_saved": 2,
+                    "resync_required": False,
+                },
+                {
+                    "scenario": "gap",
+                    "final_status": "degraded",
+                    "passed": passed,
+                    "raw_payloads_saved": 4,
+                    "score_ticks_saved": 1,
+                    "odds_ticks_saved": 5,
+                    "cursors_saved": 1,
+                    "provider_latency_saved": 2,
+                    "resync_required": True,
+                },
+                {
+                    "scenario": "resync_required",
+                    "final_status": "degraded",
+                    "passed": passed,
+                    "raw_payloads_saved": 4,
+                    "score_ticks_saved": 1,
+                    "odds_ticks_saved": 5,
+                    "cursors_saved": 1,
+                    "provider_latency_saved": 2,
+                    "resync_required": True,
+                },
             ],
         },
         started_at=completed_at,
@@ -925,6 +955,17 @@ def test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys() -> 
     assert replay_lab.last_contract_status == "completed"
     assert replay_lab.last_contract_passed is True
     assert replay_lab.last_contract_scenarios == ["healthy", "gap", "resync_required"]
+    assert [
+        evidence.scenario for evidence in replay_lab.last_contract_persistence
+    ] == ["healthy", "gap", "resync_required"]
+    assert replay_lab.last_contract_persistence[0].raw_payloads_saved == 3
+    assert replay_lab.last_contract_persistence[0].score_ticks_saved == 1
+    assert replay_lab.last_contract_persistence[0].odds_ticks_saved == 4
+    assert replay_lab.last_contract_persistence[0].cursors_saved == 1
+    assert replay_lab.last_contract_persistence[0].provider_latency_saved == 2
+    assert replay_lab.last_contract_persistence[0].resync_required is False
+    assert replay_lab.last_contract_persistence[1].final_status == "degraded"
+    assert replay_lab.last_contract_persistence[1].resync_required is True
     assert replay_lab.last_replay_run_id == "ingest_replay_1"
     assert replay_lab.last_replay_status == "degraded"
     assert replay_lab.last_replay_events == 3
@@ -948,6 +989,7 @@ def test_replay_lab_readiness_collects_until_contract_run_is_persisted() -> None
     assert replay_lab.status == "collecting"
     assert replay_lab.last_contract_run_id is None
     assert replay_lab.last_contract_passed is False
+    assert replay_lab.last_contract_persistence == []
     assert replay_lab.last_replay_run_id is None
     assert replay_lab.last_replay_events == 0
     assert any("No persisted replay_contract_run" in note for note in replay_lab.notes)

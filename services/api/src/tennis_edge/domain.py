@@ -1013,6 +1013,18 @@ class ReplayContractProvider(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class ReplayContractScenarioEvidence(BaseModel):
+    scenario: ReplayContractScenario
+    final_status: str
+    passed: bool
+    raw_payloads_saved: int = 0
+    score_ticks_saved: int = 0
+    odds_ticks_saved: int = 0
+    cursors_saved: int = 0
+    provider_latency_saved: int = 0
+    resync_required: bool = False
+
+
 class ReplayLabSnapshot(BaseModel):
     status: Literal["ready", "collecting", "blocked"]
     source: Literal["budget_replay_fixtures"]
@@ -1022,6 +1034,9 @@ class ReplayLabSnapshot(BaseModel):
     last_contract_status: str | None = None
     last_contract_passed: bool = False
     last_contract_scenarios: list[str] = Field(default_factory=list)
+    last_contract_persistence: list[ReplayContractScenarioEvidence] = Field(
+        default_factory=list
+    )
     last_replay_run_id: str | None = None
     last_replay_status: str | None = None
     last_replay_events: int = 0

@@ -25,6 +25,7 @@ from tennis_edge.domain import (
     ProviderHealth,
     ProviderModeStep,
     ReplayContractProvider,
+    ReplayContractScenarioEvidence,
     ReplayLabSnapshot,
 )
 from tennis_edge.services.cost_profile import (
@@ -50,6 +51,40 @@ def _replay_contract_scenarios(summary: dict) -> list[str]:
         if isinstance(scenario, str):
             scenarios.append(scenario)
     return scenarios
+
+
+def _summary_int(row: dict, key: str) -> int:
+    value = row.get(key)
+    return value if isinstance(value, int) else 0
+
+
+def _replay_contract_persistence(
+    summary: dict,
+) -> list[ReplayContractScenarioEvidence]:
+    scenario_rows = summary.get("scenarios")
+    if not isinstance(scenario_rows, list):
+        return []
+    evidence: list[ReplayContractScenarioEvidence] = []
+    for row in scenario_rows:
+        if not isinstance(row, dict):
+            continue
+        scenario = row.get("scenario")
+        if scenario not in {"healthy", "gap", "resync_required"}:
+            continue
+        evidence.append(
+            ReplayContractScenarioEvidence(
+                scenario=scenario,
+                final_status=str(row.get("final_status") or "unknown"),
+                passed=bool(row.get("passed") is True),
+                raw_payloads_saved=_summary_int(row, "raw_payloads_saved"),
+                score_ticks_saved=_summary_int(row, "score_ticks_saved"),
+                odds_ticks_saved=_summary_int(row, "odds_ticks_saved"),
+                cursors_saved=_summary_int(row, "cursors_saved"),
+                provider_latency_saved=_summary_int(row, "provider_latency_saved"),
+                resync_required=bool(row.get("resync_required") is True),
+            )
+        )
+    return evidence
 
 
 class OperationalStateService:
@@ -410,6 +445,9 @@ class OperationalStateService:
         last_contract_summary = last_contract.summary if last_contract else {}
         last_contract_passed = bool(last_contract_summary.get("passed") is True)
         last_contract_scenarios = _replay_contract_scenarios(last_contract_summary)
+        last_contract_persistence = _replay_contract_persistence(
+            last_contract_summary
+        )
         providers = [
             ReplayContractProvider(
                 provider=spec.provider,
@@ -448,6 +486,7 @@ class OperationalStateService:
             last_contract_status=last_contract.status if last_contract else None,
             last_contract_passed=last_contract_passed,
             last_contract_scenarios=last_contract_scenarios,
+            last_contract_persistence=last_contract_persistence,
             last_replay_run_id=last_run.id if last_run else None,
             last_replay_status=last_run.status if last_run else None,
             last_replay_events=int(last_summary.get("events_replayed") or 0),

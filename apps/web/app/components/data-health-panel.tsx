@@ -72,6 +72,13 @@ function summaryText(run: IngestionRunRecord) {
     const resync = summary.resync_required === true ? "resync required" : null;
     return [scenario, events, score, odds, resync].filter(Boolean).join(" · ");
   }
+  if (run.run_type === "replay_contract_run") {
+    const passed = summary.passed === true ? "contract passed" : "contract blocked";
+    const scenarios = Array.isArray(summary.scenarios)
+      ? `${summary.scenarios.length} scenarios`
+      : null;
+    return [passed, scenarios].filter(Boolean).join(" · ");
+  }
   const directReason = typeof summary.reason === "string" ? summary.reason : null;
   const error = typeof summary.error === "string" ? summary.error : null;
   const oddsIngestion = summaryObject(summary.odds_ingestion);
@@ -178,6 +185,28 @@ export function DataHealthPanel({
           <span className={replayStatusClass(replayLab.status)}>{replayLab.status}</span>
           <span>{replayLab.can_validate_without_live_keys ? "no live keys required" : "live keys required"}</span>
           <span>{replayLab.scenarios.join(", ")}</span>
+          <span
+            className={
+              replayLab.last_contract_passed
+                ? "status statusEntry"
+                : replayLab.last_contract_run_id
+                  ? "status statusBlocked"
+                  : "status statusMonitor"
+            }
+          >
+            contract{" "}
+            {replayLab.last_contract_passed
+              ? "passed"
+              : replayLab.last_contract_run_id
+                ? "failed"
+                : "pending"}
+          </span>
+          <span>
+            contract {replayLab.last_contract_run_id ?? "none"} ·{" "}
+            {replayLab.last_contract_scenarios.length
+              ? replayLab.last_contract_scenarios.join(", ")
+              : "no scenarios"}
+          </span>
           <span>
             last {replayLab.last_replay_run_id ?? "none"} · events {replayLab.last_replay_events} · score{" "}
             {replayLab.last_replay_score_ticks} · odds {replayLab.last_replay_odds_ticks}

@@ -280,6 +280,10 @@ export type ReplayLabSnapshot = {
   source: "budget_replay_fixtures";
   providers: ReplayContractProvider[];
   scenarios: string[];
+  last_contract_run_id: string | null;
+  last_contract_status: string | null;
+  last_contract_passed: boolean;
+  last_contract_scenarios: string[];
   last_replay_run_id: string | null;
   last_replay_status: string | null;
   last_replay_events: number;
@@ -297,7 +301,8 @@ export type IngestionRunRecord = {
     | "odds_message"
     | "odds_stream"
     | "live_budget_cycle"
-    | "replay_run";
+    | "replay_run"
+    | "replay_contract_run";
   source: "api" | "cli" | "openclaw" | "cron" | "system";
   status: "completed" | "degraded" | "skipped" | "failed";
   summary: Record<string, unknown>;

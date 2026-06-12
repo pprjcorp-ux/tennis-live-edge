@@ -36,6 +36,20 @@ from tennis_edge.services.provider_cursor import default_provider_cursors
 from tennis_edge.services.storage import PersistentStore
 
 
+def _replay_contract_scenarios(summary: dict) -> list[str]:
+    scenario_rows = summary.get("scenarios")
+    if not isinstance(scenario_rows, list):
+        return []
+    scenarios: list[str] = []
+    for row in scenario_rows:
+        if not isinstance(row, dict):
+            continue
+        scenario = row.get("scenario")
+        if isinstance(scenario, str):
+            scenarios.append(scenario)
+    return scenarios
+
+
 class OperationalStateService:
     def __init__(self, settings: Settings, store: PersistentStore) -> None:
         self.settings = settings
@@ -324,9 +338,17 @@ class OperationalStateService:
         )
 
     def replay_lab_readiness(self) -> ReplayLabSnapshot:
-        replay_runs = [run for run in self.ingestion_runs() if run.run_type == "replay_run"]
+        ingestion_runs = self.ingestion_runs()
+        replay_runs = [run for run in ingestion_runs if run.run_type == "replay_run"]
+        contract_runs = [
+            run for run in ingestion_runs if run.run_type == "replay_contract_run"
+        ]
         last_run = replay_runs[0] if replay_runs else None
+        last_contract = contract_runs[0] if contract_runs else None
         last_summary = last_run.summary if last_run else {}
+        last_contract_summary = last_contract.summary if last_contract else {}
+        last_contract_passed = bool(last_contract_summary.get("passed") is True)
+        last_contract_scenarios = _replay_contract_scenarios(last_contract_summary)
         providers = [
             ReplayContractProvider(
                 provider=Provider.API_TENNIS,
@@ -363,13 +385,27 @@ class OperationalStateService:
             "Replay fixtures are the fake API layer; live provider keys are not required.",
             "Run healthy, gap, and resync_required odds scenarios before enabling live websocket ingestion.",
         ]
+        if last_contract is None:
+            notes.append("No persisted replay_contract_run has been recorded yet.")
+        elif not last_contract_passed:
+            notes.append("Last replay_contract_run did not pass; keep paid provider onboarding blocked.")
         if last_run is None:
             notes.append("No persisted replay_run has been recorded yet.")
         return ReplayLabSnapshot(
-            status="ready" if last_run else "collecting",
+            status=(
+                "ready"
+                if last_contract_passed
+                else "blocked"
+                if last_contract is not None
+                else "collecting"
+            ),
             source="budget_replay_fixtures",
             providers=providers,
             scenarios=["healthy", "gap", "resync_required"],
+            last_contract_run_id=last_contract.id if last_contract else None,
+            last_contract_status=last_contract.status if last_contract else None,
+            last_contract_passed=last_contract_passed,
+            last_contract_scenarios=last_contract_scenarios,
             last_replay_run_id=last_run.id if last_run else None,
             last_replay_status=last_run.status if last_run else None,
             last_replay_events=int(last_summary.get("events_replayed") or 0),
@@ -382,6 +418,8 @@ class OperationalStateService:
 
     def api_onboarding(self) -> ApiOnboardingSnapshot:
         core_ready, persistence_error = self._persistence_ready()
+        replay_lab = self.replay_lab_readiness()
+        replay_contract_ready = replay_lab.last_contract_passed
         warnings: list[str] = []
         if not core_ready:
             warnings.append(
@@ -389,6 +427,10 @@ class OperationalStateService:
             )
             if persistence_error:
                 warnings.append(persistence_error)
+        if not replay_contract_ready:
+            warnings.append(
+                "Run /api/v1/replay/contracts/run and keep all replay contracts passing before enabling paid provider keys."
+            )
 
         odds_cursor_resync = any(
             cursor.provider == Provider.ODDS_API_IO and cursor.resync_required
@@ -431,15 +473,22 @@ class OperationalStateService:
                 configured=the_odds_api_configured,
                 status=setup_status(
                     configured=the_odds_api_configured,
-                    prerequisites_met=True,
+                    prerequisites_met=replay_contract_ready,
                 ),
                 required_before_enable=[]
-                if core_ready
-                else ["Healthy Postgres/Timescale persistence"],
+                if core_ready and replay_contract_ready
+                else [
+                    requirement
+                    for requirement, satisfied in [
+                        ("Healthy Postgres/Timescale persistence", core_ready),
+                        ("Passing replay contract run", replay_contract_ready),
+                    ]
+                    if not satisfied
+                ],
                 next_action=(
                     "Keep as REST archive/comparison and never override fresher persisted live odds."
                     if the_odds_api_configured
-                    else "Set THE_ODDS_API_KEY and run an archive snapshot smoke check."
+                    else "Run replay contracts first, then set THE_ODDS_API_KEY and run an archive snapshot smoke check."
                 ),
                 notes=[
                     "Lowest-risk paid provider to connect first because it is REST/archive, not live decisioning."
@@ -452,12 +501,13 @@ class OperationalStateService:
                 configured=api_tennis_configured,
                 status=setup_status(
                     configured=api_tennis_configured,
-                    prerequisites_met=the_odds_api_configured,
+                    prerequisites_met=the_odds_api_configured and replay_contract_ready,
                 ),
                 required_before_enable=[
                     requirement
                     for requirement, satisfied in [
                         ("Healthy Postgres/Timescale persistence", core_ready),
+                        ("Passing replay contract run", replay_contract_ready),
                         ("TheOddsAPI archive/comparison configured", the_odds_api_configured),
                     ]
                     if not satisfied
@@ -481,13 +531,18 @@ class OperationalStateService:
                     if odds_api_io_configured and odds_cursor_resync
                     else setup_status(
                         configured=odds_api_io_configured,
-                        prerequisites_met=the_odds_api_configured and api_tennis_configured,
+                        prerequisites_met=(
+                            replay_contract_ready
+                            and the_odds_api_configured
+                            and api_tennis_configured
+                        ),
                     )
                 ),
                 required_before_enable=[
                     requirement
                     for requirement, satisfied in [
                         ("Healthy Postgres/Timescale persistence", core_ready),
+                        ("Passing replay contract run", replay_contract_ready),
                         ("TheOddsAPI archive/comparison configured", the_odds_api_configured),
                         ("API-Tennis score/livescore configured", api_tennis_configured),
                     ]
@@ -510,7 +565,8 @@ class OperationalStateService:
                 status=setup_status(
                     configured=enterprise_configured,
                     prerequisites_met=(
-                        the_odds_api_configured
+                        replay_contract_ready
+                        and the_odds_api_configured
                         and api_tennis_configured
                         and odds_api_io_configured
                     ),
@@ -520,6 +576,7 @@ class OperationalStateService:
                     requirement
                     for requirement, satisfied in [
                         ("Enable ENTERPRISE_FEEDS_ENABLED only after budget paper proof", self.settings.enterprise_feeds_enabled),
+                        ("Passing replay contract run", replay_contract_ready),
                         ("TheOddsAPI archive/comparison configured", the_odds_api_configured),
                         ("API-Tennis score/livescore configured", api_tennis_configured),
                         ("Odds-API.io websocket configured", odds_api_io_configured),

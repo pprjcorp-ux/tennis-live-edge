@@ -94,6 +94,30 @@ def _paper_performance() -> PaperPerformance:
     )
 
 
+def _replay_contract_run(
+    *,
+    passed: bool = True,
+    generated_at: datetime | None = None,
+) -> IngestionRunRecord:
+    completed_at = generated_at or datetime(2026, 6, 7, tzinfo=timezone.utc)
+    return IngestionRunRecord(
+        id="ingest_replay_contract_1",
+        run_type="replay_contract_run",
+        source="api",
+        status="completed" if passed else "failed",
+        summary={
+            "passed": passed,
+            "scenarios": [
+                {"scenario": "healthy", "passed": passed},
+                {"scenario": "gap", "passed": passed},
+                {"scenario": "resync_required", "passed": passed},
+            ],
+        },
+        started_at=completed_at,
+        completed_at=completed_at,
+    )
+
+
 def _snapshot(service: OperationalStateService, generated_at: datetime):
     return service.snapshot(
         cost_report=service.daily_cost_report(
@@ -322,7 +346,7 @@ def test_api_onboarding_guides_budget_provider_sequence_after_archive_key() -> N
             persistence_enabled=True,
             database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
         ),
-        StoreStub(),
+        StoreStub(ingestion_runs=[_replay_contract_run()]),
     )
 
     onboarding = service.api_onboarding()
@@ -336,6 +360,32 @@ def test_api_onboarding_guides_budget_provider_sequence_after_archive_key() -> N
     assert steps[Provider.ODDS_API_IO].status == "blocked"
     assert "API-Tennis score/livescore configured" in steps[Provider.ODDS_API_IO].required_before_enable
     assert steps[Provider.SPORTRADAR].status == "deferred"
+
+
+def test_api_onboarding_blocks_paid_keys_until_replay_contract_passes() -> None:
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            the_odds_api_key=None,
+            api_tennis_key=None,
+            odds_api_io_key=None,
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(),
+    )
+
+    onboarding = service.api_onboarding()
+    archive_step = next(
+        step for step in onboarding.steps if step.provider == Provider.THE_ODDS_API
+    )
+
+    assert onboarding.core_ready is True
+    assert onboarding.current_step == "1. theoddsapi:archive_odds"
+    assert archive_step.status == "blocked"
+    assert archive_step.current is True
+    assert "Passing replay contract run" in archive_step.required_before_enable
+    assert any("replay/contracts/run" in warning for warning in onboarding.warnings)
 
 
 def test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync() -> None:
@@ -358,7 +408,7 @@ def test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync() -> N
             persistence_enabled=True,
             database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
         ),
-        StoreStub(cursors=[resync_cursor]),
+        StoreStub(cursors=[resync_cursor], ingestion_runs=[_replay_contract_run()]),
     )
 
     onboarding = service.api_onboarding()
@@ -658,6 +708,7 @@ def test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys() -> 
         Settings(data_mode="live", persistence_enabled=True),
         StoreStub(
             ingestion_runs=[
+                _replay_contract_run(generated_at=generated_at),
                 IngestionRunRecord(
                     id="ingest_replay_1",
                     run_type="replay_run",
@@ -682,6 +733,10 @@ def test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys() -> 
     assert replay_lab.status == "ready"
     assert replay_lab.source == "budget_replay_fixtures"
     assert replay_lab.can_validate_without_live_keys is True
+    assert replay_lab.last_contract_run_id == "ingest_replay_contract_1"
+    assert replay_lab.last_contract_status == "completed"
+    assert replay_lab.last_contract_passed is True
+    assert replay_lab.last_contract_scenarios == ["healthy", "gap", "resync_required"]
     assert replay_lab.last_replay_run_id == "ingest_replay_1"
     assert replay_lab.last_replay_status == "degraded"
     assert replay_lab.last_replay_events == 3
@@ -697,15 +752,35 @@ def test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys() -> 
     assert "RawProviderPayload" in providers[Provider.THE_ODDS_API].input_contracts
 
 
-def test_replay_lab_readiness_collects_until_replay_run_is_persisted() -> None:
+def test_replay_lab_readiness_collects_until_contract_run_is_persisted() -> None:
     service = OperationalStateService(Settings(data_mode="live"), StoreStub())
 
     replay_lab = service.replay_lab_readiness()
 
     assert replay_lab.status == "collecting"
+    assert replay_lab.last_contract_run_id is None
+    assert replay_lab.last_contract_passed is False
     assert replay_lab.last_replay_run_id is None
     assert replay_lab.last_replay_events == 0
-    assert any("No persisted replay_run" in note for note in replay_lab.notes)
+    assert any("No persisted replay_contract_run" in note for note in replay_lab.notes)
+
+
+def test_replay_lab_readiness_collects_until_replay_run_is_persisted() -> None:
+    test_replay_lab_readiness_collects_until_contract_run_is_persisted()
+
+
+def test_replay_lab_readiness_blocks_failed_contract_run() -> None:
+    service = OperationalStateService(
+        Settings(data_mode="live"),
+        StoreStub(ingestion_runs=[_replay_contract_run(passed=False)]),
+    )
+
+    replay_lab = service.replay_lab_readiness()
+
+    assert replay_lab.status == "blocked"
+    assert replay_lab.last_contract_passed is False
+    assert replay_lab.last_contract_scenarios == ["healthy", "gap", "resync_required"]
+    assert any("did not pass" in note for note in replay_lab.notes)
 
 
 def test_live_readiness_blocks_entries_when_persistent_store_cannot_connect() -> None:

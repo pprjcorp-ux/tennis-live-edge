@@ -950,6 +950,10 @@ class ReplayLabSnapshot(BaseModel):
     source: Literal["budget_replay_fixtures"]
     providers: list[ReplayContractProvider]
     scenarios: list[str]
+    last_contract_run_id: str | None = None
+    last_contract_status: str | None = None
+    last_contract_passed: bool = False
+    last_contract_scenarios: list[str] = Field(default_factory=list)
     last_replay_run_id: str | None = None
     last_replay_status: str | None = None
     last_replay_events: int = 0

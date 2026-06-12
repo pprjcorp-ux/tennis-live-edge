@@ -67,6 +67,7 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(pageSource, /apiOnboarding=\{apiOnboarding\}/);
   assert.match(pageSource, /ingestionRuns=\{ingestionRuns\}/);
   assert.match(pageSource, /providerModeMatrix=\{providerModeMatrix\}/);
+  assert.match(pageSource, /providerModeReason=\{providerModeReason\}/);
   assert.match(pageSource, /replayLab=\{replayLab\}/);
   assert.match(apiSource, /\/api\/v1\/dashboard\/live-state/);
   assert.match(apiSource, /odds_scenario: oddsScenario/);
@@ -78,6 +79,12 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(dataHealthSource, /replayContractBusy/);
   assert.match(dataHealthSource, /Run replay contract scenarios/);
   assert.match(dataHealthSource, /Provider Mode Matrix/);
+  assert.match(dataHealthSource, /Operational Truth/);
+  assert.match(dataHealthSource, /Modo, cursor e replay contract/);
+  assert.match(dataHealthSource, /activeMode/);
+  assert.match(dataHealthSource, /contractStatusLabel/);
+  assert.match(dataHealthSource, /sourceSummary/);
+  assert.match(dataHealthSource, /missing blocks Entrada/);
   assert.match(dataHealthSource, /providerModeMatrix\.map/);
   assert.match(dataHealthSource, /entries \{step\.entry_gate\}/);
   assert.match(dataHealthSource, /replayLab\.providers/);

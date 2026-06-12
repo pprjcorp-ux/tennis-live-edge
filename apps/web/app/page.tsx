@@ -667,6 +667,7 @@ export default function Page() {
             ingestionRuns={ingestionRuns}
             onRunReplayContracts={triggerReplayContracts}
             providerModeMatrix={providerModeMatrix}
+            providerModeReason={providerModeReason}
             providerCursors={providerCursors}
             replayContractBusy={replayContractBusy}
             replayLab={replayLab}

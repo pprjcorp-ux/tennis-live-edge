@@ -52,6 +52,23 @@ function entryGateClass(gate: ProviderModeStep["entry_gate"]) {
   return "status statusBlocked";
 }
 
+function contractStatusClass(replayLab: ReplayLabSnapshot) {
+  if (replayLab.last_contract_passed) return "status statusEntry";
+  if (replayLab.last_contract_run_id) return "status statusBlocked";
+  return "status statusMonitor";
+}
+
+function contractStatusLabel(replayLab: ReplayLabSnapshot) {
+  if (replayLab.last_contract_passed) return "contract passed";
+  if (replayLab.last_contract_run_id) return "contract failed";
+  return "contract pending";
+}
+
+function sourceSummary(run: IngestionRunRecord | undefined) {
+  if (!run) return "no persisted run";
+  return `${run.run_type.replaceAll("_", " ")} · ${run.source} · ${run.status}`;
+}
+
 function summaryObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -100,6 +117,7 @@ export function DataHealthPanel({
   ingestionRuns,
   onRunReplayContracts,
   providerModeMatrix,
+  providerModeReason,
   providerCursors,
   replayContractBusy,
   replayLab
@@ -109,12 +127,76 @@ export function DataHealthPanel({
   ingestionRuns: IngestionRunRecord[];
   onRunReplayContracts: () => void;
   providerModeMatrix: ProviderModeStep[];
+  providerModeReason: string;
   providerCursors: ProviderCursor[];
   replayContractBusy: boolean;
   replayLab: ReplayLabSnapshot;
 }) {
+  const activeMode = providerModeMatrix.find((step) => step.active) ?? providerModeMatrix[0];
+  const oddsCursor = providerCursors.find((cursor) => cursor.provider === "odds_api_io");
+  const latestRun = ingestionRuns[0];
+
   return (
     <div className="enterpriseGrid">
+      <div className="panel wide">
+        <div className="panelHeader">
+          <div>
+            <p className="eyebrow">Operational Truth</p>
+            <h2>Modo, cursor e replay contract</h2>
+          </div>
+          <DatabaseZap size={20} />
+        </div>
+        <div className="operationalTruthRows">
+          <div className="operationalTruthRow">
+            <span>Active mode</span>
+            <strong className={activeMode ? modeStatusClass(activeMode.status) : "status statusBlocked"}>
+              {activeMode?.mode ?? "unknown"}
+            </strong>
+            <p>{providerModeReason}</p>
+          </div>
+          <div className="operationalTruthRow">
+            <span>Entry gate</span>
+            <strong className={activeMode ? entryGateClass(activeMode.entry_gate) : "status statusBlocked"}>
+              {activeMode?.entry_gate ?? "block"}
+            </strong>
+            <p>
+              {activeMode?.blockers.length
+                ? activeMode.blockers.join(", ")
+                : activeMode?.next_action ?? "Awaiting operational state."}
+            </p>
+          </div>
+          <div className="operationalTruthRow">
+            <span>Replay contract</span>
+            <strong className={contractStatusClass(replayLab)}>{contractStatusLabel(replayLab)}</strong>
+            <p>
+              {replayLab.last_contract_scenarios.length
+                ? replayLab.last_contract_scenarios.join(", ")
+                : "Run replay contracts before adding provider keys."}
+            </p>
+          </div>
+          <div className="operationalTruthRow">
+            <span>Odds cursor</span>
+            <strong className={oddsCursor ? cursorStatusClass(oddsCursor) : "status statusBlocked"}>
+              {oddsCursor?.status ?? "missing"}
+            </strong>
+            <p>
+              seq {oddsCursor?.last_seq ?? "none"} · next {oddsCursor?.expected_next_seq ?? "none"} ·{" "}
+              {oddsCursor
+                ? oddsCursor.resync_required
+                  ? "blocks Entrada"
+                  : "cursor trusted"
+                : "missing blocks Entrada"}
+            </p>
+          </div>
+          <div className="operationalTruthRow">
+            <span>Latest persisted run</span>
+            <strong className={latestRun ? ingestionStatusClass(latestRun.status) : "status statusBlocked"}>
+              {latestRun?.status ?? "missing"}
+            </strong>
+            <p>{sourceSummary(latestRun)}</p>
+          </div>
+        </div>
+      </div>
       <div className="panel wide">
         <div className="panelHeader">
           <div>

@@ -59,12 +59,18 @@ Paper entries stay blocked until `TENNIS_EDGE_PERSISTENCE_ENABLED=true`,
 npm run api:test
 npm --prefix apps/web run build
 python3 scripts/check_private_runtime.py
+npm run api:check:operational-truth -- --pretty
 ```
 
 `check_private_runtime.py` also verifies the API-last core contract: provider
 adapter protocols, budget replay fixtures, provider runtime modes, signal safety
 gates, paper settlement, Model Lab `training_examples` readiness, and the
 dashboard-visible provider mode matrix plus Replay Lab/API onboarding sequence.
+`api:check:operational-truth` is the integrated local runtime proof: it uses the
+repo venv automatically, validates the Postgres schema, runs fake-provider
+replay contracts, checks the dashboard persisted source summary, confirms real
+execution is hard-blocked, and can create a rehearsal-only paper training
+example without any live API calls.
 
 ## Documentation
 

@@ -11,6 +11,7 @@
     "api:ingest:odds-stream": "cd services/api && ../../.venv/bin/python -m tennis_edge.ingest_odds_stream",
     "api:ops:daily": "cd services/api && ../../.venv/bin/python -m tennis_edge.operational_daily",
     "api:replay:contracts": "cd services/api && ../../.venv/bin/python -m tennis_edge.replay_contracts",
+    "api:check:operational-truth": "python3 scripts/check_operational_truth_runtime.py",
     "api:test": "cd services/api && ../../.venv/bin/pytest",
     "web:test": "npm --prefix apps/web test",
     "cloudflare:check": "python3 scripts/check_cloudflare_private_runtime.py",

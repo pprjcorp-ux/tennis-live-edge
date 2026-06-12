@@ -80,6 +80,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     ).read_text()
     web_page = (root / "apps/web/app/page.tsx").read_text()
     web_api = (root / "apps/web/lib/api.ts").read_text()
+    runtime_check = (root / "scripts/check_operational_truth_runtime.py").read_text()
+    package_json = (root / "package.json").read_text()
 
     _require_text(
         errors,
@@ -277,6 +279,23 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "events_replayed",
             "resync required",
             "Ingestion Journal",
+        ],
+    )
+    _require_text(
+        errors,
+        label="integrated operational truth runtime check",
+        text=runtime_check + package_json,
+        required=[
+            "api:check:operational-truth",
+            "check_operational_truth_runtime.py",
+            "REQUIRED_TABLES",
+            "run_daily_operational_loop",
+            "run_paper_rehearsal",
+            "dashboard_persisted_source",
+            "signals_fail_closed_in_replay",
+            "real_execution_blocked",
+            "model_lab_training_examples",
+            "live_api_calls == 0",
         ],
     )
     return errors

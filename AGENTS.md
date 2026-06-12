@@ -119,7 +119,14 @@ npm run api:ingest
 printf '{"event_id":"smoke-event","seq":1,"timestamp":"2026-06-07T20:00:00Z","data":{"bookmaker":"SmokeBook","market":"h2h","selections":[{"player_id":"p1","odds":1.8},{"player_id":"p2","odds":2.1}]}}' | TENNIS_EDGE_DATA_MODE=sample TENNIS_EDGE_PERSISTENCE_ENABLED=false npm run api:ingest:odds-message
 npm --prefix apps/web run build
 python3 scripts/check_private_runtime.py
+npm run api:check:operational-truth -- --pretty
 ```
+
+`api:check:operational-truth` is the required integrated smoke before API
+onboarding work: it validates local Postgres schema, fake-provider replay
+contracts, dashboard persisted source summary, fail-closed replay signals,
+execution hard block, and rehearsal-only `training_examples` without spending
+provider quota.
 
 When the local API is running:
 

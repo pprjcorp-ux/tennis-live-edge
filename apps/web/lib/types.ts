@@ -269,6 +269,9 @@ export type ModelLabReadinessSnapshot = {
   model_version: string;
   feature_set: string;
   training_examples: number;
+  total_training_examples: number;
+  production_training_examples: number;
+  rehearsal_training_examples: number;
   can_run_live_backtest: boolean;
   reasons: string[];
 };

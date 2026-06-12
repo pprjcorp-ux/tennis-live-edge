@@ -1972,6 +1972,51 @@ class PersistentStore:
                 return 0
         return int(row["examples"] or 0) if row else 0
 
+    def training_example_lineage_counts(self) -> dict[str, int]:
+        if not self.enabled:
+            return {"total": 0, "production": 0, "rehearsal": 0}
+        with self._connect() as conn:
+            if conn is None:
+                return {"total": 0, "production": 0, "rehearsal": 0}
+            try:
+                with conn.cursor() as cur:
+                    row = cur.execute(
+                        """
+                        SELECT
+                          count(*)::int AS total,
+                          count(*) FILTER (
+                            WHERE te.model_version LIKE 'paper_rehearsal%%'
+                          )::int AS rehearsal,
+                          count(*) FILTER (
+                            WHERE te.model_version NOT LIKE 'paper_rehearsal%%'
+                          )::int AS production
+                        FROM training_examples te
+                        LEFT JOIN paper_orders po ON te.id = ('train_' || po.external_order_ref)
+                        LEFT JOIN LATERAL (
+                          SELECT settled_at
+                          FROM paper_settlements
+                          WHERE paper_order_id = po.id
+                          ORDER BY settled_at DESC, id DESC
+                          LIMIT 1
+                        ) latest_settlement ON TRUE
+                        WHERE te.result_win IS NOT NULL
+                          AND te.pnl IS NOT NULL
+                          AND te.stake_amount > 0
+                          AND (
+                            latest_settlement.settled_at IS NULL
+                            OR te.decision_ts < latest_settlement.settled_at
+                          )
+                        """
+                    ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("training_example_lineage_counts", exc)
+                return {"total": 0, "production": 0, "rehearsal": 0}
+        return {
+            "total": int(row["total"] or 0) if row else 0,
+            "production": int(row["production"] or 0) if row else 0,
+            "rehearsal": int(row["rehearsal"] or 0) if row else 0,
+        }
+
     def backtest_metrics(self, request: BacktestRunRequest | None = None) -> BacktestMetrics | None:
         request = request or BacktestRunRequest()
         examples = self.training_examples(request)

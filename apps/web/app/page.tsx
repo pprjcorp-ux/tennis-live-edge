@@ -184,6 +184,9 @@ export default function Page() {
     model_version: "prematch_ensemble_v1",
     feature_set: "live_budget_v1",
     training_examples: 0,
+    total_training_examples: 0,
+    production_training_examples: 0,
+    rehearsal_training_examples: 0,
     can_run_live_backtest: false,
     reasons: ["Awaiting operational state."]
   });
@@ -775,6 +778,9 @@ export default function Page() {
               <div className="modelLabDataset">
                 <span className={preflightStatusClass(modelLab.status)}>{modelLab.status}</span>
                 <span>{modelLab.training_examples} settled examples</span>
+                <span>{modelLab.production_training_examples} production</span>
+                <span>{modelLab.rehearsal_training_examples} rehearsal</span>
+                <span>{modelLab.total_training_examples} total</span>
                 <span>{modelLab.model_version}</span>
                 <span>{modelLab.feature_set}</span>
                 <span>{modelLab.can_run_live_backtest ? "live backtest ready" : "live backtest blocked"}</span>

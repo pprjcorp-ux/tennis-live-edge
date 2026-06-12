@@ -987,6 +987,9 @@ class ModelLabReadinessSnapshot(BaseModel):
     model_version: str
     feature_set: str
     training_examples: int
+    total_training_examples: int = 0
+    production_training_examples: int = 0
+    rehearsal_training_examples: int = 0
     can_run_live_backtest: bool
     reasons: list[str] = Field(default_factory=list)
 

@@ -55,6 +55,13 @@ class StoreStub:
     def training_example_count(self) -> int:
         return self._training_examples_count
 
+    def training_example_lineage_counts(self) -> dict[str, int]:
+        return {
+            "total": self._training_examples_count,
+            "production": self._training_examples_count,
+            "rehearsal": 0,
+        }
+
     def provider_usage_counts(self, target_date) -> dict[Provider, int]:
         return self._provider_usage_counts
 
@@ -661,8 +668,39 @@ def test_model_lab_readiness_uses_persisted_training_examples_dataset() -> None:
     assert model_lab.status == "ready"
     assert model_lab.source == "training_examples"
     assert model_lab.training_examples == 42
+    assert model_lab.total_training_examples == 42
+    assert model_lab.production_training_examples == 42
+    assert model_lab.rehearsal_training_examples == 0
     assert model_lab.can_run_live_backtest is True
     assert model_lab.reasons == []
+
+
+def test_model_lab_readiness_excludes_rehearsal_examples_from_production() -> None:
+    class RehearsalOnlyStore(StoreStub):
+        def __init__(self) -> None:
+            super().__init__(cursors=[_healthy_odds_cursor()], training_examples_count=0)
+
+        def training_example_lineage_counts(self) -> dict[str, int]:
+            return {"total": 3, "production": 0, "rehearsal": 3}
+
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        RehearsalOnlyStore(),
+    )
+
+    model_lab = service.model_lab_readiness()
+
+    assert model_lab.status == "collecting"
+    assert model_lab.training_examples == 0
+    assert model_lab.total_training_examples == 3
+    assert model_lab.production_training_examples == 0
+    assert model_lab.rehearsal_training_examples == 3
+    assert model_lab.can_run_live_backtest is False
+    assert any("rehearsal" in reason for reason in model_lab.reasons)
 
 
 def test_model_lab_readiness_blocks_without_persistent_truth() -> None:

@@ -302,6 +302,18 @@ class OperationalStateService:
         except TypeError:
             return int(counter())
 
+    def _training_example_lineage_counts(self) -> dict[str, int]:
+        counter = getattr(self.store, "training_example_lineage_counts", None)
+        if callable(counter):
+            counts = counter()
+            return {
+                "total": int(counts.get("total", 0)),
+                "production": int(counts.get("production", 0)),
+                "rehearsal": int(counts.get("rehearsal", 0)),
+            }
+        total = self._training_example_count()
+        return {"total": total, "production": total, "rehearsal": 0}
+
     def model_lab_readiness(self) -> ModelLabReadinessSnapshot:
         default_request = BacktestRunRequest()
         request = BacktestRunRequest(
@@ -313,12 +325,16 @@ class OperationalStateService:
             feature_set=default_request.feature_set,
         )
         persistence_ready, persistence_detail = self._persistence_ready()
+        lineage_counts = {"total": 0, "production": 0, "rehearsal": 0}
         examples = self._training_example_count(request) if persistence_ready else 0
+        if persistence_ready:
+            lineage_counts = self._training_example_lineage_counts()
         if persistence_ready:
             persistence_detail = getattr(self.store, "last_error", None)
             if persistence_detail:
                 persistence_ready = False
                 examples = 0
+                lineage_counts = {"total": 0, "production": 0, "rehearsal": 0}
         reasons: list[str] = []
         if not persistence_ready:
             reasons.append(
@@ -328,6 +344,10 @@ class OperationalStateService:
             reasons.append(
                 "No settled persisted training_examples are available for this model_version/feature_set."
             )
+        if lineage_counts["rehearsal"] > 0 and examples <= 0:
+            reasons.append(
+                "Only rehearsal training_examples are present; they stay excluded from production Model Lab evidence."
+            )
         can_run = persistence_ready and examples > 0
         return ModelLabReadinessSnapshot(
             status="ready" if can_run else "collecting" if persistence_ready else "blocked",
@@ -335,6 +355,9 @@ class OperationalStateService:
             model_version=request.model_version,
             feature_set=request.feature_set,
             training_examples=examples,
+            total_training_examples=lineage_counts["total"],
+            production_training_examples=lineage_counts["production"],
+            rehearsal_training_examples=lineage_counts["rehearsal"],
             can_run_live_backtest=can_run,
             reasons=reasons,
         )

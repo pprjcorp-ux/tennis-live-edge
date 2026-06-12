@@ -10,6 +10,7 @@ from tennis_edge.domain import (
     AgentBriefing,
     AgentPreflight,
     AgentRun,
+    ArchiveOddsSyncResult,
     AutoPaperSettleRequest,
     AutoPaperSettleResult,
     BacktestMetrics,
@@ -233,10 +234,76 @@ class AnalysisRepository:
         )
         return result
 
+    async def sync_archive_odds(
+        self,
+        *,
+        archive_source=None,
+        source: Literal["api", "cli", "openclaw", "cron", "system"] = "system",
+    ) -> ArchiveOddsSyncResult:
+        started_at = self._now()
+        if not self.settings.the_odds_api_key and archive_source is None:
+            result = ArchiveOddsSyncResult(
+                configured=False,
+                source="skipped",
+                provider_warnings=[
+                    "THE_ODDS_API_KEY is missing; archive sync skipped."
+                ],
+                live_api_calls=0,
+                generated_at=self._now(),
+            )
+            self.record_ingestion_run(
+                "archive_odds_sync",
+                {
+                    **result.model_dump(mode="json"),
+                    "run_kind": "archive_odds_sync",
+                },
+                source=source,
+                started_at=started_at,
+            )
+            return result
+
+        archive = archive_source or self.the_odds_api
+        try:
+            events = await archive.get_tennis_h2h_events()
+        except Exception as exc:
+            events = []
+            warnings = [f"TheOddsAPI archive sync failed: {type(exc).__name__}"]
+        else:
+            warnings = list(getattr(archive, "last_warnings", []) or [])
+        raw_payloads = [
+            event.raw_payload
+            for event in events
+            if getattr(event, "raw_payload", None) is not None
+        ]
+        raw_payloads_saved = self.store.save_raw_payloads(raw_payloads)
+        provider_latency_saved = self._record_archive_latency(raw_payloads)
+        result = ArchiveOddsSyncResult(
+            configured=bool(self.settings.the_odds_api_key or archive_source),
+            source="archive_odds",
+            events=len(events),
+            quotes=sum(len(getattr(event, "quotes", []) or []) for event in events),
+            raw_payloads_saved=raw_payloads_saved,
+            provider_latency_saved=provider_latency_saved,
+            provider_warnings=warnings,
+            live_api_calls=1 if self.settings.the_odds_api_key and archive_source is None else 0,
+            generated_at=self._now(),
+        )
+        self.record_ingestion_run(
+            "archive_odds_sync",
+            {
+                **result.model_dump(mode="json"),
+                "run_kind": "archive_odds_sync",
+            },
+            source=source,
+            started_at=started_at,
+        )
+        return result
+
     def record_ingestion_run(
         self,
         run_type: Literal[
             "score_snapshot",
+            "archive_odds_sync",
             "odds_message",
             "odds_stream",
             "live_budget_cycle",
@@ -279,6 +346,12 @@ class AnalysisRepository:
                 return status
             if status == "failed":
                 return "failed"
+        if summary.get("run_kind") == "archive_odds_sync":
+            if summary.get("source") == "skipped":
+                return "skipped"
+            if summary.get("provider_warnings"):
+                return "degraded"
+            return "completed" if int(summary.get("events") or 0) > 0 else "collecting"
         if summary.get("error"):
             return "failed"
         if summary.get("provider_warnings"):
@@ -1448,6 +1521,28 @@ class AnalysisRepository:
             ):
                 saved += 1
         return saved
+
+    def _record_archive_latency(self, payloads: list[RawProviderPayload]) -> int:
+        latest_payload = max(
+            (
+                payload
+                for payload in payloads
+                if payload.provider == Provider.THE_ODDS_API
+                and payload.payload_type == "odds"
+            ),
+            key=lambda payload: payload.ingested_at,
+            default=None,
+        )
+        if latest_payload is None:
+            return 0
+        if self.store.record_provider_latency(
+            Provider.THE_ODDS_API,
+            "odds/archive",
+            latest_source_ts=latest_payload.source_ts,
+            latest_ingested_at=latest_payload.ingested_at,
+        ):
+            return 1
+        return 0
 
     def _raw_payloads_for_replay(
         self,

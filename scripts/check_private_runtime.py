@@ -53,10 +53,12 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     provider_adapters = (source / "services/provider_adapters.py").read_text()
     runtime_modes = (source / "runtime_modes.py").read_text()
     replay_engine = (source / "services/replay_engine.py").read_text()
+    archive_cli = (source / "ingest_archive_odds.py").read_text()
     ingestion_pipeline = (source / "services/ingestion.py").read_text()
     replay_fixtures = (source / "services/budget_replay_fixtures.py").read_text()
     repository = (source / "services/repository.py").read_text()
     domain = (source / "domain.py").read_text()
+    main_api = (source / "main.py").read_text()
     operational_state = (source / "services/operational_state.py").read_text()
     operational_session = (source / "services/operational_session.py").read_text()
     signal_gates = (source / "services/signal_gates.py").read_text()
@@ -180,6 +182,22 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             '"ScoreProviderAdapter"',
             '"OddsProviderAdapter"',
             '"ArchiveOddsProviderAdapter"',
+        ],
+    )
+    _require_text(
+        errors,
+        label="the odds api archive sync",
+        text=domain + repository + main_api + web_types + archive_cli + package_json + repository_tests + v1_tests,
+        required=[
+            "ArchiveOddsSyncResult",
+            "sync_archive_odds",
+            "archive_odds_sync",
+            "/api/v1/ingestion/the-odds-api/archive-sync",
+            "api:ingest:archive-odds",
+            "THE_ODDS_API_KEY is missing; archive sync skipped.",
+            "test_archive_odds_sync_persists_theoddsapi_payloads_and_latency",
+            "test_archive_odds_sync_records_provider_failure_without_raising",
+            "test_v1_the_odds_api_archive_sync_requires_token_and_skips_without_key",
         ],
     )
     _require_text(

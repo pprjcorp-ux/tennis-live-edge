@@ -33,7 +33,9 @@ current API onboarding state from persisted operational truth:
 
 1. Run `POST /api/v1/replay/contracts/run` with fixture seeds and keep all
    healthy/gap/`resync_required` scenarios passing without paid provider quota.
-2. Configure TheOddsAPI first for REST archive/comparison.
+2. Configure TheOddsAPI first for REST archive/comparison, then run protected
+   `POST /api/v1/ingestion/the-odds-api/archive-sync` before touching score or
+   websocket providers.
 3. Configure API-Tennis second for fixtures/livescore.
 4. Configure Odds-API.io websocket third, after replay tests prove sequence,
    resync, stale odds, and moneyline completeness gates.

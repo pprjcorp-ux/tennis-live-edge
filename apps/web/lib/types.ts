@@ -345,6 +345,7 @@ export type IngestionRunRecord = {
   id: string;
   run_type:
     | "score_snapshot"
+    | "archive_odds_sync"
     | "odds_message"
     | "odds_stream"
     | "live_budget_cycle"

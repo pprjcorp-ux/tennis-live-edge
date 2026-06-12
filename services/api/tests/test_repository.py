@@ -473,6 +473,146 @@ def test_archive_odds_augmentation_records_theoddsapi_warning_on_failure() -> No
     ]
 
 
+def test_archive_odds_sync_persists_theoddsapi_payloads_and_latency() -> None:
+    events = asyncio.run(
+        TheOddsApiClient(api_key=None, data_mode="sample").get_tennis_h2h_events()
+    )
+
+    class ArchiveSource:
+        last_warnings = []
+
+        async def get_tennis_h2h_events(self):
+            return events
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.saved_payloads = []
+            self.latencies = []
+            self.ingestion_runs_saved = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def save_raw_payloads(self, payloads):
+            self.saved_payloads.extend(payloads)
+            return len(payloads)
+
+        def record_provider_latency(
+            self,
+            provider,
+            feed,
+            *,
+            latest_source_ts,
+            latest_ingested_at,
+        ):
+            self.latencies.append(
+                (provider, feed, latest_source_ts, latest_ingested_at)
+            )
+            return True
+
+        def save_ingestion_run(self, run):
+            self.ingestion_runs_saved.append(run)
+            return True
+
+    repo = AnalysisRepository(
+        Settings(data_mode="live", the_odds_api_key="key", persistence_enabled=True)
+    )
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    result = asyncio.run(
+        repo.sync_archive_odds(archive_source=ArchiveSource(), source="cli")
+    )
+
+    assert result.provider == Provider.THE_ODDS_API
+    assert result.configured is True
+    assert result.source == "archive_odds"
+    assert result.live_api_calls == 0
+    assert result.events == len(events)
+    assert result.quotes == sum(len(event.quotes) for event in events)
+    assert result.raw_payloads_saved == len(store.saved_payloads)
+    assert all(payload.provider == Provider.THE_ODDS_API for payload in store.saved_payloads)
+    assert result.provider_latency_saved == 1
+    assert store.latencies[0][0] == Provider.THE_ODDS_API
+    assert store.latencies[0][1] == "odds/archive"
+    assert store.ingestion_runs_saved[-1].run_type == "archive_odds_sync"
+    assert store.ingestion_runs_saved[-1].status == "completed"
+    assert store.ingestion_runs_saved[-1].summary["events"] == len(events)
+
+
+def test_archive_odds_sync_skips_without_theoddsapi_key() -> None:
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.ingestion_runs_saved = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def save_ingestion_run(self, run):
+            self.ingestion_runs_saved.append(run)
+            return True
+
+    repo = AnalysisRepository(Settings(data_mode="live", the_odds_api_key=None))
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    result = asyncio.run(repo.sync_archive_odds(source="cli"))
+
+    assert result.configured is False
+    assert result.source == "skipped"
+    assert result.events == 0
+    assert result.live_api_calls == 0
+    assert result.provider_warnings == [
+        "THE_ODDS_API_KEY is missing; archive sync skipped."
+    ]
+    assert store.ingestion_runs_saved[-1].run_type == "archive_odds_sync"
+    assert store.ingestion_runs_saved[-1].status == "skipped"
+
+
+def test_archive_odds_sync_records_provider_failure_without_raising() -> None:
+    class ArchiveSource:
+        async def get_tennis_h2h_events(self):
+            raise RuntimeError("provider down")
+
+    class StoreStub:
+        def __init__(self, fallback) -> None:
+            self.fallback = fallback
+            self.ingestion_runs_saved = []
+
+        def __getattr__(self, name):
+            return getattr(self.fallback, name)
+
+        def save_raw_payloads(self, payloads):
+            return len(payloads)
+
+        def record_provider_latency(self, *args, **kwargs):
+            return False
+
+        def save_ingestion_run(self, run):
+            self.ingestion_runs_saved.append(run)
+            return True
+
+    repo = AnalysisRepository(
+        Settings(data_mode="live", the_odds_api_key="key", persistence_enabled=True)
+    )
+    store = StoreStub(repo.store)
+    repo.store = store
+
+    result = asyncio.run(
+        repo.sync_archive_odds(archive_source=ArchiveSource(), source="cli")
+    )
+
+    assert result.configured is True
+    assert result.events == 0
+    assert result.provider_warnings == [
+        "TheOddsAPI archive sync failed: RuntimeError"
+    ]
+    assert store.ingestion_runs_saved[-1].run_type == "archive_odds_sync"
+    assert store.ingestion_runs_saved[-1].status == "degraded"
+
+
 def test_entity_conflicts_prefers_persisted_store_over_sample_conflicts() -> None:
     persisted_conflicts = [
         CanonicalEntityConflict(

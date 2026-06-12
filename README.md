@@ -113,7 +113,10 @@ this same sequence from `/api/v1/dashboard/live-state`:
 
 1. Budget replay fixtures as the fake API layer for score, odds, gap, and resync
    contracts.
-2. TheOddsAPI REST/archive and comparison.
+2. TheOddsAPI REST/archive and comparison. Use the protected
+   `POST /api/v1/ingestion/the-odds-api/archive-sync` smoke first; it persists
+   archive raw payloads and `odds/archive` latency, but it cannot create live
+   entries by itself. Local CLI equivalent: `npm run api:ingest:archive-odds -- --pretty`.
 3. API-Tennis fixtures/livescore.
 4. Odds-API.io websocket live odds, only after `seq`/`lastSeq` replay and resync
    gates are healthy.

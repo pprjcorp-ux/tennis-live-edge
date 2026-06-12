@@ -6,12 +6,13 @@ os.environ["ADMIN_API_TOKEN"] = "test-admin-token"
 os.environ["TENNIS_EDGE_DATA_MODE"] = "sample"
 os.environ["TENNIS_EDGE_PERSISTENCE_ENABLED"] = "false"
 
-from tennis_edge.config import get_settings
+from tennis_edge.config import Settings, get_settings
 from tennis_edge.domain import AutoPaperSettleResult
 
 get_settings.cache_clear()
 
 from tennis_edge.main import app, repository
+from tennis_edge.services.repository import AnalysisRepository
 from tennis_edge.services.agent_ops import AGENT_RUNS
 from tennis_edge.services.execution_engine import ORDERS
 from tennis_edge.services.provider_cursor import CURSORS
@@ -248,6 +249,31 @@ def test_v1_replay_and_backtest() -> None:
     assert "brier_score" in backtest.json()
     assert calibration.status_code == 200
     assert calibration.json()["buckets"]
+
+
+def test_v1_the_odds_api_archive_sync_requires_token_and_skips_without_key() -> None:
+    repo = AnalysisRepository(
+        Settings(data_mode="live", the_odds_api_key=None, persistence_enabled=False)
+    )
+    app.dependency_overrides[repository] = lambda: repo
+    try:
+        unauthorized = client.post("/api/v1/ingestion/the-odds-api/archive-sync")
+        response = client.post(
+            "/api/v1/ingestion/the-odds-api/archive-sync",
+            headers=ADMIN_HEADERS,
+        )
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert unauthorized.status_code in {401, 403}
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "theoddsapi"
+    assert body["configured"] is False
+    assert body["source"] == "skipped"
+    assert body["events"] == 0
+    assert body["live_api_calls"] == 0
+    assert "THE_ODDS_API_KEY is missing" in body["provider_warnings"][0]
 
 
 def test_v1_replay_can_simulate_odds_api_gap() -> None:

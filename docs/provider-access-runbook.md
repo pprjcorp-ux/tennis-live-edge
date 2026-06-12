@@ -142,7 +142,10 @@ Pedro
 1. Finish the API-last core first: Postgres/Timescale persistence, replay fake
    APIs, signal gates, paper settlement, and Model Lab `training_examples`.
 2. Add TheOddsAPI first because it is REST/archive/comparison and cannot by
-   itself create live entries.
+   itself create live entries. After setting `THE_ODDS_API_KEY`, run protected
+   `POST /api/v1/ingestion/the-odds-api/archive-sync` and verify it records an
+   `archive_odds_sync` ingestion run with raw payload and `odds/archive`
+   latency evidence.
 3. Add API-Tennis second for fixtures/livescore and score freshness.
 4. Add Odds-API.io websocket third, only after replay/resync tests prove
    `seq`/`lastSeq`, gaps, stale odds and incomplete moneyline gates.

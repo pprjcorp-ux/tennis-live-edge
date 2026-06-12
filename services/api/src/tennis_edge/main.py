@@ -11,6 +11,7 @@ from tennis_edge.domain import (
     AgentBriefing,
     AgentPreflight,
     AgentRun,
+    ArchiveOddsSyncResult,
     AutoPaperSettleRequest,
     AutoPaperSettleResult,
     BacktestMetrics,
@@ -195,6 +196,14 @@ async def v1_ingestion_runs(
     repo: AnalysisRepository = Depends(repository),
 ) -> list[IngestionRunRecord]:
     return await repo.ingestion_runs()
+
+
+@app.post("/api/v1/ingestion/the-odds-api/archive-sync", response_model=ArchiveOddsSyncResult)
+async def v1_sync_the_odds_api_archive(
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ArchiveOddsSyncResult:
+    return await repo.sync_archive_odds(source="api")
 
 
 @app.post("/api/v1/ingestion/odds-api-io/message", response_model=OddsMessageIngestionResult)

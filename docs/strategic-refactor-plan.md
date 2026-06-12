@@ -216,6 +216,10 @@ OpenClaw can audit whether each match is persisted, replay-backed, live, or
 runtime-only before any signal is trusted. Replay contracts also expose
 per-provider `provider_contracts` evidence, making expected vs. observed
 adapter artifacts visible before live API keys are introduced.
+The first real-provider hook is now isolated as
+`POST /api/v1/ingestion/the-odds-api/archive-sync`: it persists TheOddsAPI
+archive raw payloads and `odds/archive` latency evidence without producing live
+entries or depending on score/live providers.
 
 Tasks:
 

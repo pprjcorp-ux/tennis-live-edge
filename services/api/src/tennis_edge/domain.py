@@ -860,10 +860,24 @@ class IngestionRunResult(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ArchiveOddsSyncResult(BaseModel):
+    provider: Provider = Provider.THE_ODDS_API
+    configured: bool
+    source: Literal["archive_odds", "skipped"]
+    events: int = 0
+    quotes: int = 0
+    raw_payloads_saved: int = 0
+    provider_latency_saved: int = 0
+    provider_warnings: list[str] = Field(default_factory=list)
+    live_api_calls: int = 0
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class IngestionRunRecord(BaseModel):
     id: str
     run_type: Literal[
         "score_snapshot",
+        "archive_odds_sync",
         "odds_message",
         "odds_stream",
         "live_budget_cycle",

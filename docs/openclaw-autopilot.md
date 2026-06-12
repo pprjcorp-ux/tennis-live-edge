@@ -12,6 +12,7 @@ node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingest-live-bud
 npm run api:ingest
 printf '{"event_id":"smoke-event","seq":1,"timestamp":"2026-06-07T20:00:00Z","data":{"bookmaker":"SmokeBook","market":"h2h","selections":[{"player_id":"p1","odds":1.8},{"player_id":"p2","odds":2.1}]}}' | TENNIS_EDGE_DATA_MODE=sample TENNIS_EDGE_PERSISTENCE_ENABLED=false npm run api:ingest:odds-message
 npm run api:ingest:odds-stream -- --max-messages 25 --timeout-seconds 30
+npm run api:ops:daily
 npm run openclaw:briefing
 npm run openclaw:anomalies
 npm run openclaw:runs
@@ -30,6 +31,11 @@ when you want all operations routed through `tennis_edge_ops.mjs`.
 Each score snapshot, odds stream, and live-budget cycle is journaled in
 `ingestion_runs` when persistence is enabled; read recent rows with
 `GET /api/v1/ingestion/runs`.
+
+Before live provider keys are configured, use `api:ops:daily` or protected
+`POST /api/v1/ops/daily` for the daily paper-first rehearsal. It runs replay
+contracts, paper auto-settlement, and the Model Lab `training_examples` backtest
+path while reporting `live_api_calls=0`.
 
 ## Audit Trail
 

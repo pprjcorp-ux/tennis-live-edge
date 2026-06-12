@@ -207,6 +207,28 @@ def test_v1_agent_autopilot_creates_paper_orders_and_blocks_real_request() -> No
     assert runs.json()[0]["model_routes"][-1]["model"] == "gpt-5.5"
 
 
+def test_v1_daily_operational_run_requires_token_and_uses_fake_api_contracts() -> None:
+    unauthorized = client.post("/api/v1/ops/daily", json={})
+    response = client.post(
+        "/api/v1/ops/daily",
+        headers=ADMIN_HEADERS,
+        json={"match_id": "match_atp_002", "scenarios": ["healthy"], "max_orders": 3},
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "api"
+    assert body["live_api_calls"] == 0
+    assert body["match_id"] == "match_atp_002"
+    assert body["replay_contracts"]["passed"] is True
+    assert body["replay_contracts"]["scenarios"][0]["scenario"] == "healthy"
+    assert "training_examples_ready" in body["paper_auto_settlement"]
+    assert body["model_lab_backtest"]["status"] in {"completed", "skipped"}
+    assert body["execution"]["can_submit_real_orders"] is False
+    assert body["execution"]["real_execution_hard_block"] is True
+
+
 def test_v1_replay_and_backtest() -> None:
     replay = client.post(
         "/api/v1/replay/run",

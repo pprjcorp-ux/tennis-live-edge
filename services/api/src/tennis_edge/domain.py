@@ -639,6 +639,48 @@ class AutoPaperSettleResult(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class DailyOperationalRunRequest(BaseModel):
+    match_id: str = "match_atp_002"
+    settle_match_id: str | None = None
+    max_orders: int = Field(default=100, ge=1, le=500)
+    scenarios: list[ReplayContractScenario] | None = None
+    model_version: str = "prematch_ensemble_v1"
+    feature_set: str = "live_budget_v1"
+
+
+class DailyOperationalBacktestStatus(BaseModel):
+    status: Literal["completed", "skipped"]
+    model_version: str
+    feature_set: str
+    reason: str | None = None
+    run_id: str | None = None
+    signals: int | None = None
+    roi: float | None = None
+    clv: float | None = None
+    brier_score: float | None = None
+    log_loss: float | None = None
+    calibration_error: float | None = None
+    max_drawdown: float | None = None
+
+
+class DailyOperationalExecutionSnapshot(BaseModel):
+    can_submit_real_orders: bool
+    real_execution_hard_block: bool
+    stage: ExecutionStage
+
+
+class DailyOperationalRunResult(BaseModel):
+    status: Literal["completed", "collecting", "degraded"]
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    source: Literal["api", "cli", "openclaw", "cron", "system"] = "system"
+    live_api_calls: int = 0
+    match_id: str
+    replay_contracts: ReplayContractRunResult
+    paper_auto_settlement: AutoPaperSettleResult
+    model_lab_backtest: DailyOperationalBacktestStatus
+    execution: DailyOperationalExecutionSnapshot
+
+
 class PaperPerformance(BaseModel):
     orders: int
     settled_orders: int

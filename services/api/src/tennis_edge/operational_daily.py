@@ -4,12 +4,15 @@ import argparse
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from tennis_edge.config import get_settings
 from tennis_edge.domain import (
     AutoPaperSettleRequest,
     BacktestRunRequest,
+    DailyOperationalBacktestStatus,
+    DailyOperationalExecutionSnapshot,
+    DailyOperationalRunResult,
     ReplayContractScenario,
 )
 from tennis_edge.replay_contracts import run_replay_contracts
@@ -77,7 +80,8 @@ async def run_daily_operational_loop(
     scenarios: list[ReplayContractScenario] | None = None,
     model_version: str = "prematch_ensemble_v1",
     feature_set: str = "live_budget_v1",
-) -> dict[str, Any]:
+    source: Literal["api", "cli", "openclaw", "cron", "system"] = "cli",
+) -> DailyOperationalRunResult:
     replay = await run_replay_contracts(
         repo,
         match_id=match_id,
@@ -90,49 +94,50 @@ async def run_daily_operational_loop(
         model_version=model_version,
         feature_set=feature_set,
     )
-    backtest_status: dict[str, Any]
+    backtest_status: DailyOperationalBacktestStatus
     try:
         backtest = await repo.run_backtest(backtest_request)
-        backtest_status = {
-            "status": "completed",
-            "run_id": backtest.run_id,
-            "model_version": backtest.model_version,
-            "signals": backtest.signals,
-            "roi": backtest.roi,
-            "clv": backtest.clv,
-            "brier_score": backtest.brier_score,
-            "log_loss": backtest.log_loss,
-            "calibration_error": backtest.calibration_error,
-            "max_drawdown": backtest.max_drawdown,
-        }
+        backtest_status = DailyOperationalBacktestStatus(
+            status="completed",
+            run_id=backtest.run_id,
+            model_version=backtest.model_version,
+            feature_set=feature_set,
+            signals=backtest.signals,
+            roi=backtest.roi,
+            clv=backtest.clv,
+            brier_score=backtest.brier_score,
+            log_loss=backtest.log_loss,
+            calibration_error=backtest.calibration_error,
+            max_drawdown=backtest.max_drawdown,
+        )
     except KeyError as exc:
-        backtest_status = {
-            "status": "skipped",
-            "reason": str(exc.args[0]) if exc.args else str(exc),
-            "model_version": model_version,
-            "feature_set": feature_set,
-        }
+        backtest_status = DailyOperationalBacktestStatus(
+            status="skipped",
+            reason=str(exc.args[0]) if exc.args else str(exc),
+            model_version=model_version,
+            feature_set=feature_set,
+        )
 
     execution = await repo.execution_status()
     status = "completed" if replay.passed else "degraded"
-    if backtest_status["status"] == "skipped":
+    if backtest_status.status == "skipped":
         status = "collecting" if replay.passed else "degraded"
 
-    return {
-        "status": status,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "source": "cli",
-        "live_api_calls": 0,
-        "match_id": match_id,
-        "replay_contracts": replay.model_dump(mode="json"),
-        "paper_auto_settlement": settlement.model_dump(mode="json"),
-        "model_lab_backtest": backtest_status,
-        "execution": {
-            "can_submit_real_orders": execution.can_submit_real_orders,
-            "real_execution_hard_block": execution.real_execution_hard_block,
-            "stage": execution.stage,
-        },
-    }
+    return DailyOperationalRunResult(
+        status=status,
+        generated_at=datetime.now(timezone.utc),
+        source=source,
+        live_api_calls=0,
+        match_id=match_id,
+        replay_contracts=replay,
+        paper_auto_settlement=settlement,
+        model_lab_backtest=backtest_status,
+        execution=DailyOperationalExecutionSnapshot(
+            can_submit_real_orders=execution.can_submit_real_orders,
+            real_execution_hard_block=execution.real_execution_hard_block,
+            stage=execution.stage,
+        ),
+    )
 
 
 async def _run(argv: list[str] | None = None) -> int:
@@ -146,11 +151,12 @@ async def _run(argv: list[str] | None = None) -> int:
         scenarios=args.scenario,
         model_version=args.model_version,
         feature_set=args.feature_set,
+        source="cli",
     )
-    print(_json(result, pretty=args.pretty))
-    if not result["replay_contracts"]["passed"]:
+    print(_json(result.model_dump(mode="json"), pretty=args.pretty))
+    if not result.replay_contracts.passed:
         return 2
-    if args.require_backtest and result["model_lab_backtest"]["status"] == "skipped":
+    if args.require_backtest and result.model_lab_backtest.status == "skipped":
         return 3
     return 0
 

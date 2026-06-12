@@ -21,6 +21,8 @@ from tennis_edge.domain import (
     CanonicalEntityConflict,
     CostProfile,
     DailyCostReport,
+    DailyOperationalRunRequest,
+    DailyOperationalRunResult,
     DailyMetrics,
     DataQualitySnapshot,
     ExecutionOrder,
@@ -51,6 +53,7 @@ from tennis_edge.domain import (
     ReplayRunResult,
     Signal,
 )
+from tennis_edge.operational_daily import run_daily_operational_loop
 from tennis_edge.security import require_admin_token
 from tennis_edge.services.repository import AnalysisRepository
 
@@ -275,6 +278,25 @@ async def v1_agent_runs(
     repo: AnalysisRepository = Depends(repository),
 ) -> list[AgentRun]:
     return await repo.agent_runs()
+
+
+@app.post("/api/v1/ops/daily", response_model=DailyOperationalRunResult)
+async def v1_daily_operational_run(
+    request: DailyOperationalRunRequest | None = Body(default=None),
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> DailyOperationalRunResult:
+    requested = request or DailyOperationalRunRequest()
+    return await run_daily_operational_loop(
+        repo,
+        match_id=requested.match_id,
+        settle_match_id=requested.settle_match_id,
+        max_orders=requested.max_orders,
+        scenarios=requested.scenarios,
+        model_version=requested.model_version,
+        feature_set=requested.feature_set,
+        source="api",
+    )
 
 
 @app.post("/api/v1/paper/settle", response_model=PaperSettlement)

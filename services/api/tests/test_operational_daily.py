@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 from tennis_edge.domain import (
     AutoPaperSettleResult,
@@ -111,14 +112,15 @@ def test_daily_operational_loop_runs_replay_settlement_and_backtest() -> None:
         )
     )
 
-    assert result["status"] == "completed"
-    assert result["live_api_calls"] == 0
-    assert result["replay_contracts"]["passed"] is True
-    assert result["paper_auto_settlement"]["training_examples_ready"] == 1
-    assert result["model_lab_backtest"]["status"] == "completed"
-    assert result["model_lab_backtest"]["run_id"] == "bt_daily"
-    assert result["execution"]["can_submit_real_orders"] is False
-    assert result["execution"]["real_execution_hard_block"] is True
+    assert result.status == "completed"
+    assert result.source == "cli"
+    assert result.live_api_calls == 0
+    assert result.replay_contracts.passed is True
+    assert result.paper_auto_settlement.training_examples_ready == 1
+    assert result.model_lab_backtest.status == "completed"
+    assert result.model_lab_backtest.run_id == "bt_daily"
+    assert result.execution.can_submit_real_orders is False
+    assert result.execution.real_execution_hard_block is True
     assert repo.replay_source == "cli"
     assert repo.replay_request is not None
     assert repo.replay_request.scenarios == ["healthy"]
@@ -135,10 +137,11 @@ def test_daily_operational_loop_collects_when_training_examples_are_missing() ->
         )
     )
 
-    assert result["status"] == "collecting"
-    assert result["replay_contracts"]["passed"] is True
-    assert result["model_lab_backtest"]["status"] == "skipped"
-    assert "No persisted training examples" in result["model_lab_backtest"]["reason"]
+    assert result.status == "collecting"
+    assert result.replay_contracts.passed is True
+    assert result.model_lab_backtest.status == "skipped"
+    assert result.model_lab_backtest.reason is not None
+    assert "No persisted training examples" in result.model_lab_backtest.reason
 
 
 def test_daily_operational_cli_exit_codes(monkeypatch, capsys) -> None:
@@ -173,7 +176,9 @@ def test_daily_operational_cli_can_require_backtest(monkeypatch, capsys) -> None
 
     exit_code = asyncio.run(_run(["--match-id", "match_atp_002", "--require-backtest"]))
     captured = capsys.readouterr()
+    body = json.loads(captured.out)
 
     assert exit_code == 3
-    assert '"status": "collecting"' in captured.out
-    assert '"model_lab_backtest": {"feature_set": "live_budget_v1"' in captured.out
+    assert body["status"] == "collecting"
+    assert body["model_lab_backtest"]["feature_set"] == "live_budget_v1"
+    assert body["model_lab_backtest"]["status"] == "skipped"

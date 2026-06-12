@@ -117,3 +117,9 @@ provider contracts without consuming live provider quota. Before adding or
 debugging any paid key, run the aggregate contract rehearsal through
 `POST /api/v1/replay/contracts/run`; it exercises healthy, gap, and
 `resync_required` scenarios for API-Tennis, Odds-API.io, and TheOddsAPI.
+
+For the daily paper-first operational loop, run `npm run api:ops:daily` or call
+the protected `POST /api/v1/ops/daily` endpoint. This executes replay contracts,
+paper auto-settlement, and the Model Lab `training_examples` backtest path while
+reporting `live_api_calls=0`, so it is safe to run before provider credentials
+are configured.

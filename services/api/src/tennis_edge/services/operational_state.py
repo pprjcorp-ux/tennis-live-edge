@@ -32,6 +32,7 @@ from tennis_edge.services.cost_profile import (
 )
 from tennis_edge.services.enterprise_analytics import data_quality_snapshots
 from tennis_edge.services.execution_engine import execution_status
+from tennis_edge.services.provider_adapters import BUDGET_PROVIDER_CONTRACT_SPECS
 from tennis_edge.services.provider_cursor import default_provider_cursors
 from tennis_edge.services.storage import PersistentStore
 
@@ -351,35 +352,16 @@ class OperationalStateService:
         last_contract_scenarios = _replay_contract_scenarios(last_contract_summary)
         providers = [
             ReplayContractProvider(
-                provider=Provider.API_TENNIS,
-                adapter_contract="ScoreProviderAdapter",
-                fake_api="Simulated API-Tennis fixtures/livescore",
-                input_contracts=["RawProviderPayload", "CanonicalMatch"],
-                output_contracts=["ScoreTick", "ProviderLatency"],
-                scenarios=["score_snapshot", "live_score_state"],
-                status="covered",
-                notes=["Budget replay emits API-Tennis score payloads without provider quota."],
-            ),
-            ReplayContractProvider(
-                provider=Provider.ODDS_API_IO,
-                adapter_contract="OddsProviderAdapter",
-                fake_api="Simulated Odds-API.io websocket",
-                input_contracts=["RawProviderPayload", "seq", "lastSeq"],
-                output_contracts=["OddsTick", "ProviderCursor", "ProviderLatency"],
-                scenarios=["healthy", "gap", "resync_required"],
-                status="covered",
-                notes=["Replay validates cursor gaps and resync_required before live websocket keys."],
-            ),
-            ReplayContractProvider(
-                provider=Provider.THE_ODDS_API,
-                adapter_contract="ArchiveOddsProviderAdapter",
-                fake_api="Simulated TheOddsAPI REST snapshot",
-                input_contracts=["RawProviderPayload"],
-                output_contracts=["OddsTick", "ProviderLatency"],
-                scenarios=["archive_snapshot"],
-                status="covered",
-                notes=["Archive odds replay is used as fallback/comparison before live providers."],
-            ),
+                provider=spec.provider,
+                adapter_contract=spec.adapter_contract,
+                fake_api=spec.fake_api,
+                input_contracts=list(spec.input_contracts),
+                output_contracts=list(spec.output_contracts),
+                scenarios=list(spec.scenarios),
+                status=spec.status,
+                notes=list(spec.notes),
+            )
+            for spec in BUDGET_PROVIDER_CONTRACT_SPECS
         ]
         notes = [
             "Replay fixtures are the fake API layer; live provider keys are not required.",

@@ -22,6 +22,7 @@ from tennis_edge.services.budget_replay_fixtures import sample_budget_replay_pay
 from tennis_edge.services.normalizer import dedupe_payloads, normalize_name, payload_checksum, similarity
 from tennis_edge.services.provider_adapters import (
     ArchiveOddsProviderAdapter,
+    BUDGET_PROVIDER_CONTRACT_SPECS,
     OddsProviderAdapter,
     ScoreProviderAdapter,
     canonical_match_from_provider_payload,
@@ -132,6 +133,48 @@ def test_budget_provider_clients_satisfy_adapter_contracts() -> None:
     assert isinstance(ApiTennisClient(api_key=None, data_mode="replay"), ScoreProviderAdapter)
     assert isinstance(OddsApiIoClient(api_key=None, data_mode="replay"), OddsProviderAdapter)
     assert isinstance(TheOddsApiClient(api_key=None, data_mode="replay"), ArchiveOddsProviderAdapter)
+
+
+def test_budget_provider_contract_specs_freeze_internal_artifacts() -> None:
+    matrix = {spec.provider: spec for spec in BUDGET_PROVIDER_CONTRACT_SPECS}
+    all_contracts = {
+        contract
+        for spec in BUDGET_PROVIDER_CONTRACT_SPECS
+        for contract in [*spec.input_contracts, *spec.output_contracts]
+    }
+
+    assert set(matrix) == {
+        Provider.API_TENNIS,
+        Provider.ODDS_API_IO,
+        Provider.THE_ODDS_API,
+    }
+    assert all_contracts.issuperset(
+        {
+            "RawProviderPayload",
+            "CanonicalMatch",
+            "ScoreTick",
+            "OddsTick",
+            "ProviderCursor",
+            "ProviderLatency",
+        }
+    )
+    assert matrix[Provider.API_TENNIS].adapter_contract == "ScoreProviderAdapter"
+    assert matrix[Provider.API_TENNIS].output_contracts == (
+        "ScoreTick",
+        "ProviderLatency",
+    )
+    assert matrix[Provider.ODDS_API_IO].adapter_contract == "OddsProviderAdapter"
+    assert matrix[Provider.ODDS_API_IO].output_contracts == (
+        "OddsTick",
+        "ProviderCursor",
+        "ProviderLatency",
+    )
+    assert matrix[Provider.THE_ODDS_API].adapter_contract == "ArchiveOddsProviderAdapter"
+    assert matrix[Provider.THE_ODDS_API].output_contracts == (
+        "OddsTick",
+        "ProviderLatency",
+    )
+    assert all(spec.status == "covered" for spec in BUDGET_PROVIDER_CONTRACT_SPECS)
 
 
 def test_replay_mode_provider_clients_use_fake_api_without_live_calls() -> None:

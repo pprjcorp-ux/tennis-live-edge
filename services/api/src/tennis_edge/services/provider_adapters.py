@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import date
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from tennis_edge.domain import (
     CanonicalMatch,
     OddsTick,
+    Provider,
     ProviderCursor,
     ProviderLatency,
     ProviderMatchPayload,
@@ -71,6 +73,49 @@ class ArchiveOddsProviderAdapter(Protocol):
 
     async def get_tennis_h2h_events(self) -> list[ArchiveOddsEvent]:
         ...
+
+
+@dataclass(frozen=True)
+class AdapterContractSpec:
+    provider: Provider
+    adapter_contract: str
+    fake_api: str
+    input_contracts: tuple[str, ...]
+    output_contracts: tuple[str, ...]
+    scenarios: tuple[str, ...]
+    notes: tuple[str, ...]
+    status: Literal["covered", "pending"] = "covered"
+
+
+BUDGET_PROVIDER_CONTRACT_SPECS: tuple[AdapterContractSpec, ...] = (
+    AdapterContractSpec(
+        provider=Provider.API_TENNIS,
+        adapter_contract="ScoreProviderAdapter",
+        fake_api="Simulated API-Tennis fixtures/livescore",
+        input_contracts=("RawProviderPayload", "CanonicalMatch"),
+        output_contracts=("ScoreTick", "ProviderLatency"),
+        scenarios=("score_snapshot", "live_score_state"),
+        notes=("Budget replay emits API-Tennis score payloads without provider quota.",),
+    ),
+    AdapterContractSpec(
+        provider=Provider.ODDS_API_IO,
+        adapter_contract="OddsProviderAdapter",
+        fake_api="Simulated Odds-API.io websocket",
+        input_contracts=("RawProviderPayload", "seq", "lastSeq"),
+        output_contracts=("OddsTick", "ProviderCursor", "ProviderLatency"),
+        scenarios=("healthy", "gap", "resync_required"),
+        notes=("Replay validates cursor gaps and resync_required before live websocket keys.",),
+    ),
+    AdapterContractSpec(
+        provider=Provider.THE_ODDS_API,
+        adapter_contract="ArchiveOddsProviderAdapter",
+        fake_api="Simulated TheOddsAPI REST snapshot",
+        input_contracts=("RawProviderPayload",),
+        output_contracts=("OddsTick", "ProviderLatency"),
+        scenarios=("archive_snapshot",),
+        notes=("Archive odds replay is used as fallback/comparison before live providers.",),
+    ),
+)
 
 
 def provider_latency_from_payload(

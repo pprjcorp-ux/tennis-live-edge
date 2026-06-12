@@ -158,6 +158,12 @@ function bestSignal(analysis: MatchAnalysis) {
   return analysis.signals[0];
 }
 
+function settledError(label: string, result: PromiseSettledResult<unknown>) {
+  if (result.status === "fulfilled") return null;
+  const detail = result.reason instanceof Error ? result.reason.message : String(result.reason);
+  return `${label}: ${detail}`;
+}
+
 export default function Page() {
   const [matches, setMatches] = useState<MatchAnalysis[]>([]);
   const [metrics, setMetrics] = useState<DailyMetrics | null>(null);
@@ -241,20 +247,7 @@ export default function Page() {
   async function load() {
     setError(null);
     try {
-      const [
-        nextDashboard,
-        nextModelRegistry,
-        nextChampionModel,
-        nextPaperPerformance,
-        nextAgentBriefing,
-        nextAgentPreflight,
-        nextAgentAnomalies,
-        nextAgentRuns,
-        nextEntityConflicts,
-        nextBankroll,
-        nextOrders
-      ] = await Promise.all([
-        getLiveDashboard(),
+      const auxiliaryRequests = [
         getModelRegistry(),
         getChampionModel(),
         getPaperPerformance(),
@@ -265,7 +258,9 @@ export default function Page() {
         getEntityConflicts(),
         getBankroll(),
         getOrders()
-      ]);
+      ] as const;
+      const auxiliaryResultsPromise = Promise.allSettled(auxiliaryRequests);
+      const nextDashboard = await getLiveDashboard();
       const nextOperational = nextDashboard.operational_state;
       setMatches(nextDashboard.matches);
       setMetrics(nextDashboard.metrics);
@@ -280,24 +275,57 @@ export default function Page() {
       setReplayLab(nextOperational.replay_lab);
       setProviderMode(nextOperational.provider_mode);
       setProviderModeReason(nextOperational.provider_mode_reason);
-      setModelRegistry(nextModelRegistry);
-      setChampionModel(nextChampionModel);
-      setPaperPerformance(nextPaperPerformance);
-      setAgentBriefing(nextAgentBriefing);
-      setAgentPreflight(nextAgentPreflight);
-      setAgentAnomalies(nextAgentAnomalies);
-      setAgentRuns(nextAgentRuns);
-      setEntityConflicts(nextEntityConflicts);
       setExecutionStatus(nextOperational.execution_status);
       setReadiness(nextDashboard.readiness);
-      setBankroll(nextBankroll);
-      setOrders(nextOrders);
       setHealth(nextOperational.provider_health);
       setSignals(nextDashboard.signals);
       setSelectedMatchId((current) => current ?? nextDashboard.matches[0]?.match.id ?? null);
       setUpdatedAt(new Date());
+
+      const [
+        modelRegistryResult,
+        championModelResult,
+        paperPerformanceResult,
+        agentBriefingResult,
+        agentPreflightResult,
+        agentAnomaliesResult,
+        agentRunsResult,
+        entityConflictsResult,
+        bankrollResult,
+        ordersResult
+      ] = await auxiliaryResultsPromise;
+      if (modelRegistryResult.status === "fulfilled") setModelRegistry(modelRegistryResult.value);
+      if (championModelResult.status === "fulfilled") setChampionModel(championModelResult.value);
+      if (paperPerformanceResult.status === "fulfilled") setPaperPerformance(paperPerformanceResult.value);
+      if (agentBriefingResult.status === "fulfilled") setAgentBriefing(agentBriefingResult.value);
+      if (agentPreflightResult.status === "fulfilled") setAgentPreflight(agentPreflightResult.value);
+      if (agentAnomaliesResult.status === "fulfilled") setAgentAnomalies(agentAnomaliesResult.value);
+      if (agentRunsResult.status === "fulfilled") setAgentRuns(agentRunsResult.value);
+      if (entityConflictsResult.status === "fulfilled") setEntityConflicts(entityConflictsResult.value);
+      if (bankrollResult.status === "fulfilled") setBankroll(bankrollResult.value);
+      if (ordersResult.status === "fulfilled") setOrders(ordersResult.value);
+
+      const auxiliaryErrors = [
+        settledError("model registry", modelRegistryResult),
+        settledError("champion model", championModelResult),
+        settledError("paper performance", paperPerformanceResult),
+        settledError("agent briefing", agentBriefingResult),
+        settledError("agent preflight", agentPreflightResult),
+        settledError("agent anomalies", agentAnomaliesResult),
+        settledError("agent runs", agentRunsResult),
+        settledError("entity conflicts", entityConflictsResult),
+        settledError("bankroll", bankrollResult),
+        settledError("orders", ordersResult)
+      ].filter(Boolean);
+      if (auxiliaryErrors.length) {
+        setError(`Estado operacional carregado; painel auxiliar indisponivel: ${auxiliaryErrors.join(" · ")}`);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar API");
+      setError(
+        err instanceof Error
+          ? `Estado operacional indisponivel: ${err.message}`
+          : "Estado operacional indisponivel"
+      );
     } finally {
       setLoading(false);
     }

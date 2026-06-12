@@ -40,6 +40,10 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.doesNotMatch(importBlock, /getTodayMatches/);
   assert.match(pageSource, /getAgentPreflightSafe\(\)/);
   assert.match(pageSource, /getLiveDashboard\(\)/);
+  assert.match(pageSource, /const auxiliaryResultsPromise = Promise\.allSettled/);
+  assert.match(pageSource, /const nextDashboard = await getLiveDashboard\(\)/);
+  assert.match(pageSource, /Estado operacional carregado; painel auxiliar indisponivel/);
+  assert.match(pageSource, /Estado operacional indisponivel/);
   assert.match(pageSource, /nextDashboard\.operational_state/);
   assert.match(pageSource, /nextDashboard\.matches/);
   assert.match(pageSource, /nextDashboard\.metrics/);

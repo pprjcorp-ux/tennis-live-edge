@@ -1552,6 +1552,7 @@ class PersistentStore:
                           po.external_order_ref,
                           po.match_id,
                           po.player_id,
+                          po.created_at AS order_created_at,
                           po.matched_stake,
                           po.stake_amount,
                           m.player1_id,
@@ -1614,9 +1615,14 @@ class PersistentStore:
         score_source_ts = _as_utc_datetime(row.get("score_source_ts"))
         if score_source_ts is None:
             return None, "missing final score timestamp for settlement."
+        order_created_at = _as_utc_datetime(row.get("order_created_at"))
+        if order_created_at is None:
+            return None, "missing paper order decision timestamp for settlement."
         closing_odds_source_ts = _as_utc_datetime(row.get("closing_odds_source_ts"))
         if closing_odds_source_ts is None:
             return None, "missing closing moneyline odds timestamp for settlement."
+        if closing_odds_source_ts < order_created_at:
+            return None, "closing moneyline odds are before the paper order."
         if closing_odds_source_ts > score_source_ts:
             return None, "closing moneyline odds are after the final score."
         closing_age_ms = int((score_source_ts - closing_odds_source_ts).total_seconds() * 1000)

@@ -280,6 +280,38 @@ def test_v1_replay_accepts_explicit_fixture_seed() -> None:
     assert body["odds_ticks"] >= 1
 
 
+def test_v1_replay_contracts_run_all_budget_scenarios() -> None:
+    response = client.post(
+        "/api/v1/replay/contracts/run",
+        headers=ADMIN_HEADERS,
+        json={"match_id": "match_atp_002"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["passed"] is True
+    assert [scenario["scenario"] for scenario in body["scenarios"]] == [
+        "healthy",
+        "gap",
+        "resync_required",
+    ]
+    assert all(
+        {"api_tennis", "odds_api_io", "theoddsapi"}.issubset(
+            set(scenario["providers_seen"])
+        )
+        for scenario in body["scenarios"]
+    )
+    assert all(
+        {"RawProviderPayload", "ScoreTick", "OddsTick", "ProviderCursor"}.issubset(
+            set(scenario["output_contracts"])
+        )
+        for scenario in body["scenarios"]
+    )
+    assert body["scenarios"][0]["final_status"] == "completed"
+    assert body["scenarios"][1]["resync_required"] is True
+    assert body["scenarios"][2]["resync_required"] is True
+
+
 def test_v1_live_backtest_without_training_examples_returns_409() -> None:
     class RepoStub:
         async def run_backtest(self, request):

@@ -45,6 +45,8 @@ from tennis_edge.domain import (
     ProviderCursorResyncRequest,
     ProviderCursorResyncResult,
     ProviderHealth,
+    ReplayContractRunRequest,
+    ReplayContractRunResult,
     ReplayRunRequest,
     ReplayRunResult,
     Signal,
@@ -380,6 +382,15 @@ async def v1_run_replay(
     repo: AnalysisRepository = Depends(repository),
 ) -> ReplayRunResult:
     return await repo.run_replay(request)
+
+
+@app.post("/api/v1/replay/contracts/run", response_model=ReplayContractRunResult)
+async def v1_run_replay_contracts(
+    request: ReplayContractRunRequest | None = Body(default=None),
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ReplayContractRunResult:
+    return await repo.run_replay_contracts(request or ReplayContractRunRequest())
 
 
 @app.post("/api/v1/backtests/run", response_model=BacktestMetrics)

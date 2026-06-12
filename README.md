@@ -113,4 +113,7 @@ this same sequence from `/api/v1/dashboard/live-state`:
 
 In live mode, replay does not silently use sample data. The dashboard's Replay
 Lab sends `use_fixture_seed=true` explicitly when the operator wants to rehearse
-provider contracts without consuming live provider quota.
+provider contracts without consuming live provider quota. Before adding or
+debugging any paid key, run the aggregate contract rehearsal through
+`POST /api/v1/replay/contracts/run`; it exercises healthy, gap, and
+`resync_required` scenarios for API-Tennis, Odds-API.io, and TheOddsAPI.

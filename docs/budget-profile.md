@@ -31,11 +31,13 @@ applied, provider cursors are trusted, and the score/odds feeds are fresh.
 The budget vendor stack is not activated all at once. The dashboard exposes the
 current API onboarding state from persisted operational truth:
 
-1. Configure TheOddsAPI first for REST archive/comparison.
-2. Configure API-Tennis second for fixtures/livescore.
-3. Configure Odds-API.io websocket third, after replay tests prove sequence,
+1. Run `POST /api/v1/replay/contracts/run` with fixture seeds and keep all
+   healthy/gap/`resync_required` scenarios passing without paid provider quota.
+2. Configure TheOddsAPI first for REST archive/comparison.
+3. Configure API-Tennis second for fixtures/livescore.
+4. Configure Odds-API.io websocket third, after replay tests prove sequence,
    resync, stale odds, and moneyline completeness gates.
-4. Keep enterprise feeds disabled until paper trading proves that the budget
+5. Keep enterprise feeds disabled until paper trading proves that the budget
    feeds are the bottleneck.
 
 Sportradar, Betradar UOF, and TXODDS stay documented but disabled until the

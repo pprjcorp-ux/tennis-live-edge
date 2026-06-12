@@ -321,6 +321,38 @@ class ReplayRunResult(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+ReplayContractScenario = Literal["healthy", "gap", "resync_required"]
+
+
+class ReplayContractRunRequest(BaseModel):
+    match_id: str = "match_atp_002"
+    scenarios: list[ReplayContractScenario] = Field(
+        default_factory=lambda: ["healthy", "gap", "resync_required"]
+    )
+
+
+class ReplayContractScenarioResult(BaseModel):
+    scenario: ReplayContractScenario
+    run_id: str
+    final_status: str
+    events_replayed: int
+    score_ticks: int
+    odds_ticks: int
+    providers_seen: list[Provider]
+    output_contracts: list[str]
+    provider_cursors: list["ProviderCursor"] = Field(default_factory=list)
+    resync_required: bool = False
+    passed: bool
+    notes: list[str] = Field(default_factory=list)
+
+
+class ReplayContractRunResult(BaseModel):
+    match_id: str
+    scenarios: list[ReplayContractScenarioResult]
+    passed: bool
+    notes: list[str] = Field(default_factory=list)
+
+
 class BacktestMetrics(BaseModel):
     run_id: str
     model_version: str
@@ -741,6 +773,7 @@ class IngestionRunRecord(BaseModel):
         "odds_stream",
         "live_budget_cycle",
         "replay_run",
+        "replay_contract_run",
     ]
     source: Literal["api", "cli", "openclaw", "cron", "system"] = "system"
     status: Literal["completed", "degraded", "skipped", "failed"]

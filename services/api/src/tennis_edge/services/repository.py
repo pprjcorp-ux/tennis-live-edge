@@ -49,6 +49,9 @@ from tennis_edge.domain import (
     ProviderCursorResyncResult,
     ProviderHealth,
     RawProviderPayload,
+    ReplayContractRunRequest,
+    ReplayContractRunResult,
+    ReplayContractScenarioResult,
     ReplayRunRequest,
     ReplayRunResult,
     Signal,
@@ -233,6 +236,7 @@ class AnalysisRepository:
             "odds_stream",
             "live_budget_cycle",
             "replay_run",
+            "replay_contract_run",
         ],
         summary: dict,
         *,
@@ -815,6 +819,107 @@ class AnalysisRepository:
             source="api",
         )
         return final_result
+
+    async def run_replay_contracts(
+        self,
+        request: ReplayContractRunRequest,
+    ) -> ReplayContractRunResult:
+        scenario_results: list[ReplayContractScenarioResult] = []
+        for scenario in request.scenarios:
+            payloads = sample_budget_replay_payloads(
+                request.match_id,
+                odds_scenario=scenario,
+            )
+            run = await self.run_replay(
+                ReplayRunRequest(
+                    match_id=request.match_id,
+                    odds_scenario=scenario,
+                    use_fixture_seed=True,
+                )
+            )
+            providers_seen = sorted(
+                {payload.provider for payload in payloads},
+                key=lambda provider: provider.value,
+            )
+            output_contracts = self._replay_output_contracts(run)
+            scenario_passed = self._replay_contract_scenario_passed(
+                scenario,
+                run,
+                providers_seen,
+                output_contracts,
+            )
+            scenario_results.append(
+                ReplayContractScenarioResult(
+                    scenario=scenario,
+                    run_id=run.run_id,
+                    final_status=run.final_status,
+                    events_replayed=run.events_replayed,
+                    score_ticks=run.score_ticks,
+                    odds_ticks=run.odds_ticks,
+                    providers_seen=providers_seen,
+                    output_contracts=output_contracts,
+                    provider_cursors=run.provider_cursors,
+                    resync_required=run.resync_required,
+                    passed=scenario_passed,
+                    notes=run.notes,
+                )
+            )
+
+        result = ReplayContractRunResult(
+            match_id=request.match_id,
+            scenarios=scenario_results,
+            passed=all(scenario.passed for scenario in scenario_results),
+            notes=[
+                "Contract replay used explicit fixture seeds only; no live provider quota or paid API calls were consumed.",
+                "Use this runner before enabling API-Tennis, Odds-API.io WebSocket, or TheOddsAPI live credentials.",
+            ],
+        )
+        self.record_ingestion_run(
+            "replay_contract_run",
+            {
+                **result.model_dump(mode="json"),
+                "source": "replay",
+                "payload_source": "explicit_fixture_seed",
+            },
+            source="api",
+        )
+        return result
+
+    @staticmethod
+    def _replay_output_contracts(run: ReplayRunResult) -> list[str]:
+        contracts: list[str] = []
+        if run.events_replayed:
+            contracts.append("RawProviderPayload")
+        if run.score_ticks:
+            contracts.append("ScoreTick")
+        if run.odds_ticks:
+            contracts.append("OddsTick")
+        if run.provider_cursors:
+            contracts.append("ProviderCursor")
+        return contracts
+
+    @staticmethod
+    def _replay_contract_scenario_passed(
+        scenario: str,
+        run: ReplayRunResult,
+        providers_seen: list[Provider],
+        output_contracts: list[str],
+    ) -> bool:
+        required_providers = {
+            Provider.API_TENNIS,
+            Provider.ODDS_API_IO,
+            Provider.THE_ODDS_API,
+        }
+        required_contracts = {"RawProviderPayload", "ScoreTick", "OddsTick", "ProviderCursor"}
+        provider_contract_ok = required_providers.issubset(set(providers_seen))
+        output_contract_ok = required_contracts.issubset(set(output_contracts))
+        if not provider_contract_ok or not output_contract_ok:
+            return False
+        if scenario == "healthy":
+            return run.final_status == "completed" and not run.resync_required
+        if scenario in {"gap", "resync_required"}:
+            return run.final_status == "degraded" and run.resync_required
+        return False
 
     def _persist_replay_effects(
         self,

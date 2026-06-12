@@ -46,6 +46,8 @@ decide whether the system behaves as budget or enterprise.
    manual win/loss marking. Paper performance counts only settled orders with
    positive `matched_stake`, matching Model Lab's training dataset, so unmatched
    or zero-exposure orders cannot inflate ROI, CLV, drawdown, or segment stats.
+   Normal completions can infer the winner from sets; retirement/walkover
+   completions require an explicit provider winner before settlement.
 11. Settled paper orders become `training_examples` keyed by model version and
     decision timestamp. Budget live backtests use `live_budget_v1`, matching the
     persisted `feature_snapshots.feature_set` written by the ingestion pipeline,

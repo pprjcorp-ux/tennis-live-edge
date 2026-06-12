@@ -118,6 +118,81 @@ def _as_utc_datetime(value: Any) -> datetime | None:
     return None
 
 
+_EXPLICIT_WINNER_KEYS = (
+    "winner_player_id",
+    "winner",
+    "winner_id",
+    "match_winner_id",
+    "event_winner",
+)
+_RETIREMENT_OR_WALKOVER_KEYS = (
+    "status",
+    "status_text",
+    "status_detail",
+    "match_status",
+    "event_status",
+    "reason",
+)
+_RETIREMENT_OR_WALKOVER_TOKENS = ("retired", "retirement", "walkover", "withdrawn")
+
+
+def _winner_from_finished_state(
+    raw_state: dict[str, Any],
+    row: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    explicit_winner, explicit_reason = _explicit_winner_from_state(raw_state, row)
+    if explicit_winner is not None or explicit_reason is not None:
+        return explicit_winner, explicit_reason
+    if _requires_explicit_winner(raw_state):
+        return None, "retirement/walkover score requires explicit provider winner."
+    p1_sets = _safe_int(raw_state.get("p1_sets"))
+    p2_sets = _safe_int(raw_state.get("p2_sets"))
+    if p1_sets == p2_sets:
+        return None, "finished score has no inferable winner."
+    return (row["player1_id"] if p1_sets > p2_sets else row["player2_id"]), None
+
+
+def _explicit_winner_from_state(
+    raw_state: dict[str, Any],
+    row: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    for key in _EXPLICIT_WINNER_KEYS:
+        value = raw_state.get(key)
+        if value is None:
+            continue
+        normalized = str(value).strip()
+        if not normalized:
+            continue
+        player_id = _winner_alias_to_player_id(normalized, row)
+        if player_id is None:
+            return None, "explicit provider winner does not match either player."
+        return player_id, None
+    return None, None
+
+
+def _winner_alias_to_player_id(value: str, row: dict[str, Any]) -> str | None:
+    player1_id = str(row["player1_id"])
+    player2_id = str(row["player2_id"])
+    if value == player1_id:
+        return player1_id
+    if value == player2_id:
+        return player2_id
+    normalized = value.lower().replace("_", "").replace("-", "")
+    if normalized in {"p1", "player1", "home", "first", "1"}:
+        return player1_id
+    if normalized in {"p2", "player2", "away", "second", "2"}:
+        return player2_id
+    return None
+
+
+def _requires_explicit_winner(raw_state: dict[str, Any]) -> bool:
+    status_text = " ".join(
+        str(raw_state.get(key, "")).lower()
+        for key in _RETIREMENT_OR_WALKOVER_KEYS
+    )
+    return any(token in status_text for token in _RETIREMENT_OR_WALKOVER_TOKENS)
+
+
 def _provider_warnings_from_summary(summary: Any) -> list[str]:
     if not isinstance(summary, dict):
         return []
@@ -1619,11 +1694,9 @@ class PersistentStore:
         )
         if matched <= 0:
             return None, "paper order has no matched stake to settle."
-        p1_sets = _safe_int(raw_state.get("p1_sets"))
-        p2_sets = _safe_int(raw_state.get("p2_sets"))
-        if p1_sets == p2_sets:
-            return None, "finished score has no inferable winner."
-        winner_player_id = row["player1_id"] if p1_sets > p2_sets else row["player2_id"]
+        winner_player_id, winner_reason = _winner_from_finished_state(raw_state, row)
+        if winner_player_id is None:
+            return None, winner_reason or "finished score has no inferable winner."
         score_source_ts = _as_utc_datetime(row.get("score_source_ts"))
         if score_source_ts is None:
             return None, "missing final score timestamp for settlement."

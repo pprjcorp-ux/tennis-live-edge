@@ -971,6 +971,114 @@ def test_auto_settle_paper_orders_uses_finished_score_and_closing_odds() -> None
     assert [request.closing_odds for request in store.requests] == [1.8, 2.2]
 
 
+def test_auto_settle_paper_orders_uses_explicit_winner_for_retirement() -> None:
+    score_ts = datetime(2026, 6, 7, 20, 0, tzinfo=timezone.utc)
+    order_ts = score_ts - timedelta(minutes=2)
+    closing_ts = score_ts - timedelta(seconds=30)
+    rows = [
+        {
+            "external_order_ref": "ord_retirement_win",
+            "match_id": "match_auto",
+            "player_id": "p2",
+            "order_created_at": order_ts,
+            "matched_stake": 100,
+            "stake_amount": 100,
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {
+                "status": "finished",
+                "status_detail": "retired",
+                "p1_sets": 1,
+                "p2_sets": 1,
+                "winner_player_id": "p2",
+            },
+            "score_source_ts": score_ts,
+            "closing_odds": 2.4,
+            "closing_odds_source_ts": closing_ts,
+        },
+        {
+            "external_order_ref": "ord_walkover_alias_loss",
+            "match_id": "match_auto",
+            "player_id": "p2",
+            "order_created_at": order_ts,
+            "matched_stake": 100,
+            "stake_amount": 100,
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {
+                "status": "finished",
+                "reason": "walkover before first ball",
+                "p1_sets": 0,
+                "p2_sets": 0,
+                "winner": "home",
+            },
+            "score_source_ts": score_ts,
+            "closing_odds": 1.6,
+            "closing_odds_source_ts": closing_ts,
+        },
+    ]
+
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            return self
+
+        def fetchall(self):
+            return rows
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+            self.requests: list[PaperSettleRequest] = []
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+        def settle_paper_order(self, request: PaperSettleRequest):
+            self.requests.append(request)
+            return PaperSettlement(
+                order_id=request.order_id,
+                status=OrderStatus.SETTLED,
+                result_win=request.result_win,
+                requested_odds=2.0,
+                average_price=2.0,
+                matched_stake=100,
+                gross_pnl=100 if request.result_win else -100,
+                commission=2 if request.result_win else 0,
+                net_pnl=98 if request.result_win else -100,
+                closing_odds=request.closing_odds,
+                clv=0.01,
+            )
+
+        def _training_example_ready(self, order_ref: str) -> bool:
+            return True
+
+    store = StoreStub()
+
+    result = store.auto_settle_paper_orders(AutoPaperSettleRequest(max_orders=25))
+
+    assert result.settled_orders == 2
+    assert [request.order_id for request in store.requests] == [
+        "ord_retirement_win",
+        "ord_walkover_alias_loss",
+    ]
+    assert [request.result_win for request in store.requests] == [True, False]
+
+
 def test_auto_settle_paper_orders_reports_missing_candidates() -> None:
     class CursorStub:
         def __enter__(self):
@@ -1124,6 +1232,44 @@ def test_auto_settle_paper_orders_skips_unsettleable_candidates() -> None:
             "closing_odds_source_ts": closing_ts,
         },
         {
+            "external_order_ref": "ord_retired_no_winner",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "order_created_at": order_ts,
+            "matched_stake": 100,
+            "stake_amount": 100,
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {
+                "status": "finished",
+                "status_detail": "retired",
+                "p1_sets": 2,
+                "p2_sets": 0,
+            },
+            "score_source_ts": score_ts,
+            "closing_odds": 1.8,
+            "closing_odds_source_ts": closing_ts,
+        },
+        {
+            "external_order_ref": "ord_bad_explicit_winner",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "order_created_at": order_ts,
+            "matched_stake": 100,
+            "stake_amount": 100,
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {
+                "status": "finished",
+                "p1_sets": 2,
+                "p2_sets": 0,
+                "winner_player_id": "third-player",
+            },
+            "score_source_ts": score_ts,
+            "closing_odds": 1.8,
+            "closing_odds_source_ts": closing_ts,
+        },
+        {
             "external_order_ref": "ord_no_odds",
             "match_id": "match_auto",
             "player_id": "p1",
@@ -1229,12 +1375,14 @@ def test_auto_settle_paper_orders_skips_unsettleable_candidates() -> None:
 
     result = StoreStub().auto_settle_paper_orders()
 
-    assert result.evaluated_orders == 7
+    assert result.evaluated_orders == 9
     assert result.settled_orders == 0
-    assert result.skipped_orders == 7
+    assert result.skipped_orders == 9
     assert result.training_examples_ready == 0
     assert any("not finished" in reason for reason in result.reasons)
     assert any("no inferable winner" in reason for reason in result.reasons)
+    assert any("requires explicit provider winner" in reason for reason in result.reasons)
+    assert any("explicit provider winner does not match" in reason for reason in result.reasons)
     assert any("missing closing moneyline odds" in reason for reason in result.reasons)
     assert any("no matched stake" in reason for reason in result.reasons)
     assert any("before the paper order" in reason for reason in result.reasons)

@@ -40,6 +40,7 @@ import {
   promoteFromLearning,
   runAgentAutopilot,
   runBacktest,
+  runDailyOperationalLoop,
   runReplay,
   runReplayContracts,
   settlePaperOrder,
@@ -61,6 +62,7 @@ import type {
   CostProfile,
   DailyMetrics,
   DailyCostReport,
+  DailyOperationalRunResult,
   DataQualitySnapshot,
   ExecutionOrder,
   ExecutionStatus,
@@ -206,6 +208,7 @@ export default function Page() {
   const [calibration, setCalibration] = useState<CalibrationReport | null>(null);
   const [paperPerformance, setPaperPerformance] = useState<PaperPerformance | null>(null);
   const [autoSettlement, setAutoSettlement] = useState<AutoPaperSettleResult | null>(null);
+  const [dailyOperationalRun, setDailyOperationalRun] = useState<DailyOperationalRunResult | null>(null);
   const [agentBriefing, setAgentBriefing] = useState<AgentBriefing | null>(null);
   const [agentPreflight, setAgentPreflight] = useState<AgentPreflight | null>(null);
   const [agentAnomalies, setAgentAnomalies] = useState<AgentAnomaly[]>([]);
@@ -223,6 +226,7 @@ export default function Page() {
   const [replay, setReplay] = useState<ReplayRunResult | null>(null);
   const [replayContract, setReplayContract] = useState<ReplayContractRunResult | null>(null);
   const [replayContractBusy, setReplayContractBusy] = useState(false);
+  const [dailyOpsBusy, setDailyOpsBusy] = useState(false);
   const [backtest, setBacktest] = useState<BacktestMetrics | null>(null);
   const [promotion, setPromotion] = useState<ModelPromotionDecision | null>(null);
   const [loading, setLoading] = useState(true);
@@ -330,6 +334,26 @@ export default function Page() {
       setError(err instanceof Error ? err.message : "Replay contract failed");
     } finally {
       setReplayContractBusy(false);
+      setBusy(false);
+    }
+  }
+
+  async function triggerDailyOperationalRun() {
+    const token = requireAdminToken();
+    if (!token) return;
+    setBusy(true);
+    setDailyOpsBusy(true);
+    setError(null);
+    try {
+      const result = await runDailyOperationalLoop(token, selectedMatchId ?? "match_atp_002", 100);
+      setDailyOperationalRun(result);
+      setReplayContract(result.replay_contracts);
+      setAutoSettlement(result.paper_auto_settlement);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Daily operational run failed");
+    } finally {
+      setDailyOpsBusy(false);
       setBusy(false);
     }
   }
@@ -664,7 +688,10 @@ export default function Page() {
           <DataHealthPanel
             apiOnboarding={apiOnboarding}
             dataQuality={dataQuality}
+            dailyOperationalRun={dailyOperationalRun}
+            dailyOpsBusy={dailyOpsBusy}
             ingestionRuns={ingestionRuns}
+            onRunDailyOperational={triggerDailyOperationalRun}
             onRunReplayContracts={triggerReplayContracts}
             providerModeMatrix={providerModeMatrix}
             providerModeReason={providerModeReason}

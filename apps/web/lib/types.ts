@@ -572,6 +572,37 @@ export type AutoPaperSettleResult = {
   reasons: string[];
 };
 
+export type DailyOperationalBacktestStatus = {
+  status: "completed" | "skipped";
+  model_version: string;
+  feature_set: string;
+  reason: string | null;
+  run_id: string | null;
+  signals: number | null;
+  roi: number | null;
+  clv: number | null;
+  brier_score: number | null;
+  log_loss: number | null;
+  calibration_error: number | null;
+  max_drawdown: number | null;
+};
+
+export type DailyOperationalRunResult = {
+  status: "completed" | "collecting" | "degraded";
+  generated_at: string;
+  source: "api" | "cli" | "openclaw" | "cron" | "system";
+  live_api_calls: number;
+  match_id: string;
+  replay_contracts: ReplayContractRunResult;
+  paper_auto_settlement: AutoPaperSettleResult;
+  model_lab_backtest: DailyOperationalBacktestStatus;
+  execution: {
+    can_submit_real_orders: boolean;
+    real_execution_hard_block: boolean;
+    stage: ExecutionStage;
+  };
+};
+
 export type PaperPerformance = {
   orders: number;
   settled_orders: number;

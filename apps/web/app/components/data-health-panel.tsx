@@ -2,6 +2,7 @@ import { Activity, DatabaseZap, GitCompareArrows, Timer } from "lucide-react";
 
 import type {
   ApiOnboardingSnapshot,
+  DailyOperationalRunResult,
   DataQualitySnapshot,
   IngestionRunRecord,
   ProviderCursor,
@@ -36,6 +37,12 @@ function onboardingStatusClass(status: ApiOnboardingSnapshot["steps"][number]["s
 
 function replayStatusClass(status: ReplayLabSnapshot["status"] | ReplayLabSnapshot["providers"][number]["status"]) {
   if (status === "ready" || status === "covered") return "status statusEntry";
+  if (status === "collecting") return "status statusMonitor";
+  return "status statusBlocked";
+}
+
+function dailyOpsStatusClass(status: DailyOperationalRunResult["status"]) {
+  if (status === "completed") return "status statusEntry";
   if (status === "collecting") return "status statusMonitor";
   return "status statusBlocked";
 }
@@ -114,7 +121,10 @@ function summaryText(run: IngestionRunRecord) {
 export function DataHealthPanel({
   apiOnboarding,
   dataQuality,
+  dailyOperationalRun,
+  dailyOpsBusy,
   ingestionRuns,
+  onRunDailyOperational,
   onRunReplayContracts,
   providerModeMatrix,
   providerModeReason,
@@ -124,7 +134,10 @@ export function DataHealthPanel({
 }: {
   apiOnboarding: ApiOnboardingSnapshot;
   dataQuality: DataQualitySnapshot[];
+  dailyOperationalRun: DailyOperationalRunResult | null;
+  dailyOpsBusy: boolean;
   ingestionRuns: IngestionRunRecord[];
+  onRunDailyOperational: () => void;
   onRunReplayContracts: () => void;
   providerModeMatrix: ProviderModeStep[];
   providerModeReason: string;
@@ -195,6 +208,49 @@ export function DataHealthPanel({
             </strong>
             <p>{sourceSummary(latestRun)}</p>
           </div>
+        </div>
+      </div>
+      <div className="panel wide">
+        <div className="panelHeader">
+          <div>
+            <p className="eyebrow">Daily Ops</p>
+            <h2>Replay, settlement e Model Lab</h2>
+          </div>
+          <button
+            className="iconButton"
+            disabled={dailyOpsBusy}
+            onClick={onRunDailyOperational}
+            title="Run daily operational rehearsal"
+            type="button"
+          >
+            {dailyOpsBusy ? <Timer size={18} /> : <Activity size={18} />}
+          </button>
+        </div>
+        <div className="replaySummary">
+          <span className={dailyOperationalRun ? dailyOpsStatusClass(dailyOperationalRun.status) : "status statusMonitor"}>
+            {dailyOperationalRun?.status ?? "pending"}
+          </span>
+          <span>live calls {dailyOperationalRun?.live_api_calls ?? 0}</span>
+          <span>match {dailyOperationalRun?.match_id ?? "not run"}</span>
+          <span className={dailyOperationalRun?.replay_contracts.passed ? "status statusEntry" : "status statusMonitor"}>
+            replay {dailyOperationalRun?.replay_contracts.passed ? "passed" : "pending"}
+          </span>
+          <span>
+            paper settled {dailyOperationalRun?.paper_auto_settlement.settled_orders ?? 0} · examples{" "}
+            {dailyOperationalRun?.paper_auto_settlement.training_examples_ready ?? 0}
+          </span>
+          <span className={dailyOperationalRun?.model_lab_backtest.status === "completed" ? "status statusEntry" : "status statusMonitor"}>
+            model {dailyOperationalRun?.model_lab_backtest.status ?? "pending"}
+          </span>
+          <span>
+            execution{" "}
+            {dailyOperationalRun?.execution.can_submit_real_orders ? "real enabled" : "paper locked"}
+          </span>
+          <span>
+            {dailyOperationalRun?.model_lab_backtest.reason ??
+              dailyOperationalRun?.model_lab_backtest.run_id ??
+              "Awaiting daily ops run."}
+          </span>
         </div>
       </div>
       <div className="panel wide">

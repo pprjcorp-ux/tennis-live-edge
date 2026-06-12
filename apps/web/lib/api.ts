@@ -13,6 +13,7 @@ import type {
   CostProfile,
   DailyMetrics,
   DailyCostReport,
+  DailyOperationalRunResult,
   DataQualitySnapshot,
   ExecutionOrder,
   ExecutionStatus,
@@ -213,6 +214,26 @@ export async function runReplayContracts(
     throw new Error(await errorMessage(response, `Replay contract request failed: ${response.status}`));
   }
   return response.json() as Promise<ReplayContractRunResult>;
+}
+
+export async function runDailyOperationalLoop(
+  adminToken: string,
+  matchId: string,
+  maxOrders = 100
+): Promise<DailyOperationalRunResult> {
+  const response = await fetch(`${API_BASE}/api/v1/ops/daily`, {
+    method: "POST",
+    headers: adminHeaders(adminToken),
+    credentials: "include",
+    body: JSON.stringify({
+      match_id: matchId,
+      max_orders: maxOrders
+    })
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, `Daily operational run failed: ${response.status}`));
+  }
+  return response.json() as Promise<DailyOperationalRunResult>;
 }
 
 export async function runBacktest(adminToken: string): Promise<BacktestMetrics> {

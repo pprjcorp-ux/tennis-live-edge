@@ -53,6 +53,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     provider_adapters = (source / "services/provider_adapters.py").read_text()
     runtime_modes = (source / "runtime_modes.py").read_text()
     replay_engine = (source / "services/replay_engine.py").read_text()
+    ingestion_pipeline = (source / "services/ingestion.py").read_text()
     replay_fixtures = (source / "services/budget_replay_fixtures.py").read_text()
     repository = (source / "services/repository.py").read_text()
     domain = (source / "domain.py").read_text()
@@ -115,6 +116,17 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "ScoreTick",
             "ReplayRunResult",
             "resync_required",
+        ],
+    )
+    _require_text(
+        errors,
+        label="provider failure warning contract",
+        text=ingestion_pipeline + persistence_tests,
+        required=[
+            "score/live fetch failed",
+            "archive augmentation failed",
+            "test_live_ingestion_pipeline_records_raw_match_source_exception_as_warning",
+            "test_live_ingestion_pipeline_records_archive_exception_as_warning",
         ],
     )
     _require_text(

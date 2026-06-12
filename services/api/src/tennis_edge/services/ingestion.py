@@ -84,8 +84,11 @@ class LiveIngestionPipeline:
         self.archive_augmenter = archive_augmenter
 
     async def snapshot_for_date(self, target_date: date) -> OperationalSnapshot:
-        matches = await self._fetch_matches(target_date)
-        provider_warnings = _source_warnings(self.match_source)
+        matches, fetch_warnings = await self._fetch_matches(target_date)
+        provider_warnings = [
+            *fetch_warnings,
+            *_source_warnings(self.match_source),
+        ]
         provider_matches, raw_payloads, score_source_ts_by_key = _split_provider_matches(matches)
         if not provider_matches:
             try:
@@ -112,7 +115,13 @@ class LiveIngestionPipeline:
                 provider_warnings=provider_warnings,
             )
 
-        matches = await self.archive_augmenter(provider_matches, self.archive_source)
+        try:
+            matches = await self.archive_augmenter(provider_matches, self.archive_source)
+        except Exception as exc:
+            provider_warnings.append(
+                f"{self.archive_source.__class__.__name__} archive augmentation failed: {type(exc).__name__}"
+            )
+            matches = provider_matches
         provider_warnings = [
             *provider_warnings,
             *_source_warnings(self.archive_source),
@@ -142,11 +151,19 @@ class LiveIngestionPipeline:
             provider_warnings=provider_warnings,
         )
 
-    async def _fetch_matches(self, target_date: date) -> list[Match | ProviderMatchPayload]:
+    async def _fetch_matches(
+        self,
+        target_date: date,
+    ) -> tuple[list[Match | ProviderMatchPayload], list[str]]:
         try:
-            return await self.match_source.get_today_matches(target_date)
-        except Exception:
-            return []
+            return await self.match_source.get_today_matches(target_date), []
+        except Exception as exc:
+            return (
+                [],
+                [
+                    f"{self.match_source.__class__.__name__} score/live fetch failed: {type(exc).__name__}"
+                ],
+            )
 
     def _analysis_for_match(
         self,

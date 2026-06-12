@@ -3341,6 +3341,48 @@ def test_live_ingestion_pipeline_exposes_source_warnings() -> None:
     ]
 
 
+def test_live_ingestion_pipeline_records_raw_match_source_exception_as_warning() -> None:
+    persisted = asyncio.run(
+        AnalysisRepository(Settings(data_mode="sample")).analyses_for_date(date.today())
+    )[:1]
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource(exc=TimeoutError("fixture timeout")),
+        _FakeArchiveSource(),
+        _FakeStore(persisted=persisted),
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=_same_matches,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert snapshot.source == "persisted_fallback"
+    assert snapshot.analyses == persisted
+    assert snapshot.provider_warnings == [
+        "_FakeMatchSource score/live fetch failed: TimeoutError"
+    ]
+
+
+def test_live_ingestion_pipeline_records_archive_exception_as_warning() -> None:
+    async def raising_archive_augmenter(matches, archive_source):
+        raise RuntimeError("archive down")
+
+    pipeline = LiveIngestionPipeline(
+        _FakeMatchSource(_live_provider_matches()),
+        _FakeArchiveSource(),
+        _FakeStore(),
+        signal_gate=lambda match, signals: signals,
+        archive_augmenter=raising_archive_augmenter,
+    )
+
+    snapshot = asyncio.run(pipeline.snapshot_for_date(date.today()))
+
+    assert snapshot.source == "provider_live"
+    assert len(snapshot.analyses) == 1
+    assert snapshot.provider_warnings == [
+        "_FakeArchiveSource archive augmentation failed: RuntimeError"
+    ]
+
+
 def test_repository_ingestion_run_records_provider_warnings_as_degraded() -> None:
     class WarningSource:
         last_warnings = ["API-Tennis fixtures endpoint failed: TimeoutError"]

@@ -325,11 +325,12 @@ def test_provider_usage_counts_reads_raw_payloads_for_target_date() -> None:
     }
 
 
-def test_save_order_prefers_exact_external_signal_id_lookup() -> None:
+def test_save_order_requires_exact_external_signal_id_lookup() -> None:
     class CursorStub:
         def __init__(self) -> None:
             self.query = ""
             self.params = None
+            self.queries: list[str] = []
 
         def __enter__(self):
             return self
@@ -340,6 +341,7 @@ def test_save_order_prefers_exact_external_signal_id_lookup() -> None:
         def execute(self, query, params=None):
             self.query = query
             self.params = params
+            self.queries.append(query)
             return self
 
         def fetchone(self):
@@ -389,12 +391,11 @@ def test_save_order_prefers_exact_external_signal_id_lookup() -> None:
     store.save_order(order)
 
     assert "risk->>'external_signal_id' = %s" in store.conn.cursor_stub.query
-    assert "CASE WHEN risk->>'external_signal_id' = %s THEN 0 ELSE 1 END" in store.conn.cursor_stub.query
-    assert store.conn.cursor_stub.params == (
-        "sig_exact",
-        "match_atp_001",
-        "atp_sinner",
-        "sig_exact",
+    assert "match_id = %s AND outcome_player_id = %s" not in store.conn.cursor_stub.query
+    assert "INSERT INTO paper_orders" not in "\n".join(store.conn.cursor_stub.queries)
+    assert store.conn.cursor_stub.params == ("sig_exact",)
+    assert store.last_error == (
+        "save_order failed: no persisted signal matched external_signal_id 'sig_exact'"
     )
 
 
@@ -968,6 +969,125 @@ def test_auto_settle_paper_orders_uses_finished_score_and_closing_odds() -> None
     assert [request.order_id for request in store.requests] == ["ord_auto_win", "ord_auto_loss"]
     assert [request.result_win for request in store.requests] == [True, False]
     assert [request.closing_odds for request in store.requests] == [1.8, 2.2]
+
+
+def test_auto_settle_paper_orders_reports_missing_candidates() -> None:
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            return self
+
+        def fetchall(self):
+            return []
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    result = StoreStub().auto_settle_paper_orders(
+        AutoPaperSettleRequest(match_id="match_missing", max_orders=25)
+    )
+
+    assert result.evaluated_orders == 0
+    assert result.settled_orders == 0
+    assert result.training_examples_ready == 0
+    assert result.reasons == [
+        "No persisted open paper orders with score ticks were eligible "
+        "for auto-settlement for match match_missing."
+    ]
+
+
+def test_auto_settle_paper_orders_reports_settlement_without_training_example() -> None:
+    score_ts = datetime(2026, 6, 7, 20, 0, tzinfo=timezone.utc)
+    rows = [
+        {
+            "external_order_ref": "ord_no_training",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "order_created_at": score_ts - timedelta(minutes=2),
+            "matched_stake": 100,
+            "stake_amount": 100,
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "score_source_ts": score_ts,
+            "closing_odds": 1.8,
+            "closing_odds_source_ts": score_ts - timedelta(seconds=30),
+        }
+    ]
+
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            return self
+
+        def fetchall(self):
+            return rows
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+        def settle_paper_order(self, request: PaperSettleRequest):
+            return PaperSettlement(
+                order_id=request.order_id,
+                status=OrderStatus.SETTLED,
+                result_win=request.result_win,
+                requested_odds=2.0,
+                average_price=2.0,
+                matched_stake=100,
+                gross_pnl=100,
+                commission=2,
+                net_pnl=98,
+                closing_odds=request.closing_odds,
+                clv=0.01,
+            )
+
+        def _training_example_ready(self, order_ref: str) -> bool:
+            return False
+
+    result = StoreStub().auto_settle_paper_orders()
+
+    assert result.evaluated_orders == 1
+    assert result.settled_orders == 1
+    assert result.training_examples_ready == 0
+    assert result.reasons == [
+        "ord_no_training: settlement persisted but no ready training_example was found."
+    ]
 
 
 def test_auto_settle_paper_orders_skips_unsettleable_candidates() -> None:

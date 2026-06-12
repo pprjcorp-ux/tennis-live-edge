@@ -1109,20 +1109,18 @@ class PersistentStore:
                             SELECT id
                             FROM signals
                             WHERE risk->>'external_signal_id' = %s
-                               OR (match_id = %s AND outcome_player_id = %s)
-                            ORDER BY
-                              CASE WHEN risk->>'external_signal_id' = %s THEN 0 ELSE 1 END,
-                              created_at DESC
                             LIMIT 1
                             """,
-                            (
-                                order.signal_id,
-                                order.match_id,
-                                order.player_id,
-                                order.signal_id,
-                            ),
+                            (order.signal_id,),
                         ).fetchone()
                         if not signal_row:
+                            self._record_write_error(
+                                "save_order",
+                                LookupError(
+                                    "no persisted signal matched external_signal_id "
+                                    f"{order.signal_id!r}"
+                                ),
+                            )
                             return
                         order_row = cur.execute(
                             """
@@ -1505,6 +1503,12 @@ class PersistentStore:
         rows = self._auto_settlement_candidates(request)
         settlements: list[PaperSettlement] = []
         reasons: list[str] = []
+        if not rows:
+            target = f" for match {request.match_id}" if request.match_id else ""
+            reasons.append(
+                "No persisted open paper orders with score ticks were eligible "
+                f"for auto-settlement{target}."
+            )
         training_examples_ready = 0
         for row in rows:
             order_ref = str(row.get("external_order_ref") or "")
@@ -1519,6 +1523,10 @@ class PersistentStore:
             settlements.append(settlement)
             if self._training_example_ready(order_ref):
                 training_examples_ready += 1
+            else:
+                reasons.append(
+                    f"{order_ref}: settlement persisted but no ready training_example was found."
+                )
         return AutoPaperSettleResult(
             evaluated_orders=len(rows),
             settled_orders=len(settlements),

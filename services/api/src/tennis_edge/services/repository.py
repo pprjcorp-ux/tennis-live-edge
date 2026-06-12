@@ -694,6 +694,7 @@ class AnalysisRepository:
             order_id=order.id,
             settled_orders=settlement.settled_orders,
             training_examples_ready=settlement.training_examples_ready,
+            settlement_decisions=settlement.decisions,
             live_api_calls=0,
             notes=[
                 "Paper rehearsal used persisted fixture data only; no provider quota was consumed.",

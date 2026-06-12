@@ -204,17 +204,20 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
                 rehearsal
                 and rehearsal.live_api_calls == 0
                 and rehearsal.training_examples_ready >= 1
+                and len(rehearsal.settlement_decisions) >= rehearsal.settled_orders
             ),
             (
                 "Paper rehearsal created settled rehearsal training evidence without live API calls."
                 if rehearsal
                 and rehearsal.live_api_calls == 0
                 and rehearsal.training_examples_ready >= 1
+                and len(rehearsal.settlement_decisions) >= rehearsal.settled_orders
                 else "Paper rehearsal did not create settled rehearsal training evidence."
             ),
             live_api_calls=rehearsal.live_api_calls if rehearsal else None,
             training_examples_ready=rehearsal.training_examples_ready if rehearsal else 0,
             settled_orders=rehearsal.settled_orders if rehearsal else 0,
+            settlement_decisions=len(rehearsal.settlement_decisions) if rehearsal else 0,
         )
 
     dashboard = await repo.live_dashboard_snapshot(date.today())

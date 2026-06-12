@@ -639,11 +639,28 @@ class AutoPaperSettleRequest(BaseModel):
     max_orders: int = Field(default=100, ge=1, le=500)
 
 
+class AutoPaperSettleDecision(BaseModel):
+    order_id: str
+    match_id: str | None = None
+    player_id: str | None = None
+    status: Literal[
+        "settled",
+        "skipped",
+        "training_example_missing",
+        "settlement_failed",
+    ]
+    reason: str
+    result_win: bool | None = None
+    closing_odds: float | None = Field(default=None, gt=1)
+    training_example_ready: bool = False
+
+
 class AutoPaperSettleResult(BaseModel):
     evaluated_orders: int
     settled_orders: int
     skipped_orders: int
     training_examples_ready: int = 0
+    decisions: list[AutoPaperSettleDecision] = Field(default_factory=list)
     settlements: list[PaperSettlement] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
 
@@ -655,6 +672,7 @@ class PaperRehearsalResult(BaseModel):
     order_id: str | None = None
     settled_orders: int = 0
     training_examples_ready: int = 0
+    settlement_decisions: list[AutoPaperSettleDecision] = Field(default_factory=list)
     live_api_calls: int = 0
     notes: list[str] = Field(default_factory=list)
 

@@ -888,6 +888,11 @@ export default function Page() {
                   <span>settled {autoSettlement.settled_orders}</span>
                   <span>skipped {autoSettlement.skipped_orders}</span>
                   <span>{autoSettlement.training_examples_ready} training examples ready</span>
+                  {autoSettlement.decisions.slice(0, 3).map((decision) => (
+                    <span key={`${decision.order_id}-${decision.status}`}>
+                      {decision.order_id}: {decision.status}
+                    </span>
+                  ))}
                   {autoSettlement.reasons.slice(0, 3).map((reason) => (
                     <span key={reason}>{reason}</span>
                   ))}

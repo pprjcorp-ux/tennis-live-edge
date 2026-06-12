@@ -48,6 +48,9 @@ decide whether the system behaves as budget or enterprise.
    or zero-exposure orders cannot inflate ROI, CLV, drawdown, or segment stats.
    Normal completions can infer the winner from sets; retirement/walkover
    completions require an explicit provider winner before settlement.
+   Auto-settlement returns structured per-order `decisions` for settled,
+   skipped, settlement-failed, and training-example-missing candidates, so the
+   paper loop remains machine-auditable without parsing reason strings.
 11. Settled paper orders become `training_examples` keyed by model version and
     decision timestamp. Budget live backtests use `live_budget_v1`, matching the
     persisted `feature_snapshots.feature_set` written by the ingestion pipeline,

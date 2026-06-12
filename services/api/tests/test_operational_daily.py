@@ -2,6 +2,7 @@ import asyncio
 import json
 
 from tennis_edge.domain import (
+    AutoPaperSettleDecision,
     AutoPaperSettleResult,
     BacktestMetrics,
     ExecutionStage,
@@ -87,6 +88,25 @@ class RepoStub:
             settled_orders=1,
             skipped_orders=1,
             training_examples_ready=1,
+            decisions=[
+                AutoPaperSettleDecision(
+                    order_id="ord_daily_settled",
+                    match_id="match_atp_002",
+                    player_id="p1",
+                    status="settled",
+                    reason="settlement persisted and training_example is ready.",
+                    result_win=True,
+                    closing_odds=1.8,
+                    training_example_ready=True,
+                ),
+                AutoPaperSettleDecision(
+                    order_id="ord_live",
+                    match_id="match_atp_002",
+                    player_id="p1",
+                    status="skipped",
+                    reason="latest score state is not finished.",
+                ),
+            ],
             reasons=["ord_live: latest score state is not finished."],
         )
 
@@ -99,6 +119,18 @@ class RepoStub:
             order_id="ord_paper_rehearsal",
             settled_orders=1,
             training_examples_ready=1,
+            settlement_decisions=[
+                AutoPaperSettleDecision(
+                    order_id="ord_paper_rehearsal",
+                    match_id="match_paper_rehearsal",
+                    player_id="p1",
+                    status="settled",
+                    reason="settlement persisted and training_example is ready.",
+                    result_win=True,
+                    closing_odds=1.8,
+                    training_example_ready=True,
+                )
+            ],
             live_api_calls=0,
             notes=["rehearsal"],
         )
@@ -143,6 +175,7 @@ def test_daily_operational_loop_runs_replay_settlement_and_backtest() -> None:
     assert result.live_api_calls == 0
     assert result.replay_contracts.passed is True
     assert result.paper_auto_settlement.training_examples_ready == 1
+    assert len(result.paper_auto_settlement.decisions) == 2
     assert result.model_lab_backtest.status == "completed"
     assert result.model_lab_backtest.run_id == "bt_daily"
     assert result.execution.can_submit_real_orders is False
@@ -166,6 +199,7 @@ def test_daily_operational_loop_runs_replay_settlement_and_backtest() -> None:
     assert ingestion_run["summary"]["replay_contracts"]["passed"] is True
     assert ingestion_run["summary"]["execution"]["can_submit_real_orders"] is False
     assert ingestion_run["summary"]["execution"]["real_execution_hard_block"] is True
+    assert len(ingestion_run["summary"]["paper_auto_settlement"]["decisions"]) == 2
 
 
 def test_daily_operational_loop_collects_when_training_examples_are_missing() -> None:
@@ -202,8 +236,13 @@ def test_daily_operational_loop_can_run_explicit_paper_rehearsal() -> None:
     assert result.paper_rehearsal.enabled is True
     assert result.paper_rehearsal.live_api_calls == 0
     assert result.paper_rehearsal.training_examples_ready == 1
+    assert len(result.paper_rehearsal.settlement_decisions) == 1
     assert repo.paper_rehearsal_model_version == "paper_rehearsal_v1"
     assert repo.ingestion_run_calls[0]["summary"]["paper_rehearsal"]["order_id"] == "ord_paper_rehearsal"
+    assert (
+        repo.ingestion_run_calls[0]["summary"]["paper_rehearsal"]["settlement_decisions"][0]["status"]
+        == "settled"
+    )
 
 
 def test_daily_operational_loop_uses_rehearsal_model_when_flag_has_default_model() -> None:

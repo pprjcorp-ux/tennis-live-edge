@@ -508,6 +508,7 @@ def test_paper_auto_settlement_requires_token_and_calls_repository() -> None:
     assert response.json()["evaluated_orders"] == 1
     assert response.json()["skipped_orders"] == 1
     assert response.json()["training_examples_ready"] == 0
+    assert response.json()["decisions"] == []
     assert repo.requests[0].match_id == "match_atp_001"
     assert repo.requests[0].max_orders == 5
 

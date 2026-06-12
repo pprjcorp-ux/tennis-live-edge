@@ -134,4 +134,6 @@ For the daily paper-first operational loop, run `npm run api:ops:daily` or call
 the protected `POST /api/v1/ops/daily` endpoint. This executes replay contracts,
 paper auto-settlement, and the Model Lab `training_examples` backtest path while
 reporting `live_api_calls=0`, so it is safe to run before provider credentials
-are configured.
+are configured. Auto-settlement returns structured `decisions` for each
+candidate order, so operators and OpenClaw can audit why an order settled,
+skipped, failed, or did not produce a ready `training_example`.

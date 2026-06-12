@@ -109,6 +109,10 @@ function summaryNumber(value: unknown) {
   return typeof value === "number" ? value : null;
 }
 
+function summaryArrayLength(value: unknown) {
+  return Array.isArray(value) ? value.length : null;
+}
+
 function summaryText(run: IngestionRunRecord) {
   const summary = run.summary;
   if (run.run_type === "replay_run") {
@@ -241,9 +245,17 @@ export function DataHealthPanel({
     dailyOperationalRun?.paper_auto_settlement.training_examples_ready ??
     summaryNumber(latestDailyPaperSummary?.training_examples_ready) ??
     0;
+  const dailySettlementDecisions =
+    dailyOperationalRun?.paper_auto_settlement.decisions.length ??
+    summaryArrayLength(latestDailyPaperSummary?.decisions) ??
+    0;
   const dailyRehearsalTrainingExamples =
     dailyOperationalRun?.paper_rehearsal?.training_examples_ready ??
     summaryNumber(latestDailyRehearsalSummary?.training_examples_ready) ??
+    0;
+  const dailyRehearsalSettlementDecisions =
+    dailyOperationalRun?.paper_rehearsal?.settlement_decisions.length ??
+    summaryArrayLength(latestDailyRehearsalSummary?.settlement_decisions) ??
     0;
   const dailyModelStatus =
     dailyOperationalRun?.model_lab_backtest.status ??
@@ -380,11 +392,13 @@ export function DataHealthPanel({
             replay {dailyReplayPassed ? "passed" : "pending"}
           </span>
           <span>
-            paper settled {dailySettledOrders} · examples {dailyTrainingExamples}
+            paper settled {dailySettledOrders} · examples {dailyTrainingExamples} · decisions{" "}
+            {dailySettlementDecisions}
           </span>
           {dailyRehearsalTrainingExamples > 0 ? (
             <span className="status statusMonitor">
-              rehearsal examples {dailyRehearsalTrainingExamples}
+              rehearsal examples {dailyRehearsalTrainingExamples} · decisions{" "}
+              {dailyRehearsalSettlementDecisions}
             </span>
           ) : null}
           <span className={dailyModelStatus === "completed" ? "status statusEntry" : "status statusMonitor"}>

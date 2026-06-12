@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
+    AutoPaperSettleDecision,
     AutoPaperSettleRequest,
     AutoPaperSettleResult,
     BacktestMetrics,
@@ -1621,6 +1622,7 @@ class PersistentStore:
             )
         rows = self._auto_settlement_candidates(request)
         settlements: list[PaperSettlement] = []
+        decisions: list[AutoPaperSettleDecision] = []
         reasons: list[str] = []
         if not rows:
             target = f" for match {request.match_id}" if request.match_id else ""
@@ -1634,23 +1636,67 @@ class PersistentStore:
             settle_request, reason = self._auto_settlement_request(row)
             if settle_request is None:
                 reasons.append(f"{order_ref or 'unknown'}: {reason}")
+                decisions.append(
+                    AutoPaperSettleDecision(
+                        order_id=order_ref or "unknown",
+                        match_id=row.get("match_id"),
+                        player_id=row.get("player_id"),
+                        status="skipped",
+                        reason=reason,
+                    )
+                )
                 continue
             settlement = self.settle_paper_order(settle_request)
             if settlement is None:
                 reasons.append(f"{order_ref}: settlement write failed or order is no longer open.")
+                decisions.append(
+                    AutoPaperSettleDecision(
+                        order_id=order_ref,
+                        match_id=row.get("match_id"),
+                        player_id=row.get("player_id"),
+                        status="settlement_failed",
+                        reason="settlement write failed or order is no longer open.",
+                        result_win=settle_request.result_win,
+                        closing_odds=settle_request.closing_odds,
+                    )
+                )
                 continue
             settlements.append(settlement)
             if self._training_example_ready(order_ref):
                 training_examples_ready += 1
+                decisions.append(
+                    AutoPaperSettleDecision(
+                        order_id=order_ref,
+                        match_id=row.get("match_id"),
+                        player_id=row.get("player_id"),
+                        status="settled",
+                        reason="settlement persisted and training_example is ready.",
+                        result_win=settlement.result_win,
+                        closing_odds=settlement.closing_odds,
+                        training_example_ready=True,
+                    )
+                )
             else:
                 reasons.append(
                     f"{order_ref}: settlement persisted but no ready training_example was found."
+                )
+                decisions.append(
+                    AutoPaperSettleDecision(
+                        order_id=order_ref,
+                        match_id=row.get("match_id"),
+                        player_id=row.get("player_id"),
+                        status="training_example_missing",
+                        reason="settlement persisted but no ready training_example was found.",
+                        result_win=settlement.result_win,
+                        closing_odds=settlement.closing_odds,
+                    )
                 )
         return AutoPaperSettleResult(
             evaluated_orders=len(rows),
             settled_orders=len(settlements),
             skipped_orders=len(rows) - len(settlements),
             training_examples_ready=training_examples_ready,
+            decisions=decisions,
             settlements=settlements,
             reasons=reasons,
         )

@@ -598,11 +598,23 @@ export type PaperSettlement = {
   settled_at: string;
 };
 
+export type AutoPaperSettleDecision = {
+  order_id: string;
+  match_id: string | null;
+  player_id: string | null;
+  status: "settled" | "skipped" | "training_example_missing" | "settlement_failed";
+  reason: string;
+  result_win: boolean | null;
+  closing_odds: number | null;
+  training_example_ready: boolean;
+};
+
 export type AutoPaperSettleResult = {
   evaluated_orders: number;
   settled_orders: number;
   skipped_orders: number;
   training_examples_ready: number;
+  decisions: AutoPaperSettleDecision[];
   settlements: PaperSettlement[];
   reasons: string[];
 };
@@ -614,6 +626,7 @@ export type PaperRehearsalResult = {
   order_id: string | null;
   settled_orders: number;
   training_examples_ready: number;
+  settlement_decisions: AutoPaperSettleDecision[];
   live_api_calls: number;
   notes: string[];
 };

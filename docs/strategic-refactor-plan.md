@@ -231,6 +231,9 @@ Current implementation status: baseline complete for v2. Paper orders now
 require `Entrada`, deterministic fills are persisted, closing-line snapshots are
 recorded at settlement, and paper performance reports ROI/CLV by model, odds
 bucket, surface, tour, and provider when enough settled orders exist.
+Auto-settlement returns structured per-order `decisions` alongside readable
+reasons, so skipped, failed, settled, and training-example-missing outcomes can
+be audited by dashboard/OpenClaw after restart.
 
 Tasks:
 
@@ -243,6 +246,7 @@ Tasks:
 Acceptance:
 
 - each paper order can be audited from signal to settlement;
+- each auto-settlement candidate has a structured decision record;
 - no paper order can be created from non-entry signals;
 - ROI and CLV are calculated only from settled orders.
 

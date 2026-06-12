@@ -37,6 +37,9 @@ Before live provider keys are configured, use `api:ops:daily`,
 `openclaw:ops:daily`, or protected `POST /api/v1/ops/daily` for the daily
 paper-first rehearsal. It runs replay contracts, paper auto-settlement, and the
 Model Lab `training_examples` backtest path while reporting `live_api_calls=0`.
+The auto-settlement response includes structured per-order `decisions`, so
+OpenClaw can summarize settled, skipped, failed, and training-example-missing
+outcomes without parsing free-form reason strings.
 
 ## Audit Trail
 

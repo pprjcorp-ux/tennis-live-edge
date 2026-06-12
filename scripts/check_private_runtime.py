@@ -71,6 +71,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     risk_tests = (tests / "test_enterprise_risk.py").read_text()
     signal_tests = (tests / "test_signal_engine.py").read_text()
     model_tests = (tests / "test_model_lab.py").read_text()
+    operational_daily_tests = (tests / "test_operational_daily.py").read_text()
     operational_session_tests = (tests / "test_operational_session.py").read_text()
     operational_tests = (tests / "test_operational_state.py").read_text()
     agent_ops_tests = (tests / "test_agent_ops_anomalies.py").read_text()
@@ -228,13 +229,15 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     _require_text(
         errors,
         label="paper learning persistence",
-        text=storage + model_lab + web_page + web_api,
+        text=storage + model_lab + repository + domain + data_health_panel + web_page + web_api,
         required=[
             "paper_settlements",
             "closing_line_snapshots",
             "training_examples",
             "walk_forward_from_training_examples",
             "calibration_from_training_examples",
+            "AutoPaperSettleDecision",
+            "settlement_decisions",
             "training_example_lineage_counts",
             "paper_rehearsal%",
             "matched_stake <= 0",
@@ -259,6 +262,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             + risk_tests
             + signal_tests
             + model_tests
+            + operational_daily_tests
             + operational_session_tests
             + operational_tests
             + agent_ops_tests
@@ -273,7 +277,9 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_operational_state_marks_explicit_replay_mode_without_live_keys",
             "test_repository_regates_persisted_fallback_when_odds_cursor_requires_resync",
             "test_auto_settle_paper_orders_uses_explicit_winner_for_retirement",
+            "test_auto_settle_paper_orders_records_settlement_failure_decision",
             "test_auto_settle_paper_orders_skips_unsettleable_candidates",
+            "settlement_decisions",
             "test_walk_forward_backtest_uses_settled_training_examples_only",
             "test_walk_forward_ignores_invalid_zero_stake_examples",
             "test_paper_performance_uses_positive_matched_stake_only",

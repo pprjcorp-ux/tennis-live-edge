@@ -1043,6 +1043,14 @@ def test_auto_settle_paper_orders_uses_finished_score_and_closing_odds() -> None
     assert [request.order_id for request in store.requests] == ["ord_auto_win", "ord_auto_loss"]
     assert [request.result_win for request in store.requests] == [True, False]
     assert [request.closing_odds for request in store.requests] == [1.8, 2.2]
+    assert [decision.status for decision in result.decisions] == ["settled", "settled"]
+    assert [decision.order_id for decision in result.decisions] == [
+        "ord_auto_win",
+        "ord_auto_loss",
+    ]
+    assert all(decision.training_example_ready for decision in result.decisions)
+    assert [decision.result_win for decision in result.decisions] == [True, False]
+    assert [decision.closing_odds for decision in result.decisions] == [1.8, 2.2]
 
 
 def test_auto_settle_paper_orders_uses_explicit_winner_for_retirement() -> None:
@@ -1190,6 +1198,7 @@ def test_auto_settle_paper_orders_reports_missing_candidates() -> None:
     assert result.evaluated_orders == 0
     assert result.settled_orders == 0
     assert result.training_examples_ready == 0
+    assert result.decisions == []
     assert result.reasons == [
         "No persisted open paper orders with score ticks were eligible "
         "for auto-settlement for match match_missing."
@@ -1267,8 +1276,84 @@ def test_auto_settle_paper_orders_reports_settlement_without_training_example() 
     assert result.evaluated_orders == 1
     assert result.settled_orders == 1
     assert result.training_examples_ready == 0
+    assert len(result.decisions) == 1
+    assert result.decisions[0].order_id == "ord_no_training"
+    assert result.decisions[0].status == "training_example_missing"
+    assert result.decisions[0].training_example_ready is False
+    assert result.decisions[0].reason == (
+        "settlement persisted but no ready training_example was found."
+    )
     assert result.reasons == [
         "ord_no_training: settlement persisted but no ready training_example was found."
+    ]
+
+
+def test_auto_settle_paper_orders_records_settlement_failure_decision() -> None:
+    score_ts = datetime(2026, 6, 7, 20, 0, tzinfo=timezone.utc)
+    rows = [
+        {
+            "external_order_ref": "ord_settlement_failed",
+            "match_id": "match_auto",
+            "player_id": "p1",
+            "order_created_at": score_ts - timedelta(minutes=2),
+            "matched_stake": 100,
+            "stake_amount": 100,
+            "player1_id": "p1",
+            "player2_id": "p2",
+            "raw_state": {"status": "finished", "p1_sets": 2, "p2_sets": 0},
+            "score_source_ts": score_ts,
+            "closing_odds": 1.8,
+            "closing_odds_source_ts": score_ts - timedelta(seconds=30),
+        }
+    ]
+
+    class CursorStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            return self
+
+        def fetchall(self):
+            return rows
+
+    class ConnStub:
+        def cursor(self):
+            return CursorStub()
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(Settings(data_mode="live", persistence_enabled=True))
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+        def settle_paper_order(self, request: PaperSettleRequest):
+            return None
+
+    result = StoreStub().auto_settle_paper_orders()
+
+    assert result.evaluated_orders == 1
+    assert result.settled_orders == 0
+    assert result.skipped_orders == 1
+    assert result.training_examples_ready == 0
+    assert len(result.decisions) == 1
+    decision = result.decisions[0]
+    assert decision.order_id == "ord_settlement_failed"
+    assert decision.status == "settlement_failed"
+    assert decision.result_win is True
+    assert decision.closing_odds == 1.8
+    assert decision.reason == "settlement write failed or order is no longer open."
+    assert result.reasons == [
+        "ord_settlement_failed: settlement write failed or order is no longer open."
     ]
 
 
@@ -1453,6 +1538,14 @@ def test_auto_settle_paper_orders_skips_unsettleable_candidates() -> None:
     assert result.settled_orders == 0
     assert result.skipped_orders == 9
     assert result.training_examples_ready == 0
+    assert len(result.decisions) == 9
+    assert {decision.status for decision in result.decisions} == {"skipped"}
+    assert {decision.order_id for decision in result.decisions} >= {
+        "ord_live",
+        "ord_tied",
+        "ord_no_odds",
+        "ord_stale_closing",
+    }
     assert any("not finished" in reason for reason in result.reasons)
     assert any("no inferable winner" in reason for reason in result.reasons)
     assert any("requires explicit provider winner" in reason for reason in result.reasons)

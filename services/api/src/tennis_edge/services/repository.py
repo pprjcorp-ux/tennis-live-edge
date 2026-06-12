@@ -1007,6 +1007,11 @@ class AnalysisRepository:
                     input_contracts=input_contracts,
                     output_contracts=output_contracts,
                     provider_cursors=run.provider_cursors,
+                    raw_payloads_saved=run.raw_payloads_saved,
+                    score_ticks_saved=run.score_ticks_saved,
+                    odds_ticks_saved=run.odds_ticks_saved,
+                    cursors_saved=run.cursors_saved,
+                    provider_latency_saved=run.provider_latency_saved,
                     resync_required=run.resync_required,
                     passed=scenario_passed,
                     notes=run.notes,
@@ -1159,7 +1164,7 @@ class AnalysisRepository:
             if cursor.resync_required:
                 notes.append(cursor.note)
 
-        self._record_replay_latency(payloads)
+        provider_latency_saved = self._record_replay_latency(payloads)
         if payloads and not raw_payloads_saved:
             if payload_source == "explicit_fixture_seed":
                 notes.append(
@@ -1172,6 +1177,7 @@ class AnalysisRepository:
             "score_ticks_saved": score_ticks_saved,
             "odds_ticks_saved": odds_ticks_saved,
             "cursors_saved": cursors_saved,
+            "provider_latency_saved": provider_latency_saved,
             "resync_required": any(cursor.resync_required for cursor in state.provider_cursors),
             "notes": notes,
         }
@@ -1296,7 +1302,7 @@ class AnalysisRepository:
                 return match
         return None
 
-    def _record_replay_latency(self, payloads: list[RawProviderPayload]) -> None:
+    def _record_replay_latency(self, payloads: list[RawProviderPayload]) -> int:
         latest_by_feed: dict[tuple[Provider, str], RawProviderPayload] = {}
         for payload in payloads:
             if payload.payload_type == "score":
@@ -1310,13 +1316,16 @@ class AnalysisRepository:
             current = latest_by_feed.get(key)
             if current is None or payload.ingested_at > current.ingested_at:
                 latest_by_feed[key] = payload
+        saved = 0
         for (provider, feed), payload in latest_by_feed.items():
-            self.store.record_provider_latency(
+            if self.store.record_provider_latency(
                 provider,
                 feed,
                 latest_source_ts=payload.source_ts,
                 latest_ingested_at=payload.ingested_at,
-            )
+            ):
+                saved += 1
+        return saved
 
     def _raw_payloads_for_replay(
         self,

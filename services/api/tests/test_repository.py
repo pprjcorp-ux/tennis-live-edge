@@ -1332,10 +1332,15 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
         assert scenario.events_replayed >= 3
         assert scenario.score_ticks >= 1
         assert scenario.odds_ticks >= 1
+        assert scenario.raw_payloads_saved >= 3
+        assert scenario.score_ticks_saved >= 1
+        assert scenario.odds_ticks_saved >= 1
+        assert scenario.provider_latency_saved >= 2
 
     healthy, gap, resync_required = result.scenarios
     assert healthy.final_status == "completed"
     assert healthy.resync_required is False
+    assert healthy.cursors_saved == 1
     assert {"seq", "lastSeq"}.issubset(set(healthy.output_contracts))
     assert gap.final_status == "degraded"
     assert gap.resync_required is True

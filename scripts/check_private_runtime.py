@@ -168,6 +168,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "_replay_input_contracts",
             "scenario.adapter_contracts",
             "scenario.input_contracts",
+            "scenario.provider_latency_saved",
+            "provider_latency_saved",
             '"ScoreProviderAdapter"',
             '"OddsProviderAdapter"',
             '"ArchiveOddsProviderAdapter"',

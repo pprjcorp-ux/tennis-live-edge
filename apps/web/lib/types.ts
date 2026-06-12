@@ -462,6 +462,11 @@ export type ReplayContractScenarioResult = {
   input_contracts: string[];
   output_contracts: string[];
   provider_cursors: ProviderCursor[];
+  raw_payloads_saved: number;
+  score_ticks_saved: number;
+  odds_ticks_saved: number;
+  cursors_saved: number;
+  provider_latency_saved: number;
   resync_required: boolean;
   passed: boolean;
   notes: string[];

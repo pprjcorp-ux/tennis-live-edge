@@ -348,7 +348,12 @@ def test_v1_replay_contracts_run_all_budget_scenarios() -> None:
         }.issubset(set(scenario["output_contracts"]))
         for scenario in body["scenarios"]
     )
+    assert all("raw_payloads_saved" in scenario for scenario in body["scenarios"])
+    assert all("score_ticks_saved" in scenario for scenario in body["scenarios"])
+    assert all("odds_ticks_saved" in scenario for scenario in body["scenarios"])
+    assert all("provider_latency_saved" in scenario for scenario in body["scenarios"])
     assert body["scenarios"][0]["final_status"] == "completed"
+    assert body["scenarios"][0]["provider_cursors"]
     assert body["scenarios"][1]["resync_required"] is True
     assert body["scenarios"][2]["resync_required"] is True
 

@@ -96,7 +96,11 @@ decide whether the system behaves as budget or enterprise.
     payloads for rehearsal without consuming live provider quota. Replay runs
     that receive unsupported or unparseable provider payloads are marked
     degraded in both the API response and ingestion journal rather than
-    completing silently with zero useful ticks.
+    completing silently with zero useful ticks. Replay contract scenarios also
+    expose persistence evidence (`raw_payloads_saved`, `score_ticks_saved`,
+    `odds_ticks_saved`, `cursors_saved`, and `provider_latency_saved`) separately
+    from adapter output contracts, so fixture tests can prove both canonical
+    formats and Postgres materialization without live API calls.
 18. Live model registry reads persisted `model_versions`; without persisted
     metrics it exposes only a clearly unvalidated runtime default instead of
     demo ROI/CLV.

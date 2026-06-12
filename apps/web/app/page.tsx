@@ -41,6 +41,7 @@ import {
   runAgentAutopilot,
   runBacktest,
   runReplay,
+  runReplayContracts,
   settlePaperOrder,
   setKillSwitch,
   submitOrder
@@ -74,6 +75,7 @@ import type {
   ProviderCursor,
   ProviderHealth,
   ProviderModeStep,
+  ReplayContractRunResult,
   ReplayLabSnapshot,
   ReplayOddsScenario,
   ReplayRunResult,
@@ -219,6 +221,8 @@ export default function Page() {
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [replayOddsScenario, setReplayOddsScenario] = useState<ReplayOddsScenario>("healthy");
   const [replay, setReplay] = useState<ReplayRunResult | null>(null);
+  const [replayContract, setReplayContract] = useState<ReplayContractRunResult | null>(null);
+  const [replayContractBusy, setReplayContractBusy] = useState(false);
   const [backtest, setBacktest] = useState<BacktestMetrics | null>(null);
   const [promotion, setPromotion] = useState<ModelPromotionDecision | null>(null);
   const [loading, setLoading] = useState(true);
@@ -308,6 +312,24 @@ export default function Page() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Replay failed");
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function triggerReplayContracts() {
+    const token = requireAdminToken();
+    if (!token) return;
+    setBusy(true);
+    setReplayContractBusy(true);
+    setError(null);
+    try {
+      const result = await runReplayContracts(selectedMatchId ?? "match_atp_002", token);
+      setReplayContract(result);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Replay contract failed");
+    } finally {
+      setReplayContractBusy(false);
       setBusy(false);
     }
   }
@@ -641,8 +663,10 @@ export default function Page() {
             apiOnboarding={apiOnboarding}
             dataQuality={dataQuality}
             ingestionRuns={ingestionRuns}
+            onRunReplayContracts={triggerReplayContracts}
             providerModeMatrix={providerModeMatrix}
             providerCursors={providerCursors}
+            replayContractBusy={replayContractBusy}
             replayLab={replayLab}
           />
         ) : null}
@@ -1314,6 +1338,9 @@ export default function Page() {
             <button onClick={triggerReplay} disabled={busy || !selectedMatchId}>
               Run replay
             </button>
+            <button onClick={triggerReplayContracts} disabled={busy}>
+              Run contracts
+            </button>
             <button onClick={triggerBacktest} disabled={busy}>
               Run backtest
             </button>
@@ -1350,6 +1377,27 @@ export default function Page() {
                   </span>
                 ) : null}
                 {replay.notes.map((note) => (
+                  <span key={note}>{note}</span>
+                ))}
+              </div>
+            ) : null}
+            {replayContract ? (
+              <div className="labCard">
+                <strong>
+                  {replayContract.passed ? "replay contracts passed" : "replay contracts blocked"}
+                </strong>
+                <span>
+                  {replayContract.scenarios.length} scenarios · match {replayContract.match_id}
+                </span>
+                <span>
+                  {replayContract.scenarios
+                    .map((scenario) => `${scenario.scenario}:${scenario.passed ? "pass" : "block"}`)
+                    .join(" · ")}
+                </span>
+                <span className={replayContract.passed ? "status statusEntry" : "status statusBlocked"}>
+                  {replayContract.passed ? "ready for API onboarding" : "keep API onboarding blocked"}
+                </span>
+                {replayContract.notes.map((note) => (
                   <span key={note}>{note}</span>
                 ))}
               </div>

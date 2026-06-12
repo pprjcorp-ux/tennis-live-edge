@@ -98,15 +98,19 @@ export function DataHealthPanel({
   apiOnboarding,
   dataQuality,
   ingestionRuns,
+  onRunReplayContracts,
   providerModeMatrix,
   providerCursors,
+  replayContractBusy,
   replayLab
 }: {
   apiOnboarding: ApiOnboardingSnapshot;
   dataQuality: DataQualitySnapshot[];
   ingestionRuns: IngestionRunRecord[];
+  onRunReplayContracts: () => void;
   providerModeMatrix: ProviderModeStep[];
   providerCursors: ProviderCursor[];
+  replayContractBusy: boolean;
   replayLab: ReplayLabSnapshot;
 }) {
   return (
@@ -179,7 +183,15 @@ export function DataHealthPanel({
             <p className="eyebrow">Replay Contracts</p>
             <h2>{replayLab.source}</h2>
           </div>
-          <Activity size={20} />
+          <button
+            className="iconButton"
+            disabled={replayContractBusy}
+            onClick={onRunReplayContracts}
+            title="Run replay contract scenarios"
+            type="button"
+          >
+            {replayContractBusy ? <Timer size={18} /> : <Activity size={18} />}
+          </button>
         </div>
         <div className="replaySummary">
           <span className={replayStatusClass(replayLab.status)}>{replayLab.status}</span>

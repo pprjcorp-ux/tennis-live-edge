@@ -26,6 +26,7 @@ import type {
   PaperSettlement,
   ProviderCursor,
   ProviderHealth,
+  ReplayContractRunResult,
   ReplayOddsScenario,
   ReplayRunResult,
   Signal
@@ -196,6 +197,22 @@ export async function runReplay(
     throw new Error(`Replay request failed: ${response.status}`);
   }
   return response.json() as Promise<ReplayRunResult>;
+}
+
+export async function runReplayContracts(
+  matchId: string,
+  adminToken: string
+): Promise<ReplayContractRunResult> {
+  const response = await fetch(`${API_BASE}/api/v1/replay/contracts/run`, {
+    method: "POST",
+    headers: adminHeaders(adminToken),
+    credentials: "include",
+    body: JSON.stringify({ match_id: matchId })
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, `Replay contract request failed: ${response.status}`));
+  }
+  return response.json() as Promise<ReplayContractRunResult>;
 }
 
 export async function runBacktest(adminToken: string): Promise<BacktestMetrics> {

@@ -48,7 +48,14 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(pageSource, /replayOddsScenario/);
   assert.match(pageSource, /setReplayOddsScenario/);
   assert.match(pageSource, /runReplay\(selectedMatchId, adminToken\.trim\(\), replayOddsScenario\)/);
+  assert.match(importBlock, /runReplayContracts/);
+  assert.match(pageSource, /triggerReplayContracts/);
+  assert.match(pageSource, /runReplayContracts\(selectedMatchId \?\? "match_atp_002", token\)/);
+  assert.match(pageSource, /onRunReplayContracts=\{triggerReplayContracts\}/);
+  assert.match(pageSource, /replayContract\.scenarios/);
   assert.match(apiSource, /use_fixture_seed: true/);
+  assert.match(apiSource, /export async function runReplayContracts/);
+  assert.match(apiSource, /\/api\/v1\/replay\/contracts\/run/);
   assert.match(pageSource, /nextOperational\.daily_cost_report/);
   assert.match(pageSource, /nextOperational\.api_onboarding/);
   assert.match(pageSource, /nextOperational\.model_lab/);
@@ -67,6 +74,9 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(dataHealthSource, /API Onboarding/);
   assert.match(dataHealthSource, /Core primeiro, providers por etapas/);
   assert.match(dataHealthSource, /Replay Contracts/);
+  assert.match(dataHealthSource, /onRunReplayContracts/);
+  assert.match(dataHealthSource, /replayContractBusy/);
+  assert.match(dataHealthSource, /Run replay contract scenarios/);
   assert.match(dataHealthSource, /Provider Mode Matrix/);
   assert.match(dataHealthSource, /providerModeMatrix\.map/);
   assert.match(dataHealthSource, /entries \{step\.entry_gate\}/);

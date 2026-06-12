@@ -436,6 +436,28 @@ export type ReplayRunResult = {
   notes: string[];
 };
 
+export type ReplayContractScenarioResult = {
+  scenario: ReplayOddsScenario;
+  run_id: string;
+  final_status: string;
+  events_replayed: number;
+  score_ticks: number;
+  odds_ticks: number;
+  providers_seen: Provider[];
+  output_contracts: string[];
+  provider_cursors: ProviderCursor[];
+  resync_required: boolean;
+  passed: boolean;
+  notes: string[];
+};
+
+export type ReplayContractRunResult = {
+  match_id: string;
+  scenarios: ReplayContractScenarioResult[];
+  passed: boolean;
+  notes: string[];
+};
+
 export type BacktestMetrics = {
   run_id: string;
   model_version: string;

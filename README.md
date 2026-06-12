@@ -122,7 +122,8 @@ Lab sends `use_fixture_seed=true` explicitly when the operator wants to rehearse
 provider contracts without consuming live provider quota. Before adding or
 debugging any paid key, run the aggregate contract rehearsal through
 `POST /api/v1/replay/contracts/run`; it exercises healthy, gap, and
-`resync_required` scenarios for API-Tennis, Odds-API.io, and TheOddsAPI.
+`resync_required` scenarios for API-Tennis, Odds-API.io, and TheOddsAPI, then
+returns the adapter, input, and output contracts proven by each scenario.
 
 For the daily paper-first operational loop, run `npm run api:ops:daily` or call
 the protected `POST /api/v1/ops/daily` endpoint. This executes replay contracts,

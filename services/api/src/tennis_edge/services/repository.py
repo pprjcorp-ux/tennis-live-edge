@@ -985,6 +985,8 @@ class AnalysisRepository:
                 {payload.provider for payload in payloads},
                 key=lambda provider: provider.value,
             )
+            adapter_contracts = self._replay_adapter_contracts(providers_seen)
+            input_contracts = self._replay_input_contracts(providers_seen)
             output_contracts = self._replay_output_contracts(run, payloads)
             scenario_passed = self._replay_contract_scenario_passed(
                 scenario,
@@ -1001,6 +1003,8 @@ class AnalysisRepository:
                     score_ticks=run.score_ticks,
                     odds_ticks=run.odds_ticks,
                     providers_seen=providers_seen,
+                    adapter_contracts=adapter_contracts,
+                    input_contracts=input_contracts,
                     output_contracts=output_contracts,
                     provider_cursors=run.provider_cursors,
                     resync_required=run.resync_required,
@@ -1028,6 +1032,28 @@ class AnalysisRepository:
             source=source,
         )
         return result
+
+    @staticmethod
+    def _replay_adapter_contracts(providers_seen: list[Provider]) -> list[str]:
+        providers = set(providers_seen)
+        return sorted(
+            {
+                spec.adapter_contract
+                for spec in BUDGET_PROVIDER_CONTRACT_SPECS
+                if spec.provider in providers
+            }
+        )
+
+    @staticmethod
+    def _replay_input_contracts(providers_seen: list[Provider]) -> list[str]:
+        providers = set(providers_seen)
+        contracts = {
+            contract
+            for spec in BUDGET_PROVIDER_CONTRACT_SPECS
+            if spec.provider in providers
+            for contract in spec.input_contracts
+        }
+        return sorted(contracts)
 
     def _replay_output_contracts(
         self,

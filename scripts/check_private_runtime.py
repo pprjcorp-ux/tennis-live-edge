@@ -100,6 +100,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "ProviderMatchPayload",
             "OddsTick",
             "canonical_match_from_provider_payload",
+            "input_contracts",
         ],
     )
     _require_text(
@@ -141,6 +142,22 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "notes = [*(state.notes or []), *(persisted.get(\"notes\") or [])]",
             '"payload_source": payload_source',
             '"use_fixture_seed": request.use_fixture_seed',
+        ],
+    )
+    _require_text(
+        errors,
+        label="replay contract aggregate evidence",
+        text=domain + repository + web_types + web_page + repository_tests + v1_tests,
+        required=[
+            "adapter_contracts",
+            "input_contracts",
+            "_replay_adapter_contracts",
+            "_replay_input_contracts",
+            "scenario.adapter_contracts",
+            "scenario.input_contracts",
+            '"ScoreProviderAdapter"',
+            '"OddsProviderAdapter"',
+            '"ArchiveOddsProviderAdapter"',
         ],
     )
     _require_text(

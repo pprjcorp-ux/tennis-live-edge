@@ -1311,6 +1311,14 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
         for contract in (*spec.input_contracts, *spec.output_contracts)
         if contract not in {"seq", "lastSeq"}
     }
+    required_adapter_contracts = {
+        spec.adapter_contract for spec in BUDGET_PROVIDER_CONTRACT_SPECS
+    }
+    required_input_contracts = {
+        contract
+        for spec in BUDGET_PROVIDER_CONTRACT_SPECS
+        for contract in spec.input_contracts
+    }
     for scenario in result.scenarios:
         assert scenario.passed is True
         assert set(scenario.providers_seen) == {
@@ -1318,6 +1326,8 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
             Provider.ODDS_API_IO,
             Provider.THE_ODDS_API,
         }
+        assert set(scenario.adapter_contracts) == required_adapter_contracts
+        assert set(scenario.input_contracts) == required_input_contracts
         assert set(scenario.output_contracts) >= required_contracts
         assert scenario.events_replayed >= 3
         assert scenario.score_ticks >= 1

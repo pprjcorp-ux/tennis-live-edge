@@ -325,6 +325,20 @@ def test_v1_replay_contracts_run_all_budget_scenarios() -> None:
     )
     assert all(
         {
+            "ScoreProviderAdapter",
+            "OddsProviderAdapter",
+            "ArchiveOddsProviderAdapter",
+        }.issubset(set(scenario["adapter_contracts"]))
+        for scenario in body["scenarios"]
+    )
+    assert all(
+        {"RawProviderPayload", "CanonicalMatch", "seq", "lastSeq"}.issubset(
+            set(scenario["input_contracts"])
+        )
+        for scenario in body["scenarios"]
+    )
+    assert all(
+        {
             "RawProviderPayload",
             "CanonicalMatch",
             "ScoreTick",

@@ -458,6 +458,8 @@ export type ReplayContractScenarioResult = {
   score_ticks: number;
   odds_ticks: number;
   providers_seen: Provider[];
+  adapter_contracts: string[];
+  input_contracts: string[];
   output_contracts: string[];
   provider_cursors: ProviderCursor[];
   resync_required: boolean;

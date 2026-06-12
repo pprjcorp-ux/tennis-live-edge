@@ -84,8 +84,8 @@ decide whether the system behaves as budget or enterprise.
     `ProviderLatency`.
     `POST /api/v1/replay/contracts/run` is the aggregate rehearsal endpoint: it
     runs the healthy, gap, and `resync_required` budget scenarios from fixture
-    seeds, records a `replay_contract_run`, and verifies the adapter outputs
-    before any paid provider key is introduced.
+    seeds, records a `replay_contract_run`, and returns adapter, input, and
+    output contract evidence before any paid provider key is introduced.
     In live mode, replay does not silently fall back to sample payloads; an
     admin replay request must set `use_fixture_seed=true` to seed fake provider
     payloads for rehearsal without consuming live provider quota. Replay runs

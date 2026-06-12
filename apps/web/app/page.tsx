@@ -1494,6 +1494,22 @@ export default function Page() {
                     .map((scenario) => `${scenario.scenario}:${scenario.passed ? "pass" : "block"}`)
                     .join(" · ")}
                 </span>
+                <span>
+                  adapters{" "}
+                  {Array.from(
+                    new Set(replayContract.scenarios.flatMap((scenario) => scenario.adapter_contracts)),
+                  ).join(", ")}
+                </span>
+                <span>
+                  inputs{" "}
+                  {Array.from(
+                    new Set(replayContract.scenarios.flatMap((scenario) => scenario.input_contracts)),
+                  ).join(", ")}{" "}
+                  -&gt; outputs{" "}
+                  {Array.from(
+                    new Set(replayContract.scenarios.flatMap((scenario) => scenario.output_contracts)),
+                  ).join(", ")}
+                </span>
                 <span className={replayContract.passed ? "status statusEntry" : "status statusBlocked"}>
                   {replayContract.passed ? "ready for API onboarding" : "keep API onboarding blocked"}
                 </span>

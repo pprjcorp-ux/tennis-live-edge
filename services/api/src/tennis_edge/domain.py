@@ -339,6 +339,8 @@ class ReplayContractScenarioResult(BaseModel):
     score_ticks: int
     odds_ticks: int
     providers_seen: list[Provider]
+    adapter_contracts: list[str] = Field(default_factory=list)
+    input_contracts: list[str] = Field(default_factory=list)
     output_contracts: list[str]
     provider_cursors: list["ProviderCursor"] = Field(default_factory=list)
     resync_required: bool = False

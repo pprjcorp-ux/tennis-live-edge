@@ -25,6 +25,7 @@ from tennis_edge.domain import (
     ProviderHealth,
     ProviderModeStep,
     ReplayContractProvider,
+    ReplayProviderContractEvidence,
     ReplayContractScenarioEvidence,
     ReplayLabSnapshot,
 )
@@ -76,6 +77,7 @@ def _replay_contract_persistence(
                 scenario=scenario,
                 final_status=str(row.get("final_status") or "unknown"),
                 passed=bool(row.get("passed") is True),
+                provider_contracts=_provider_contract_evidence(row),
                 raw_payloads_saved=_summary_int(row, "raw_payloads_saved"),
                 score_ticks_saved=_summary_int(row, "score_ticks_saved"),
                 odds_ticks_saved=_summary_int(row, "odds_ticks_saved"),
@@ -93,6 +95,21 @@ def _replay_contract_persistence(
                 resync_required=bool(row.get("resync_required") is True),
             )
         )
+    return evidence
+
+
+def _provider_contract_evidence(row: dict) -> list[ReplayProviderContractEvidence]:
+    contract_rows = row.get("provider_contracts")
+    if not isinstance(contract_rows, list):
+        return []
+    evidence: list[ReplayProviderContractEvidence] = []
+    for contract in contract_rows:
+        if not isinstance(contract, dict):
+            continue
+        try:
+            evidence.append(ReplayProviderContractEvidence.model_validate(contract))
+        except ValueError:
+            continue
     return evidence
 
 

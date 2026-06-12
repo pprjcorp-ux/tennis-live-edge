@@ -296,10 +296,22 @@ export type ReplayContractProvider = {
   notes: string[];
 };
 
+export type ReplayProviderContractEvidence = {
+  provider: Provider;
+  adapter_contract: string;
+  expected_input_contracts: string[];
+  expected_output_contracts: string[];
+  observed_input_contracts: string[];
+  observed_output_contracts: string[];
+  passed: boolean;
+  notes: string[];
+};
+
 export type ReplayContractScenarioEvidence = {
   scenario: ReplayOddsScenario;
   final_status: string;
   passed: boolean;
+  provider_contracts: ReplayProviderContractEvidence[];
   raw_payloads_saved: number;
   score_ticks_saved: number;
   odds_ticks_saved: number;

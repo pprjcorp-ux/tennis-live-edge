@@ -240,6 +240,11 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
         and all(item.odds_ticks_saved > 0 for item in replay_persistence)
         and all(item.provider_cursors_replayed > 0 for item in replay_persistence)
         and all(item.provider_latency_saved > 0 for item in replay_persistence)
+        and all(len(item.provider_contracts) == 3 for item in replay_persistence)
+        and all(
+            all(contract.passed for contract in item.provider_contracts)
+            for item in replay_persistence
+        )
     )
     _add(
         checks,
@@ -259,6 +264,15 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
                 "provider_cursors_replayed": item.provider_cursors_replayed,
                 "cursors_saved": item.cursors_saved,
                 "provider_latency_saved": item.provider_latency_saved,
+                "provider_contracts": [
+                    {
+                        "provider": contract.provider.value,
+                        "adapter_contract": contract.adapter_contract,
+                        "passed": contract.passed,
+                        "observed_outputs": contract.observed_output_contracts,
+                    }
+                    for contract in item.provider_contracts
+                ],
                 "resync_required": item.resync_required,
             }
             for item in replay_persistence

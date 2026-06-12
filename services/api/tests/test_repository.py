@@ -1329,6 +1329,26 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
         assert set(scenario.adapter_contracts) == required_adapter_contracts
         assert set(scenario.input_contracts) == required_input_contracts
         assert set(scenario.output_contracts) >= required_contracts
+        assert len(scenario.provider_contracts) == 3
+        assert all(contract.passed for contract in scenario.provider_contracts)
+        provider_contracts = {
+            contract.provider: contract for contract in scenario.provider_contracts
+        }
+        assert set(provider_contracts) == {
+            Provider.API_TENNIS,
+            Provider.ODDS_API_IO,
+            Provider.THE_ODDS_API,
+        }
+        assert provider_contracts[Provider.API_TENNIS].observed_input_contracts == [
+            "CanonicalMatch",
+            "RawProviderPayload",
+        ]
+        assert {"ScoreTick", "ProviderLatency"}.issubset(
+            set(provider_contracts[Provider.API_TENNIS].observed_output_contracts)
+        )
+        assert {"OddsTick", "ProviderLatency"}.issubset(
+            set(provider_contracts[Provider.THE_ODDS_API].observed_output_contracts)
+        )
         assert scenario.events_replayed >= 3
         assert scenario.score_ticks >= 1
         assert scenario.odds_ticks >= 1
@@ -1343,12 +1363,34 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
     assert healthy.resync_required is False
     assert healthy.cursors_saved == 1
     assert {"seq", "lastSeq"}.issubset(set(healthy.output_contracts))
+    healthy_odds_contract = next(
+        contract
+        for contract in healthy.provider_contracts
+        if contract.provider == Provider.ODDS_API_IO
+    )
+    assert {"seq", "lastSeq"}.issubset(
+        set(healthy_odds_contract.observed_input_contracts)
+    )
     assert gap.final_status == "degraded"
     assert gap.resync_required is True
     assert {"seq", "lastSeq"}.issubset(set(gap.output_contracts))
+    gap_odds_contract = next(
+        contract
+        for contract in gap.provider_contracts
+        if contract.provider == Provider.ODDS_API_IO
+    )
+    assert {"seq", "lastSeq"}.issubset(set(gap_odds_contract.observed_input_contracts))
     assert resync_required.final_status == "degraded"
     assert resync_required.resync_required is True
     assert "lastSeq" in resync_required.output_contracts
+    resync_odds_contract = next(
+        contract
+        for contract in resync_required.provider_contracts
+        if contract.provider == Provider.ODDS_API_IO
+    )
+    assert "lastSeq" in resync_odds_contract.observed_input_contracts
+    assert "seq" not in resync_odds_contract.observed_input_contracts
+    assert any("may omit seq" in note for note in resync_odds_contract.notes)
     assert all(
         signal.status != SignalStatus.ENTRY and signal.stake_fraction == 0
         for analysis in store.analyses_saved

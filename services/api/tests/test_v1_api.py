@@ -348,6 +348,25 @@ def test_v1_replay_contracts_run_all_budget_scenarios() -> None:
         }.issubset(set(scenario["output_contracts"]))
         for scenario in body["scenarios"]
     )
+    assert all(len(scenario["provider_contracts"]) == 3 for scenario in body["scenarios"])
+    assert all(
+        all(contract["passed"] for contract in scenario["provider_contracts"])
+        for scenario in body["scenarios"]
+    )
+    assert all(
+        {"api_tennis", "odds_api_io", "theoddsapi"}
+        == {contract["provider"] for contract in scenario["provider_contracts"]}
+        for scenario in body["scenarios"]
+    )
+    assert all(
+        all(
+            {"provider", "adapter_contract", "observed_input_contracts", "observed_output_contracts"}.issubset(
+                set(contract)
+            )
+            for contract in scenario["provider_contracts"]
+        )
+        for scenario in body["scenarios"]
+    )
     assert all("raw_payloads_saved" in scenario for scenario in body["scenarios"])
     assert all("score_ticks_saved" in scenario for scenario in body["scenarios"])
     assert all("odds_ticks_saved" in scenario for scenario in body["scenarios"])

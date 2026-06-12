@@ -106,6 +106,44 @@ def _replay_contract_run(
     passed: bool = True,
     generated_at: datetime | None = None,
 ) -> IngestionRunRecord:
+    provider_contracts = [
+        {
+            "provider": "api_tennis",
+            "adapter_contract": "ScoreProviderAdapter",
+            "expected_input_contracts": ["RawProviderPayload", "CanonicalMatch"],
+            "expected_output_contracts": ["ScoreTick", "ProviderLatency"],
+            "observed_input_contracts": ["CanonicalMatch", "RawProviderPayload"],
+            "observed_output_contracts": ["ProviderLatency", "ScoreTick"],
+            "passed": passed,
+            "notes": [],
+        },
+        {
+            "provider": "odds_api_io",
+            "adapter_contract": "OddsProviderAdapter",
+            "expected_input_contracts": ["RawProviderPayload", "seq", "lastSeq"],
+            "expected_output_contracts": ["OddsTick", "ProviderCursor", "ProviderLatency"],
+            "observed_input_contracts": ["RawProviderPayload", "lastSeq", "seq"],
+            "observed_output_contracts": [
+                "OddsTick",
+                "ProviderCursor",
+                "ProviderLatency",
+                "lastSeq",
+                "seq",
+            ],
+            "passed": passed,
+            "notes": [],
+        },
+        {
+            "provider": "theoddsapi",
+            "adapter_contract": "ArchiveOddsProviderAdapter",
+            "expected_input_contracts": ["RawProviderPayload"],
+            "expected_output_contracts": ["OddsTick", "ProviderLatency"],
+            "observed_input_contracts": ["RawProviderPayload"],
+            "observed_output_contracts": ["OddsTick", "ProviderLatency"],
+            "passed": passed,
+            "notes": [],
+        },
+    ]
     completed_at = generated_at or datetime(2026, 6, 7, tzinfo=timezone.utc)
     return IngestionRunRecord(
         id="ingest_replay_contract_1",
@@ -126,6 +164,7 @@ def _replay_contract_run(
                     "cursors_saved": 1,
                     "provider_latency_saved": 2,
                     "resync_required": False,
+                    "provider_contracts": provider_contracts,
                 },
                 {
                     "scenario": "gap",
@@ -976,6 +1015,15 @@ def test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys() -> 
     assert replay_lab.last_contract_persistence[0].cursors_saved == 1
     assert replay_lab.last_contract_persistence[0].provider_latency_saved == 2
     assert replay_lab.last_contract_persistence[0].resync_required is False
+    assert len(replay_lab.last_contract_persistence[0].provider_contracts) == 3
+    assert all(
+        contract.passed
+        for contract in replay_lab.last_contract_persistence[0].provider_contracts
+    )
+    assert {
+        contract.provider
+        for contract in replay_lab.last_contract_persistence[0].provider_contracts
+    } == {Provider.API_TENNIS, Provider.ODDS_API_IO, Provider.THE_ODDS_API}
     assert replay_lab.last_contract_persistence[1].final_status == "degraded"
     assert replay_lab.last_contract_persistence[1].resync_required is True
     assert replay_lab.last_replay_run_id == "ingest_replay_1"

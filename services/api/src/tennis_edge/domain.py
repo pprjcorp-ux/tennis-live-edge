@@ -332,6 +332,17 @@ class ReplayContractRunRequest(BaseModel):
     )
 
 
+class ReplayProviderContractEvidence(BaseModel):
+    provider: Provider
+    adapter_contract: str
+    expected_input_contracts: list[str] = Field(default_factory=list)
+    expected_output_contracts: list[str] = Field(default_factory=list)
+    observed_input_contracts: list[str] = Field(default_factory=list)
+    observed_output_contracts: list[str] = Field(default_factory=list)
+    passed: bool
+    notes: list[str] = Field(default_factory=list)
+
+
 class ReplayContractScenarioResult(BaseModel):
     scenario: ReplayContractScenario
     run_id: str
@@ -343,6 +354,7 @@ class ReplayContractScenarioResult(BaseModel):
     adapter_contracts: list[str] = Field(default_factory=list)
     input_contracts: list[str] = Field(default_factory=list)
     output_contracts: list[str]
+    provider_contracts: list[ReplayProviderContractEvidence] = Field(default_factory=list)
     provider_cursors: list["ProviderCursor"] = Field(default_factory=list)
     raw_payloads_saved: int = 0
     score_ticks_saved: int = 0
@@ -1036,6 +1048,7 @@ class ReplayContractScenarioEvidence(BaseModel):
     scenario: ReplayContractScenario
     final_status: str
     passed: bool
+    provider_contracts: list[ReplayProviderContractEvidence] = Field(default_factory=list)
     raw_payloads_saved: int = 0
     score_ticks_saved: int = 0
     odds_ticks_saved: int = 0

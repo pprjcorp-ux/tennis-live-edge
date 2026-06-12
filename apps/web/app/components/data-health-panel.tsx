@@ -576,6 +576,17 @@ export function DataHealthPanel({
                 <span>
                   provider_latency_saved {evidence.provider_latency_saved}
                 </span>
+                {evidence.provider_contracts.length ? (
+                  <span>
+                    contracts{" "}
+                    {evidence.provider_contracts
+                      .map(
+                        (contract) =>
+                          `${contract.provider}:${contract.passed ? "pass" : "block"}`
+                      )
+                      .join(" · ")}
+                  </span>
+                ) : null}
               </div>
             ))}
           </div>

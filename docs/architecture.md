@@ -93,7 +93,10 @@ decide whether the system behaves as budget or enterprise.
     A budget adapter contract matrix runs without live keys and requires each
     adapter to output the canonical internal types: `RawProviderPayload`,
     `CanonicalMatch`, `ScoreTick`, `OddsTick`, `ProviderCursor`, and
-    `ProviderLatency`.
+    `ProviderLatency`. Each replay scenario also records per-provider
+    `provider_contracts` evidence with expected vs. observed artifacts, so a
+    single provider can be onboarded or debugged without hiding behind aggregate
+    scenario pass/fail.
     `POST /api/v1/replay/contracts/run` is the aggregate rehearsal endpoint: it
     runs the healthy, gap, and `resync_required` budget scenarios from fixture
     seeds, records a `replay_contract_run`, and returns adapter, input, and

@@ -57,6 +57,7 @@ from tennis_edge.domain import (
     ReplayContractRunRequest,
     ReplayContractRunResult,
     ReplayContractScenarioResult,
+    ReplayProviderContractEvidence,
     ReplayRunRequest,
     ReplayRunResult,
     Signal,
@@ -989,6 +990,10 @@ class AnalysisRepository:
             adapter_contracts = self._replay_adapter_contracts(providers_seen)
             input_contracts = self._replay_input_contracts(providers_seen)
             output_contracts = self._replay_output_contracts(run, payloads)
+            provider_contracts = self._replay_provider_contracts(
+                scenario,
+                payloads,
+            )
             scenario_passed = self._replay_contract_scenario_passed(
                 scenario,
                 run,
@@ -1007,6 +1012,7 @@ class AnalysisRepository:
                     adapter_contracts=adapter_contracts,
                     input_contracts=input_contracts,
                     output_contracts=output_contracts,
+                    provider_contracts=provider_contracts,
                     provider_cursors=run.provider_cursors,
                     provider_cursors_replayed=len(run.provider_cursors),
                     raw_payloads_saved=run.raw_payloads_saved,
@@ -1088,6 +1094,120 @@ class AnalysisRepository:
             if "lastSeq" in payload.payload:
                 contracts.add("lastSeq")
         return sorted(contracts)
+
+    def _replay_provider_contracts(
+        self,
+        scenario: str,
+        payloads: list[RawProviderPayload],
+    ) -> list[ReplayProviderContractEvidence]:
+        evidence: list[ReplayProviderContractEvidence] = []
+        for spec in BUDGET_PROVIDER_CONTRACT_SPECS:
+            provider_payloads = [
+                payload for payload in payloads if payload.provider == spec.provider
+            ]
+            observed_input_contracts = self._replay_observed_input_contracts(
+                spec.provider,
+                provider_payloads,
+            )
+            observed_output_contracts = self._replay_observed_output_contracts(
+                spec.provider,
+                provider_payloads,
+            )
+            passed, notes = self._replay_provider_contract_passed(
+                scenario,
+                spec.provider,
+                spec.input_contracts,
+                spec.output_contracts,
+                observed_input_contracts,
+                observed_output_contracts,
+                bool(provider_payloads),
+            )
+            evidence.append(
+                ReplayProviderContractEvidence(
+                    provider=spec.provider,
+                    adapter_contract=spec.adapter_contract,
+                    expected_input_contracts=list(spec.input_contracts),
+                    expected_output_contracts=list(spec.output_contracts),
+                    observed_input_contracts=observed_input_contracts,
+                    observed_output_contracts=observed_output_contracts,
+                    passed=passed,
+                    notes=notes,
+                )
+            )
+        return evidence
+
+    def _replay_observed_input_contracts(
+        self,
+        provider: Provider,
+        payloads: list[RawProviderPayload],
+    ) -> list[str]:
+        contracts: set[str] = set()
+        if payloads:
+            contracts.add("RawProviderPayload")
+        if provider == Provider.API_TENNIS and self._replay_has_canonical_match_payload(payloads):
+            contracts.add("CanonicalMatch")
+        if provider == Provider.ODDS_API_IO:
+            for payload in payloads:
+                if "seq" in payload.payload:
+                    contracts.add("seq")
+                if "lastSeq" in payload.payload:
+                    contracts.add("lastSeq")
+        return sorted(contracts)
+
+    def _replay_observed_output_contracts(
+        self,
+        provider: Provider,
+        payloads: list[RawProviderPayload],
+    ) -> list[str]:
+        contracts: set[str] = set()
+        if payloads:
+            contracts.add("ProviderLatency")
+        state = self.replay_engine.replay(payloads)
+        if state.score_ticks:
+            contracts.add("ScoreTick")
+        if state.odds_quotes:
+            contracts.add("OddsTick")
+        if provider == Provider.ODDS_API_IO and state.provider_cursors:
+            contracts.add("ProviderCursor")
+        if provider == Provider.ODDS_API_IO:
+            if any("seq" in payload.payload for payload in payloads):
+                contracts.add("seq")
+            if any("lastSeq" in payload.payload for payload in payloads):
+                contracts.add("lastSeq")
+        return sorted(contracts)
+
+    @staticmethod
+    def _replay_provider_contract_passed(
+        scenario: str,
+        provider: Provider,
+        expected_input_contracts: tuple[str, ...],
+        expected_output_contracts: tuple[str, ...],
+        observed_input_contracts: list[str],
+        observed_output_contracts: list[str],
+        provider_seen: bool,
+    ) -> tuple[bool, list[str]]:
+        required_inputs = set(expected_input_contracts) - _REPLAY_PROTOCOL_FIELDS
+        if provider == Provider.ODDS_API_IO:
+            if scenario in {"healthy", "gap"}:
+                required_inputs.update({"seq", "lastSeq"})
+            elif scenario == "resync_required":
+                required_inputs.add("lastSeq")
+        required_outputs = set(expected_output_contracts)
+        if provider == Provider.ODDS_API_IO and scenario == "resync_required":
+            required_outputs.discard("OddsTick")
+        missing_inputs = sorted(required_inputs - set(observed_input_contracts))
+        missing_outputs = sorted(required_outputs - set(observed_output_contracts))
+        notes: list[str] = []
+        if not provider_seen:
+            notes.append("Provider fixture payload was not present.")
+        if missing_inputs:
+            notes.append(f"Missing input contracts: {', '.join(missing_inputs)}.")
+        if missing_outputs:
+            notes.append(f"Missing output contracts: {', '.join(missing_outputs)}.")
+        if provider == Provider.ODDS_API_IO and scenario == "resync_required":
+            notes.append("Resync fixtures require lastSeq but may omit seq by design.")
+            notes.append("Resync control messages may omit OddsTick by design.")
+        return provider_seen and not missing_inputs and not missing_outputs, notes
 
     @staticmethod
     def _replay_contract_scenario_passed(

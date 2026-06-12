@@ -304,14 +304,19 @@ def detect_anomalies(
         quota_used = health.quota_used or 0
         quota_limit = health.quota_limit or 0
         if quota_limit and quota_used / quota_limit >= 0.8:
+            quota_exhausted = quota_used >= quota_limit
             anomalies.append(
                 AgentAnomaly(
                     id=_run_id("anom"),
-                    severity="warning",
+                    severity="critical" if quota_exhausted else "warning",
                     category="provider_quota",
-                    summary=f"{health.provider} quota above 80%",
+                    summary=(
+                        f"{health.provider} quota exhausted"
+                        if quota_exhausted
+                        else f"{health.provider} quota above 80%"
+                    ),
                     detail=f"{quota_used}/{quota_limit} billable units used.",
-                    blocked_signals=0,
+                    blocked_signals=blocked_signals if quota_exhausted else 0,
                     detected_at=_now(),
                 )
             )

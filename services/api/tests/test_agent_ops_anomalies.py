@@ -8,6 +8,7 @@ from tennis_edge.domain import (
     ExecutionVenue,
     PaperPerformance,
     Provider,
+    ProviderHealth,
 )
 from tennis_edge.services.agent_ops import detect_anomalies
 
@@ -107,3 +108,85 @@ def test_detect_anomalies_flags_stale_provider_ticks_as_latency_issue() -> None:
     assert "latency_ms=12000" in latency_anomaly.detail
     assert latency_anomaly.blocked_signals == 3
     assert any(anomaly.category == "data_quality" for anomaly in anomalies)
+
+
+def test_detect_anomalies_marks_exhausted_provider_quota_critical() -> None:
+    anomalies = detect_anomalies(
+        Settings(data_mode="live"),
+        analyses=[],
+        provider_health=[
+            ProviderHealth(
+                provider=Provider.API_TENNIS,
+                configured=True,
+                healthy=False,
+                status="score primary configured; quota exhausted: 200000/200000 billable units used",
+                cost_tier="$80/mo",
+                coverage_scope="score",
+                quota_used=200000,
+                quota_limit=200000,
+            )
+        ],
+        provider_cursors=[],
+        data_quality=[
+            DataQualitySnapshot(
+                id="dq_api_tennis_score",
+                provider=Provider.API_TENNIS,
+                feed="score/live",
+                score_completeness=1,
+                odds_completeness=1,
+                entity_resolution_rate=1,
+                sequence_health=1,
+                latency_ms=900,
+                stale_ticks=0,
+                blocked_signals=4,
+                notes=[],
+            )
+        ],
+        execution_status=_execution_status(),
+        paper_performance=_paper_performance(),
+        bankroll=_bankroll(),
+        cost_report=_cost_report(),
+    )
+
+    quota_anomaly = next(
+        anomaly for anomaly in anomalies if anomaly.category == "provider_quota"
+    )
+
+    assert quota_anomaly.severity == "critical"
+    assert quota_anomaly.summary == "api_tennis quota exhausted"
+    assert quota_anomaly.detail == "200000/200000 billable units used."
+    assert quota_anomaly.blocked_signals == 4
+    assert any(anomaly.category == "provider_health" for anomaly in anomalies)
+
+
+def test_detect_anomalies_keeps_high_provider_quota_as_warning() -> None:
+    anomalies = detect_anomalies(
+        Settings(data_mode="live"),
+        analyses=[],
+        provider_health=[
+            ProviderHealth(
+                provider=Provider.ODDS_API_IO,
+                configured=True,
+                healthy=True,
+                status="odds websocket primary configured",
+                cost_tier="£198/mo Starter+WS",
+                coverage_scope="odds",
+                quota_used=4000,
+                quota_limit=5000,
+            )
+        ],
+        provider_cursors=[],
+        data_quality=[],
+        execution_status=_execution_status(),
+        paper_performance=_paper_performance(),
+        bankroll=_bankroll(),
+        cost_report=_cost_report(),
+    )
+
+    quota_anomaly = next(
+        anomaly for anomaly in anomalies if anomaly.category == "provider_quota"
+    )
+
+    assert quota_anomaly.severity == "warning"
+    assert quota_anomaly.summary == "odds_api_io quota above 80%"
+    assert quota_anomaly.blocked_signals == 0

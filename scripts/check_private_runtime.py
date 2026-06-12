@@ -73,6 +73,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     model_tests = (tests / "test_model_lab.py").read_text()
     operational_session_tests = (tests / "test_operational_session.py").read_text()
     operational_tests = (tests / "test_operational_state.py").read_text()
+    agent_ops_tests = (tests / "test_agent_ops_anomalies.py").read_text()
     dashboard_read_model_tests = (tests / "test_live_dashboard_read_model.py").read_text()
     v1_tests = (tests / "test_v1_api.py").read_text()
     web_types = (root / "apps/web/lib/types.ts").read_text()
@@ -255,6 +256,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             + model_tests
             + operational_session_tests
             + operational_tests
+            + agent_ops_tests
             + dashboard_read_model_tests
             + v1_tests
         ),
@@ -275,6 +277,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_invalid_live_score_state_blocks_entries_and_zeroes_stake",
             "test_persisted_fallback_match_state_uses_latest_score_source_latency",
             "test_provider_health_marks_exhausted_quota_unhealthy_without_latency_rows",
+            "test_detect_anomalies_marks_exhausted_provider_quota_critical",
             "test_live_readiness_blocks_entries_when_critical_provider_health_is_unhealthy",
             "test_live_readiness_blocks_entries_when_provider_quota_is_exhausted",
             "test_live_readiness_blocks_entries_when_data_quality_reports_stale_ticks",

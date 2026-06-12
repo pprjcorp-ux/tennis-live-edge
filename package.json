@@ -9,6 +9,7 @@
     "api:ingest:live-budget": "cd services/api && ../../.venv/bin/python -m tennis_edge.ingest_live_budget",
     "api:ingest:odds-message": "cd services/api && ../../.venv/bin/python -m tennis_edge.ingest_odds_message",
     "api:ingest:odds-stream": "cd services/api && ../../.venv/bin/python -m tennis_edge.ingest_odds_stream",
+    "api:replay:contracts": "cd services/api && ../../.venv/bin/python -m tennis_edge.replay_contracts",
     "api:test": "cd services/api && ../../.venv/bin/pytest",
     "web:test": "npm --prefix apps/web test",
     "cloudflare:check": "python3 scripts/check_cloudflare_private_runtime.py",

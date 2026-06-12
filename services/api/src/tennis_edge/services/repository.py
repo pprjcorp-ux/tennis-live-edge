@@ -746,7 +746,12 @@ class AnalysisRepository:
         self.store.save_model_promotion_decision(decision)
         return decision
 
-    async def run_replay(self, request: ReplayRunRequest) -> ReplayRunResult:
+    async def run_replay(
+        self,
+        request: ReplayRunRequest,
+        *,
+        source: Literal["api", "cli", "openclaw", "cron", "system"] = "api",
+    ) -> ReplayRunResult:
         analyses = await self.analyses_for_date(date.today())
         signal_count = sum(
             1
@@ -816,13 +821,15 @@ class AnalysisRepository:
                 "use_fixture_seed": request.use_fixture_seed,
                 "odds_scenario": request.odds_scenario,
             },
-            source="api",
+            source=source,
         )
         return final_result
 
     async def run_replay_contracts(
         self,
         request: ReplayContractRunRequest,
+        *,
+        source: Literal["api", "cli", "openclaw", "cron", "system"] = "api",
     ) -> ReplayContractRunResult:
         scenario_results: list[ReplayContractScenarioResult] = []
         for scenario in request.scenarios:
@@ -835,7 +842,8 @@ class AnalysisRepository:
                     match_id=request.match_id,
                     odds_scenario=scenario,
                     use_fixture_seed=True,
-                )
+                ),
+                source=source,
             )
             providers_seen = sorted(
                 {payload.provider for payload in payloads},
@@ -881,7 +889,7 @@ class AnalysisRepository:
                 "source": "replay",
                 "payload_source": "explicit_fixture_seed",
             },
-            source="api",
+            source=source,
         )
         return result
 

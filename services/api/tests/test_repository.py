@@ -1257,7 +1257,10 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
     repo.store = store
 
     result = asyncio.run(
-        repo.run_replay_contracts(ReplayContractRunRequest(match_id="match_atp_002"))
+        repo.run_replay_contracts(
+            ReplayContractRunRequest(match_id="match_atp_002"),
+            source="cli",
+        )
     )
 
     assert result.passed is True
@@ -1296,4 +1299,5 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
         for signal in analysis.signals
     )
     assert store.ingestion_runs_saved[-1].run_type == "replay_contract_run"
+    assert {run.source for run in store.ingestion_runs_saved} == {"cli"}
     assert store.ingestion_runs_saved[-1].summary["passed"] is True

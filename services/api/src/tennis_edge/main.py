@@ -295,6 +295,7 @@ async def v1_daily_operational_run(
         scenarios=requested.scenarios,
         model_version=requested.model_version,
         feature_set=requested.feature_set,
+        run_paper_rehearsal=requested.run_paper_rehearsal,
         source="api",
     )
 

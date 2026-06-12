@@ -176,6 +176,7 @@ export function DataHealthPanel({
   const latestDailyOpsRun = ingestionRuns.find((run) => run.run_type === "daily_operational_run");
   const latestDailyOpsSummary = summaryObject(latestDailyOpsRun?.summary);
   const latestDailyReplaySummary = summaryObject(latestDailyOpsSummary?.replay_contracts);
+  const latestDailyRehearsalSummary = summaryObject(latestDailyOpsSummary?.paper_rehearsal);
   const latestDailyPaperSummary = summaryObject(latestDailyOpsSummary?.paper_auto_settlement);
   const latestDailyModelSummary = summaryObject(latestDailyOpsSummary?.model_lab_backtest);
   const latestDailyExecutionSummary = summaryObject(latestDailyOpsSummary?.execution);
@@ -203,10 +204,18 @@ export function DataHealthPanel({
     dailyOperationalRun?.paper_auto_settlement.training_examples_ready ??
     summaryNumber(latestDailyPaperSummary?.training_examples_ready) ??
     0;
+  const dailyRehearsalTrainingExamples =
+    dailyOperationalRun?.paper_rehearsal?.training_examples_ready ??
+    summaryNumber(latestDailyRehearsalSummary?.training_examples_ready) ??
+    0;
   const dailyModelStatus =
     dailyOperationalRun?.model_lab_backtest.status ??
     summaryString(latestDailyModelSummary?.status) ??
     "pending";
+  const dailyModelVersion =
+    dailyOperationalRun?.model_lab_backtest.model_version ??
+    summaryString(latestDailyModelSummary?.model_version) ??
+    "not set";
   const dailyExecutionCanSubmit =
     dailyOperationalRun?.execution.can_submit_real_orders ??
     (latestDailyExecutionSummary?.can_submit_real_orders === true);
@@ -308,8 +317,13 @@ export function DataHealthPanel({
           <span>
             paper settled {dailySettledOrders} · examples {dailyTrainingExamples}
           </span>
+          {dailyRehearsalTrainingExamples > 0 ? (
+            <span className="status statusMonitor">
+              rehearsal examples {dailyRehearsalTrainingExamples}
+            </span>
+          ) : null}
           <span className={dailyModelStatus === "completed" ? "status statusEntry" : "status statusMonitor"}>
-            model {dailyModelStatus}
+            model {dailyModelStatus} · {dailyModelVersion}
           </span>
           <span>
             execution {dailyExecutionCanSubmit ? "real enabled" : "paper locked"}

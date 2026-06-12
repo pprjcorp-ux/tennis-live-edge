@@ -13,6 +13,7 @@ from tennis_edge.domain import (
     DailyOperationalBacktestStatus,
     DailyOperationalExecutionSnapshot,
     DailyOperationalRunResult,
+    PaperRehearsalResult,
     ReplayContractScenario,
 )
 from tennis_edge.replay_contracts import run_replay_contracts
@@ -64,6 +65,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Exit non-zero when no persisted training examples are available.",
     )
     parser.add_argument(
+        "--run-paper-rehearsal",
+        action="store_true",
+        help=(
+            "Create and settle one explicit paper rehearsal fixture before backtesting. "
+            "Use only with a rehearsal model version; this does not call live APIs."
+        ),
+    )
+    parser.add_argument(
         "--pretty",
         action="store_true",
         help="Pretty-print JSON output for humans.",
@@ -80,6 +89,7 @@ async def run_daily_operational_loop(
     scenarios: list[ReplayContractScenario] | None = None,
     model_version: str = "prematch_ensemble_v1",
     feature_set: str = "live_budget_v1",
+    run_paper_rehearsal: bool = False,
     source: Literal["api", "cli", "openclaw", "cron", "system"] = "cli",
 ) -> DailyOperationalRunResult:
     started_at = datetime.now(timezone.utc)
@@ -92,6 +102,14 @@ async def run_daily_operational_loop(
     settlement = await repo.auto_settle_paper(
         AutoPaperSettleRequest(match_id=settle_match_id, max_orders=max_orders)
     )
+    paper_rehearsal: PaperRehearsalResult | None = None
+    if run_paper_rehearsal:
+        rehearsal_model_version = (
+            model_version
+            if model_version.startswith("paper_rehearsal")
+            else "paper_rehearsal_v1"
+        )
+        paper_rehearsal = await repo.run_paper_rehearsal(model_version=rehearsal_model_version)
     backtest_request = BacktestRunRequest(
         model_version=model_version,
         feature_set=feature_set,
@@ -132,6 +150,7 @@ async def run_daily_operational_loop(
         live_api_calls=0,
         match_id=match_id,
         replay_contracts=replay,
+        paper_rehearsal=paper_rehearsal,
         paper_auto_settlement=settlement,
         model_lab_backtest=backtest_status,
         execution=DailyOperationalExecutionSnapshot(
@@ -164,6 +183,7 @@ async def _run(argv: list[str] | None = None) -> int:
         scenarios=args.scenario,
         model_version=args.model_version,
         feature_set=args.feature_set,
+        run_paper_rehearsal=args.run_paper_rehearsal,
         source="cli",
     )
     print(_json(result.model_dump(mode="json"), pretty=args.pretty))

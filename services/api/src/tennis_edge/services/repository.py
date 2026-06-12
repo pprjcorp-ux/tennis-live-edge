@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from uuid import uuid4
 
@@ -19,11 +19,13 @@ from tennis_edge.domain import (
     CalibrationReport,
     CanonicalEntityConflict,
     CostProfile,
+    Confidence,
     DailyCostReport,
     DailyMetrics,
     DataQualitySnapshot,
     ExecutionOrder,
     ExecutionStatus,
+    FeatureVector,
     IngestionRunRequest,
     IngestionRunRecord,
     IngestionRunResult,
@@ -32,6 +34,7 @@ from tennis_edge.domain import (
     LiveDashboardSnapshot,
     Match,
     MatchAnalysis,
+    MatchFreshness,
     MatchState,
     ModelRegistryEntry,
     ModelPromotionDecision,
@@ -42,8 +45,10 @@ from tennis_edge.domain import (
     OrderStatus,
     OperationalStateSnapshot,
     PaperPerformance,
+    PaperRehearsalResult,
     PaperSettlement,
     PaperSettleRequest,
+    Prediction,
     ProviderCursor,
     ProviderCursorResyncRequest,
     ProviderCursorResyncResult,
@@ -574,6 +579,133 @@ class AnalysisRepository:
         request: AutoPaperSettleRequest,
     ) -> AutoPaperSettleResult:
         return self.store.auto_settle_paper_orders(request)
+
+    async def run_paper_rehearsal(
+        self,
+        *,
+        model_version: str = "paper_rehearsal_v1",
+    ) -> PaperRehearsalResult:
+        if not self.store.enabled:
+            return PaperRehearsalResult(
+                enabled=False,
+                notes=[
+                    "Persistence is disabled; paper rehearsal requires Postgres/Timescale.",
+                    "No live provider calls were attempted.",
+                ],
+            )
+
+        run_key = uuid4().hex[:10]
+        decision_ts = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=3)
+        closing_ts = decision_ts + timedelta(minutes=1)
+        final_ts = decision_ts + timedelta(minutes=2)
+        match_id = f"match_paper_rehearsal_{run_key}"
+        signal_id = f"sig_paper_rehearsal_{run_key}"
+
+        live_analysis = self._paper_rehearsal_analysis(
+            match_id=match_id,
+            signal_id=signal_id,
+            model_version=model_version,
+            decision_ts=decision_ts,
+            odds_ts=decision_ts,
+            finished=False,
+        )
+        self.store.last_error = None
+        if not self.store.save_analyses([live_analysis]):
+            return PaperRehearsalResult(
+                enabled=True,
+                match_id=match_id,
+                signal_id=signal_id,
+                live_api_calls=0,
+                notes=[
+                    "Paper rehearsal could not persist the decision snapshot.",
+                    self.store.last_error or "No persistence error detail was recorded.",
+                ],
+            )
+
+        try:
+            order = create_order(
+                self.settings,
+                [live_analysis],
+                OrderRequest(signal_id=signal_id),
+                real=False,
+                orders=await self.orders(),
+                remember_in_process=False,
+            )
+        except (KeyError, ValueError) as exc:
+            return PaperRehearsalResult(
+                enabled=True,
+                match_id=match_id,
+                signal_id=signal_id,
+                live_api_calls=0,
+                notes=[
+                    "Paper rehearsal could not create the paper order.",
+                    str(exc),
+                ],
+            )
+        order = order.model_copy(
+            update={
+                "created_at": decision_ts,
+                "updated_at": decision_ts,
+                "audit": [
+                    *order.audit,
+                    "Paper rehearsal fixture; no live API calls or real orders were made.",
+                ],
+            }
+        )
+        self.store.last_error = None
+        self.store.save_order(order)
+        if self.store.last_error and "save_order failed" in self.store.last_error:
+            return PaperRehearsalResult(
+                enabled=True,
+                match_id=match_id,
+                signal_id=signal_id,
+                order_id=order.id,
+                live_api_calls=0,
+                notes=[
+                    "Paper rehearsal could not persist the paper order.",
+                    self.store.last_error,
+                ],
+            )
+
+        final_analysis = self._paper_rehearsal_analysis(
+            match_id=match_id,
+            signal_id=f"{signal_id}_final",
+            model_version=model_version,
+            decision_ts=final_ts,
+            odds_ts=closing_ts,
+            finished=True,
+        )
+        self.store.last_error = None
+        if not self.store.save_analyses([final_analysis]):
+            return PaperRehearsalResult(
+                enabled=True,
+                match_id=match_id,
+                signal_id=signal_id,
+                order_id=order.id,
+                live_api_calls=0,
+                notes=[
+                    "Paper rehearsal could not persist the final score and closing line.",
+                    self.store.last_error or "No persistence error detail was recorded.",
+                ],
+            )
+
+        settlement = self.store.auto_settle_paper_orders(
+            AutoPaperSettleRequest(match_id=match_id, max_orders=10)
+        )
+        return PaperRehearsalResult(
+            enabled=True,
+            match_id=match_id,
+            signal_id=signal_id,
+            order_id=order.id,
+            settled_orders=settlement.settled_orders,
+            training_examples_ready=settlement.training_examples_ready,
+            live_api_calls=0,
+            notes=[
+                "Paper rehearsal used persisted fixture data only; no provider quota was consumed.",
+                "Use a rehearsal model_version for smoke tests; do not treat this as live ROI evidence.",
+                *settlement.reasons,
+            ],
+        )
 
     async def execution_status(self) -> ExecutionStatus:
         return self.operational_state.execution_status()
@@ -1196,3 +1328,122 @@ class AnalysisRepository:
         analyses = await self.analyses_for_date(target_date)
         paper = await self.paper_performance()
         return self.dashboard_read_model.daily_metrics(analyses, paper)
+
+    def _paper_rehearsal_analysis(
+        self,
+        *,
+        match_id: str,
+        signal_id: str,
+        model_version: str,
+        decision_ts: datetime,
+        odds_ts: datetime,
+        finished: bool,
+    ) -> MatchAnalysis:
+        base = self._sample_match_for_replay("match_atp_002") or sample_matches()[0]
+        provider_match_id = f"paper-rehearsal-{match_id}"
+        state = MatchState(
+            status="finished" if finished else "live",
+            p1_sets=2 if finished else 0,
+            p2_sets=0,
+            p1_games=6 if finished else 4,
+            p2_games=4 if finished else 3,
+            point_score="0-0" if finished else "30-15",
+            server_player_id=base.player1.id if not finished else None,
+        )
+        match = base.model_copy(
+            deep=True,
+            update={
+                "id": match_id,
+                "provider_match_id": provider_match_id,
+                "provider_ids": {
+                    **base.provider_ids,
+                    "api_tennis": provider_match_id,
+                    "odds_api_io": provider_match_id,
+                },
+                "scheduled_at": decision_ts - timedelta(hours=1),
+                "state": state,
+                "odds": [
+                    OddsQuote(
+                        bookmaker="PaperRehearsal",
+                        market="ML",
+                        player_id=base.player1.id,
+                        decimal_odds=1.9 if not finished else 1.74,
+                        source_ts=odds_ts,
+                        ingested_at=odds_ts,
+                    ),
+                    OddsQuote(
+                        bookmaker="PaperRehearsal",
+                        market="ML",
+                        player_id=base.player2.id,
+                        decimal_odds=2.05 if not finished else 2.18,
+                        source_ts=odds_ts,
+                        ingested_at=odds_ts,
+                    ),
+                ],
+            },
+        )
+        features = FeatureVector(
+            match_id=match_id,
+            elo_diff=105,
+            ranking_diff=41,
+            form_diff=0.11,
+            fatigue_diff=0.12,
+            live_score_pressure=0.07 if not finished else 0,
+            market_volatility=0.08,
+            competition_level=match.competition_level,
+            data_quality=1,
+            provider_count=2,
+            odds_latency_ms=120,
+            surface=match.surface,
+        )
+        prediction = Prediction(
+            match_id=match_id,
+            p1_win_prob=0.64,
+            p2_win_prob=0.36,
+            raw_p1_win_prob=0.64,
+            raw_p2_win_prob=0.36,
+            confidence=Confidence.MEDIUM,
+            mode="live",
+            model_version=model_version,
+            confidence_interval=(0.58, 0.7),
+            explanations=[
+                "Paper rehearsal fixture for persistence and Model Lab smoke testing.",
+                "No live API calls or paid provider quota were consumed.",
+            ],
+            generated_at=decision_ts,
+        )
+        signal = Signal(
+            id=signal_id,
+            match_id=match_id,
+            player_id=base.player1.id,
+            player_name=base.player1.name,
+            status=SignalStatus.ENTRY if not finished else SignalStatus.MONITOR,
+            model_prob=0.64,
+            market_prob=0.5263,
+            best_odds=1.9,
+            edge=0.1137,
+            stake_fraction=0.01 if not finished else 0,
+            threshold=0.04,
+            confidence=Confidence.MEDIUM,
+            reason=(
+                "Paper rehearsal Entrada created from deterministic fixture."
+                if not finished
+                else "Paper rehearsal final state; no new paper order should be created."
+            ),
+        )
+        return MatchAnalysis(
+            match=match,
+            features=features,
+            prediction=prediction,
+            signals=[signal],
+            freshness=MatchFreshness(
+                source="sample",
+                persisted=True,
+                score_source_ts=decision_ts,
+                odds_source_ts=odds_ts,
+                score_age_ms=0,
+                odds_age_ms=0,
+                provider_lineage=[Provider.API_TENNIS, Provider.ODDS_API_IO],
+                note="Paper rehearsal fixture persisted as fake-provider data.",
+            ),
+        )

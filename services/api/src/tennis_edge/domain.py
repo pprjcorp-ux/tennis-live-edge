@@ -639,6 +639,17 @@ class AutoPaperSettleResult(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class PaperRehearsalResult(BaseModel):
+    enabled: bool = False
+    match_id: str | None = None
+    signal_id: str | None = None
+    order_id: str | None = None
+    settled_orders: int = 0
+    training_examples_ready: int = 0
+    live_api_calls: int = 0
+    notes: list[str] = Field(default_factory=list)
+
+
 class DailyOperationalRunRequest(BaseModel):
     match_id: str = "match_atp_002"
     settle_match_id: str | None = None
@@ -646,6 +657,7 @@ class DailyOperationalRunRequest(BaseModel):
     scenarios: list[ReplayContractScenario] | None = None
     model_version: str = "prematch_ensemble_v1"
     feature_set: str = "live_budget_v1"
+    run_paper_rehearsal: bool = False
 
 
 class DailyOperationalBacktestStatus(BaseModel):
@@ -676,6 +688,7 @@ class DailyOperationalRunResult(BaseModel):
     live_api_calls: int = 0
     match_id: str
     replay_contracts: ReplayContractRunResult
+    paper_rehearsal: PaperRehearsalResult | None = None
     paper_auto_settlement: AutoPaperSettleResult
     model_lab_backtest: DailyOperationalBacktestStatus
     execution: DailyOperationalExecutionSnapshot

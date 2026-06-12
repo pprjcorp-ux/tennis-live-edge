@@ -7,6 +7,7 @@ from tennis_edge.domain import (
     ExecutionStage,
     ExecutionStatus,
     ExecutionVenue,
+    PaperRehearsalResult,
     ReplayContractRunRequest,
     ReplayContractRunResult,
     ReplayContractScenarioResult,
@@ -70,6 +71,7 @@ class RepoStub:
         self.replay_request: ReplayContractRunRequest | None = None
         self.replay_source: str | None = None
         self.auto_settle_request = None
+        self.paper_rehearsal_model_version = None
         self.backtest_request = None
         self.ingestion_run_calls = []
 
@@ -86,6 +88,19 @@ class RepoStub:
             skipped_orders=1,
             training_examples_ready=1,
             reasons=["ord_live: latest score state is not finished."],
+        )
+
+    async def run_paper_rehearsal(self, *, model_version):
+        self.paper_rehearsal_model_version = model_version
+        return PaperRehearsalResult(
+            enabled=True,
+            match_id="match_paper_rehearsal",
+            signal_id="sig_paper_rehearsal",
+            order_id="ord_paper_rehearsal",
+            settled_orders=1,
+            training_examples_ready=1,
+            live_api_calls=0,
+            notes=["rehearsal"],
         )
 
     async def run_backtest(self, request):
@@ -137,6 +152,7 @@ def test_daily_operational_loop_runs_replay_settlement_and_backtest() -> None:
     assert repo.replay_request.scenarios == ["healthy"]
     assert repo.auto_settle_request.match_id == "match_atp_002"
     assert repo.auto_settle_request.max_orders == 7
+    assert repo.paper_rehearsal_model_version is None
     assert repo.backtest_request.feature_set == "live_budget_v1"
     assert len(repo.ingestion_run_calls) == 1
     ingestion_run = repo.ingestion_run_calls[0]
@@ -167,6 +183,42 @@ def test_daily_operational_loop_collects_when_training_examples_are_missing() ->
     assert result.model_lab_backtest.reason is not None
     assert "No persisted training examples" in result.model_lab_backtest.reason
     assert repo.ingestion_run_calls[0]["summary"]["status"] == "collecting"
+
+
+def test_daily_operational_loop_can_run_explicit_paper_rehearsal() -> None:
+    repo = RepoStub()
+
+    result = asyncio.run(
+        run_daily_operational_loop(
+            repo,
+            match_id="match_atp_002",
+            model_version="paper_rehearsal_v1",
+            run_paper_rehearsal=True,
+        )
+    )
+
+    assert result.status == "completed"
+    assert result.paper_rehearsal is not None
+    assert result.paper_rehearsal.enabled is True
+    assert result.paper_rehearsal.live_api_calls == 0
+    assert result.paper_rehearsal.training_examples_ready == 1
+    assert repo.paper_rehearsal_model_version == "paper_rehearsal_v1"
+    assert repo.ingestion_run_calls[0]["summary"]["paper_rehearsal"]["order_id"] == "ord_paper_rehearsal"
+
+
+def test_daily_operational_loop_uses_rehearsal_model_when_flag_has_default_model() -> None:
+    repo = RepoStub()
+
+    asyncio.run(
+        run_daily_operational_loop(
+            repo,
+            match_id="match_atp_002",
+            run_paper_rehearsal=True,
+        )
+    )
+
+    assert repo.paper_rehearsal_model_version == "paper_rehearsal_v1"
+    assert repo.backtest_request.model_version == "prematch_ensemble_v1"
 
 
 def test_daily_operational_cli_exit_codes(monkeypatch, capsys) -> None:

@@ -219,7 +219,8 @@ export async function runReplayContracts(
 export async function runDailyOperationalLoop(
   adminToken: string,
   matchId: string,
-  maxOrders = 100
+  maxOrders = 100,
+  runPaperRehearsal = false
 ): Promise<DailyOperationalRunResult> {
   const response = await fetch(`${API_BASE}/api/v1/ops/daily`, {
     method: "POST",
@@ -227,7 +228,8 @@ export async function runDailyOperationalLoop(
     credentials: "include",
     body: JSON.stringify({
       match_id: matchId,
-      max_orders: maxOrders
+      max_orders: maxOrders,
+      run_paper_rehearsal: runPaperRehearsal
     })
   });
   if (!response.ok) {

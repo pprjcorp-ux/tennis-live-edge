@@ -573,6 +573,17 @@ export type AutoPaperSettleResult = {
   reasons: string[];
 };
 
+export type PaperRehearsalResult = {
+  enabled: boolean;
+  match_id: string | null;
+  signal_id: string | null;
+  order_id: string | null;
+  settled_orders: number;
+  training_examples_ready: number;
+  live_api_calls: number;
+  notes: string[];
+};
+
 export type DailyOperationalBacktestStatus = {
   status: "completed" | "skipped";
   model_version: string;
@@ -595,6 +606,7 @@ export type DailyOperationalRunResult = {
   live_api_calls: number;
   match_id: string;
   replay_contracts: ReplayContractRunResult;
+  paper_rehearsal: PaperRehearsalResult | null;
   paper_auto_settlement: AutoPaperSettleResult;
   model_lab_backtest: DailyOperationalBacktestStatus;
   execution: {

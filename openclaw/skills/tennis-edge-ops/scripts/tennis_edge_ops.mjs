@@ -108,6 +108,35 @@ async function autopilot() {
   });
 }
 
+async function opsDaily() {
+  const body = dailyOpsBody();
+  const data = await request("/api/v1/ops/daily", {
+    method: "POST",
+    headers: await adminHeaders(),
+    body: JSON.stringify(body)
+  });
+  printJson({
+    status: data.status,
+    source: data.source,
+    live_api_calls: data.live_api_calls,
+    match_id: data.match_id,
+    replay_passed: data.replay_contracts.passed,
+    replay_scenarios: data.replay_contracts.scenarios.map((scenario) => ({
+      scenario: scenario.scenario,
+      passed: scenario.passed,
+      final_status: scenario.final_status,
+      resync_required: scenario.resync_required
+    })),
+    paper_auto_settlement: {
+      evaluated_orders: data.paper_auto_settlement.evaluated_orders,
+      settled_orders: data.paper_auto_settlement.settled_orders,
+      training_examples_ready: data.paper_auto_settlement.training_examples_ready
+    },
+    model_lab_backtest: data.model_lab_backtest,
+    execution: data.execution
+  });
+}
+
 async function ingestLiveBudget() {
   const passthroughArgs = process.argv
     .slice(3)
@@ -144,6 +173,31 @@ function runNpmJson(scriptName, args = []) {
   });
 }
 
+function dailyOpsBody() {
+  const body = {};
+  const matchId = optionValue("--match-id");
+  const settleMatchId = optionValue("--settle-match-id");
+  const maxOrders = optionValue("--max-orders");
+  const scenarios = optionValues("--scenario");
+  if (matchId) body.match_id = matchId;
+  if (settleMatchId) body.settle_match_id = settleMatchId;
+  if (maxOrders) body.max_orders = Number(maxOrders);
+  if (scenarios.length) body.scenarios = scenarios;
+  return body;
+}
+
+function optionValue(name) {
+  const prefix = `${name}=`;
+  return process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
+}
+
+function optionValues(name) {
+  const prefix = `${name}=`;
+  return process.argv
+    .filter((arg) => arg.startsWith(prefix))
+    .map((arg) => arg.slice(prefix.length));
+}
+
 function summarizeFailedChecks(checks = []) {
   const failed = checks.filter((check) => check.status === "fail");
   if (!failed.length) {
@@ -159,6 +213,7 @@ const commands = {
   preflight,
   "ingestion-runs": ingestionRuns,
   autopilot,
+  "ops-daily": opsDaily,
   "ingest-live-budget": ingestLiveBudget,
 };
 

@@ -29,12 +29,15 @@ npm run openclaw:briefing
 npm run openclaw:anomalies
 npm run openclaw:runs
 npm run openclaw:preflight
+npm run openclaw:ops:daily
 npm run openclaw:autopilot
 ```
 
-`openclaw:autopilot` reads `ADMIN_API_TOKEN` from the repo-local `.env` in the
-npm wrapper and passes it to the skill through stdin. The skill itself does not
-read `.env` or environment variables. It only creates paper orders for
+`openclaw:ops:daily` and `openclaw:autopilot` read `ADMIN_API_TOKEN` from the
+repo-local `.env` in the npm wrapper and pass it to the skill through stdin. The
+skill itself does not read `.env` or environment variables. `openclaw:ops:daily`
+runs replay contracts, paper auto-settlement, and Model Lab rehearsal without
+live API calls. `openclaw:autopilot` only creates paper orders for
 backend-approved `Entrada` signals. Real execution remains blocked by
 `REAL_EXECUTION_HARD_BLOCK=true`.
 Cron creation examples are in `openclaw/cron.examples.md`; create them only

@@ -27,6 +27,18 @@ openclaw cron add \
   --timeout-seconds 60
 ```
 
+Daily operational rehearsal, paper-first and no live API quota:
+
+```bash
+openclaw cron add \
+  --name tennis-edge-daily-ops-rehearsal \
+  --cron "15 8 * * *" \
+  --tz America/Sao_Paulo \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm run openclaw:ops:daily from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report replay_passed, paper_auto_settlement, model_lab_backtest, live_api_calls, and execution safety state." \
+  --timeout-seconds 90
+```
+
 Preflight every 15 minutes while the system is active:
 
 ```bash

@@ -163,3 +163,86 @@ test("ingestion-runs reads the persisted run journal endpoint", async () => {
     server.close();
   }
 });
+
+test("ops-daily calls the protected operational endpoint and prints a compact report", async () => {
+  let receivedToken = "";
+  let receivedBody = null;
+  const { server, apiBase } = await startServer((request, response) => {
+    if (request.url === "/api/v1/ops/daily" && request.method === "POST") {
+      receivedToken = request.headers["x-admin-token"] ?? "";
+      const chunks = [];
+      request.on("data", (chunk) => chunks.push(chunk));
+      request.on("end", () => {
+        receivedBody = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        response.setHeader("content-type", "application/json");
+        response.end(
+          JSON.stringify({
+            status: "collecting",
+            source: "api",
+            live_api_calls: 0,
+            match_id: "match_atp_002",
+            replay_contracts: {
+              passed: true,
+              scenarios: [
+                {
+                  scenario: "healthy",
+                  passed: true,
+                  final_status: "completed",
+                  resync_required: false,
+                },
+              ],
+            },
+            paper_auto_settlement: {
+              evaluated_orders: 2,
+              settled_orders: 1,
+              training_examples_ready: 1,
+            },
+            model_lab_backtest: {
+              status: "skipped",
+              model_version: "prematch_ensemble_v1",
+              feature_set: "live_budget_v1",
+              reason: "collecting",
+            },
+            execution: {
+              can_submit_real_orders: false,
+              real_execution_hard_block: true,
+              stage: "paper",
+            },
+          })
+        );
+      });
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(
+      [
+        "ops-daily",
+        `--api-base=${apiBase}`,
+        "--token-stdin",
+        "--match-id=match_atp_002",
+        "--scenario=healthy",
+        "--max-orders=2",
+      ],
+      { stdin: "local-admin" }
+    );
+
+    assert.equal(result.exit, 0);
+    assert.equal(receivedToken, "local-admin");
+    assert.deepEqual(receivedBody, {
+      match_id: "match_atp_002",
+      max_orders: 2,
+      scenarios: ["healthy"],
+    });
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.live_api_calls, 0);
+    assert.equal(payload.replay_passed, true);
+    assert.equal(payload.paper_auto_settlement.training_examples_ready, 1);
+    assert.equal(payload.execution.can_submit_real_orders, false);
+  } finally {
+    server.close();
+  }
+});

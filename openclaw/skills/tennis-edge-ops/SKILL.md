@@ -30,6 +30,7 @@ node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
 node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
+printf "%s" "$ADMIN_API_TOKEN" | node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
 printf "%s" "$ADMIN_API_TOKEN" | node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
 
@@ -51,6 +52,9 @@ The `api:ingest:odds-stream` command opens the live websocket only when
 `ODDS_API_IO_KEY` exists and the persisted cursor is safe to consume from.
 Only use `POST /api/v1/ingestion/provider-cursors/resync` after a trusted REST
 snapshot has been applied and the last provider sequence is known.
+The `ops-daily` command calls protected `POST /api/v1/ops/daily` to rehearse
+replay contracts, paper auto-settlement, and Model Lab `training_examples`
+without consuming live API quota.
 The `autopilot` command creates paper orders only through
 `POST /api/v1/agent/autopilot/evaluate`.
 The `preflight` command should run before cron/autopilot jobs; it checks API

@@ -17,6 +17,7 @@ npm run openclaw:briefing
 npm run openclaw:anomalies
 npm run openclaw:runs
 npm run openclaw:preflight
+ADMIN_API_TOKEN=... npm run openclaw:ops:daily
 ADMIN_API_TOKEN=... npm run openclaw:autopilot
 ```
 
@@ -32,10 +33,10 @@ Each score snapshot, odds stream, and live-budget cycle is journaled in
 `ingestion_runs` when persistence is enabled; read recent rows with
 `GET /api/v1/ingestion/runs`.
 
-Before live provider keys are configured, use `api:ops:daily` or protected
-`POST /api/v1/ops/daily` for the daily paper-first rehearsal. It runs replay
-contracts, paper auto-settlement, and the Model Lab `training_examples` backtest
-path while reporting `live_api_calls=0`.
+Before live provider keys are configured, use `api:ops:daily`,
+`openclaw:ops:daily`, or protected `POST /api/v1/ops/daily` for the daily
+paper-first rehearsal. It runs replay contracts, paper auto-settlement, and the
+Model Lab `training_examples` backtest path while reporting `live_api_calls=0`.
 
 ## Audit Trail
 

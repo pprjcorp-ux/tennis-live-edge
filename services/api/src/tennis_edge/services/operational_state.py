@@ -170,6 +170,9 @@ class OperationalStateService:
         self,
         *,
         active_mode: str | None = None,
+        provider_health: list[ProviderHealth] | None = None,
+        provider_cursors: list[ProviderCursor] | None = None,
+        data_quality: list[DataQualitySnapshot] | None = None,
     ) -> list[ProviderModeStep]:
         mode = active_mode or self.provider_mode()[0]
         persistence_ready, persistence_error = self._persistence_ready()
@@ -177,7 +180,21 @@ class OperationalStateService:
         replay_available = explicit_replay or getattr(self.store, "has_replay_activity", lambda: False)()
         score_key_configured = bool(self.settings.api_tennis_key)
         odds_key_configured = bool(self.settings.odds_api_io_key)
-        cursor_resync = any(cursor.resync_required for cursor in self.provider_cursors())
+        provider_cursors = provider_cursors if provider_cursors is not None else self.provider_cursors()
+        provider_health = provider_health if provider_health is not None else self.provider_health()
+        data_quality = data_quality if data_quality is not None else self.data_quality()
+        cursor_resync = any(cursor.resync_required for cursor in provider_cursors)
+        critical_provider_failures = [
+            health
+            for health in provider_health
+            if health.provider in {Provider.API_TENNIS, Provider.ODDS_API_IO}
+            and not health.healthy
+        ]
+        data_quality_failures = [
+            snapshot
+            for snapshot in data_quality
+            if snapshot.stale_ticks > 0 or snapshot.blocked_signals > 0
+        ]
         live_key_blockers = []
         if not score_key_configured:
             live_key_blockers.append("API_TENNIS_KEY missing")
@@ -187,12 +204,21 @@ class OperationalStateService:
             live_key_blockers.append(persistence_error or "persistent store unavailable")
         if cursor_resync:
             live_key_blockers.append("provider cursor requires resync")
+        live_operational_blockers = list(live_key_blockers)
+        live_operational_blockers.extend(
+            f"{health.provider.value} unhealthy: {health.status}"
+            for health in critical_provider_failures
+        )
+        live_operational_blockers.extend(
+            f"{snapshot.provider.value}/{snapshot.feed} data quality blocks entries"
+            for snapshot in data_quality_failures
+        )
 
         sample_active = mode == "sample"
         replay_active = mode == "replay"
         live_without_keys_active = mode == "live_without_keys"
         live_with_keys_active = mode == "live_with_keys"
-        live_with_keys_ready = not live_key_blockers
+        live_with_keys_ready = not live_operational_blockers
 
         return [
             ProviderModeStep(
@@ -263,12 +289,22 @@ class OperationalStateService:
                     "Odds-API.io key configured." if odds_key_configured else "Odds-API.io key missing.",
                     "Postgres persistence ready." if persistence_ready else f"Persistence blocked: {persistence_error}",
                     "Provider cursors trusted." if not cursor_resync else "At least one provider cursor requires resync.",
+                    (
+                        "Critical provider health clean."
+                        if not critical_provider_failures
+                        else f"{len(critical_provider_failures)} critical provider health failure(s)."
+                    ),
+                    (
+                        "Data freshness gates clean."
+                        if not data_quality_failures
+                        else f"{len(data_quality_failures)} data freshness/blocking issue(s)."
+                    ),
                 ],
-                blockers=live_key_blockers,
+                blockers=live_operational_blockers,
                 next_action=(
                     "Run live ingestion and let signal gates decide Entrada."
                     if live_with_keys_ready
-                    else "Clear missing keys, persistence, and cursor blockers before live entries."
+                    else "Clear keys, persistence, cursor, provider health, and data freshness blockers before live entries."
                 ),
             ),
         ]
@@ -659,16 +695,24 @@ class OperationalStateService:
         analyses: list[MatchAnalysis] | None = None,
     ) -> OperationalStateSnapshot:
         provider_mode, provider_mode_reason = self.provider_mode()
+        provider_health = self.provider_health()
+        data_quality = self.data_quality()
+        provider_cursors = self.provider_cursors()
         return OperationalStateSnapshot(
             provider_mode=provider_mode,
             provider_mode_reason=provider_mode_reason,
-            provider_mode_matrix=self.provider_mode_matrix(active_mode=provider_mode),
+            provider_mode_matrix=self.provider_mode_matrix(
+                active_mode=provider_mode,
+                provider_health=provider_health,
+                provider_cursors=provider_cursors,
+                data_quality=data_quality,
+            ),
             source_summary=self.source_summary(analyses or []),
-            provider_health=self.provider_health(),
+            provider_health=provider_health,
             cost_profile=self.cost_profile(),
             daily_cost_report=cost_report,
-            data_quality=self.data_quality(),
-            provider_cursors=self.provider_cursors(),
+            data_quality=data_quality,
+            provider_cursors=provider_cursors,
             ingestion_runs=self.ingestion_runs(),
             execution_status=self.execution_status(),
             api_onboarding=self.api_onboarding(),

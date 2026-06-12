@@ -345,6 +345,73 @@ def test_provider_mode_matrix_blocks_live_with_keys_when_cursor_requires_resync(
     assert "provider cursor requires resync" in matrix["live_with_keys"].blockers
 
 
+def test_provider_mode_matrix_blocks_live_with_keys_when_provider_health_fails() -> None:
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(
+            cursors=[_healthy_odds_cursor()],
+            provider_health=[
+                ProviderHealth(
+                    provider=Provider.API_TENNIS,
+                    configured=True,
+                    healthy=False,
+                    status="quota exhausted: 200000/200000 billable units used",
+                    cost_tier="$80/mo",
+                    coverage_scope="score",
+                )
+            ],
+        ),
+    )
+
+    matrix = {step.mode: step for step in service.provider_mode_matrix(active_mode="live_with_keys")}
+
+    assert matrix["live_with_keys"].entry_gate == "block"
+    assert any("api_tennis unhealthy" in blocker for blocker in matrix["live_with_keys"].blockers)
+    assert "1 critical provider health failure(s)." in matrix["live_with_keys"].evidence
+
+
+def test_provider_mode_matrix_blocks_live_with_keys_when_data_quality_fails() -> None:
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(
+            cursors=[_healthy_odds_cursor()],
+            data_quality=[
+                DataQualitySnapshot(
+                    id="dq_odds_api_io_live_odds",
+                    provider=Provider.ODDS_API_IO,
+                    feed="odds/live",
+                    score_completeness=1,
+                    odds_completeness=1,
+                    entity_resolution_rate=1,
+                    sequence_health=1,
+                    latency_ms=12000,
+                    stale_ticks=1,
+                    blocked_signals=2,
+                    notes=["Latest odds tick is stale."],
+                )
+            ],
+        ),
+    )
+
+    matrix = {step.mode: step for step in service.provider_mode_matrix(active_mode="live_with_keys")}
+
+    assert matrix["live_with_keys"].entry_gate == "block"
+    assert "odds_api_io/odds/live data quality blocks entries" in matrix["live_with_keys"].blockers
+    assert "1 data freshness/blocking issue(s)." in matrix["live_with_keys"].evidence
+
+
 def test_api_onboarding_guides_budget_provider_sequence_after_archive_key() -> None:
     service = OperationalStateService(
         Settings(

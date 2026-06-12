@@ -295,6 +295,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_v1_replay_accepts_explicit_fixture_seed",
             "test_provider_mode_matrix_explains_replay_monitor_mode",
             "test_provider_mode_matrix_blocks_live_with_keys_when_cursor_requires_resync",
+            "test_provider_mode_matrix_blocks_live_with_keys_when_provider_health_fails",
+            "test_provider_mode_matrix_blocks_live_with_keys_when_data_quality_fails",
             "test_operational_session_reloads_canonical_persisted_snapshot_after_provider_write",
             "test_operational_session_gates_persisted_fallback_signals",
             "test_operational_source_summary_counts_persisted_and_runtime_sources",

@@ -29,6 +29,7 @@ from tennis_edge.providers.odds_api_io import OddsApiIoClient
 from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.sample_data import sample_matches, sample_raw_payloads
 from tennis_edge.services.execution_engine import KILL_SWITCH, ORDERS
+from tennis_edge.services.ingestion import OperationalSnapshot
 from tennis_edge.services.live_dashboard import LiveDashboardReadModel
 from tennis_edge.services.operational_state import OperationalStateService
 from tennis_edge.services.provider_adapters import BUDGET_PROVIDER_CONTRACT_SPECS
@@ -42,6 +43,40 @@ def test_repository_returns_match_analyses() -> None:
     assert analyses
     assert all(analysis.prediction.match_id == analysis.match.id for analysis in analyses)
     assert all(analysis.signals for analysis in analyses)
+
+
+def test_provider_live_analyses_reload_persisted_state_before_serving() -> None:
+    repo = AnalysisRepository(Settings(data_mode="live", persistence_enabled=True))
+    base = asyncio.run(
+        AnalysisRepository(Settings(data_mode="sample")).analyses_for_date(date.today())
+    )[0]
+    generated = base.model_copy(
+        update={"match": base.match.model_copy(update={"tournament": "Generated Provider"})}
+    )
+    persisted = base.model_copy(
+        update={"match": base.match.model_copy(update={"tournament": "Persisted Canonical"})}
+    )
+
+    class IngestionStub:
+        async def snapshot_for_date(self, target_date: date):
+            return OperationalSnapshot(
+                analyses=[generated],
+                source="provider_live",
+                persisted=True,
+                generated_at=datetime.now(timezone.utc),
+                raw_payloads_saved=1,
+            )
+
+    class StoreStub:
+        def latest_analyses(self, target_date: date):
+            return [persisted]
+
+    repo.ingestion = IngestionStub()
+    repo.store = StoreStub()
+
+    analyses = asyncio.run(repo.analyses_for_date(date.today()))
+
+    assert [analysis.match.tournament for analysis in analyses] == ["Persisted Canonical"]
 
 
 def test_daily_metrics_are_available() -> None:

@@ -137,6 +137,10 @@ class AnalysisRepository:
 
     async def analyses_for_date(self, target_date: date) -> list[MatchAnalysis]:
         snapshot = await self.ingestion.snapshot_for_date(target_date)
+        if snapshot.source != "sample" and snapshot.persisted:
+            persisted = self._persisted_analyses_for_date(target_date)
+            if persisted:
+                return persisted
         if snapshot.source == "persisted_fallback":
             return [
                 analysis.model_copy(
@@ -150,6 +154,25 @@ class AnalysisRepository:
                 for analysis in snapshot.analyses
             ]
         return snapshot.analyses
+
+    def _persisted_analyses_for_date(self, target_date: date) -> list[MatchAnalysis]:
+        try:
+            analyses = self.store.latest_analyses(target_date)
+        except Exception as exc:
+            if hasattr(self.store, "_record_read_error"):
+                self.store._record_read_error("latest_analyses", exc)
+            return []
+        return [
+            analysis.model_copy(
+                update={
+                    "signals": self._gate_signals_for_match(
+                        analysis.match,
+                        analysis.signals,
+                    )
+                }
+            )
+            for analysis in analyses
+        ]
 
     async def _augment_with_archive_odds(self, matches, archive_source=None):
         if self.settings.data_mode == "sample" or not self.settings.the_odds_api_key:

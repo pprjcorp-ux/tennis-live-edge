@@ -98,9 +98,13 @@ decide whether the system behaves as budget or enterprise.
     degraded in both the API response and ingestion journal rather than
     completing silently with zero useful ticks. Replay contract scenarios also
     expose persistence evidence (`raw_payloads_saved`, `score_ticks_saved`,
-    `odds_ticks_saved`, `cursors_saved`, and `provider_latency_saved`) separately
-    from adapter output contracts, so fixture tests can prove both canonical
-    formats and Postgres materialization without live API calls. The dashboard
+    `odds_ticks_saved`, `provider_cursors_replayed`, `cursors_saved`, and
+    `provider_latency_saved`) separately from adapter output contracts, so
+    fixture tests can prove both canonical formats and Postgres materialization
+    without live API calls. `provider_cursors_replayed` proves the cursor
+    contract was exercised; `cursors_saved` only counts writes to the active
+    operational cursor table, which fixture runs may intentionally skip to
+    preserve a live cursor. The dashboard
     Replay Lab reads the persisted `replay_contract_run` summary back through
     `ReplayLabSnapshot.last_contract_persistence`, so operators can inspect
     per-scenario materialization proof after restart instead of trusting a

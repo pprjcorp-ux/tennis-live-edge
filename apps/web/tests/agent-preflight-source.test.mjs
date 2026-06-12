@@ -120,6 +120,7 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(dataHealthSource, /replayLab\.providers/);
   assert.match(dataHealthSource, /replayLab\.last_contract_persistence/);
   assert.match(dataHealthSource, /raw_payloads_saved/);
+  assert.match(dataHealthSource, /provider_cursors_replayed/);
   assert.match(dataHealthSource, /provider_latency_saved/);
   assert.match(dataHealthSource, /apiOnboarding\.steps/);
   assert.match(dataHealthSource, /Ultimos ciclos persistidos/);

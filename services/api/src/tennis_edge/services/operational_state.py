@@ -79,6 +79,15 @@ def _replay_contract_persistence(
                 raw_payloads_saved=_summary_int(row, "raw_payloads_saved"),
                 score_ticks_saved=_summary_int(row, "score_ticks_saved"),
                 odds_ticks_saved=_summary_int(row, "odds_ticks_saved"),
+                provider_cursors_replayed=_summary_int(
+                    row,
+                    "provider_cursors_replayed",
+                )
+                or (
+                    len(row["provider_cursors"])
+                    if isinstance(row.get("provider_cursors"), list)
+                    else 0
+                ),
                 cursors_saved=_summary_int(row, "cursors_saved"),
                 provider_latency_saved=_summary_int(row, "provider_latency_saved"),
                 resync_required=bool(row.get("resync_required") is True),
@@ -373,10 +382,16 @@ class OperationalStateService:
         except TypeError:
             return int(counter())
 
-    def _training_example_lineage_counts(self) -> dict[str, int]:
+    def _training_example_lineage_counts(
+        self,
+        request: BacktestRunRequest | None = None,
+    ) -> dict[str, int]:
         counter = getattr(self.store, "training_example_lineage_counts", None)
         if callable(counter):
-            counts = counter()
+            try:
+                counts = counter(request)
+            except TypeError:
+                counts = counter()
             return {
                 "total": int(counts.get("total", 0)),
                 "production": int(counts.get("production", 0)),
@@ -399,7 +414,7 @@ class OperationalStateService:
         lineage_counts = {"total": 0, "production": 0, "rehearsal": 0}
         examples = self._training_example_count(request) if persistence_ready else 0
         if persistence_ready:
-            lineage_counts = self._training_example_lineage_counts()
+            lineage_counts = self._training_example_lineage_counts(request)
         if persistence_ready:
             persistence_detail = getattr(self.store, "last_error", None)
             if persistence_detail:

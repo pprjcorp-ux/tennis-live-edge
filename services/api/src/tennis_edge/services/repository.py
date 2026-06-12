@@ -1007,6 +1007,7 @@ class AnalysisRepository:
                     input_contracts=input_contracts,
                     output_contracts=output_contracts,
                     provider_cursors=run.provider_cursors,
+                    provider_cursors_replayed=len(run.provider_cursors),
                     raw_payloads_saved=run.raw_payloads_saved,
                     score_ticks_saved=run.score_ticks_saved,
                     odds_ticks_saved=run.odds_ticks_saved,

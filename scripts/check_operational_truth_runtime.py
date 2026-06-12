@@ -235,6 +235,7 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
         and all(item.raw_payloads_saved > 0 for item in replay_persistence)
         and all(item.score_ticks_saved > 0 for item in replay_persistence)
         and all(item.odds_ticks_saved > 0 for item in replay_persistence)
+        and all(item.provider_cursors_replayed > 0 for item in replay_persistence)
         and all(item.provider_latency_saved > 0 for item in replay_persistence)
     )
     _add(
@@ -252,6 +253,7 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
                 "raw_payloads_saved": item.raw_payloads_saved,
                 "score_ticks_saved": item.score_ticks_saved,
                 "odds_ticks_saved": item.odds_ticks_saved,
+                "provider_cursors_replayed": item.provider_cursors_replayed,
                 "cursors_saved": item.cursors_saved,
                 "provider_latency_saved": item.provider_latency_saved,
                 "resync_required": item.resync_required,

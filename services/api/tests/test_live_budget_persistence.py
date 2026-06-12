@@ -265,6 +265,80 @@ def test_training_example_count_casts_optional_null_filters() -> None:
     assert StoreStub().training_example_count() == 0
 
 
+def test_training_example_lineage_counts_scope_to_feature_set_and_decision_window() -> None:
+    class CursorStub:
+        def __init__(self) -> None:
+            self.params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            assert "FROM training_examples te" in query
+            assert "LEFT JOIN feature_snapshots fs" in query
+            assert "LEFT JOIN paper_orders po" in query
+            assert "FROM paper_settlements" in query
+            assert "te.result_win IS NOT NULL" in query
+            assert "te.pnl IS NOT NULL" in query
+            assert "te.stake_amount > 0" in query
+            assert "te.decision_ts < latest_settlement.settled_at" in query
+            assert "%s::text IS NULL OR fs.feature_set = %s::text" in query
+            assert "%s::date IS NULL OR te.decision_ts::date >= %s::date" in query
+            assert "%s::date IS NULL OR te.decision_ts::date <= %s::date" in query
+            self.params = params
+            return self
+
+        def fetchone(self):
+            assert self.params == (
+                "live_budget_v1",
+                "live_budget_v1",
+                "2026-06-01",
+                "2026-06-01",
+                "2026-06-08",
+                "2026-06-08",
+            )
+            return {"total": 5, "production": 2, "rehearsal": 3}
+
+    class ConnStub:
+        def __init__(self) -> None:
+            self.cursor_stub = CursorStub()
+
+        def cursor(self):
+            return self.cursor_stub
+
+    class StoreStub(PersistentStore):
+        def __init__(self) -> None:
+            super().__init__(
+                Settings(
+                    data_mode="live",
+                    persistence_enabled=True,
+                    database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+                )
+            )
+
+        @property
+        def enabled(self) -> bool:
+            return True
+
+        @contextmanager
+        def _connect(self):
+            yield ConnStub()
+
+    counts = StoreStub().training_example_lineage_counts(
+        BacktestRunRequest(
+            model_version="prematch_ensemble_v1",
+            feature_set="live_budget_v1",
+            start_date="2026-06-01",
+            end_date="2026-06-08",
+        )
+    )
+
+    assert counts == {"total": 5, "production": 2, "rehearsal": 3}
+
+
 def test_provider_usage_counts_reads_raw_payloads_for_target_date() -> None:
     target_date = date(2026, 6, 8)
 

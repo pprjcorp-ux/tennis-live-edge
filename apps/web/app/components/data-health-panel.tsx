@@ -531,8 +531,11 @@ export function DataHealthPanel({
                   {evidence.odds_ticks_saved}
                 </span>
                 <span>
-                  cursors_saved {evidence.cursors_saved} · provider_latency_saved{" "}
-                  {evidence.provider_latency_saved}
+                  provider_cursors_replayed {evidence.provider_cursors_replayed} · cursors_saved{" "}
+                  {evidence.cursors_saved}
+                </span>
+                <span>
+                  provider_latency_saved {evidence.provider_latency_saved}
                 </span>
               </div>
             ))}

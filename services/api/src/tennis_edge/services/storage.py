@@ -2089,9 +2089,18 @@ class PersistentStore:
                 return 0
         return int(row["examples"] or 0) if row else 0
 
-    def training_example_lineage_counts(self) -> dict[str, int]:
+    def training_example_lineage_counts(
+        self, request: BacktestRunRequest | None = None
+    ) -> dict[str, int]:
         if not self.enabled:
             return {"total": 0, "production": 0, "rehearsal": 0}
+        request = request or BacktestRunRequest(
+            model_version=None,
+            feature_set=None,
+        )
+        feature_set = request.feature_set
+        start_date = request.start_date
+        end_date = request.end_date
         with self._connect() as conn:
             if conn is None:
                 return {"total": 0, "production": 0, "rehearsal": 0}
@@ -2108,6 +2117,7 @@ class PersistentStore:
                             WHERE te.model_version NOT LIKE 'paper_rehearsal%%'
                           )::int AS production
                         FROM training_examples te
+                        LEFT JOIN feature_snapshots fs ON fs.id = te.feature_snapshot_id
                         LEFT JOIN paper_orders po ON te.id = ('train_' || po.external_order_ref)
                         LEFT JOIN LATERAL (
                           SELECT settled_at
@@ -2123,7 +2133,18 @@ class PersistentStore:
                             latest_settlement.settled_at IS NULL
                             OR te.decision_ts < latest_settlement.settled_at
                           )
-                        """
+                          AND (%s::text IS NULL OR fs.feature_set = %s::text)
+                          AND (%s::date IS NULL OR te.decision_ts::date >= %s::date)
+                          AND (%s::date IS NULL OR te.decision_ts::date <= %s::date)
+                        """,
+                        (
+                            feature_set,
+                            feature_set,
+                            start_date,
+                            start_date,
+                            end_date,
+                            end_date,
+                        ),
                     ).fetchone()
             except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
                 self._record_read_error("training_example_lineage_counts", exc)

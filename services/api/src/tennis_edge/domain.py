@@ -347,6 +347,7 @@ class ReplayContractScenarioResult(BaseModel):
     raw_payloads_saved: int = 0
     score_ticks_saved: int = 0
     odds_ticks_saved: int = 0
+    provider_cursors_replayed: int = 0
     cursors_saved: int = 0
     provider_latency_saved: int = 0
     resync_required: bool = False
@@ -1020,6 +1021,7 @@ class ReplayContractScenarioEvidence(BaseModel):
     raw_payloads_saved: int = 0
     score_ticks_saved: int = 0
     odds_ticks_saved: int = 0
+    provider_cursors_replayed: int = 0
     cursors_saved: int = 0
     provider_latency_saved: int = 0
     resync_required: bool = False

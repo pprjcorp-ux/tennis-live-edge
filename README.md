@@ -127,6 +127,8 @@ debugging any paid key, run the aggregate contract rehearsal through
 `POST /api/v1/replay/contracts/run`; it exercises healthy, gap, and
 `resync_required` scenarios for API-Tennis, Odds-API.io, and TheOddsAPI, then
 returns the adapter, input, and output contracts proven by each scenario.
+Replay evidence separates `provider_cursors_replayed` from `cursors_saved` so
+fixture runs can prove cursor parsing without overwriting an active live cursor.
 
 For the daily paper-first operational loop, run `npm run api:ops:daily` or call
 the protected `POST /api/v1/ops/daily` endpoint. This executes replay contracts,

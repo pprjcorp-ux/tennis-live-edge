@@ -1335,6 +1335,7 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
         assert scenario.raw_payloads_saved >= 3
         assert scenario.score_ticks_saved >= 1
         assert scenario.odds_ticks_saved >= 1
+        assert scenario.provider_cursors_replayed >= 1
         assert scenario.provider_latency_saved >= 2
 
     healthy, gap, resync_required = result.scenarios

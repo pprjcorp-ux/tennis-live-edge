@@ -294,6 +294,7 @@ export type ReplayContractScenarioEvidence = {
   raw_payloads_saved: number;
   score_ticks_saved: number;
   odds_ticks_saved: number;
+  provider_cursors_replayed: number;
   cursors_saved: number;
   provider_latency_saved: number;
   resync_required: boolean;

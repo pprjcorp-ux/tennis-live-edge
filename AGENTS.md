@@ -82,8 +82,10 @@ debugging paid provider keys; it runs healthy, gap, and `resync_required`
 fixture scenarios and must pass without consuming live quota.
 The dashboard must also surface
 `operational_state.replay_lab.last_contract_persistence` so each scenario shows
-persisted raw payload, score tick, odds tick, cursor, and provider latency
-counts after restart.
+persisted raw payload, score tick, odds tick, provider latency, and cursor
+evidence after restart. Keep `provider_cursors_replayed` separate from
+`cursors_saved`: fixture replays may validate cursor contracts while preserving
+an existing live cursor instead of overwriting it.
 
 ## API Onboarding
 

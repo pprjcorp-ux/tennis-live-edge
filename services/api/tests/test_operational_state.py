@@ -55,7 +55,7 @@ class StoreStub:
     def training_example_count(self) -> int:
         return self._training_examples_count
 
-    def training_example_lineage_counts(self) -> dict[str, int]:
+    def training_example_lineage_counts(self, request=None) -> dict[str, int]:
         return {
             "total": self._training_examples_count,
             "production": self._training_examples_count,
@@ -122,6 +122,7 @@ def _replay_contract_run(
                     "raw_payloads_saved": 3,
                     "score_ticks_saved": 1,
                     "odds_ticks_saved": 4,
+                    "provider_cursors_replayed": 1,
                     "cursors_saved": 1,
                     "provider_latency_saved": 2,
                     "resync_required": False,
@@ -133,6 +134,7 @@ def _replay_contract_run(
                     "raw_payloads_saved": 4,
                     "score_ticks_saved": 1,
                     "odds_ticks_saved": 5,
+                    "provider_cursors_replayed": 1,
                     "cursors_saved": 1,
                     "provider_latency_saved": 2,
                     "resync_required": True,
@@ -144,6 +146,7 @@ def _replay_contract_run(
                     "raw_payloads_saved": 4,
                     "score_ticks_saved": 1,
                     "odds_ticks_saved": 5,
+                    "provider_cursors_replayed": 1,
                     "cursors_saved": 1,
                     "provider_latency_saved": 2,
                     "resync_required": True,
@@ -825,10 +828,15 @@ def test_model_lab_readiness_uses_persisted_training_examples_dataset() -> None:
         def __init__(self) -> None:
             super().__init__(cursors=[_healthy_odds_cursor()], training_examples_count=42)
             self.request_seen = None
+            self.lineage_request_seen = None
 
         def training_example_count(self, request=None) -> int:
             self.request_seen = request
             return self._training_examples_count
+
+        def training_example_lineage_counts(self, request=None) -> dict[str, int]:
+            self.lineage_request_seen = request
+            return super().training_example_lineage_counts(request)
 
     store = StoreWithRequest()
     service = OperationalStateService(
@@ -845,6 +853,9 @@ def test_model_lab_readiness_uses_persisted_training_examples_dataset() -> None:
     assert store.request_seen is not None
     assert store.request_seen.model_version == "prematch_ensemble_v1"
     assert store.request_seen.feature_set == "live_budget_v1"
+    assert store.lineage_request_seen is not None
+    assert store.lineage_request_seen.model_version == "prematch_ensemble_v1"
+    assert store.lineage_request_seen.feature_set == "live_budget_v1"
     assert model_lab.status == "ready"
     assert model_lab.source == "training_examples"
     assert model_lab.training_examples == 42
@@ -961,6 +972,7 @@ def test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys() -> 
     assert replay_lab.last_contract_persistence[0].raw_payloads_saved == 3
     assert replay_lab.last_contract_persistence[0].score_ticks_saved == 1
     assert replay_lab.last_contract_persistence[0].odds_ticks_saved == 4
+    assert replay_lab.last_contract_persistence[0].provider_cursors_replayed == 1
     assert replay_lab.last_contract_persistence[0].cursors_saved == 1
     assert replay_lab.last_contract_persistence[0].provider_latency_saved == 2
     assert replay_lab.last_contract_persistence[0].resync_required is False

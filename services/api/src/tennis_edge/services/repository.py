@@ -98,6 +98,7 @@ from tennis_edge.services.execution_engine import (
 from tennis_edge.services.normalizer import normalize_name
 from tennis_edge.services.live_dashboard import LiveDashboardReadModel
 from tennis_edge.services.operational_state import OperationalStateService
+from tennis_edge.services.operational_session import OperationalSession
 from tennis_edge.services.provider_adapters import BUDGET_PROVIDER_CONTRACT_SPECS
 from tennis_edge.services.provider_cursor import mark_resynced
 from tennis_edge.services.ingestion import LiveIngestionPipeline
@@ -135,44 +136,16 @@ class AnalysisRepository:
             archive_augmenter=self._augment_with_archive_odds,
         )
 
-    async def analyses_for_date(self, target_date: date) -> list[MatchAnalysis]:
-        snapshot = await self.ingestion.snapshot_for_date(target_date)
-        if snapshot.source != "sample" and snapshot.persisted:
-            persisted = self._persisted_analyses_for_date(target_date)
-            if persisted:
-                return persisted
-        if snapshot.source == "persisted_fallback":
-            return [
-                analysis.model_copy(
-                    update={
-                        "signals": self._gate_signals_for_match(
-                            analysis.match,
-                            analysis.signals,
-                        )
-                    }
-                )
-                for analysis in snapshot.analyses
-            ]
-        return snapshot.analyses
+    def _operational_session(self) -> OperationalSession:
+        return OperationalSession(
+            self.ingestion,
+            self.store,
+            self._gate_signals_for_match,
+            self.dashboard_read_model,
+        )
 
-    def _persisted_analyses_for_date(self, target_date: date) -> list[MatchAnalysis]:
-        try:
-            analyses = self.store.latest_analyses(target_date)
-        except Exception as exc:
-            if hasattr(self.store, "_record_read_error"):
-                self.store._record_read_error("latest_analyses", exc)
-            return []
-        return [
-            analysis.model_copy(
-                update={
-                    "signals": self._gate_signals_for_match(
-                        analysis.match,
-                        analysis.signals,
-                    )
-                }
-            )
-            for analysis in analyses
-        ]
+    async def analyses_for_date(self, target_date: date) -> list[MatchAnalysis]:
+        return await self._operational_session().analyses_for_date(target_date)
 
     async def _augment_with_archive_odds(self, matches, archive_source=None):
         if self.settings.data_mode == "sample" or not self.settings.the_odds_api_key:
@@ -228,8 +201,7 @@ class AnalysisRepository:
         return self.signal_gate.gate_signals_for_match(match, signals)
 
     async def live_signals(self, target_date: date) -> list[Signal]:
-        analyses = await self.analyses_for_date(target_date)
-        return self.dashboard_read_model.sorted_signals(analyses)
+        return await self._operational_session().live_signals(target_date)
 
     async def run_ingestion(
         self,
@@ -399,11 +371,7 @@ class AnalysisRepository:
         return ProviderCursorResyncResult(cursor=cursor, persisted=persisted)
 
     async def match_detail(self, match_id: str, target_date: date) -> MatchAnalysis | None:
-        analyses = await self.analyses_for_date(target_date)
-        for analysis in analyses:
-            if analysis.match.id == match_id:
-                return analysis
-        return None
+        return await self._operational_session().match_detail(match_id, target_date)
 
     async def provider_health(self) -> list[ProviderHealth]:
         return self.operational_state.provider_health()
@@ -738,18 +706,18 @@ class AnalysisRepository:
         return self.operational_state.execution_status()
 
     async def operational_state_snapshot(self, target_date: date) -> OperationalStateSnapshot:
-        analyses = await self.analyses_for_date(target_date)
         performance = await self.paper_performance()
-        return self.dashboard_read_model.operational_state_snapshot(
+        return await self._operational_session().operational_state_snapshot(
             target_date,
-            analyses,
             performance,
         )
 
     async def live_dashboard_snapshot(self, target_date: date) -> LiveDashboardSnapshot:
-        analyses = await self.analyses_for_date(target_date)
         performance = await self.paper_performance()
-        return self.dashboard_read_model.snapshot(target_date, analyses, performance)
+        return await self._operational_session().live_dashboard_snapshot(
+            target_date,
+            performance,
+        )
 
     async def bankroll(self, orders: list[ExecutionOrder] | None = None) -> BankrollSnapshot:
         return bankroll_snapshot(self.settings, orders if orders is not None else await self.orders())

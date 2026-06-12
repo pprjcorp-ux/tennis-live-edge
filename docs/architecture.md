@@ -18,6 +18,10 @@ decide whether the system behaves as budget or enterprise.
 ## Runtime Flow
 
 1. `LiveIngestionPipeline` builds the operational snapshot for the target date.
+   `OperationalSession` is the operator-facing read boundary: when a provider
+   snapshot was persisted, it reloads canonical `latest_analyses` from
+   Postgres/Timescale before serving the dashboard, match detail, or live
+   signals. Persisted fallback snapshots are still re-gated before display.
 2. Provider adapters load fixtures, score state, odds, and market metadata.
 3. Raw provider/canonical payload lineage is persisted before decision snapshots.
 4. Normalization maps provider players/matches/markets into canonical IDs.

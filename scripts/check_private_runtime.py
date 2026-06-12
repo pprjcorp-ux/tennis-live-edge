@@ -57,6 +57,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     repository = (source / "services/repository.py").read_text()
     domain = (source / "domain.py").read_text()
     operational_state = (source / "services/operational_state.py").read_text()
+    operational_session = (source / "services/operational_session.py").read_text()
     signal_gates = (source / "services/signal_gates.py").read_text()
     risk_engine = (source / "services/risk_engine.py").read_text()
     model_lab = (source / "services/model_lab.py").read_text()
@@ -69,6 +70,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     risk_tests = (tests / "test_enterprise_risk.py").read_text()
     signal_tests = (tests / "test_signal_engine.py").read_text()
     model_tests = (tests / "test_model_lab.py").read_text()
+    operational_session_tests = (tests / "test_operational_session.py").read_text()
     operational_tests = (tests / "test_operational_state.py").read_text()
     dashboard_read_model_tests = (tests / "test_live_dashboard_read_model.py").read_text()
     v1_tests = (tests / "test_v1_api.py").read_text()
@@ -142,10 +144,14 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     _require_text(
         errors,
         label="provider runtime modes",
-        text=domain + web_types + operational_state,
+        text=domain + web_types + operational_state + operational_session,
         required=[
             'ProviderRuntimeMode = Literal["sample", "replay", "live_without_keys", "live_with_keys"]',
             '"sample" | "replay" | "live_without_keys" | "live_with_keys"',
+            "class OperationalSession",
+            "snapshot.source != \"sample\" and snapshot.persisted",
+            "self.store.latest_analyses(target_date)",
+            "snapshot.source == \"persisted_fallback\"",
             "class ProviderModeStep",
             "ProviderModeEntryGate",
             "provider_mode_matrix",
@@ -214,6 +220,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             + risk_tests
             + signal_tests
             + model_tests
+            + operational_session_tests
             + operational_tests
             + dashboard_read_model_tests
             + v1_tests
@@ -249,6 +256,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_v1_replay_accepts_explicit_fixture_seed",
             "test_provider_mode_matrix_explains_replay_monitor_mode",
             "test_provider_mode_matrix_blocks_live_with_keys_when_cursor_requires_resync",
+            "test_operational_session_reloads_canonical_persisted_snapshot_after_provider_write",
+            "test_operational_session_gates_persisted_fallback_signals",
             "test_operational_source_summary_counts_persisted_and_runtime_sources",
             "test_signal_engine_blocks_stale_odds_even_with_large_edge",
             "test_signal_engine_blocks_invalid_live_score_state",

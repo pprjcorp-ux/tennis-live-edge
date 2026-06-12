@@ -765,6 +765,50 @@ def test_replay_lab_readiness_collects_until_contract_run_is_persisted() -> None
     assert any("No persisted replay_contract_run" in note for note in replay_lab.notes)
 
 
+def test_replay_lab_contract_matrix_freezes_provider_adapter_outputs() -> None:
+    service = OperationalStateService(Settings(data_mode="replay"), StoreStub())
+
+    replay_lab = service.replay_lab_readiness()
+    matrix = {
+        provider.provider: {
+            "adapter_contract": provider.adapter_contract,
+            "fake_api": provider.fake_api,
+            "input_contracts": provider.input_contracts,
+            "output_contracts": provider.output_contracts,
+            "scenarios": provider.scenarios,
+            "status": provider.status,
+        }
+        for provider in replay_lab.providers
+    }
+
+    assert matrix == {
+        Provider.API_TENNIS: {
+            "adapter_contract": "ScoreProviderAdapter",
+            "fake_api": "Simulated API-Tennis fixtures/livescore",
+            "input_contracts": ["RawProviderPayload", "CanonicalMatch"],
+            "output_contracts": ["ScoreTick", "ProviderLatency"],
+            "scenarios": ["score_snapshot", "live_score_state"],
+            "status": "covered",
+        },
+        Provider.ODDS_API_IO: {
+            "adapter_contract": "OddsProviderAdapter",
+            "fake_api": "Simulated Odds-API.io websocket",
+            "input_contracts": ["RawProviderPayload", "seq", "lastSeq"],
+            "output_contracts": ["OddsTick", "ProviderCursor", "ProviderLatency"],
+            "scenarios": ["healthy", "gap", "resync_required"],
+            "status": "covered",
+        },
+        Provider.THE_ODDS_API: {
+            "adapter_contract": "ArchiveOddsProviderAdapter",
+            "fake_api": "Simulated TheOddsAPI REST snapshot",
+            "input_contracts": ["RawProviderPayload"],
+            "output_contracts": ["OddsTick", "ProviderLatency"],
+            "scenarios": ["archive_snapshot"],
+            "status": "covered",
+        },
+    }
+
+
 def test_replay_lab_readiness_collects_until_replay_run_is_persisted() -> None:
     test_replay_lab_readiness_collects_until_contract_run_is_persisted()
 

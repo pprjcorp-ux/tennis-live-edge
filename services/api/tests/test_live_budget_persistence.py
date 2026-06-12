@@ -2791,18 +2791,31 @@ def _provider_health_with_latency(
     latest_ingested_at: datetime | None = None,
     latency_ms: int = 500,
     latency_rows=None,
+    raw_payload_rows=None,
     provider_warnings=None,
 ):
-    latency_rows = latency_rows or [
-        {
-            "provider": Provider.API_TENNIS.value,
-            "feed": "score/live",
-            "latest_ingested_at": latest_ingested_at
-            or datetime.now(timezone.utc).replace(microsecond=0),
-            "latency_ms": latency_ms,
-            "healthy": True,
-        }
-    ]
+    latest_ingested_at = latest_ingested_at or datetime.now(timezone.utc).replace(microsecond=0)
+    if latency_rows is None:
+        latency_rows = [
+            {
+                "provider": Provider.API_TENNIS.value,
+                "feed": "score/live",
+                "latest_ingested_at": latest_ingested_at,
+                "latency_ms": latency_ms,
+                "healthy": True,
+            }
+        ]
+    if raw_payload_rows is None:
+        raw_payload_rows = [
+            {
+                "provider": Provider.API_TENNIS.value,
+                "count": 1,
+                "last_billable_call_at": latest_ingested_at,
+            }
+        ]
+
+    latency_rows = latency_rows or []
+    raw_payload_rows = raw_payload_rows or []
 
     class CursorStub:
         def __init__(self) -> None:
@@ -2822,7 +2835,7 @@ def _provider_health_with_latency(
             if "FROM provider_latency" in self.last_query:
                 return latency_rows
             if "FROM raw_provider_payloads" in self.last_query:
-                return [{"provider": Provider.API_TENNIS.value, "count": 1}]
+                return raw_payload_rows
             return []
 
         def fetchone(self):
@@ -2847,6 +2860,35 @@ def _provider_health_with_latency(
             yield ConnStub()
 
     return StoreStub().provider_health()
+
+
+def test_provider_health_marks_exhausted_quota_unhealthy_without_latency_rows() -> None:
+    now = datetime(2026, 6, 7, 20, 0, tzinfo=timezone.utc)
+    health = _provider_health_with_latency(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            the_odds_api_key="archive-key",
+        ),
+        latest_ingested_at=now,
+        latency_rows=[],
+        raw_payload_rows=[
+            {
+                "provider": Provider.API_TENNIS.value,
+                "count": 200000,
+                "last_billable_call_at": now,
+            }
+        ],
+    )
+
+    api_tennis = next(item for item in health if item.provider == Provider.API_TENNIS)
+
+    assert api_tennis.configured is True
+    assert api_tennis.healthy is False
+    assert api_tennis.quota_used == api_tennis.quota_limit == 200000
+    assert api_tennis.last_billable_call_at == now
+    assert "quota exhausted: 200000/200000 billable units used" in api_tennis.status
 
 
 def test_has_replay_activity_reads_provider_latency_replay_feeds() -> None:

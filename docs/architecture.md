@@ -103,7 +103,13 @@ decide whether the system behaves as budget or enterprise.
 19. Live execution status derives kill-switch state from persisted
     `execution_controls`; if that state cannot be read or written it fails
     closed instead of trusting process memory.
-20. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
+20. Provider quota exhaustion is treated as an operational provider-health
+    failure, not as a model concern. When persisted billable payload counts
+    reach `quota_limit`, the affected provider is marked unhealthy with a
+    `quota exhausted` status; live readiness keeps the dashboard available but
+    blocks actionable `Entrada` signals until quota is restored or the runtime
+    is switched to monitor/replay.
+21. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
     paper orders are persisted so restart recovery includes the operational
     audit trail.
 

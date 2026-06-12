@@ -576,6 +576,52 @@ def test_live_readiness_blocks_entries_when_critical_provider_health_is_unhealth
     assert "Critical budget provider health is unhealthy or stale." in readiness.blockers
 
 
+def test_live_readiness_blocks_entries_when_provider_quota_is_exhausted() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(
+            cursors=[_healthy_odds_cursor()],
+            provider_health=[
+                ProviderHealth(
+                    provider=Provider.API_TENNIS,
+                    configured=True,
+                    healthy=False,
+                    status="score primary configured; quota exhausted: 200000/200000 billable units used",
+                    cost_tier="$80/mo",
+                    coverage_scope="score",
+                    quota_used=200000,
+                    quota_limit=200000,
+                ),
+                ProviderHealth(
+                    provider=Provider.ODDS_API_IO,
+                    configured=True,
+                    healthy=True,
+                    status="odds websocket primary configured",
+                    cost_tier="£198/mo Starter+WS",
+                    coverage_scope="odds",
+                ),
+            ],
+        ),
+    )
+
+    readiness = service.live_readiness(_snapshot(service, generated_at))
+    provider_check = next(check for check in readiness.checks if check.name == "provider_health")
+
+    assert readiness.status == "degraded"
+    assert readiness.can_analyze_live is True
+    assert readiness.can_generate_entries is False
+    assert provider_check.status == "fail"
+    assert "quota exhausted" in (provider_check.detail or "")
+    assert "Critical budget provider health is unhealthy or stale." in readiness.blockers
+
+
 def test_live_readiness_blocks_entries_when_data_quality_reports_stale_ticks() -> None:
     generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
     service = OperationalStateService(

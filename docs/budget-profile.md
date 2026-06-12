@@ -40,6 +40,11 @@ current API onboarding state from persisted operational truth:
 5. Keep enterprise feeds disabled until paper trading proves that the budget
    feeds are the bottleneck.
 
+If a budget provider reaches its persisted `quota_limit`, provider health moves
+to `quota exhausted`, live readiness blocks `Entrada`, and the system should
+continue in monitor/replay mode rather than forcing signals or breaking the
+dashboard.
+
 Sportradar, Betradar UOF, and TXODDS stay documented but disabled until the
 model proves value and the budget moves to enterprise.
 

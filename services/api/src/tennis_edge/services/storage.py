@@ -849,13 +849,22 @@ class PersistentStore:
                     ).fetchall()
                     call_rows = cur.execute(
                         """
-                        SELECT provider, count(*)::int AS count
+                        SELECT
+                          provider,
+                          count(*)::int AS count,
+                          max(ingested_at) AS last_billable_call_at
                         FROM raw_provider_payloads
                         WHERE ingested_at >= now() - interval '1 day'
                         GROUP BY provider
                         """
                     ).fetchall()
-                    call_counts = {row["provider"]: row["count"] for row in call_rows}
+                    call_usage = {
+                        row["provider"]: {
+                            "count": row["count"],
+                            "last_billable_call_at": row.get("last_billable_call_at"),
+                        }
+                        for row in call_rows
+                    }
                     self._ensure_ingestion_runs_table(cur)
                     score_run = cur.execute(
                         """
@@ -889,6 +898,21 @@ class PersistentStore:
         updated: list[ProviderHealth] = []
         for item in base:
             rows = by_provider.get(item.provider.value, [])
+            provider_usage = call_usage.get(item.provider.value, {})
+            quota_used = provider_usage.get("count", item.quota_used)
+            quota_limit = item.quota_limit
+            quota_exhausted = (
+                quota_used is not None
+                and quota_limit is not None
+                and quota_limit > 0
+                and quota_used >= quota_limit
+            )
+            quota_status = (
+                f"quota exhausted: {quota_used}/{quota_limit} billable units used"
+                if quota_exhausted
+                else None
+            )
+            last_billable_call_at = provider_usage.get("last_billable_call_at")
             score_degraded = item.provider == Provider.API_TENNIS and bool(score_warnings)
             if rows:
                 feeds = ", ".join(str(row["feed"]) for row in rows[:3])
@@ -900,6 +924,8 @@ class PersistentStore:
                     status = f"{status}; stale persisted feed: {', '.join(stale_feeds[:3])}"
                 if score_degraded:
                     status = f"{status}; degraded: {'; '.join(score_warnings[:2])}"
+                if quota_status:
+                    status = f"{status}; {quota_status}"
                 latest_ingested_at = max(
                     row["latest_ingested_at"] for row in rows if row["latest_ingested_at"]
                 )
@@ -914,22 +940,40 @@ class PersistentStore:
                                 and all(bool(row["healthy"]) for row in rows)
                                 and not stale_feeds
                                 and not score_degraded
+                                and not quota_exhausted
                             ),
                             "latency_ms": max_latency_ms,
                             "last_message_at": latest_ingested_at,
                             "status": status,
-                            "quota_used": call_counts.get(item.provider.value, item.quota_used),
-                            "last_billable_call_at": latest_ingested_at,
+                            "quota_used": quota_used,
+                            "last_billable_call_at": last_billable_call_at
+                            or latest_ingested_at,
                         }
                     )
                 )
             else:
-                if score_degraded:
+                if score_degraded or quota_exhausted:
+                    status = item.status
+                    if score_degraded:
+                        status = f"{status}; degraded: {'; '.join(score_warnings[:2])}"
+                    if quota_status:
+                        status = f"{status}; {quota_status}"
                     updated.append(
                         item.model_copy(
                             update={
                                 "healthy": False,
-                                "status": f"{item.status}; degraded: {'; '.join(score_warnings[:2])}",
+                                "status": status,
+                                "quota_used": quota_used,
+                                "last_billable_call_at": last_billable_call_at,
+                            }
+                        )
+                    )
+                elif provider_usage:
+                    updated.append(
+                        item.model_copy(
+                            update={
+                                "quota_used": quota_used,
+                                "last_billable_call_at": last_billable_call_at,
                             }
                         )
                     )

@@ -954,6 +954,9 @@ def test_auto_settle_paper_orders_uses_finished_score_and_closing_odds() -> None
                 clv=0.01,
             )
 
+        def _training_example_ready(self, order_ref: str) -> bool:
+            return order_ref in {"ord_auto_win", "ord_auto_loss"}
+
     store = StoreStub()
 
     result = store.auto_settle_paper_orders(AutoPaperSettleRequest(max_orders=25))
@@ -961,6 +964,7 @@ def test_auto_settle_paper_orders_uses_finished_score_and_closing_odds() -> None
     assert result.evaluated_orders == 2
     assert result.settled_orders == 2
     assert result.skipped_orders == 0
+    assert result.training_examples_ready == 2
     assert [request.order_id for request in store.requests] == ["ord_auto_win", "ord_auto_loss"]
     assert [request.result_win for request in store.requests] == [True, False]
     assert [request.closing_odds for request in store.requests] == [1.8, 2.2]
@@ -1108,6 +1112,7 @@ def test_auto_settle_paper_orders_skips_unsettleable_candidates() -> None:
     assert result.evaluated_orders == 7
     assert result.settled_orders == 0
     assert result.skipped_orders == 7
+    assert result.training_examples_ready == 0
     assert any("not finished" in reason for reason in result.reasons)
     assert any("no inferable winner" in reason for reason in result.reasons)
     assert any("missing closing moneyline odds" in reason for reason in result.reasons)

@@ -634,6 +634,7 @@ class AutoPaperSettleResult(BaseModel):
     evaluated_orders: int
     settled_orders: int
     skipped_orders: int
+    training_examples_ready: int = 0
     settlements: list[PaperSettlement] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
 

@@ -567,6 +567,7 @@ export type AutoPaperSettleResult = {
   evaluated_orders: number;
   settled_orders: number;
   skipped_orders: number;
+  training_examples_ready: number;
   settlements: PaperSettlement[];
   reasons: string[];
 };

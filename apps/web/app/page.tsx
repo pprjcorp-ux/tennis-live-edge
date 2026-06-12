@@ -481,6 +481,7 @@ export default function Page() {
       setOrders(await getOrders());
       setBankroll(await getBankroll());
       setPaperPerformance(await getPaperPerformance());
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Paper settlement failed");
     } finally {
@@ -499,6 +500,7 @@ export default function Page() {
       setOrders(await getOrders());
       setBankroll(await getBankroll());
       setPaperPerformance(await getPaperPerformance());
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Auto paper settlement failed");
     } finally {
@@ -786,6 +788,7 @@ export default function Page() {
                   <span>evaluated {autoSettlement.evaluated_orders}</span>
                   <span>settled {autoSettlement.settled_orders}</span>
                   <span>skipped {autoSettlement.skipped_orders}</span>
+                  <span>{autoSettlement.training_examples_ready} training examples ready</span>
                   {autoSettlement.reasons.slice(0, 3).map((reason) => (
                     <span key={reason}>{reason}</span>
                   ))}

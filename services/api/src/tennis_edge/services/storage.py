@@ -1505,6 +1505,7 @@ class PersistentStore:
         rows = self._auto_settlement_candidates(request)
         settlements: list[PaperSettlement] = []
         reasons: list[str] = []
+        training_examples_ready = 0
         for row in rows:
             order_ref = str(row.get("external_order_ref") or "")
             settle_request, reason = self._auto_settlement_request(row)
@@ -1516,10 +1517,13 @@ class PersistentStore:
                 reasons.append(f"{order_ref}: settlement write failed or order is no longer open.")
                 continue
             settlements.append(settlement)
+            if self._training_example_ready(order_ref):
+                training_examples_ready += 1
         return AutoPaperSettleResult(
             evaluated_orders=len(rows),
             settled_orders=len(settlements),
             skipped_orders=len(rows) - len(settlements),
+            training_examples_ready=training_examples_ready,
             settlements=settlements,
             reasons=reasons,
         )
@@ -1645,6 +1649,41 @@ class PersistentStore:
             ),
             "ready",
         )
+
+    def _training_example_ready(self, order_ref: str) -> bool:
+        if not order_ref:
+            return False
+        with self._connect() as conn:
+            if conn is None:
+                return False
+            try:
+                with conn.cursor() as cur:
+                    row = cur.execute(
+                        """
+                        SELECT 1
+                        FROM training_examples te
+                        JOIN paper_orders po
+                          ON te.id = ('train_' || po.external_order_ref)
+                        JOIN LATERAL (
+                          SELECT settled_at
+                          FROM paper_settlements
+                          WHERE paper_order_id = po.id
+                          ORDER BY settled_at DESC, id DESC
+                          LIMIT 1
+                        ) latest_settlement ON TRUE
+                        WHERE po.external_order_ref = %s
+                          AND te.result_win IS NOT NULL
+                          AND te.pnl IS NOT NULL
+                          AND te.stake_amount > 0
+                          AND te.decision_ts < latest_settlement.settled_at
+                        LIMIT 1
+                        """,
+                        (order_ref,),
+                    ).fetchone()
+            except Exception as exc:  # pragma: no cover - exercised with DB drift tests.
+                self._record_read_error("training_example_ready", exc)
+                return False
+        return row is not None
 
     def save_settlement(self, settlement: PaperSettlement) -> bool:
         if not self.enabled:

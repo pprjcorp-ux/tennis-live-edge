@@ -209,6 +209,15 @@ export default function Page() {
   const [providerMode, setProviderMode] =
     useState<OperationalStateSnapshot["provider_mode"]>("sample");
   const [providerModeReason, setProviderModeReason] = useState("Awaiting operational state.");
+  const [sourceSummary, setSourceSummary] =
+    useState<OperationalStateSnapshot["source_summary"]>({
+      total_matches: 0,
+      persisted_matches: 0,
+      volatile_matches: 0,
+      source_counts: {},
+      provider_lineage: [],
+      note: "Awaiting operational state."
+    });
   const [modelRegistry, setModelRegistry] = useState<ModelRegistryEntry[]>([]);
   const [championModel, setChampionModel] = useState<ModelRegistryEntry | null>(null);
   const [calibration, setCalibration] = useState<CalibrationReport | null>(null);
@@ -275,6 +284,7 @@ export default function Page() {
       setReplayLab(nextOperational.replay_lab);
       setProviderMode(nextOperational.provider_mode);
       setProviderModeReason(nextOperational.provider_mode_reason);
+      setSourceSummary(nextOperational.source_summary);
       setExecutionStatus(nextOperational.execution_status);
       setReadiness(nextDashboard.readiness);
       setHealth(nextOperational.provider_health);
@@ -587,6 +597,10 @@ export default function Page() {
   const oddsCursor = providerCursors.find((cursor) => cursor.provider === "odds_api_io");
   const selectedFreshness = selected?.freshness;
   const selectedLineage = selectedFreshness?.provider_lineage.join(", ") || "-";
+  const sourceCounts = Object.entries(sourceSummary.source_counts)
+    .map(([source, count]) => `${source} ${count}`)
+    .join(" · ");
+  const sourceLineage = sourceSummary.provider_lineage.join(", ") || "-";
 
   return (
     <main className="shell">
@@ -664,6 +678,25 @@ export default function Page() {
             analyze {readiness?.can_analyze_live ? "yes" : "no"} · entries{" "}
             {readiness?.can_generate_entries ? "ready" : "blocked"} · real{" "}
             {readiness?.can_submit_real_orders ? "enabled" : "hard-blocked"}
+          </p>
+        </div>
+        <div className="opsCell">
+          <div>
+            <span>Source truth</span>
+            <strong
+              className={
+                sourceSummary.total_matches === 0
+                  ? "status statusBlocked"
+                  : sourceSummary.volatile_matches > 0
+                    ? "status statusMonitor"
+                    : "status statusEntry"
+              }
+            >
+              {sourceSummary.persisted_matches}/{sourceSummary.total_matches} persisted
+            </strong>
+          </div>
+          <p>
+            {sourceCounts || "empty"} · lineage {sourceLineage}
           </p>
         </div>
         <div className="opsCell">

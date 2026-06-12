@@ -1021,10 +1021,20 @@ class ReplayLabSnapshot(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class OperationalSourceSummary(BaseModel):
+    total_matches: int = 0
+    persisted_matches: int = 0
+    volatile_matches: int = 0
+    source_counts: dict[str, int] = Field(default_factory=dict)
+    provider_lineage: list[Provider] = Field(default_factory=list)
+    note: str = "No matches loaded yet."
+
+
 class OperationalStateSnapshot(BaseModel):
     provider_mode: ProviderRuntimeMode
     provider_mode_reason: str
     provider_mode_matrix: list[ProviderModeStep]
+    source_summary: OperationalSourceSummary = Field(default_factory=OperationalSourceSummary)
     provider_health: list[ProviderHealth]
     cost_profile: CostProfile
     daily_cost_report: DailyCostReport

@@ -44,7 +44,8 @@ class LiveDashboardReadModel:
                 target_date,
                 analyses,
                 paper,
-            )
+            ),
+            analyses=analyses,
         )
 
     @staticmethod

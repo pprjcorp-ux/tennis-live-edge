@@ -18,6 +18,7 @@ from tennis_edge.domain import (
     MatchAnalysis,
     ModelLabReadinessSnapshot,
     OperationalStateSnapshot,
+    OperationalSourceSummary,
     PaperPerformance,
     Provider,
     ProviderCursor,
@@ -595,12 +596,51 @@ class OperationalStateService:
             warnings=warnings,
         )
 
-    def snapshot(self, *, cost_report: DailyCostReport) -> OperationalStateSnapshot:
+    def source_summary(self, analyses: list[MatchAnalysis]) -> OperationalSourceSummary:
+        source_counts: dict[str, int] = {}
+        provider_values: set[Provider] = set()
+        persisted_matches = 0
+        for analysis in analyses:
+            freshness = analysis.freshness
+            source = freshness.source if freshness else "sample"
+            source_counts[source] = source_counts.get(source, 0) + 1
+            if freshness and freshness.persisted:
+                persisted_matches += 1
+            if freshness:
+                provider_values.update(freshness.provider_lineage)
+
+        total_matches = len(analyses)
+        volatile_matches = max(0, total_matches - persisted_matches)
+        if not total_matches:
+            note = "No matches loaded from live, replay, persisted fallback, or sample sources."
+        elif volatile_matches:
+            note = (
+                f"{persisted_matches}/{total_matches} matches are backed by persisted state; "
+                f"{volatile_matches} are runtime-only."
+            )
+        else:
+            note = f"All {total_matches} loaded matches are backed by persisted state."
+        return OperationalSourceSummary(
+            total_matches=total_matches,
+            persisted_matches=persisted_matches,
+            volatile_matches=volatile_matches,
+            source_counts=source_counts,
+            provider_lineage=sorted(provider_values, key=lambda provider: provider.value),
+            note=note,
+        )
+
+    def snapshot(
+        self,
+        *,
+        cost_report: DailyCostReport,
+        analyses: list[MatchAnalysis] | None = None,
+    ) -> OperationalStateSnapshot:
         provider_mode, provider_mode_reason = self.provider_mode()
         return OperationalStateSnapshot(
             provider_mode=provider_mode,
             provider_mode_reason=provider_mode_reason,
             provider_mode_matrix=self.provider_mode_matrix(active_mode=provider_mode),
+            source_summary=self.source_summary(analyses or []),
             provider_health=self.provider_health(),
             cost_profile=self.cost_profile(),
             daily_cost_report=cost_report,

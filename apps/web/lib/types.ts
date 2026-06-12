@@ -235,6 +235,15 @@ export type ProviderModeStep = {
   next_action: string;
 };
 
+export type OperationalSourceSummary = {
+  total_matches: number;
+  persisted_matches: number;
+  volatile_matches: number;
+  source_counts: Record<string, number>;
+  provider_lineage: Provider[];
+  note: string;
+};
+
 export type ApiOnboardingStep = {
   order: number;
   provider: Provider;
@@ -315,6 +324,7 @@ export type OperationalStateSnapshot = {
   provider_mode: "sample" | "replay" | "live_without_keys" | "live_with_keys";
   provider_mode_reason: string;
   provider_mode_matrix: ProviderModeStep[];
+  source_summary: OperationalSourceSummary;
   provider_health: ProviderHealth[];
   cost_profile: CostProfile;
   daily_cost_report: DailyCostReport;

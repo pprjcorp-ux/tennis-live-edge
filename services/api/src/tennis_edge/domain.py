@@ -928,6 +928,28 @@ class OddsMessageIngestionResult(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class OddsStreamIngestionRequest(BaseModel):
+    stream: str = "tennis:moneyline"
+    max_messages: int = Field(default=25, ge=1, le=500)
+    timeout_seconds: float = Field(default=30, gt=0, le=300)
+    force: bool = False
+
+
+class OddsStreamIngestionResult(BaseModel):
+    provider: Provider = Provider.ODDS_API_IO
+    stream: str
+    connected: bool
+    resync_required: bool
+    start_last_seq: int | None = None
+    messages: int
+    quotes: int
+    raw_payloads_saved: int
+    normalized_odds_saved: int
+    timed_out: bool
+    reason: str | None = None
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ProviderCursorResyncRequest(BaseModel):
     provider: Provider = Provider.ODDS_API_IO
     stream: str = "tennis:moneyline"

@@ -55,6 +55,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     replay_engine = (source / "services/replay_engine.py").read_text()
     api_tennis_cli = (source / "ingest_api_tennis_scores.py").read_text()
     archive_cli = (source / "ingest_archive_odds.py").read_text()
+    odds_stream_cli = (source / "ingest_odds_stream.py").read_text()
     ingestion_pipeline = (source / "services/ingestion.py").read_text()
     replay_fixtures = (source / "services/budget_replay_fixtures.py").read_text()
     repository = (source / "services/repository.py").read_text()
@@ -215,6 +216,19 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_api_tennis_score_sync_persists_score_payloads_without_archive_odds",
             "test_api_tennis_score_sync_skips_without_key",
             "test_v1_api_tennis_score_sync_requires_token_and_skips_without_key",
+        ],
+    )
+    _require_text(
+        errors,
+        label="odds api io stream smoke",
+        text=domain + main_api + odds_stream_cli + package_json + v1_tests,
+        required=[
+            "OddsStreamIngestionRequest",
+            "OddsStreamIngestionResult",
+            "/api/v1/ingestion/odds-api-io/stream-smoke",
+            "api:ingest:odds-stream",
+            "ODDS_API_IO_KEY is missing or data mode is sample; websocket not opened.",
+            "test_v1_odds_api_io_stream_smoke_requires_token_and_skips_without_key",
         ],
     )
     _require_text(

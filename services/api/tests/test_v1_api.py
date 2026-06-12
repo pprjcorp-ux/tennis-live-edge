@@ -131,6 +131,33 @@ def test_v1_odds_api_io_message_ingestion_requires_token_and_tracks_cursor() -> 
     assert response.json()["resync_required"] is False
 
 
+def test_v1_odds_api_io_stream_smoke_requires_token_and_skips_without_key() -> None:
+    repo = AnalysisRepository(
+        Settings(data_mode="live", odds_api_io_key=None, persistence_enabled=False)
+    )
+    app.dependency_overrides[repository] = lambda: repo
+    try:
+        unauthorized = client.post("/api/v1/ingestion/odds-api-io/stream-smoke")
+        response = client.post(
+            "/api/v1/ingestion/odds-api-io/stream-smoke",
+            headers=ADMIN_HEADERS,
+            json={"max_messages": 1, "timeout_seconds": 0.01},
+        )
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert unauthorized.status_code in {401, 403}
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "odds_api_io"
+    assert body["connected"] is False
+    assert body["messages"] == 0
+    assert body["quotes"] == 0
+    assert body["reason"] == (
+        "ODDS_API_IO_KEY is missing or data mode is sample; websocket not opened."
+    )
+
+
 def test_v1_provider_cursor_resync_requires_token_and_persists_status() -> None:
     unauthorized = client.post(
         "/api/v1/ingestion/provider-cursors/resync",

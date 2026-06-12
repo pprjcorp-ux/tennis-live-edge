@@ -151,7 +151,11 @@ Pedro
    `POST /api/v1/ingestion/api-tennis/score-sync` and verify it records an
    `api_tennis_score_sync` summary with fixture/score payload counts.
 4. Add Odds-API.io websocket third, only after replay/resync tests prove
-   `seq`/`lastSeq`, gaps, stale odds and incomplete moneyline gates.
+   `seq`/`lastSeq`, gaps, stale odds and incomplete moneyline gates. Start with
+   protected `POST /api/v1/ingestion/odds-api-io/stream-smoke` using
+   `max_messages=1` and a short timeout; if the persisted cursor says
+   `resync_required`, reconcile by REST/snapshot and then use the cursor resync
+   endpoint.
 5. Keep Betfair in delayed/paper validation until model performance is proven.
 6. Defer Sportradar/Betradar/TXODDS until paper trading shows positive CLV/ROI
    or the current feeds become the bottleneck.

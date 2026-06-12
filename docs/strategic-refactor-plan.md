@@ -223,6 +223,9 @@ entries or depending on score/live providers.
 The second hook is `POST /api/v1/ingestion/api-tennis/score-sync`, a
 score-only API-Tennis smoke that persists fixture/livescore payload evidence and
 canonical state without calling archive odds.
+The third hook is `POST /api/v1/ingestion/odds-api-io/stream-smoke`, a bounded
+Odds-API.io websocket smoke that reuses the persistent message path and honors
+cursor `resync_required` before consuming live odds.
 
 Tasks:
 

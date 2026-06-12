@@ -4,6 +4,7 @@ import argparse
 import asyncio
 from datetime import datetime, timezone
 import json
+from typing import Literal
 
 from tennis_edge.config import get_settings
 from tennis_edge.domain import OddsMessageIngestionRequest, Provider
@@ -36,6 +37,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Connect even if the persisted cursor says resync_required.",
     )
+    parser.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Pretty-print the stream result JSON.",
+    )
     return parser.parse_args()
 
 
@@ -46,6 +52,7 @@ async def run_odds_stream_ingestion(
     max_messages: int = 25,
     timeout_seconds: float = 30,
     force: bool = False,
+    source: Literal["api", "cli", "openclaw", "cron", "system"] = "cli",
 ) -> dict[str, object]:
     settings = repo.settings
     summary = {
@@ -65,7 +72,7 @@ async def run_odds_stream_ingestion(
 
     if settings.data_mode == "sample" or not settings.odds_api_io_key:
         summary["reason"] = "ODDS_API_IO_KEY is missing or data mode is sample; websocket not opened."
-        repo.record_ingestion_run("odds_stream", summary, source="cli")
+        repo.record_ingestion_run("odds_stream", summary, source=source)
         return summary
 
     cursor = next(
@@ -81,7 +88,7 @@ async def run_odds_stream_ingestion(
         summary["start_last_seq"] = cursor.last_seq
         if cursor.resync_required and not force:
             summary["reason"] = "Persisted cursor requires REST resync before websocket consumption."
-            repo.record_ingestion_run("odds_stream", summary, source="cli")
+            repo.record_ingestion_run("odds_stream", summary, source=source)
             return summary
 
     try:
@@ -104,7 +111,7 @@ async def run_odds_stream_ingestion(
     except TimeoutError:
         summary["timed_out"] = True
         summary["reason"] = "Timed out while waiting for websocket messages."
-    repo.record_ingestion_run("odds_stream", summary, source="cli")
+    repo.record_ingestion_run("odds_stream", summary, source=source)
     return summary
 
 
@@ -119,7 +126,7 @@ async def _run() -> None:
         force=args.force,
     )
 
-    print(json.dumps(summary))
+    print(json.dumps(summary, indent=2 if args.pretty else None))
 
 
 def main() -> None:

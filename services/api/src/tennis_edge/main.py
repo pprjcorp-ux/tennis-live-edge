@@ -39,6 +39,8 @@ from tennis_edge.domain import (
     ModelPromotionDecision,
     OddsMessageIngestionRequest,
     OddsMessageIngestionResult,
+    OddsStreamIngestionRequest,
+    OddsStreamIngestionResult,
     OrderRequest,
     OperationalStateSnapshot,
     PaperPerformance,
@@ -55,6 +57,7 @@ from tennis_edge.domain import (
     ScoreSyncResult,
     Signal,
 )
+from tennis_edge.ingest_odds_stream import run_odds_stream_ingestion
 from tennis_edge.operational_daily import run_daily_operational_loop
 from tennis_edge.security import require_admin_token
 from tennis_edge.services.repository import AnalysisRepository
@@ -223,6 +226,24 @@ async def v1_ingest_odds_api_io_message(
     repo: AnalysisRepository = Depends(repository),
 ) -> OddsMessageIngestionResult:
     return await repo.ingest_odds_api_message(request)
+
+
+@app.post("/api/v1/ingestion/odds-api-io/stream-smoke", response_model=OddsStreamIngestionResult)
+async def v1_ingest_odds_api_io_stream_smoke(
+    request: OddsStreamIngestionRequest | None = Body(default=None),
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> OddsStreamIngestionResult:
+    request = request or OddsStreamIngestionRequest()
+    result = await run_odds_stream_ingestion(
+        repo,
+        stream=request.stream,
+        max_messages=request.max_messages,
+        timeout_seconds=request.timeout_seconds,
+        force=request.force,
+        source="api",
+    )
+    return OddsStreamIngestionResult(**result)
 
 
 @app.post("/api/v1/ingestion/provider-cursors/resync", response_model=ProviderCursorResyncResult)

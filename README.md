@@ -122,7 +122,10 @@ this same sequence from `/api/v1/dashboard/live-state`:
    persists fixture/score payloads and canonical state without calling archive
    odds. Local CLI equivalent: `npm run api:ingest:api-tennis -- --pretty`.
 4. Odds-API.io websocket live odds, only after `seq`/`lastSeq` replay and resync
-   gates are healthy.
+   gates are healthy. Use protected
+   `POST /api/v1/ingestion/odds-api-io/stream-smoke` with a small timeout before
+   enabling the combined live loop. Local CLI equivalent:
+   `npm run api:ingest:odds-stream -- --max-messages 1 --timeout-seconds 5 --pretty`.
 5. Sportradar/Betradar/TXODDS enterprise feeds, deferred until budget paper data
    proves a real coverage or latency bottleneck.
 

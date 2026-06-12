@@ -31,6 +31,7 @@ from tennis_edge.sample_data import sample_matches, sample_raw_payloads
 from tennis_edge.services.execution_engine import KILL_SWITCH, ORDERS
 from tennis_edge.services.live_dashboard import LiveDashboardReadModel
 from tennis_edge.services.operational_state import OperationalStateService
+from tennis_edge.services.provider_adapters import BUDGET_PROVIDER_CONTRACT_SPECS
 from tennis_edge.services.repository import AnalysisRepository
 
 
@@ -1269,6 +1270,12 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
         "gap",
         "resync_required",
     ]
+    required_contracts = {
+        contract
+        for spec in BUDGET_PROVIDER_CONTRACT_SPECS
+        for contract in (*spec.input_contracts, *spec.output_contracts)
+        if contract not in {"seq", "lastSeq"}
+    }
     for scenario in result.scenarios:
         assert scenario.passed is True
         assert set(scenario.providers_seen) == {
@@ -1276,12 +1283,7 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
             Provider.ODDS_API_IO,
             Provider.THE_ODDS_API,
         }
-        assert set(scenario.output_contracts) >= {
-            "RawProviderPayload",
-            "ScoreTick",
-            "OddsTick",
-            "ProviderCursor",
-        }
+        assert set(scenario.output_contracts) >= required_contracts
         assert scenario.events_replayed >= 3
         assert scenario.score_ticks >= 1
         assert scenario.odds_ticks >= 1
@@ -1289,10 +1291,13 @@ def test_replay_contract_runner_validates_budget_provider_scenarios() -> None:
     healthy, gap, resync_required = result.scenarios
     assert healthy.final_status == "completed"
     assert healthy.resync_required is False
+    assert {"seq", "lastSeq"}.issubset(set(healthy.output_contracts))
     assert gap.final_status == "degraded"
     assert gap.resync_required is True
+    assert {"seq", "lastSeq"}.issubset(set(gap.output_contracts))
     assert resync_required.final_status == "degraded"
     assert resync_required.resync_required is True
+    assert "lastSeq" in resync_required.output_contracts
     assert all(
         signal.status != SignalStatus.ENTRY and signal.stake_fraction == 0
         for analysis in store.analyses_saved

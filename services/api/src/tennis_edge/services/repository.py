@@ -98,11 +98,15 @@ from tennis_edge.services.execution_engine import (
 from tennis_edge.services.normalizer import normalize_name
 from tennis_edge.services.live_dashboard import LiveDashboardReadModel
 from tennis_edge.services.operational_state import OperationalStateService
+from tennis_edge.services.provider_adapters import BUDGET_PROVIDER_CONTRACT_SPECS
 from tennis_edge.services.provider_cursor import mark_resynced
 from tennis_edge.services.ingestion import LiveIngestionPipeline
 from tennis_edge.services.replay_engine import ReplayEngine, ReplayState
 from tennis_edge.services.signal_gates import SignalGateService
 from tennis_edge.services.storage import PersistentStore
+
+
+_REPLAY_PROTOCOL_FIELDS = {"seq", "lastSeq"}
 
 
 class AnalysisRepository:
@@ -990,7 +994,7 @@ class AnalysisRepository:
                 {payload.provider for payload in payloads},
                 key=lambda provider: provider.value,
             )
-            output_contracts = self._replay_output_contracts(run)
+            output_contracts = self._replay_output_contracts(run, payloads)
             scenario_passed = self._replay_contract_scenario_passed(
                 scenario,
                 run,
@@ -1034,18 +1038,32 @@ class AnalysisRepository:
         )
         return result
 
-    @staticmethod
-    def _replay_output_contracts(run: ReplayRunResult) -> list[str]:
-        contracts: list[str] = []
+    def _replay_output_contracts(
+        self,
+        run: ReplayRunResult,
+        payloads: list[RawProviderPayload],
+    ) -> list[str]:
+        contracts: set[str] = set()
         if run.events_replayed:
-            contracts.append("RawProviderPayload")
+            contracts.add("RawProviderPayload")
+        if self._replay_has_canonical_match_payload(payloads):
+            contracts.add("CanonicalMatch")
         if run.score_ticks:
-            contracts.append("ScoreTick")
+            contracts.add("ScoreTick")
         if run.odds_ticks:
-            contracts.append("OddsTick")
+            contracts.add("OddsTick")
         if run.provider_cursors:
-            contracts.append("ProviderCursor")
-        return contracts
+            contracts.add("ProviderCursor")
+        if payloads:
+            contracts.add("ProviderLatency")
+        for payload in payloads:
+            if payload.provider != Provider.ODDS_API_IO:
+                continue
+            if "seq" in payload.payload:
+                contracts.add("seq")
+            if "lastSeq" in payload.payload:
+                contracts.add("lastSeq")
+        return sorted(contracts)
 
     @staticmethod
     def _replay_contract_scenario_passed(
@@ -1054,12 +1072,13 @@ class AnalysisRepository:
         providers_seen: list[Provider],
         output_contracts: list[str],
     ) -> bool:
-        required_providers = {
-            Provider.API_TENNIS,
-            Provider.ODDS_API_IO,
-            Provider.THE_ODDS_API,
+        required_providers = {spec.provider for spec in BUDGET_PROVIDER_CONTRACT_SPECS}
+        required_contracts = {
+            contract
+            for spec in BUDGET_PROVIDER_CONTRACT_SPECS
+            for contract in (*spec.input_contracts, *spec.output_contracts)
+            if contract not in _REPLAY_PROTOCOL_FIELDS
         }
-        required_contracts = {"RawProviderPayload", "ScoreTick", "OddsTick", "ProviderCursor"}
         provider_contract_ok = required_providers.issubset(set(providers_seen))
         output_contract_ok = required_contracts.issubset(set(output_contracts))
         if not provider_contract_ok or not output_contract_ok:
@@ -1069,6 +1088,18 @@ class AnalysisRepository:
         if scenario in {"gap", "resync_required"}:
             return run.final_status == "degraded" and run.resync_required
         return False
+
+    @staticmethod
+    def _replay_has_canonical_match_payload(payloads: list[RawProviderPayload]) -> bool:
+        return any(
+            payload.provider == Provider.API_TENNIS
+            and payload.payload_type in {"fixture", "score"}
+            and bool(
+                payload.payload.get("event_key")
+                or payload.payload.get("canonical_match_id")
+            )
+            for payload in payloads
+        )
 
     def _persist_replay_effects(
         self,

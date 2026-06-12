@@ -324,9 +324,14 @@ def test_v1_replay_contracts_run_all_budget_scenarios() -> None:
         for scenario in body["scenarios"]
     )
     assert all(
-        {"RawProviderPayload", "ScoreTick", "OddsTick", "ProviderCursor"}.issubset(
-            set(scenario["output_contracts"])
-        )
+        {
+            "RawProviderPayload",
+            "CanonicalMatch",
+            "ScoreTick",
+            "OddsTick",
+            "ProviderCursor",
+            "ProviderLatency",
+        }.issubset(set(scenario["output_contracts"]))
         for scenario in body["scenarios"]
     )
     assert body["scenarios"][0]["final_status"] == "completed"

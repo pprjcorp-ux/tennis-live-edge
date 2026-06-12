@@ -67,8 +67,10 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     persistence_tests = (tests / "test_live_budget_persistence.py").read_text()
     repository_tests = (tests / "test_repository.py").read_text()
     risk_tests = (tests / "test_enterprise_risk.py").read_text()
+    signal_tests = (tests / "test_signal_engine.py").read_text()
     model_tests = (tests / "test_model_lab.py").read_text()
     operational_tests = (tests / "test_operational_state.py").read_text()
+    dashboard_read_model_tests = (tests / "test_live_dashboard_read_model.py").read_text()
     v1_tests = (tests / "test_v1_api.py").read_text()
     web_types = (root / "apps/web/lib/types.ts").read_text()
     data_health_panel = (
@@ -151,8 +153,13 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "class ApiOnboardingSnapshot",
             "ApiOnboardingStep",
             "class ModelLabReadinessSnapshot",
+            "total_training_examples",
+            "production_training_examples",
+            "rehearsal_training_examples",
             "model_lab_readiness",
             "class ReplayLabSnapshot",
+            "class OperationalSourceSummary",
+            "source_summary",
             "ReplayContractProvider",
             "replay_lab_readiness",
             "source=\"budget_replay_fixtures\"",
@@ -185,6 +192,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "training_examples",
             "walk_forward_from_training_examples",
             "calibration_from_training_examples",
+            "training_example_lineage_counts",
+            "paper_rehearsal%",
             "matched_stake <= 0",
             "matched_stake > 0",
             "THEN matched_stake ELSE 0 END",
@@ -203,8 +212,10 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             + persistence_tests
             + repository_tests
             + risk_tests
+            + signal_tests
             + model_tests
             + operational_tests
+            + dashboard_read_model_tests
             + v1_tests
         ),
         required=[
@@ -228,6 +239,7 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_api_onboarding_guides_budget_provider_sequence_after_archive_key",
             "test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync",
             "test_model_lab_readiness_uses_persisted_training_examples_dataset",
+            "test_model_lab_readiness_excludes_rehearsal_examples_from_production",
             "test_model_lab_readiness_blocks_without_persistent_truth",
             "test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys",
             "test_replay_lab_readiness_collects_until_replay_run_is_persisted",
@@ -237,6 +249,10 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_v1_replay_accepts_explicit_fixture_seed",
             "test_provider_mode_matrix_explains_replay_monitor_mode",
             "test_provider_mode_matrix_blocks_live_with_keys_when_cursor_requires_resync",
+            "test_operational_source_summary_counts_persisted_and_runtime_sources",
+            "test_signal_engine_blocks_stale_odds_even_with_large_edge",
+            "test_signal_engine_blocks_invalid_live_score_state",
+            "test_signal_engine_emits_no_signal_without_complete_moneyline",
         ],
     )
     _require_text(

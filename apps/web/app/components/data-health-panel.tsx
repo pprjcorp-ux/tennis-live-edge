@@ -487,6 +487,18 @@ export function DataHealthPanel({
               </div>
               <span className={onboardingStatusClass(step.status)}>{step.status}</span>
               <span>{step.configured ? "key/config ready" : "missing"}</span>
+              <span>
+                {step.last_smoke_status
+                  ? `last smoke ${step.last_smoke_status}${
+                      step.last_smoke_at
+                        ? ` ${new Date(step.last_smoke_at).toLocaleTimeString("pt-BR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}`
+                        : ""
+                    }`
+                  : "no smoke run"}
+              </span>
               <span>{step.next_action}</span>
               {step.required_before_enable.length ? (
                 <span>needs {step.required_before_enable.join(", ")}</span>

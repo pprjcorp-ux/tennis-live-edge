@@ -233,6 +233,19 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     )
     _require_text(
         errors,
+        label="provider smoke onboarding evidence",
+        text=domain + operational_state + web_types + data_health_panel + operational_tests,
+        required=[
+            "last_smoke_status",
+            "last_smoke_at",
+            "_latest_ingestion_run",
+            "test_api_onboarding_exposes_latest_provider_smoke_evidence",
+            "step.last_smoke_status",
+            "last smoke",
+        ],
+    )
+    _require_text(
+        errors,
         label="provider runtime modes",
         text=domain + web_types + operational_state + operational_session,
         required=[

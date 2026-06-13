@@ -126,6 +126,8 @@ test("dashboard uses safe preflight loading and keeps paper-order visibility", (
   assert.match(dataHealthSource, /settlement_decisions/);
   assert.match(dataHealthSource, /match_freshness/);
   assert.match(dataHealthSource, /apiOnboarding\.steps/);
+  assert.match(dataHealthSource, /last smoke/);
+  assert.match(dataHealthSource, /step\.last_smoke_status/);
   assert.match(dataHealthSource, /Ultimos ciclos persistidos/);
   assert.match(dataHealthSource, /run\.run_type === "replay_run"/);
   assert.match(dataHealthSource, /events_replayed/);

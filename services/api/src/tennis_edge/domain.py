@@ -1061,6 +1061,8 @@ class ApiOnboardingStep(BaseModel):
     status: ApiOnboardingStatus
     configured: bool
     current: bool = False
+    last_smoke_status: str | None = None
+    last_smoke_at: datetime | None = None
     required_before_enable: list[str] = Field(default_factory=list)
     next_action: str
     notes: list[str] = Field(default_factory=list)

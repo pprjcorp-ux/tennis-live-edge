@@ -226,6 +226,9 @@ canonical state without calling archive odds.
 The third hook is `POST /api/v1/ingestion/odds-api-io/stream-smoke`, a bounded
 Odds-API.io websocket smoke that reuses the persistent message path and honors
 cursor `resync_required` before consuming live odds.
+API onboarding also surfaces each provider's latest persisted smoke status, so
+operators can distinguish "key configured" from "provider actually produced
+auditable ingestion evidence."
 
 Tasks:
 

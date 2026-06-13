@@ -260,6 +260,8 @@ export type ApiOnboardingStep = {
   status: ApiOnboardingStatus;
   configured: boolean;
   current: boolean;
+  last_smoke_status: string | null;
+  last_smoke_at: string | null;
   required_before_enable: string[];
   next_action: string;
   notes: string[];

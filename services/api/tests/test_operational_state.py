@@ -197,6 +197,26 @@ def _replay_contract_run(
     )
 
 
+def _provider_smoke_run(
+    run_type: str,
+    run_kind: str | None,
+    *,
+    status: str = "completed",
+    generated_at: datetime | None = None,
+) -> IngestionRunRecord:
+    completed_at = generated_at or datetime(2026, 6, 7, 12, tzinfo=timezone.utc)
+    summary = {"run_kind": run_kind} if run_kind else {}
+    return IngestionRunRecord(
+        id=f"ingest_{run_type}_{run_kind or 'smoke'}",
+        run_type=run_type,  # type: ignore[arg-type]
+        source="api",
+        status=status,  # type: ignore[arg-type]
+        summary=summary,
+        started_at=completed_at,
+        completed_at=completed_at,
+    )
+
+
 def _snapshot(service: OperationalStateService, generated_at: datetime):
     return service.snapshot(
         cost_report=service.daily_cost_report(
@@ -506,6 +526,54 @@ def test_api_onboarding_guides_budget_provider_sequence_after_archive_key() -> N
     assert steps[Provider.ODDS_API_IO].status == "blocked"
     assert "API-Tennis score/livescore configured" in steps[Provider.ODDS_API_IO].required_before_enable
     assert steps[Provider.SPORTRADAR].status == "deferred"
+
+
+def test_api_onboarding_exposes_latest_provider_smoke_evidence() -> None:
+    archive_at = datetime(2026, 6, 7, 12, tzinfo=timezone.utc)
+    score_at = datetime(2026, 6, 7, 13, tzinfo=timezone.utc)
+    odds_at = datetime(2026, 6, 7, 14, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            the_odds_api_key="archive-key",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(
+            ingestion_runs=[
+                _replay_contract_run(),
+                _provider_smoke_run(
+                    "archive_odds_sync",
+                    "archive_odds_sync",
+                    generated_at=archive_at,
+                ),
+                _provider_smoke_run(
+                    "score_snapshot",
+                    "api_tennis_score_sync",
+                    status="degraded",
+                    generated_at=score_at,
+                ),
+                _provider_smoke_run(
+                    "odds_stream",
+                    None,
+                    status="skipped",
+                    generated_at=odds_at,
+                ),
+            ]
+        ),
+    )
+
+    steps = {step.provider: step for step in service.api_onboarding().steps}
+
+    assert steps[Provider.THE_ODDS_API].last_smoke_status == "completed"
+    assert steps[Provider.THE_ODDS_API].last_smoke_at == archive_at
+    assert steps[Provider.API_TENNIS].last_smoke_status == "degraded"
+    assert steps[Provider.API_TENNIS].last_smoke_at == score_at
+    assert steps[Provider.ODDS_API_IO].last_smoke_status == "skipped"
+    assert steps[Provider.ODDS_API_IO].last_smoke_at == odds_at
+    assert steps[Provider.SPORTRADAR].last_smoke_status is None
 
 
 def test_api_onboarding_blocks_paid_keys_until_replay_contract_passes() -> None:

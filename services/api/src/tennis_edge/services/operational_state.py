@@ -59,6 +59,21 @@ def _summary_int(row: dict, key: str) -> int:
     return value if isinstance(value, int) else 0
 
 
+def _latest_ingestion_run(
+    runs: list[IngestionRunRecord],
+    *,
+    run_type: str,
+    run_kind: str | None = None,
+) -> IngestionRunRecord | None:
+    matching = [
+        run
+        for run in runs
+        if run.run_type == run_type
+        and (run_kind is None or run.summary.get("run_kind") == run_kind)
+    ]
+    return max(matching, key=lambda run: run.completed_at, default=None)
+
+
 def _replay_contract_persistence(
     summary: dict,
 ) -> list[ReplayContractScenarioEvidence]:
@@ -533,6 +548,21 @@ class OperationalStateService:
         core_ready, persistence_error = self._persistence_ready()
         replay_lab = self.replay_lab_readiness()
         replay_contract_ready = replay_lab.last_contract_passed
+        ingestion_runs = self.ingestion_runs()
+        archive_smoke = _latest_ingestion_run(
+            ingestion_runs,
+            run_type="archive_odds_sync",
+            run_kind="archive_odds_sync",
+        )
+        score_smoke = _latest_ingestion_run(
+            ingestion_runs,
+            run_type="score_snapshot",
+            run_kind="api_tennis_score_sync",
+        )
+        odds_stream_smoke = _latest_ingestion_run(
+            ingestion_runs,
+            run_type="odds_stream",
+        )
         warnings: list[str] = []
         if not core_ready:
             warnings.append(
@@ -588,6 +618,8 @@ class OperationalStateService:
                     configured=the_odds_api_configured,
                     prerequisites_met=replay_contract_ready,
                 ),
+                last_smoke_status=archive_smoke.status if archive_smoke else None,
+                last_smoke_at=archive_smoke.completed_at if archive_smoke else None,
                 required_before_enable=[]
                 if core_ready and replay_contract_ready
                 else [
@@ -616,6 +648,8 @@ class OperationalStateService:
                     configured=api_tennis_configured,
                     prerequisites_met=the_odds_api_configured and replay_contract_ready,
                 ),
+                last_smoke_status=score_smoke.status if score_smoke else None,
+                last_smoke_at=score_smoke.completed_at if score_smoke else None,
                 required_before_enable=[
                     requirement
                     for requirement, satisfied in [
@@ -650,6 +684,12 @@ class OperationalStateService:
                             and api_tennis_configured
                         ),
                     )
+                ),
+                last_smoke_status=(
+                    odds_stream_smoke.status if odds_stream_smoke else None
+                ),
+                last_smoke_at=(
+                    odds_stream_smoke.completed_at if odds_stream_smoke else None
                 ),
                 required_before_enable=[
                     requirement

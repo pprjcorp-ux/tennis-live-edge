@@ -356,6 +356,8 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
         operational.api_onboarding.core_ready is True,
         "API onboarding sees the local core as ready before paid providers are added.",
         current_step=operational.api_onboarding.current_step,
+        budget_chain_completed=operational.api_onboarding.budget_chain_completed,
+        enterprise_eligible=operational.api_onboarding.enterprise_eligible,
         warnings=operational.api_onboarding.warnings,
     )
     return checks

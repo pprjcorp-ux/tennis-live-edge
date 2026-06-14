@@ -471,6 +471,12 @@ export function DataHealthPanel({
           <span className={apiOnboarding.core_ready ? "status statusEntry" : "status statusBlocked"}>
             core {apiOnboarding.core_ready ? "ready" : "blocked"}
           </span>
+          <span className={apiOnboarding.budget_chain_completed ? "status statusEntry" : "status statusMonitor"}>
+            budget chain {apiOnboarding.budget_chain_completed ? "complete" : "pending"}
+          </span>
+          <span className={apiOnboarding.enterprise_eligible ? "status statusEntry" : "status statusBlocked"}>
+            enterprise {apiOnboarding.enterprise_eligible ? "eligible" : "locked"}
+          </span>
           <span>next {apiOnboarding.current_step}</span>
           {apiOnboarding.warnings.slice(0, 2).map((warning) => (
             <span key={warning}>{warning}</span>

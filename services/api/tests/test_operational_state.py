@@ -701,6 +701,75 @@ def test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync() -> N
     assert any("cursor requires resync" in warning for warning in onboarding.warnings)
 
 
+def test_api_onboarding_blocks_enterprise_until_budget_chain_complete() -> None:
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            the_odds_api_key="archive-key",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            enterprise_feeds_enabled=True,
+            sportradar_api_key="sportradar-key",
+            betradar_uof_token="uof-token",
+            txodds_user="txodds-user",
+            txodds_password="txodds-password",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(ingestion_runs=[_replay_contract_run()]),
+    )
+
+    onboarding = service.api_onboarding()
+    enterprise_step = next(
+        step for step in onboarding.steps if step.provider == Provider.SPORTRADAR
+    )
+
+    assert onboarding.budget_chain_completed is False
+    assert onboarding.enterprise_eligible is False
+    assert onboarding.current_step == "1. theoddsapi:archive_odds"
+    assert enterprise_step.configured is True
+    assert enterprise_step.status == "blocked"
+    assert "Budget provider chain complete" in enterprise_step.required_before_enable
+    assert "TheOddsAPI archive smoke completed" in enterprise_step.required_before_enable
+    assert "API-Tennis score smoke completed" in enterprise_step.required_before_enable
+    assert "Odds-API.io stream smoke completed" in enterprise_step.required_before_enable
+
+
+def test_api_onboarding_marks_enterprise_ready_after_budget_chain_complete() -> None:
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            the_odds_api_key="archive-key",
+            api_tennis_key="score-key",
+            odds_api_io_key="odds-key",
+            enterprise_feeds_enabled=True,
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(
+            cursors=[_healthy_odds_cursor()],
+            ingestion_runs=[
+                _replay_contract_run(),
+                _provider_smoke_run("archive_odds_sync", "archive_odds_sync"),
+                _provider_smoke_run("score_snapshot", "api_tennis_score_sync"),
+                _provider_smoke_run("odds_stream", None),
+            ],
+        ),
+    )
+
+    onboarding = service.api_onboarding()
+    enterprise_step = next(
+        step for step in onboarding.steps if step.provider == Provider.SPORTRADAR
+    )
+
+    assert onboarding.budget_chain_completed is True
+    assert onboarding.enterprise_eligible is True
+    assert onboarding.current_step == "4. sportradar:enterprise_feeds"
+    assert enterprise_step.configured is False
+    assert enterprise_step.status == "ready_next"
+    assert "Budget provider chain complete" not in enterprise_step.required_before_enable
+
+
 def test_daily_cost_report_uses_persisted_odds_stream_usage() -> None:
     generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
     service = OperationalStateService(

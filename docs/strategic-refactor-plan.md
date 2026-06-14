@@ -232,6 +232,9 @@ auditable ingestion evidence."
 The onboarding sequence now treats a successful smoke as part of the handoff:
 API-Tennis remains blocked until TheOddsAPI archive smoke is completed, and
 Odds-API.io remains blocked until API-Tennis score smoke is completed.
+Enterprise feed eligibility is now explicit: `budget_chain_completed` must be
+true before `enterprise_eligible` can become true, even if enterprise
+credentials are already configured.
 
 Tasks:
 

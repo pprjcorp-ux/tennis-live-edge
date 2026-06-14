@@ -271,6 +271,8 @@ export type ApiOnboardingStep = {
 export type ApiOnboardingSnapshot = {
   core_ready: boolean;
   current_step: string;
+  budget_chain_completed: boolean;
+  enterprise_eligible: boolean;
   steps: ApiOnboardingStep[];
   warnings: string[];
 };

@@ -175,6 +175,8 @@ export default function Page() {
   const [apiOnboarding, setApiOnboarding] = useState<ApiOnboardingSnapshot>({
     core_ready: false,
     current_step: "loading",
+    budget_chain_completed: false,
+    enterprise_eligible: false,
     steps: [],
     warnings: ["Awaiting operational state."]
   });

@@ -1072,6 +1072,8 @@ class ApiOnboardingStep(BaseModel):
 class ApiOnboardingSnapshot(BaseModel):
     core_ready: bool
     current_step: str
+    budget_chain_completed: bool = False
+    enterprise_eligible: bool = False
     steps: list[ApiOnboardingStep]
     warnings: list[str] = Field(default_factory=list)
 

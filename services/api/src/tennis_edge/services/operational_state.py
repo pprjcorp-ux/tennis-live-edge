@@ -611,6 +611,15 @@ class OperationalStateService:
             and api_tennis_configured
             and score_smoke_completed
         )
+        budget_chain_completed = (
+            odds_prerequisites_ready
+            and odds_api_io_configured
+            and odds_stream_smoke_completed
+            and not odds_cursor_resync
+        )
+        enterprise_eligible = (
+            budget_chain_completed and self.settings.enterprise_feeds_enabled
+        )
 
         def setup_status(
             *,
@@ -625,6 +634,15 @@ class OperationalStateService:
             if core_ready and prerequisites_met:
                 return "ready_next"
             return "blocked"
+
+        def enterprise_setup_status() -> ApiOnboardingStatus:
+            if not self.settings.enterprise_feeds_enabled:
+                return "deferred"
+            if not budget_chain_completed:
+                return "blocked"
+            if enterprise_configured:
+                return "configured"
+            return "ready_next"
 
         steps = [
             ApiOnboardingStep(
@@ -749,19 +767,12 @@ class OperationalStateService:
                 provider=Provider.SPORTRADAR,
                 capability="enterprise_feeds",
                 configured=enterprise_configured,
-                status=setup_status(
-                    configured=enterprise_configured,
-                    prerequisites_met=(
-                        odds_prerequisites_ready
-                        and odds_api_io_configured
-                        and odds_stream_smoke_completed
-                    ),
-                    deferred=not self.settings.enterprise_feeds_enabled,
-                ),
+                status=enterprise_setup_status(),
                 required_before_enable=[
                     requirement
                     for requirement, satisfied in [
                         ("Enable ENTERPRISE_FEEDS_ENABLED only after budget paper proof", self.settings.enterprise_feeds_enabled),
+                        ("Budget provider chain complete", budget_chain_completed),
                         ("Passing replay contract run", replay_contract_ready),
                         ("TheOddsAPI archive/comparison configured", the_odds_api_configured),
                         ("TheOddsAPI archive smoke completed", archive_smoke_completed),
@@ -769,6 +780,7 @@ class OperationalStateService:
                         ("API-Tennis score smoke completed", score_smoke_completed),
                         ("Odds-API.io websocket configured", odds_api_io_configured),
                         ("Odds-API.io stream smoke completed", odds_stream_smoke_completed),
+                        ("Odds-API.io cursor healthy", not odds_cursor_resync),
                     ]
                     if not satisfied
                 ],
@@ -807,8 +819,12 @@ class OperationalStateService:
             current_step=(
                 f"{current.order}. {current.provider}:{current.capability}"
                 if current
+                else "enterprise_stack_configured"
+                if enterprise_eligible and enterprise_configured
                 else "budget_stack_configured_enterprise_deferred"
             ),
+            budget_chain_completed=budget_chain_completed,
+            enterprise_eligible=enterprise_eligible,
             steps=steps,
             warnings=warnings,
         )

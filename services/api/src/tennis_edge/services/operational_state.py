@@ -74,6 +74,10 @@ def _latest_ingestion_run(
     return max(matching, key=lambda run: run.completed_at, default=None)
 
 
+def _smoke_completed(run: IngestionRunRecord | None) -> bool:
+    return run is not None and run.status == "completed"
+
+
 def _replay_contract_persistence(
     summary: dict,
 ) -> list[ReplayContractScenarioEvidence]:
@@ -563,6 +567,9 @@ class OperationalStateService:
             ingestion_runs,
             run_type="odds_stream",
         )
+        archive_smoke_completed = _smoke_completed(archive_smoke)
+        score_smoke_completed = _smoke_completed(score_smoke)
+        odds_stream_smoke_completed = _smoke_completed(odds_stream_smoke)
         warnings: list[str] = []
         if not core_ready:
             warnings.append(
@@ -592,6 +599,17 @@ class OperationalStateService:
             and bool(self.settings.betradar_uof_token)
             and bool(self.settings.txodds_user)
             and bool(self.settings.txodds_password)
+        )
+        archive_prerequisites_ready = core_ready and replay_contract_ready
+        score_prerequisites_ready = (
+            archive_prerequisites_ready
+            and the_odds_api_configured
+            and archive_smoke_completed
+        )
+        odds_prerequisites_ready = (
+            score_prerequisites_ready
+            and api_tennis_configured
+            and score_smoke_completed
         )
 
         def setup_status(
@@ -631,7 +649,11 @@ class OperationalStateService:
                     if not satisfied
                 ],
                 next_action=(
-                    "Keep as REST archive/comparison and never override fresher persisted live odds."
+                    "Complete replay contracts before running TheOddsAPI archive smoke."
+                    if the_odds_api_configured and not archive_prerequisites_ready
+                    else "Run TheOddsAPI archive-sync smoke and confirm persisted payload evidence."
+                    if the_odds_api_configured and not archive_smoke_completed
+                    else "Keep as REST archive/comparison and never override fresher persisted live odds."
                     if the_odds_api_configured
                     else "Run replay contracts first, then set THE_ODDS_API_KEY and run an archive snapshot smoke check."
                 ),
@@ -646,7 +668,7 @@ class OperationalStateService:
                 configured=api_tennis_configured,
                 status=setup_status(
                     configured=api_tennis_configured,
-                    prerequisites_met=the_odds_api_configured and replay_contract_ready,
+                    prerequisites_met=score_prerequisites_ready,
                 ),
                 last_smoke_status=score_smoke.status if score_smoke else None,
                 last_smoke_at=score_smoke.completed_at if score_smoke else None,
@@ -656,11 +678,16 @@ class OperationalStateService:
                         ("Healthy Postgres/Timescale persistence", core_ready),
                         ("Passing replay contract run", replay_contract_ready),
                         ("TheOddsAPI archive/comparison configured", the_odds_api_configured),
+                        ("TheOddsAPI archive smoke completed", archive_smoke_completed),
                     ]
                     if not satisfied
                 ],
                 next_action=(
-                    "Run API-Tennis fixtures/livescore ingestion and verify score ticks plus freshness."
+                    "Complete TheOddsAPI archive smoke before API-Tennis score smoke."
+                    if api_tennis_configured and not score_prerequisites_ready
+                    else "Run API-Tennis score-sync smoke and confirm fixture/score payload evidence."
+                    if api_tennis_configured and not score_smoke_completed
+                    else "Run API-Tennis fixtures/livescore ingestion and verify score ticks plus freshness."
                     if api_tennis_configured
                     else "Set API_TENNIS_KEY after archive odds are stable; keep signals monitor-only until score state is valid."
                 ),
@@ -679,9 +706,7 @@ class OperationalStateService:
                     else setup_status(
                         configured=odds_api_io_configured,
                         prerequisites_met=(
-                            replay_contract_ready
-                            and the_odds_api_configured
-                            and api_tennis_configured
+                            odds_prerequisites_ready
                         ),
                     )
                 ),
@@ -697,12 +722,18 @@ class OperationalStateService:
                         ("Healthy Postgres/Timescale persistence", core_ready),
                         ("Passing replay contract run", replay_contract_ready),
                         ("TheOddsAPI archive/comparison configured", the_odds_api_configured),
+                        ("TheOddsAPI archive smoke completed", archive_smoke_completed),
                         ("API-Tennis score/livescore configured", api_tennis_configured),
+                        ("API-Tennis score smoke completed", score_smoke_completed),
                     ]
                     if not satisfied
                 ],
                 next_action=(
-                    "Run websocket replay/resync smoke before allowing live entries."
+                    "Complete API-Tennis score smoke before Odds-API.io stream smoke."
+                    if odds_api_io_configured and not odds_prerequisites_ready
+                    else "Run Odds-API.io stream-smoke and confirm cursor/odds payload evidence."
+                    if odds_api_io_configured and not odds_stream_smoke_completed
+                    else "Run websocket replay/resync smoke before allowing live entries."
                     if odds_api_io_configured
                     else "Set ODDS_API_IO_KEY last among budget feeds; validate seq/lastSeq, gaps and stale odds gates."
                 ),
@@ -718,10 +749,9 @@ class OperationalStateService:
                 status=setup_status(
                     configured=enterprise_configured,
                     prerequisites_met=(
-                        replay_contract_ready
-                        and the_odds_api_configured
-                        and api_tennis_configured
+                        odds_prerequisites_ready
                         and odds_api_io_configured
+                        and odds_stream_smoke_completed
                     ),
                     deferred=not self.settings.enterprise_feeds_enabled,
                 ),
@@ -731,8 +761,11 @@ class OperationalStateService:
                         ("Enable ENTERPRISE_FEEDS_ENABLED only after budget paper proof", self.settings.enterprise_feeds_enabled),
                         ("Passing replay contract run", replay_contract_ready),
                         ("TheOddsAPI archive/comparison configured", the_odds_api_configured),
+                        ("TheOddsAPI archive smoke completed", archive_smoke_completed),
                         ("API-Tennis score/livescore configured", api_tennis_configured),
+                        ("API-Tennis score smoke completed", score_smoke_completed),
                         ("Odds-API.io websocket configured", odds_api_io_configured),
+                        ("Odds-API.io stream smoke completed", odds_stream_smoke_completed),
                     ]
                     if not satisfied
                 ],
@@ -747,7 +780,18 @@ class OperationalStateService:
             ),
         ]
 
-        current = next(
+        def needs_smoke(step: ApiOnboardingStep) -> bool:
+            if not step.configured or step.last_smoke_status == "completed":
+                return False
+            if step.provider == Provider.THE_ODDS_API:
+                return archive_prerequisites_ready
+            if step.provider == Provider.API_TENNIS:
+                return score_prerequisites_ready
+            if step.provider == Provider.ODDS_API_IO:
+                return odds_prerequisites_ready
+            return False
+
+        current = next((step for step in steps if needs_smoke(step)), None) or next(
             (step for step in steps if step.status in {"ready_next", "blocked"}),
             None,
         )

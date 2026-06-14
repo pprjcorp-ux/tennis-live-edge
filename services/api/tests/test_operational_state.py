@@ -504,7 +504,7 @@ def test_provider_mode_matrix_blocks_live_with_keys_when_data_quality_fails() ->
     assert "1 data freshness/blocking issue(s)." in matrix["live_with_keys"].evidence
 
 
-def test_api_onboarding_guides_budget_provider_sequence_after_archive_key() -> None:
+def test_api_onboarding_requires_archive_smoke_before_api_tennis_step() -> None:
     service = OperationalStateService(
         Settings(
             data_mode="live",
@@ -519,13 +519,69 @@ def test_api_onboarding_guides_budget_provider_sequence_after_archive_key() -> N
     steps = {step.provider: step for step in onboarding.steps}
 
     assert onboarding.core_ready is True
-    assert onboarding.current_step == "2. api_tennis:score_livescore"
+    assert onboarding.current_step == "1. theoddsapi:archive_odds"
     assert steps[Provider.THE_ODDS_API].status == "configured"
-    assert steps[Provider.API_TENNIS].status == "ready_next"
-    assert steps[Provider.API_TENNIS].current is True
+    assert steps[Provider.THE_ODDS_API].current is True
+    assert "archive-sync smoke" in steps[Provider.THE_ODDS_API].next_action
+    assert steps[Provider.API_TENNIS].status == "blocked"
+    assert "TheOddsAPI archive smoke completed" in steps[Provider.API_TENNIS].required_before_enable
     assert steps[Provider.ODDS_API_IO].status == "blocked"
     assert "API-Tennis score/livescore configured" in steps[Provider.ODDS_API_IO].required_before_enable
     assert steps[Provider.SPORTRADAR].status == "deferred"
+
+
+def test_api_onboarding_guides_budget_provider_sequence_after_archive_smoke() -> None:
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            the_odds_api_key="archive-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(
+            ingestion_runs=[
+                _replay_contract_run(),
+                _provider_smoke_run("archive_odds_sync", "archive_odds_sync"),
+            ]
+        ),
+    )
+
+    onboarding = service.api_onboarding()
+    steps = {step.provider: step for step in onboarding.steps}
+
+    assert onboarding.core_ready is True
+    assert onboarding.current_step == "2. api_tennis:score_livescore"
+    assert steps[Provider.THE_ODDS_API].last_smoke_status == "completed"
+    assert steps[Provider.API_TENNIS].status == "ready_next"
+    assert steps[Provider.API_TENNIS].current is True
+
+
+def test_api_onboarding_requires_score_smoke_before_odds_websocket_step() -> None:
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            the_odds_api_key="archive-key",
+            api_tennis_key="score-key",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(
+            ingestion_runs=[
+                _replay_contract_run(),
+                _provider_smoke_run("archive_odds_sync", "archive_odds_sync"),
+            ]
+        ),
+    )
+
+    onboarding = service.api_onboarding()
+    steps = {step.provider: step for step in onboarding.steps}
+
+    assert onboarding.current_step == "2. api_tennis:score_livescore"
+    assert steps[Provider.API_TENNIS].status == "configured"
+    assert steps[Provider.API_TENNIS].current is True
+    assert "score-sync smoke" in steps[Provider.API_TENNIS].next_action
+    assert steps[Provider.ODDS_API_IO].status == "blocked"
+    assert "API-Tennis score smoke completed" in steps[Provider.ODDS_API_IO].required_before_enable
 
 
 def test_api_onboarding_exposes_latest_provider_smoke_evidence() -> None:
@@ -622,7 +678,14 @@ def test_api_onboarding_blocks_live_odds_step_when_cursor_requires_resync() -> N
             persistence_enabled=True,
             database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
         ),
-        StoreStub(cursors=[resync_cursor], ingestion_runs=[_replay_contract_run()]),
+        StoreStub(
+            cursors=[resync_cursor],
+            ingestion_runs=[
+                _replay_contract_run(),
+                _provider_smoke_run("archive_odds_sync", "archive_odds_sync"),
+                _provider_smoke_run("score_snapshot", "api_tennis_score_sync"),
+            ],
+        ),
     )
 
     onboarding = service.api_onboarding()

@@ -229,6 +229,9 @@ cursor `resync_required` before consuming live odds.
 API onboarding also surfaces each provider's latest persisted smoke status, so
 operators can distinguish "key configured" from "provider actually produced
 auditable ingestion evidence."
+The onboarding sequence now treats a successful smoke as part of the handoff:
+API-Tennis remains blocked until TheOddsAPI archive smoke is completed, and
+Odds-API.io remains blocked until API-Tennis score smoke is completed.
 
 Tasks:
 

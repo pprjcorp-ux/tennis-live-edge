@@ -625,10 +625,13 @@ def test_api_onboarding_exposes_latest_provider_smoke_evidence() -> None:
 
     assert steps[Provider.THE_ODDS_API].last_smoke_status == "completed"
     assert steps[Provider.THE_ODDS_API].last_smoke_at == archive_at
+    assert steps[Provider.THE_ODDS_API].smoke_completed is True
     assert steps[Provider.API_TENNIS].last_smoke_status == "degraded"
     assert steps[Provider.API_TENNIS].last_smoke_at == score_at
+    assert steps[Provider.API_TENNIS].smoke_completed is False
     assert steps[Provider.ODDS_API_IO].last_smoke_status == "skipped"
     assert steps[Provider.ODDS_API_IO].last_smoke_at == odds_at
+    assert steps[Provider.ODDS_API_IO].smoke_completed is False
     assert steps[Provider.SPORTRADAR].last_smoke_status is None
 
 

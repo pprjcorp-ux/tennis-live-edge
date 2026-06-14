@@ -486,7 +486,10 @@ export function DataHealthPanel({
                 <span>{step.capability.replaceAll("_", " ")}</span>
               </div>
               <span className={onboardingStatusClass(step.status)}>{step.status}</span>
-              <span>{step.configured ? "key/config ready" : "missing"}</span>
+              <span>{step.configured ? "key configured" : "missing key"}</span>
+              <span className={step.smoke_completed ? "status statusEntry" : "status statusMonitor"}>
+                {step.smoke_completed ? "smoke passed" : "smoke pending"}
+              </span>
               <span>
                 {step.last_smoke_status
                   ? `last smoke ${step.last_smoke_status}${

@@ -638,6 +638,7 @@ class OperationalStateService:
                 ),
                 last_smoke_status=archive_smoke.status if archive_smoke else None,
                 last_smoke_at=archive_smoke.completed_at if archive_smoke else None,
+                smoke_completed=archive_smoke_completed,
                 required_before_enable=[]
                 if core_ready and replay_contract_ready
                 else [
@@ -672,6 +673,7 @@ class OperationalStateService:
                 ),
                 last_smoke_status=score_smoke.status if score_smoke else None,
                 last_smoke_at=score_smoke.completed_at if score_smoke else None,
+                smoke_completed=score_smoke_completed,
                 required_before_enable=[
                     requirement
                     for requirement, satisfied in [
@@ -716,6 +718,7 @@ class OperationalStateService:
                 last_smoke_at=(
                     odds_stream_smoke.completed_at if odds_stream_smoke else None
                 ),
+                smoke_completed=odds_stream_smoke_completed,
                 required_before_enable=[
                     requirement
                     for requirement, satisfied in [

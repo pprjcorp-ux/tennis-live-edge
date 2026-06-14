@@ -238,12 +238,15 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
         required=[
             "last_smoke_status",
             "last_smoke_at",
+            "smoke_completed",
             "_latest_ingestion_run",
             "_smoke_completed",
             "test_api_onboarding_exposes_latest_provider_smoke_evidence",
             "test_api_onboarding_requires_archive_smoke_before_api_tennis_step",
             "test_api_onboarding_requires_score_smoke_before_odds_websocket_step",
             "step.last_smoke_status",
+            "step.smoke_completed",
+            "smoke passed",
             "last smoke",
         ],
     )

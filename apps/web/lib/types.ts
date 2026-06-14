@@ -262,6 +262,7 @@ export type ApiOnboardingStep = {
   current: boolean;
   last_smoke_status: string | null;
   last_smoke_at: string | null;
+  smoke_completed: boolean;
   required_before_enable: string[];
   next_action: string;
   notes: string[];

@@ -2397,6 +2397,67 @@ test("backlog-plan turns repeated ledgers into non-executing implementation prio
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
+test("backlog-plan uses mission-ledger blockers as implementation evidence", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-mission-plan-"));
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
+  const missionRows = [
+    {
+      mode: "mission_ledger_record",
+      status: "blocked",
+      active_ceiling: "observe",
+      outcome: "observed",
+      action_executed: false,
+      mission_command_executed: false,
+      next_action_lane: "channel",
+      next_action_command: "hermes gateway start",
+      blocked_lane_ids: ["channel", "live_window"],
+      mission: { status: "blocked" },
+    },
+    {
+      mode: "mission_ledger_record",
+      status: "blocked",
+      active_ceiling: "observe",
+      outcome: "observed",
+      action_executed: false,
+      mission_command_executed: false,
+      next_action_lane: "channel",
+      next_action_command: "hermes gateway start",
+      blocked_lane_ids: ["channel"],
+      mission: { status: "blocked" },
+    },
+  ];
+  writeFileSync(experimentLedgerPath, "");
+  writeFileSync(operatorLedgerPath, "");
+  writeFileSync(missionLedgerPath, `${missionRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["backlog-plan"], {
+    env: {
+      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+      HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "backlog_plan");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.items[0].id, "stabilize_hermes_runtime_channels");
+  assert.equal(payload.items[0].source.includes("mission_ledger"), true);
+  assert.equal(payload.items[0].frequency, 2);
+  assert.equal(payload.next_item.id, "stabilize_hermes_runtime_channels");
+  assert.equal(payload.evidence.mission_ledger.total_records, 2);
+  assert.equal(payload.evidence.mission_ledger.top_next_action, "hermes gateway start");
+  assert.equal(payload.evidence.mission_ledger.blocked_lane_counts.channel, 2);
+  assert.equal(payload.evidence.mission_ledger.mission_command_executed_count, 0);
+});
+
 test("operator-packet emits a compact channel-safe decision summary", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

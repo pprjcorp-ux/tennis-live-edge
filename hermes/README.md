@@ -270,9 +270,10 @@ it never runs the experiment command it records.
 recommendations and active ceilings from the local ledger without writing or
 executing commands.
 
-`hermes:backlog-plan` compiles local operator/experiment ledger evidence into
-non-executing implementation priorities. Each item includes target files,
-validation commands, acceptance evidence and the gates it would unblock.
+`hermes:backlog-plan` compiles local mission/operator/experiment ledger
+evidence into non-executing implementation priorities. Each item includes
+target files, validation commands, acceptance evidence and the gates it would
+unblock.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

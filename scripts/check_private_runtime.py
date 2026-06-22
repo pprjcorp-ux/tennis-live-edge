@@ -708,6 +708,7 @@ def main() -> int:
         "next_required_gate",
         "success_metrics",
         "experiment_command_executed=false",
+        "mission_command_executed=false",
         "validation commands",
         "acceptance evidence",
         "cost tiers",

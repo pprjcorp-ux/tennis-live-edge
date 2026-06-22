@@ -1125,8 +1125,9 @@ async function experimentLedgerReport() {
 async function backlogPlan() {
   const experimentReport = buildExperimentLedgerReport(readExperimentLedgerRecords());
   const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
+  const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
-  printJson(buildBacklogPlan({ experimentReport, operatorReport, runtimePriorities }));
+  printJson(buildBacklogPlan({ experimentReport, operatorReport, missionReport, runtimePriorities }));
 }
 
 async function operatorPacket() {
@@ -3548,8 +3549,8 @@ function buildExperimentLedgerReport({ path, records, invalid_rows: invalidRows 
   };
 }
 
-function buildBacklogPlan({ experimentReport, operatorReport, runtimePriorities }) {
-  const items = buildBacklogItems({ experimentReport, operatorReport, runtimePriorities })
+function buildBacklogPlan({ experimentReport, operatorReport, missionReport, runtimePriorities }) {
+  const items = buildBacklogItems({ experimentReport, operatorReport, missionReport, runtimePriorities })
     .sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
   return {
     generated_at: new Date().toISOString(),
@@ -3580,6 +3581,14 @@ function buildBacklogPlan({ experimentReport, operatorReport, runtimePriorities 
         priority_counts: operatorReport.priority_counts,
         action_executed_count: operatorReport.action_executed_count,
       },
+      mission_ledger: {
+        path: missionReport.ledger?.path,
+        total_records: missionReport.total_records,
+        top_next_action: missionReport.top_next_action,
+        active_ceiling_counts: missionReport.active_ceiling_counts,
+        blocked_lane_counts: missionReport.blocked_lane_counts,
+        mission_command_executed_count: missionReport.mission_command_executed_count,
+      },
       runtime_priorities: {
         next_priority: runtimePriorities.next_priority,
         total_priorities: runtimePriorities.priorities.length,
@@ -3595,24 +3604,38 @@ function buildBacklogPlan({ experimentReport, operatorReport, runtimePriorities 
   };
 }
 
-function buildBacklogItems({ experimentReport, operatorReport, runtimePriorities }) {
+function buildBacklogItems({ experimentReport, operatorReport, missionReport, runtimePriorities }) {
   const items = [];
   const topExperiment = experimentReport.top_experiment;
   const ready = experimentReport.ready_experiment_counts ?? {};
   const topBlocker = operatorReport.top_blocker;
+  const topMissionAction = missionReport.top_next_action;
+  const missionLaneCounts = missionReport.blocked_lane_counts ?? {};
+  const missionNextLaneCounts = missionReport.next_lane_counts ?? {};
   const runtimePriority = runtimePriorities.next_priority;
+  const missionRuntimeFrequency = Math.max(
+    countFor(missionReport.next_action_counts, "hermes gateway start"),
+    countFor(missionReport.next_action_counts, "npm run api:dev"),
+    missionLaneCounts.backend ?? 0,
+    missionLaneCounts.channel ?? 0,
+    missionNextLaneCounts.backend ?? 0,
+    missionNextLaneCounts.channel ?? 0,
+  );
 
   if (topExperiment === "runtime_channel_recovery"
     || topBlocker === "npm run hermes:runtime-check"
-    || runtimePriority?.id === "stabilize_hermes_runtime") {
+    || runtimePriority?.id === "stabilize_hermes_runtime"
+    || ["hermes gateway start", "npm run api:dev"].includes(topMissionAction)
+    || missionRuntimeFrequency > 0) {
     items.push(backlogItem({
       id: "stabilize_hermes_runtime_channels",
       title: "Stabilize Hermes runtime and channel readiness before more autonomy",
       priority: 10,
-      source: ["experiment_ledger", "operator_ledger", "runtime_priorities"],
+      source: ["experiment_ledger", "operator_ledger", "mission_ledger", "runtime_priorities"],
       frequency: Math.max(
         countFor(experimentReport.next_experiment_counts, "runtime_channel_recovery"),
         countFor(operatorReport.next_action_counts, "npm run hermes:runtime-check"),
+        missionRuntimeFrequency,
         runtimePriority?.frequency ?? 0,
       ),
       rationale: "Runtime/channel blockers are the recurring ceiling; model, collection and paper work should wait for this proof.",
@@ -3625,6 +3648,7 @@ function buildBacklogItems({ experimentReport, operatorReport, runtimePriorities
         "npm run hermes:runtime-check",
         "npm --silent run hermes:autonomy-gates",
         "npm --silent run hermes:experiment-ledger-report",
+        "npm --silent run hermes:mission-ledger-report",
       ],
       acceptanceEvidence: [
         "gateway_service_status=running",

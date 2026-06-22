@@ -9568,11 +9568,13 @@ function buildAutonomyEffectiveness({
   runtimePriorities,
   backlog,
 }) {
+  const liveRepairPlanEvidence = backlog?.evidence?.live_repair_plan ?? null;
   const evidenceTotals = autonomyEvidenceTotals({
     experimentReport,
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairPlanEvidence,
     liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
@@ -9585,6 +9587,7 @@ function buildAutonomyEffectiveness({
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairPlanEvidence,
     liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
@@ -9597,6 +9600,7 @@ function buildAutonomyEffectiveness({
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairPlanEvidence,
     liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
@@ -9640,8 +9644,14 @@ function buildAutonomyEffectiveness({
       live_repair: effectivenessLane({
         id: "live_repair",
         repeated_count: repeatPressure.live_repair,
-        top_signal: liveRepairReport.top_selected_repair ?? liveRepairReport.top_blocker,
-        command: liveRepairReport.top_selected_repair_command ?? "npm --silent run hermes:live-repair-plan",
+        top_signal: liveRepairReport.top_selected_repair
+          ?? liveRepairPlanEvidence?.recommended_repair_id
+          ?? liveRepairPlanEvidence?.selected_repair_id
+          ?? liveRepairReport.top_blocker,
+        command: liveRepairReport.top_selected_repair_command
+          ?? liveRepairPlanEvidence?.recommended_repair_command
+          ?? liveRepairPlanEvidence?.selected_repair_command
+          ?? "npm --silent run hermes:live-repair-plan",
       }),
       source_routes: effectivenessLane({
         id: "source_routes",
@@ -9738,6 +9748,7 @@ function autonomyEvidenceTotals({
   operatorReport,
   missionReport,
   liveControllerReport,
+  liveRepairPlanEvidence = null,
   liveRepairReport = emptyLiveRepairLedgerReport(),
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
@@ -9764,6 +9775,9 @@ function autonomyEvidenceTotals({
     mission_records: missionReport.total_records,
     live_controller_records: liveControllerReport.total_records,
     live_repair_records: liveRepairReport.total_records,
+    live_repair_plan_preview_present: Boolean(liveRepairPlanEvidence),
+    live_repair_alignment_requires_review: liveRepairPlanEvidence?.requires_operator_review === true,
+    live_repair_alignment_status: liveRepairPlanEvidence?.repair_alignment_status ?? null,
     grand_slam_mission_records: grandSlamMissionReport.total_records,
     source_route_records: sourceRouteReport.total_records,
     source_use_records: sourceUseReport.total_records,
@@ -9789,6 +9803,7 @@ function autonomyProtectedActionClaims({
   operatorReport,
   missionReport,
   liveControllerReport,
+  liveRepairPlanEvidence = null,
   liveRepairReport = emptyLiveRepairLedgerReport(),
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
@@ -9811,6 +9826,8 @@ function autonomyProtectedActionClaims({
       liveRepairReport.repair_command_executed_count,
       liveRepairReport.provider_command_executed_count,
       liveRepairReport.paper_order_created_count,
+      liveRepairPlanEvidence?.provider_command_executed_count ?? 0,
+      liveRepairPlanEvidence?.paper_order_created_count ?? 0,
       grandSlamMissionReport.action_executed_count,
       grandSlamMissionReport.mission_command_executed_count,
       grandSlamMissionReport.provider_command_executed_count,
@@ -9836,6 +9853,7 @@ function autonomyProtectedActionClaims({
     provider_commands: sumNumbers([
       liveControllerReport.provider_command_executed_count,
       liveRepairReport.provider_command_executed_count,
+      liveRepairPlanEvidence?.provider_command_executed_count ?? 0,
       grandSlamMissionReport.provider_command_executed_count,
       sourceRouteReport.provider_command_executed_count,
       sourceUseReport.provider_command_executed_count,
@@ -9847,6 +9865,8 @@ function autonomyProtectedActionClaims({
     manifest_commands: sourceUseReport.manifest_command_executed_count,
     intake_commands: sourceIntakeReport.intake_command_executed_count,
     repair_commands: liveRepairReport.repair_command_executed_count,
+    repair_plan_provider_commands: liveRepairPlanEvidence?.provider_command_executed_count ?? 0,
+    repair_plan_paper_orders: liveRepairPlanEvidence?.paper_order_created_count ?? 0,
     dataset_fetches: sourceIntakeReport.dataset_fetch_attempted_count,
     bypass_attempts: sumNumbers([
       sourceRouteReport.bypass_attempted_count,
@@ -9856,6 +9876,7 @@ function autonomyProtectedActionClaims({
     paper_orders: sumNumbers([
       liveControllerReport.paper_order_created_count,
       liveRepairReport.paper_order_created_count,
+      liveRepairPlanEvidence?.paper_order_created_count ?? 0,
       grandSlamMissionReport.paper_order_created_count,
     ]),
     experiment_commands: experimentReport.experiment_command_executed_count,
@@ -9871,6 +9892,7 @@ function autonomyRepeatPressure({
   operatorReport,
   missionReport,
   liveControllerReport,
+  liveRepairPlanEvidence = null,
   liveRepairReport = emptyLiveRepairLedgerReport(),
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
@@ -9894,7 +9916,9 @@ function autonomyRepeatPressure({
     firstCount(liveRepairReport.selected_repair_counts),
     firstCount(liveRepairReport.primary_blocker_counts),
     firstCount(liveRepairReport.blocker_counts),
+    liveRepairPlanEvidence?.requires_operator_review === true ? 1 : 0,
   );
+  const liveRepairAlignment = liveRepairPlanEvidence?.requires_operator_review === true ? 1 : 0;
   const grandSlam = Math.max(
     maxObjectValue(grandSlamMissionReport.active_phase_counts),
     firstCount(grandSlamMissionReport.next_action_counts),
@@ -9933,6 +9957,7 @@ function autonomyRepeatPressure({
     runtime,
     live_collection: liveCollection,
     live_repair: liveRepair,
+    live_repair_alignment: liveRepairAlignment,
     source_routes: sourceRoutes,
     source_use: sourceUse,
     source_intake: sourceIntake,
@@ -9940,7 +9965,7 @@ function autonomyRepeatPressure({
     grand_slam: grandSlam,
     experiment,
     operator,
-    max_repeated_count: Math.max(runtime, liveCollection, liveRepair, sourceRoutes, sourceUse, sourceIntake, providerSmoke, grandSlam, experiment, operator),
+    max_repeated_count: Math.max(runtime, liveCollection, liveRepair, liveRepairAlignment, sourceRoutes, sourceUse, sourceIntake, providerSmoke, grandSlam, experiment, operator),
   };
 }
 

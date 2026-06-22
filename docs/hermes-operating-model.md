@@ -582,6 +582,11 @@ Codex review before the backlog treats it as resolved.
 live-controller ledger row and exposes it as `evidence.live_repair_plan`, so
 `hermes:implementation-handoff` carries the recommended repair, selected repair
 and review requirement without writing a live-repair ledger row.
+`hermes:autonomy-effectiveness` also reads this preview as an observed
+`live_repair` lane, which lets Hermes notice a repair-alignment review before a
+`live-repair-ledger` row exists while keeping all protected-action counters at
+zero. The canonical proof fields are `live_repair_plan_preview_present` and
+`live_repair_alignment_requires_review`.
 
 `hermes:live-repair-ledger` persists that selected repair as local JSONL with
 `action_executed=false`, `repair_command_executed=false`,

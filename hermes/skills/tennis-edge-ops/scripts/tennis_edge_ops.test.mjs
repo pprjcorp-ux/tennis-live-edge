@@ -5561,6 +5561,59 @@ test("autonomy-effectiveness includes repeated live-repair pressure", async () =
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
+test("autonomy-effectiveness includes live-repair alignment preview without ledger writes", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-autonomy-effectiveness-live-repair-preview-"));
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const rows = [
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "blocked",
+      action: "freeze_collection",
+      next_safe_command: "npm --silent run hermes:events",
+      throttle_level: "blocked",
+      source_route_id: "replay_backfill",
+      feature_contract_status: "blocked",
+      feedback_blocker_ids: ["budget_chain_completed", "event_severity:high"],
+      feedback_next_action_ids: ["inspect_budget_chain", "route_high_severity_events"],
+    },
+  ];
+  writeFileSync(controllerLedgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["autonomy-effectiveness"], {
+    env: isolatedLedgerEnv(tempDir, {
+      HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+    }),
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "autonomy_effectiveness");
+  assert.equal(payload.status, "needs_implementation");
+  assert.equal(payload.evidence_totals.live_controller_records, 1);
+  assert.equal(payload.evidence_totals.live_repair_records, 0);
+  assert.equal(payload.evidence_totals.live_repair_plan_preview_present, true);
+  assert.equal(payload.evidence_totals.live_repair_alignment_requires_review, true);
+  assert.equal(payload.evidence_totals.live_repair_alignment_status, "controller_priority_differs_from_repeated_feedback");
+  assert.equal(payload.protected_action_claims.total, 0);
+  assert.equal(payload.protected_action_claims.repair_plan_provider_commands, 0);
+  assert.equal(payload.protected_action_claims.repair_plan_paper_orders, 0);
+  assert.equal(payload.repeat_pressure.live_repair, 1);
+  assert.equal(payload.repeat_pressure.live_repair_alignment, 1);
+  assert.equal(payload.effectiveness_matrix.live_repair.status, "observed");
+  assert.equal(payload.effectiveness_matrix.live_repair.top_signal, "inspect_budget_chain");
+  assert.equal(payload.effectiveness_matrix.live_repair.command, "npm --silent run hermes:budget-chain");
+  assert.equal(payload.backlog_feedback.evidence.live_repair_plan.requires_operator_review, true);
+  assert.equal(payload.backlog_feedback.evidence.live_repair_plan.recommended_repair_id, "inspect_budget_chain");
+  assert.equal(payload.backlog_feedback.evidence.live_repair_plan.selected_repair_id, "route_high_severity_events");
+  assert.equal(payload.next_action.id, "harden_live_controller_feedback_loop");
+  assert.equal(payload.safety.can_submit_real_orders, false);
+});
+
 test("autonomy-effectiveness includes repeated source-route pressure", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-autonomy-effectiveness-source-route-"));
   const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");

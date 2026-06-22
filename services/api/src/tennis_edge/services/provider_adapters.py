@@ -84,7 +84,7 @@ class AdapterContractSpec:
     output_contracts: tuple[str, ...]
     scenarios: tuple[str, ...]
     notes: tuple[str, ...]
-    status: Literal["covered", "pending"] = "covered"
+    status: Literal["covered", "pending", "shadow", "deferred"] = "covered"
 
 
 BUDGET_PROVIDER_CONTRACT_SPECS: tuple[AdapterContractSpec, ...] = (
@@ -114,6 +114,85 @@ BUDGET_PROVIDER_CONTRACT_SPECS: tuple[AdapterContractSpec, ...] = (
         output_contracts=("OddsTick", "ProviderLatency"),
         scenarios=("archive_snapshot",),
         notes=("Archive odds replay is used as fallback/comparison before live providers.",),
+    ),
+)
+
+
+ENTERPRISE_PROVIDER_CONTRACT_SPECS: tuple[AdapterContractSpec, ...] = (
+    AdapterContractSpec(
+        provider=Provider.SPORTRADAR,
+        adapter_contract="EnterpriseTimelineProviderAdapter",
+        fake_api="Offline Sportradar live timeline fixture",
+        input_contracts=("RawProviderPayload", "CanonicalMatch", "timeline_events"),
+        output_contracts=(
+            "ScoreTick",
+            "PointEvent",
+            "ProviderLatency",
+            "retirement_delay_walkover_state",
+        ),
+        scenarios=("timeline_point", "timeline_delay", "timeline_retirement"),
+        notes=(
+            "Shadow/deferred only: provider_api_call_allowed=false.",
+            "Fixture validates timeline semantics without a Sportradar key, quota, or live feed.",
+        ),
+        status="deferred",
+    ),
+    AdapterContractSpec(
+        provider=Provider.BETRADAR_UOF,
+        adapter_contract="EnterpriseMarketStateProviderAdapter",
+        fake_api="Offline Betradar UOF market-state fixture",
+        input_contracts=(
+            "RawProviderPayload",
+            "market_status",
+            "betstop_or_suspension",
+        ),
+        output_contracts=("MarketState", "ProviderLatency", "market_suspension"),
+        scenarios=("market_open", "market_suspended", "market_settled"),
+        notes=(
+            "Shadow/deferred only: provider_api_call_allowed=false.",
+            "Fixture validates market-state semantics without a Betradar token or live package.",
+        ),
+        status="deferred",
+    ),
+    AdapterContractSpec(
+        provider=Provider.TXODDS,
+        adapter_contract="EnterpriseInRunningOddsProviderAdapter",
+        fake_api="Offline TXODDS in-running tennis odds fixture",
+        input_contracts=(
+            "RawProviderPayload",
+            "sequence",
+            "bookmaker",
+            "market",
+        ),
+        output_contracts=("OddsTick", "ProviderLatency", "market_odds_snapshot"),
+        scenarios=("in_running_odds", "price_move", "stale_quote"),
+        notes=(
+            "Shadow/deferred only: provider_api_call_allowed=false.",
+            "Fixture validates in-running odds semantics without TXODDS credentials or quota.",
+        ),
+        status="deferred",
+    ),
+    AdapterContractSpec(
+        provider=Provider.BETFAIR,
+        adapter_contract="EnterpriseExchangeMarketStreamAdapter",
+        fake_api="Offline Betfair exchange market stream fixture",
+        input_contracts=(
+            "RawProviderPayload",
+            "marketId",
+            "selectionId",
+            "publishTime",
+        ),
+        output_contracts=(
+            "ProviderLatency",
+            "exchange_market_depth",
+            "traded_volume",
+        ),
+        scenarios=("market_book", "price_ladder", "market_closed"),
+        notes=(
+            "Shadow/deferred market-data only: provider_api_call_allowed=false.",
+            "Fixture does not enable order placement, account access, or execution credentials.",
+        ),
+        status="deferred",
     ),
 )
 

@@ -58,6 +58,9 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     odds_stream_cli = (source / "ingest_odds_stream.py").read_text()
     ingestion_pipeline = (source / "services/ingestion.py").read_text()
     replay_fixtures = (source / "services/budget_replay_fixtures.py").read_text()
+    enterprise_replay_fixtures = (
+        source / "services/enterprise_replay_fixtures.py"
+    ).read_text()
     repository = (source / "services/repository.py").read_text()
     domain = (source / "domain.py").read_text()
     main_api = (source / "main.py").read_text()
@@ -93,11 +96,17 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
     _require_text(
         errors,
         label="provider adapter contract",
-        text=provider_adapters + runtime_modes,
+        text=provider_adapters + runtime_modes + enterprise_replay_fixtures,
         required=[
             "class ScoreProviderAdapter",
             "class OddsProviderAdapter",
             "class ArchiveOddsProviderAdapter",
+            "ENTERPRISE_PROVIDER_CONTRACT_SPECS",
+            "sample_enterprise_shadow_payloads",
+            "Offline Sportradar live timeline fixture",
+            "Offline Betradar UOF market-state fixture",
+            "Offline TXODDS in-running tennis odds fixture",
+            "Offline Betfair exchange market stream fixture",
             'OFFLINE_PROVIDER_MODES = frozenset({"sample", "replay"})',
             "uses_offline_provider_fixtures",
             "RawProviderPayload",
@@ -352,6 +361,8 @@ def validate_api_last_core_contract(root: Path = ROOT) -> list[str]:
             "test_budget_replay_fixtures_exercise_provider_contracts_without_keys",
             "test_budget_adapter_contract_matrix_outputs_internal_formats_without_live_keys",
             "test_replay_mode_provider_clients_use_fake_api_without_live_calls",
+            "test_enterprise_provider_contract_specs_are_shadow_deferred",
+            "test_enterprise_shadow_fixtures_are_offline_and_budget_chain_safe",
             "test_replay_provider_health_reports_fake_feeds_without_configured_keys",
             "test_operational_state_marks_explicit_replay_mode_without_live_keys",
             "test_repository_regates_persisted_fallback_when_odds_cursor_requires_resync",

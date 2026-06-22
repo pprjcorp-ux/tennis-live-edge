@@ -42,6 +42,7 @@ class Provider(StrEnum):
     SPORTRADAR = "sportradar"
     BETRADAR_UOF = "betradar_uof"
     TXODDS = "txodds"
+    BETFAIR = "betfair"
     API_TENNIS = "api_tennis"
     ODDS_API_IO = "odds_api_io"
     THE_ODDS_API = "theoddsapi"
@@ -1098,7 +1099,7 @@ class ReplayContractProvider(BaseModel):
     input_contracts: list[str]
     output_contracts: list[str]
     scenarios: list[str]
-    status: Literal["covered", "pending"]
+    status: Literal["covered", "pending", "shadow", "deferred"]
     notes: list[str] = Field(default_factory=list)
 
 

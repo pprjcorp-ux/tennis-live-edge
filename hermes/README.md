@@ -411,6 +411,12 @@ contract". The command sets `dataset_fetch_allowed=false`,
 recommend `hermes:replay-backfill-contract` or `hermes:live-stats`, but it
 must not fetch public datasets, spend provider quota, scrape, bypass controls
 or create paper/real orders.
+It emits `intake_contracts` for every allowed internal contract, including
+`replay_backfill_intake_contract` and `live_stats_feature_intake_contract`.
+The live-stats contract maps `live_stats_feature_contract` into
+`LiveFeatureSnapshotSeed`, `CollectionCadenceSeed`, `SignalGateContextSeed`,
+and `LearningReviewSeed` without provider calls, live API calls, dataset
+fetching, browser scraping, execution, or LLM-per-tick decisions.
 The JSON mode is `source_intake_plan`, and the acceptance contract includes
 `source_intake_plan.mode=source_intake_plan`,
 `allowed_contracts_before_operator_review_before_deferred_before_forbidden`,

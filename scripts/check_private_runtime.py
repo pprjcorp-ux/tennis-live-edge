@@ -805,6 +805,8 @@ def main() -> int:
         "source-intake-ledger-report",
         "source_intake_plan",
         "source_intake_plan.mode=source_intake_plan",
+        "live_stats_feature_intake_contract",
+        "intake_contracts",
         "source_intake_ledger_report",
         "local_source_intake_jsonl_only",
         "intake_command_executed=false",

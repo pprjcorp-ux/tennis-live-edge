@@ -5586,6 +5586,7 @@ function buildSourceIntakePlan({
     },
     recommended_action: sourceIntakeRecommendedAction({ nextIntake, sourceUseReport, manifest }),
     intake_contract: sourceIntakeContract(nextIntake),
+    intake_contracts: allowedContracts.map(sourceIntakeContract).filter(Boolean),
     validation_commands: [
       "npm --silent run hermes:source-intake-plan",
       "npm --silent run hermes:source-use-manifest",
@@ -5747,6 +5748,37 @@ function sourceIntakeContract(nextIntake) {
       can_submit_real_orders: false,
     };
   }
+  if (nextIntake.source_id === "live_statistics") {
+    return {
+      id: "live_stats_feature_intake_contract",
+      status: "ready",
+      source_id: nextIntake.source_id,
+      feature_contract_id: "live_stats_feature_contract",
+      input_contracts: [
+        "OperationalStateSnapshot",
+        "MatchFreshness",
+        "LiveSignals",
+        "ProviderHealth",
+        "ProviderCursors",
+        "DataQualitySnapshot",
+        "CostProfile",
+        "ModelLabReadinessSnapshot",
+      ],
+      output_contracts: [
+        "LiveFeatureSnapshotSeed",
+        "CollectionCadenceSeed",
+        "SignalGateContextSeed",
+        "LearningReviewSeed",
+      ],
+      validation_command: nextIntake.command,
+      provider_api_call_allowed: false,
+      live_api_calls: false,
+      dataset_fetch_allowed: false,
+      browser_scraping_allowed: false,
+      can_submit_real_orders: false,
+      llm_per_tick_allowed: false,
+    };
+  }
   return {
     id: `${nextIntake.source_id}_intake_contract`,
     status: "ready",
@@ -5759,6 +5791,7 @@ function sourceIntakeContract(nextIntake) {
       : ["LiveStatsSnapshot", "FreshnessSignal", "CollectionThrottleEvidence"],
     validation_command: nextIntake.command,
     provider_api_call_allowed: false,
+    live_api_calls: false,
     dataset_fetch_allowed: false,
     can_submit_real_orders: false,
   };

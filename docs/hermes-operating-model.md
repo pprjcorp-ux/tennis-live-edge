@@ -475,6 +475,13 @@ cursor/data-quality state, cost profile, and Model Lab readiness into
 and `LearningReviewSeed`. This is the safe "jailbreak" route for live
 statistics: no live scoreboard scraping, no provider quota spend without an
 operator, no browser automation, and no LLM per tick.
+`hermes:source-intake-plan` also exposes this route as
+`live_stats_feature_intake_contract` inside `intake_contracts` whenever
+`route:live_statistics` is allowed. That makes live-stat feature extraction a
+first-class internal intake contract while preserving
+`provider_api_call_allowed=false`, `live_api_calls=false`,
+`dataset_fetch_allowed=false`, `browser_scraping_allowed=false`, and
+`llm_per_tick_allowed=false`.
 
 `hermes:live-window` is the preferred go/no-go packet for an active live
 window. It reuses the deterministic event and live-stats gates, returns

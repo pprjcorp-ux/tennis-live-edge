@@ -257,11 +257,15 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it is read-only and must never execute `diagnostic_command` values.
 - Hermes scheduler rehearsal should consume `npm run hermes:scheduler-rehearsal`;
   it may write only local JSONL audit rows under `hermes/runs/`, must not create
-  real cron jobs, and must never execute the commands it schedules.
+  real cron jobs, and must never execute the commands it schedules. It should
+  include a read-only Grand Slam readiness lane with low-frequency checks
+  off-calendar and tighter checks only when Slam windows, predictions, or
+  paper-ready rows are visible.
 - Hermes cron proposal should consume `npm run hermes:cron-proposal`; it may
   write only a local review manifest under `hermes/runs/`, must not call
   `hermes cron add`, and must exclude provider-smoke, autopilot, admin-token,
-  quota-consuming, or order-creating jobs.
+  quota-consuming, or order-creating jobs. Grand Slam readiness proposals are
+  allowed only while they remain read-only and cannot create paper orders.
 - Hermes cron activation review should consume
   `npm run hermes:activation-checklist`; it must not create jobs, must not print
   secrets, and should expose manual activation commands only when runtime,

@@ -3489,7 +3489,7 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
   });
 
   try {
-    const result = await runCli(["scheduler-rehearsal", `--api-base=${apiBase}`], {
+    const result = await runCli(["scheduler-rehearsal", `--api-base=${apiBase}`, "--date=2026-06-22"], {
       env: {
         HERMES_BIN: fakeHermes,
         HERMES_SCHEDULER_RUN_LOG: runLog,
@@ -3508,6 +3508,13 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(payload.next_tick.command, "npm run hermes:runtime-check");
     assert.equal(payload.schedule.some((item) => item.command === "npm --silent run hermes:safe-loop"), true);
     assert.equal(payload.schedule.some((item) => item.command === "npm --silent run hermes:quota-plan"), true);
+    const grandSlamItem = payload.schedule.find((item) => item.id === "grand_slam_readiness");
+    assert.equal(grandSlamItem.command, "npm --silent run hermes:grand-slam-readiness");
+    assert.equal(grandSlamItem.every_minutes, 30);
+    assert.equal(grandSlamItem.provider_api_call_allowed, false);
+    assert.equal(grandSlamItem.can_create_paper_orders, false);
+    assert.equal(payload.grand_slam_readiness.status, "blocked");
+    assert.equal(payload.grand_slam_readiness.cadence.every_minutes, 30);
     assert.equal(payload.audit_log.path, runLog);
     const lines = readFileSync(runLog, "utf8").trim().split("\n");
     assert.equal(lines.length, 1);
@@ -3515,6 +3522,141 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(audit.mode, "scheduler_rehearsal");
     assert.equal(audit.next_tick.command, "npm run hermes:runtime-check");
     assert.equal(audit.executed_commands.length, 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("scheduler-rehearsal tightens Grand Slam cadence when paper-ready without executing actions", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-scheduler-slam-"));
+  const runLog = join(tempDir, "scheduler-runs.jsonl");
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: running'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('doctor: ok'); process.exit(0); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const match = {
+    match: {
+      id: "wimbledon_live_edge",
+      tournament: "Wimbledon",
+      round: "R64",
+      tour: "WTA",
+      competition_level: "GRAND_SLAM",
+      surface: "grass",
+      player1: { id: "p1", name: "Player One" },
+      player2: { id: "p2", name: "Player Two" },
+      state: {
+        status: "live",
+        p1_games: 3,
+        p2_games: 2,
+        point_score: "30-15",
+        server_player_id: "p1",
+        is_tiebreak: false,
+        is_break_point: false,
+      },
+    },
+    prediction: {
+      p1_win_prob: 0.64,
+      p2_win_prob: 0.36,
+      confidence: "Alta",
+      model_version: "baseline_v0",
+    },
+    signals: [
+      {
+        id: "sig_wimbledon_edge",
+        match_id: "wimbledon_live_edge",
+        player_id: "p1",
+        player_name: "Player One",
+        status: "Entrada",
+        edge: 0.075,
+        threshold: 0.03,
+        confidence: "Alta",
+        best_odds: 2.02,
+        reason: "fresh Grand Slam edge",
+      },
+    ],
+    freshness: {
+      source: "live",
+      persisted: true,
+      score_age_ms: 3000,
+      odds_age_ms: 2500,
+      provider_lineage: ["api_tennis", "odds_api_io"],
+    },
+  };
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": [match],
+    "/api/v1/signals/live": [match.signals[0]],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "live_with_keys",
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 12,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          steps: [],
+        },
+        source_summary: {
+          total_matches: 1,
+          persisted_matches: 1,
+          match_freshness: [
+            {
+              match_id: "wimbledon_live_edge",
+              source: "live",
+              persisted: true,
+              score_age_ms: 3000,
+              odds_age_ms: 2500,
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["scheduler-rehearsal", `--api-base=${apiBase}`, "--date=2026-07-01"], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_SCHEDULER_RUN_LOG: runLog,
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    const grandSlamItem = payload.schedule.find((item) => item.id === "grand_slam_readiness");
+    assert.equal(payload.grand_slam_readiness.status, "paper_ready");
+    assert.equal(payload.grand_slam_readiness.paper_ready, true);
+    assert.equal(payload.grand_slam_readiness.grand_slam_visible, 1);
+    assert.equal(grandSlamItem.every_minutes, 5);
+    assert.equal(grandSlamItem.live_api_calls, false);
+    assert.equal(grandSlamItem.provider_api_call_allowed, false);
+    assert.equal(grandSlamItem.can_create_paper_orders, false);
+    assert.equal(payload.executed_commands.length, 0);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.can_submit_real_orders, false);
   } finally {
     server.close();
   }
@@ -3562,7 +3704,7 @@ test("cron-proposal writes reviewable Hermes cron commands without creating jobs
   });
 
   try {
-    const result = await runCli(["cron-proposal", `--api-base=${apiBase}`], {
+    const result = await runCli(["cron-proposal", `--api-base=${apiBase}`, "--date=2026-06-22"], {
       env: {
         HERMES_BIN: fakeHermes,
         HERMES_SCHEDULER_RUN_LOG: runLog,
@@ -3582,6 +3724,12 @@ test("cron-proposal writes reviewable Hermes cron commands without creating jobs
     assert.equal(payload.can_create_paper_orders, false);
     assert.equal(payload.proposal_path, proposalPath);
     assert.equal(payload.jobs.some((job) => job.name === "tennis-edge-safe-loop"), true);
+    const grandSlamJob = payload.jobs.find((job) => job.name === "tennis-edge-grand-slam-readiness");
+    assert.equal(grandSlamJob.every, "30m");
+    assert.equal(grandSlamJob.source_command, "npm --silent run hermes:grand-slam-readiness");
+    assert.equal(grandSlamJob.message.includes("Report status, active_grand_slams"), true);
+    assert.equal(grandSlamJob.can_create_paper_orders, false);
+    assert.equal(grandSlamJob.provider_api_call_allowed, false);
     assert.equal(payload.jobs.every((job) => job.command_preview.startsWith("hermes cron add")), true);
     assert.equal(payload.jobs.every((job) => job.command_preview.includes("--message")), true);
     assert.equal(payload.jobs.every((job) => !job.command_preview.includes("--execute-provider-call")), true);

@@ -1647,7 +1647,8 @@ async function autonomyGates() {
     autonomyPlan,
     opsPacket,
   });
-  const rehearsal = buildSchedulerRehearsal(loop);
+  const grandSlam = await grandSlamReadinessData();
+  const rehearsal = buildSchedulerRehearsal(loop, grandSlam);
   const proposal = buildCronProposal(rehearsal);
   const activation = buildActivationChecklist({ loop, rehearsal, proposal });
   printJson(buildAutonomyGates({
@@ -1701,7 +1702,8 @@ async function experimentLabData() {
     autonomyPlan,
     opsPacket,
   });
-  const rehearsal = buildSchedulerRehearsal(loop);
+  const grandSlam = await grandSlamReadinessData();
+  const rehearsal = buildSchedulerRehearsal(loop, grandSlam);
   const proposal = buildCronProposal(rehearsal);
   const activation = buildActivationChecklist({ loop, rehearsal, proposal });
   const gates = buildAutonomyGates({
@@ -1825,15 +1827,21 @@ async function liveMatchesData() {
 }
 
 async function schedulerRehearsal() {
-  const loop = await safeLoopData();
-  const rehearsal = buildSchedulerRehearsal(loop);
+  const [loop, grandSlam] = await Promise.all([
+    safeLoopData(),
+    grandSlamReadinessData(),
+  ]);
+  const rehearsal = buildSchedulerRehearsal(loop, grandSlam);
   writeSchedulerAudit(rehearsal);
   printJson(rehearsal);
 }
 
 async function cronProposal() {
-  const loop = await safeLoopData();
-  const rehearsal = buildSchedulerRehearsal(loop);
+  const [loop, grandSlam] = await Promise.all([
+    safeLoopData(),
+    grandSlamReadinessData(),
+  ]);
+  const rehearsal = buildSchedulerRehearsal(loop, grandSlam);
   writeSchedulerAudit(rehearsal);
   const proposal = buildCronProposal(rehearsal);
   writeCronProposal(proposal);
@@ -1841,8 +1849,11 @@ async function cronProposal() {
 }
 
 async function activationChecklist() {
-  const loop = await safeLoopData();
-  const rehearsal = buildSchedulerRehearsal(loop);
+  const [loop, grandSlam] = await Promise.all([
+    safeLoopData(),
+    grandSlamReadinessData(),
+  ]);
+  const rehearsal = buildSchedulerRehearsal(loop, grandSlam);
   writeSchedulerAudit(rehearsal);
   const proposal = buildCronProposal(rehearsal);
   writeCronProposal(proposal);
@@ -1850,8 +1861,11 @@ async function activationChecklist() {
 }
 
 async function runtimeFixPlan() {
-  const loop = await safeLoopData();
-  const rehearsal = buildSchedulerRehearsal(loop);
+  const [loop, grandSlam] = await Promise.all([
+    safeLoopData(),
+    grandSlamReadinessData(),
+  ]);
+  const rehearsal = buildSchedulerRehearsal(loop, grandSlam);
   const proposal = buildCronProposal(rehearsal);
   const activation = buildActivationChecklist({ loop, rehearsal, proposal });
   printJson(buildRuntimeFixPlan({ loop, rehearsal, proposal, activation }));
@@ -6191,8 +6205,8 @@ function dedupeLoopCommands(commands) {
   });
 }
 
-function buildSchedulerRehearsal(loop) {
-  const schedule = schedulerSchedule(loop);
+function buildSchedulerRehearsal(loop, grandSlam = null) {
+  const schedule = schedulerSchedule(loop, grandSlam);
   const nextTick = chooseSchedulerNextTick(loop, schedule);
   const auditPath = schedulerAuditPath();
   return {
@@ -6219,6 +6233,7 @@ function buildSchedulerRehearsal(loop) {
       sampling_policy: loop.live_stats?.sampling_policy,
       safety: loop.safety,
     },
+    grand_slam_readiness: grandSlam ? grandSlamScheduleSummary(grandSlam) : null,
     audit_log: {
       path: auditPath,
       format: "jsonl",
@@ -6236,9 +6251,10 @@ function buildSchedulerRehearsal(loop) {
   };
 }
 
-function schedulerSchedule(loop) {
+function schedulerSchedule(loop, grandSlam = null) {
   const policy = loop.live_stats?.sampling_policy ?? {};
   const baseMinutes = Number(policy.poll_interval_minutes ?? 5);
+  const grandSlamCadence = grandSlamScheduleCadence(grandSlam);
   const safeLoopInterval = loop.status === "runtime_degraded"
     ? 5
     : baseMinutes > 0
@@ -6268,6 +6284,12 @@ function schedulerSchedule(loop) {
       command: "npm --silent run hermes:trigger-policy",
       everyMinutes: 5,
       reason: "Refresh safe wakeup triggers for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway.",
+    }),
+    schedulerItem({
+      id: "grand_slam_readiness",
+      command: "npm --silent run hermes:grand-slam-readiness",
+      everyMinutes: grandSlamCadence.every_minutes,
+      reason: grandSlamCadence.reason,
     }),
     schedulerItem({
       id: "ops_compiler",
@@ -6341,6 +6363,60 @@ function schedulerSchedule(loop) {
     }));
   }
   return dedupeSchedule(rows);
+}
+
+function grandSlamScheduleCadence(grandSlam) {
+  if (!grandSlam) {
+    return {
+      every_minutes: 12 * 60,
+      reason: "Run low-frequency Grand Slam readiness checks until the readiness packet is available.",
+    };
+  }
+  if (grandSlam.paper_ready) {
+    return {
+      every_minutes: 5,
+      reason: "Grand Slam prediction rows are paper-ready; watch backend gates frequently without creating paper orders.",
+    };
+  }
+  if (grandSlam.prediction_ready) {
+    return {
+      every_minutes: 10,
+      reason: "Grand Slam prediction rows exist; refresh readiness while waiting for paper gates.",
+    };
+  }
+  if (grandSlam.status === "waiting_for_draw_or_feed" || Number(grandSlam.active_grand_slams?.length ?? 0) > 0) {
+    return {
+      every_minutes: 15,
+      reason: "Grand Slam window is open; monitor draw/feed visibility without spending provider quota.",
+    };
+  }
+  if (grandSlam.status === "blocked") {
+    return {
+      every_minutes: 30,
+      reason: "Grand Slam readiness is blocked; recheck backend and safety gates without executing repair actions.",
+    };
+  }
+  return {
+    every_minutes: 12 * 60,
+    reason: "No Grand Slam window or rows are active; keep readiness checks low-frequency.",
+  };
+}
+
+function grandSlamScheduleSummary(grandSlam) {
+  return {
+    status: grandSlam.status,
+    prediction_ready: Boolean(grandSlam.prediction_ready),
+    paper_ready: Boolean(grandSlam.paper_ready),
+    active_grand_slams: grandSlam.active_grand_slams ?? [],
+    grand_slam_visible: grandSlam.matches?.grand_slam_visible ?? 0,
+    next_action: grandSlam.next_action ? {
+      id: grandSlam.next_action.id,
+      command: grandSlam.next_action.command,
+      can_create_paper_orders: Boolean(grandSlam.next_action.can_create_paper_orders),
+      provider_api_call_allowed: Boolean(grandSlam.next_action.provider_api_call_allowed),
+    } : null,
+    cadence: grandSlamScheduleCadence(grandSlam),
+  };
 }
 
 function schedulerItem({ id, command, everyMinutes, reason }) {
@@ -6466,6 +6542,8 @@ function cronMessageFor(item, rehearsal) {
         ? "Report severity, events, recommended_commands, can_run_paper_autopilot, and safety."
         : item.id === "live_stats"
           ? "Report health_scores, freshness, sampling_policy, budget_chain, and safety only."
+          : item.id === "grand_slam_readiness"
+            ? "Report status, active_grand_slams, matches, prediction_ready, paper_ready, next_action, and safety only."
           : item.id === "budget_chain"
             ? "Report current_step, blockers, smoke_command, and provider_api_call_allowed."
             : "Report review_status, gates, blockers, next_actions, and real_execution_recommendation.";

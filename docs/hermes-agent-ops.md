@@ -294,13 +294,16 @@ executes them.
 Use `hermes:scheduler-rehearsal` before creating or changing real Hermes cron
 jobs. It converts the current safe-loop packet into proposed intervals and
 appends a local JSONL row under `hermes/runs/`. It does not create, update, or
-delete cron jobs and does not execute the commands in the schedule.
+delete cron jobs and does not execute the commands in the schedule. It includes
+an adaptive `hermes:grand-slam-readiness` lane that stays low-frequency outside
+Grand Slam windows and tightens only when Slam rows/predictions are visible.
 
 Use `hermes:cron-proposal` to generate a reviewable cron manifest. It writes
 `hermes/runs/cron-proposal.json` with exact `hermes cron add` command previews
 for safe read-only jobs only. It does not call `hermes cron add` and excludes
 autopilot, provider-smoke, admin-token, quota-consuming, and order-creating
-jobs.
+jobs. Grand Slam readiness proposals remain non-executing even when paper-ready
+matches are present.
 
 Use `hermes:activation-checklist` as the final non-mutating gate before any
 manual cron creation. It checks Hermes runtime health, Telegram allowlist,

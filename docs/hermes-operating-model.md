@@ -252,12 +252,15 @@ operator action without giving Hermes write authority.
 real Hermes cron configuration. It computes proposed intervals, chooses the
 next safe tick, and appends a local JSONL audit row under `hermes/runs/`. It
 does not create cron jobs, execute scheduled commands, create paper orders, or
-spend provider quota.
+spend provider quota. Grand Slam readiness is scheduled as a read-only lane:
+low-frequency when no Slam is active, tighter during Slam windows, and five
+minutes when persisted Grand Slam rows are paper-ready.
 
 `hermes:cron-proposal` turns the rehearsal into a local review manifest with
 exact `hermes cron add` command previews. It is still non-mutating: it does not
 call `hermes cron add`, and it excludes autopilot, provider-smoke, admin-token,
-quota-consuming, and order-creating jobs.
+quota-consuming, and order-creating jobs. The Grand Slam readiness job is
+allowed only because it calls the read-only packet and never creates orders.
 
 `hermes:activation-checklist` is the last non-mutating gate before a human
 creates any Hermes cron jobs. It requires clean runtime diagnostics, Telegram

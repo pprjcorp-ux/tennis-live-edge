@@ -297,12 +297,17 @@ unblock.
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not
 create real cron jobs, execute commands, create paper orders, spend provider
-quota, or submit real orders.
+quota, or submit real orders. It also includes `hermes:grand-slam-readiness`
+with adaptive cadence: low-frequency off-calendar, tighter during a configured
+Grand Slam window, and five-minute checks when backend Grand Slam rows are
+paper-ready.
 
 `hermes:cron-proposal` writes a reviewable local manifest at
 `hermes/runs/cron-proposal.json` with exact `hermes cron add` command previews.
 It does not call `hermes cron add` and excludes provider-smoke, autopilot,
-admin-token, quota-consuming, and order-creating jobs.
+admin-token, quota-consuming, and order-creating jobs. Grand Slam readiness cron
+proposals remain read-only and cannot create paper orders even when the packet
+reports paper-ready matches.
 
 `hermes:activation-checklist` is the final non-mutating gate before a human
 creates cron jobs. It checks Hermes runtime health, Telegram allowlist,

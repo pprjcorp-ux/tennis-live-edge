@@ -401,8 +401,8 @@ function channelReadinessActions({ checks, runtime }) {
       id: "rerun_bounded_runtime_check",
       priority: 20,
       lane: "local_runtime",
-      command: "npm run hermes:runtime-check",
-      reason: "Hermes doctor must pass bounded diagnostics before channel readiness is accepted.",
+      command: runtimeReviewCommand(runtime.runtime_findings),
+      reason: runtimeReviewReason(runtime.runtime_findings),
     }));
   }
   if (byId.telegram_allowlist_configured?.status !== "pass") {
@@ -2081,8 +2081,8 @@ function runtimeDiagnosticActions({ hasMissingCommand, hasFailure, runtimeFindin
   if (runtimeFindings.doctor_status === "timed_out") {
     actions.push(runtimeDiagnosticAction({
       id: "bounded_doctor_review",
-      command: "npm run hermes:runtime-check",
-      reason: "Hermes doctor timed out inside bounded diagnostics; keep using the bounded repo wrapper instead of unbounded doctor calls.",
+      command: runtimeReviewCommand(runtimeFindings),
+      reason: runtimeReviewReason(runtimeFindings),
     }));
   }
   if (runtimeFindings.doctor_status === "failed") {
@@ -2146,7 +2146,7 @@ function runtimeCheckActions({ hasMissingCommand, hasFailure, runtimeFindings })
   }
   if (runtimeFindings?.doctor_status === "timed_out") {
     return [
-      "Hermes doctor timed out in bounded diagnostics; use npm run hermes:runtime-check instead of unbounded doctor calls.",
+      `Hermes doctor timed out in bounded diagnostics; use ${runtimeReviewCommand(runtimeFindings)} instead of unbounded doctor calls.`,
       "Keep protected automation disabled until the gateway and channel checks are clean.",
     ];
   }
@@ -2160,6 +2160,22 @@ function runtimeCheckActions({ hasMissingCommand, hasFailure, runtimeFindings })
     "Hermes CLI diagnostics are clean; rerun npm run hermes:preflight.",
     "Keep real execution hard-blocked.",
   ];
+}
+
+function runtimeReviewCommand(runtimeFindings) {
+  if (runtimeFindings?.gateway_service_status === "running"
+    && runtimeFindings?.doctor_status === "timed_out"
+    && (runtimeFindings?.blockers ?? []).includes("doctor_timed_out")) {
+    return "npm run hermes:doctor-triage";
+  }
+  return "npm run hermes:runtime-check";
+}
+
+function runtimeReviewReason(runtimeFindings) {
+  if (runtimeReviewCommand(runtimeFindings) === "npm run hermes:doctor-triage") {
+    return "Hermes doctor timed out while the gateway is running; run bounded doctor triage before channel readiness.";
+  }
+  return "Hermes local runtime is missing or degraded; collect CLI diagnostics without repair.";
 }
 
 function dailyOpsBody() {
@@ -3525,12 +3541,7 @@ function buildAutonomyGateRows({ loop, report, eventPlan, sourcePlan, activation
 }
 
 function channelReadyGateCommand(runtimeFindings) {
-  if (runtimeFindings?.gateway_service_status === "running"
-    && runtimeFindings?.doctor_status === "timed_out"
-    && (runtimeFindings?.blockers ?? []).includes("doctor_timed_out")) {
-    return "npm run hermes:doctor-triage";
-  }
-  return "npm run hermes:runtime-check";
+  return runtimeReviewCommand(runtimeFindings);
 }
 
 function autonomyGate({
@@ -4163,7 +4174,7 @@ function buildCapabilityRows({ loop, report, eventPlan, sourcePlan, autonomyPlan
       label: "Hermes local runtime and channel health",
       status: loop.runtime?.status === "ready" ? "ready" : "degraded",
       score: loop.runtime?.status === "ready" ? 100 : 35,
-      command: "npm run hermes:runtime-check",
+      command: runtimeReviewCommand(loop.runtime?.runtime_findings),
       reason: "Runtime diagnostics determine whether cron, Telegram and gateway packets can be trusted.",
       evidence: [
         `runtime.status=${loop.runtime?.status ?? "unknown"}`,
@@ -4419,9 +4430,9 @@ function buildWakeTriggers({ loop, sourcePlan }) {
       id: "runtime_degraded",
       priority: 10,
       severity: "high",
-      command: "npm run hermes:runtime-check",
+      command: runtimeReviewCommand(loop.runtime?.runtime_findings),
       condition: `runtime.status=${loop.runtime?.status ?? "unknown"}`,
-      reason: "Collect local Hermes diagnostics before protected automation.",
+      reason: runtimeReviewReason(loop.runtime?.runtime_findings),
     }));
   }
   for (const event of loop.event_summary?.events ?? []) {
@@ -4828,8 +4839,8 @@ function safeLoopCommands({ runtime, eventPlan, budgetPlan, unblock, playbookPla
   if (runtime.status !== "ready" || unblock.lanes.some((lane) => lane.id === "local_runtime")) {
     commands.push(loopCommand({
       id: "runtime_check",
-      command: "npm run hermes:runtime-check",
-      reason: "Hermes local runtime is missing or degraded; collect CLI diagnostics without repair.",
+      command: runtimeReviewCommand(runtime.runtime_findings),
+      reason: runtimeReviewReason(runtime.runtime_findings),
     }));
   }
   for (const step of playbookPlan.steps.filter((item) => item.status === "ready")) {
@@ -5216,6 +5227,17 @@ function buildRuntimeFixPriorities(report) {
 
 function runtimePriorityFor(row) {
   const command = row.command;
+  if (command === "npm run hermes:doctor-triage") {
+    return runtimePriority({
+      id: "triage_hermes_doctor_timeout",
+      priority: 5,
+      lane: "local_runtime",
+      sourceCommand: command,
+      frequency: row.count,
+      reason: "Hermes doctor timeout triage is the most specific runtime blocker.",
+      diagnosticCommand: "npm run hermes:doctor-triage",
+    });
+  }
   if (command === "npm run hermes:runtime-check") {
     return runtimePriority({
       id: "stabilize_hermes_runtime",

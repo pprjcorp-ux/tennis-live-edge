@@ -1999,6 +1999,53 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
   }
 });
 
+test("ops-compiler routes running-gateway doctor timeouts through doctor-triage", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-ops-compiler-doctor-timeout-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✓ running'); process.exit(0); }",
+      "else if (process.argv[2] === 'doctor') { setTimeout(() => {}, 10000); }",
+      "else { process.exit(2); }",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["ops-compiler", `--api-base=${apiBase}`], {
+      env: { HERMES_BIN: fakeHermes },
+      timeoutMs: 12_000,
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "ops_compiler");
+    assert.equal(payload.compiled_action.command, "npm run hermes:doctor-triage");
+    assert.equal(payload.operator_packet.next_action.command, "npm run hermes:doctor-triage");
+    assert.equal(payload.trigger_policy.next_wakeup.command, "npm run hermes:doctor-triage");
+    assert.equal(payload.compiled_action.executes_now, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("capability-audit scores Hermes autonomy without executing actions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-capability-audit-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

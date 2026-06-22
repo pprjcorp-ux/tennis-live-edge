@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from tennis_edge.config import Settings
 from tennis_edge.domain import (
@@ -461,6 +462,33 @@ class OperationalStateService:
                 persistence_ready = False
                 examples = 0
                 lineage_counts = {"total": 0, "production": 0, "rehearsal": 0}
+        replay_seed_status: Literal["ready", "collecting", "blocked"] = "blocked"
+        replay_seed_count = 0
+        replay_seed_notes: list[str] = []
+        closing_line_proxy_seed_ready = False
+        paper_learning_seed_ready = False
+        signal_gate_regression_ready = False
+        can_use_replay_backfill_for_rehearsal = False
+        if persistence_ready:
+            replay_backfill = self.replay_backfill_evidence()
+            replay_seed_status = replay_backfill.status
+            replay_seed_count = (
+                replay_backfill.raw_payloads_saved
+                + replay_backfill.score_ticks_saved
+                + replay_backfill.odds_ticks_saved
+                + replay_backfill.cursors_saved
+                + replay_backfill.provider_latency_saved
+            )
+            closing_line_proxy_seed_ready = replay_backfill.closing_line_proxy_seed_ready
+            paper_learning_seed_ready = replay_backfill.paper_learning_seed_ready
+            signal_gate_regression_ready = replay_backfill.signal_gate_regression_ready
+            can_use_replay_backfill_for_rehearsal = (
+                replay_backfill.status == "ready"
+                and replay_seed_count > 0
+                and replay_backfill.provider_api_call_allowed is False
+                and replay_backfill.can_submit_real_orders is False
+            )
+            replay_seed_notes = replay_backfill.notes[:5]
         reasons: list[str] = []
         if not persistence_ready:
             reasons.append(
@@ -474,6 +502,10 @@ class OperationalStateService:
             reasons.append(
                 "Only rehearsal training_examples are present; they stay excluded from production Model Lab evidence."
             )
+        if can_use_replay_backfill_for_rehearsal and examples <= 0:
+            reasons.append(
+                "ReplayBackfillEvidence seeds are ready for rehearsal/regression only; settled production training_examples are still required before live backtests."
+            )
         can_run = persistence_ready and examples > 0
         return ModelLabReadinessSnapshot(
             status="ready" if can_run else "collecting" if persistence_ready else "blocked",
@@ -484,6 +516,14 @@ class OperationalStateService:
             total_training_examples=lineage_counts["total"],
             production_training_examples=lineage_counts["production"],
             rehearsal_training_examples=lineage_counts["rehearsal"],
+            replay_backfill_seed_status=replay_seed_status,
+            replay_backfill_seed_count=replay_seed_count,
+            closing_line_proxy_seed_ready=closing_line_proxy_seed_ready,
+            paper_learning_seed_ready=paper_learning_seed_ready,
+            signal_gate_regression_ready=signal_gate_regression_ready,
+            can_use_replay_backfill_for_rehearsal=can_use_replay_backfill_for_rehearsal,
+            can_promote_model_from_replay_seeds=False,
+            replay_backfill_seed_notes=replay_seed_notes,
             can_run_live_backtest=can_run,
             reasons=reasons,
         )

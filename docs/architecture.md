@@ -123,6 +123,12 @@ decide whether the system behaves as budget or enterprise.
     `ReplayBackfillEvidence` from the same persisted operational truth, exposing
     `closing_line_proxy_seed_ready`, `paper_learning_seed_ready` and
     `signal_gate_regression_ready` without provider calls or runtime mutation.
+    Model Lab surfaces those rows as `replay_backfill_seed_status` and
+    `replay_backfill_seed_count` for rehearsal/regression only:
+    `can_use_replay_backfill_for_rehearsal=true` may help Hermes plan
+    validation, but `can_promote_model_from_replay_seeds=false` and
+    `can_run_live_backtest=false` remain enforced until settled production
+    `training_examples` exist.
 18. Live model registry reads persisted `model_versions`; without persisted
     metrics it exposes only a clearly unvalidated runtime default instead of
     demo ROI/CLV.

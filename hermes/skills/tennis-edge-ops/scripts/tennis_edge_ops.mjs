@@ -3339,6 +3339,13 @@ function buildIntelligenceReport({
       settled_orders: paperPerformance.settled_orders,
       model_lab_status: modelLab.status,
       production_training_examples: modelLab.production_training_examples,
+      replay_backfill_seed_status: modelLab.replay_backfill_seed_status ?? "collecting",
+      replay_backfill_seed_count: Number(modelLab.replay_backfill_seed_count ?? 0),
+      closing_line_proxy_seed_ready: Boolean(modelLab.closing_line_proxy_seed_ready),
+      paper_learning_seed_ready: Boolean(modelLab.paper_learning_seed_ready),
+      signal_gate_regression_ready: Boolean(modelLab.signal_gate_regression_ready),
+      can_use_replay_backfill_for_rehearsal: Boolean(modelLab.can_use_replay_backfill_for_rehearsal),
+      can_promote_model_from_replay_seeds: Boolean(modelLab.can_promote_model_from_replay_seeds),
       can_run_live_backtest: modelLab.can_run_live_backtest,
     },
     cost_snapshot: {
@@ -3480,6 +3487,13 @@ function buildEnterpriseReadinessReport(dashboardState, requestError = null) {
       settled_orders: 0,
       model_lab_status: modelLab.status,
       production_training_examples: modelLab.production_training_examples,
+      replay_backfill_seed_status: modelLab.replay_backfill_seed_status ?? "collecting",
+      replay_backfill_seed_count: Number(modelLab.replay_backfill_seed_count ?? 0),
+      closing_line_proxy_seed_ready: Boolean(modelLab.closing_line_proxy_seed_ready),
+      paper_learning_seed_ready: Boolean(modelLab.paper_learning_seed_ready),
+      signal_gate_regression_ready: Boolean(modelLab.signal_gate_regression_ready),
+      can_use_replay_backfill_for_rehearsal: Boolean(modelLab.can_use_replay_backfill_for_rehearsal),
+      can_promote_model_from_replay_seeds: Boolean(modelLab.can_promote_model_from_replay_seeds),
       can_run_live_backtest: modelLab.can_run_live_backtest,
     },
     cost_snapshot: {
@@ -14514,6 +14528,8 @@ function buildLearningReview(report, eventPlan, playbookPlan) {
   const safety = report.safety ?? {};
   const readyForReview = learning.readiness_status === "ready_for_review";
   const canRunBacktest = Boolean(learning.can_run_live_backtest);
+  const replayBackfillSeedsReady = learning.replay_backfill_seed_status === "ready"
+    && Number(learning.replay_backfill_seed_count ?? 0) > 0;
   const budgetComplete = Boolean(budget.budget_chain_completed);
   const highBlockers = eventPlan.events.filter((item) => ["critical", "high"].includes(item.severity));
   const reviewStatus = (
@@ -14541,12 +14557,19 @@ function buildLearningReview(report, eventPlan, playbookPlan) {
       roi: learning.roi ?? null,
       clv: learning.clv ?? null,
       model_lab_status: learning.model_lab_status,
+      replay_backfill_seed_status: learning.replay_backfill_seed_status ?? "collecting",
+      replay_backfill_seed_count: learning.replay_backfill_seed_count ?? 0,
+      closing_line_proxy_seed_ready: Boolean(learning.closing_line_proxy_seed_ready),
+      paper_learning_seed_ready: Boolean(learning.paper_learning_seed_ready),
+      signal_gate_regression_ready: Boolean(learning.signal_gate_regression_ready),
     },
     gates: {
       budget_chain_completed: budgetComplete,
       enterprise_eligible: Boolean(budget.enterprise_eligible),
       can_run_live_backtest: canRunBacktest,
       ready_for_review: readyForReview,
+      replay_backfill_rehearsal_seed_ready: replayBackfillSeedsReady,
+      can_promote_model_from_replay_seeds: false,
       high_severity_blockers: highBlockers.length,
       real_execution_hard_block: safety.real_execution_hard_block === true,
     },
@@ -14554,6 +14577,7 @@ function buildLearningReview(report, eventPlan, playbookPlan) {
       ...(!budgetComplete ? ["budget_chain_incomplete"] : []),
       ...(!canRunBacktest ? ["live_backtest_dataset_not_ready"] : []),
       ...(!readyForReview ? ["paper_readiness_not_ready_for_review"] : []),
+      ...(replayBackfillSeedsReady && !canRunBacktest ? ["replay_backfill_seeds_rehearsal_only"] : []),
       ...highBlockers.map((item) => `${item.type}:${item.reason}`),
       ...(safety.can_submit_real_orders ? ["real_execution_not_blocked"] : []),
     ],

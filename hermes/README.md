@@ -351,6 +351,12 @@ backend `ReplayBackfillEvidence` status plus `closing_line_proxy_seed_ready`,
 `paper_learning_seed_ready`, and `signal_gate_regression_ready` into the
 contract evidence. The acceptance marker is
 `backend_replay_backfill_evidence.status=ready`.
+Model Lab then exposes that same replay route as rehearsal metadata through
+`replay_backfill_seed_status`, `replay_backfill_seed_count`,
+`can_use_replay_backfill_for_rehearsal`, and
+`can_promote_model_from_replay_seeds=false`. Learning review can mention ready
+seeds, but it must report `replay_backfill_seeds_rehearsal_only` until settled
+production `training_examples` make live backtests available.
 
 `hermes:source-use-manifest` is the audit layer between safe source discovery
 and collection/import work. It creates one source-use row per collection route,

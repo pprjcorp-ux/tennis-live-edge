@@ -189,6 +189,14 @@ export default function Page() {
     total_training_examples: 0,
     production_training_examples: 0,
     rehearsal_training_examples: 0,
+    replay_backfill_seed_status: "collecting",
+    replay_backfill_seed_count: 0,
+    closing_line_proxy_seed_ready: false,
+    paper_learning_seed_ready: false,
+    signal_gate_regression_ready: false,
+    can_use_replay_backfill_for_rehearsal: false,
+    can_promote_model_from_replay_seeds: false,
+    replay_backfill_seed_notes: [],
     can_run_live_backtest: false,
     reasons: ["Awaiting operational state."]
   });

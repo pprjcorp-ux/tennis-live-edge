@@ -1104,6 +1104,10 @@ def test_model_lab_readiness_uses_persisted_training_examples_dataset() -> None:
     assert model_lab.total_training_examples == 42
     assert model_lab.production_training_examples == 42
     assert model_lab.rehearsal_training_examples == 0
+    assert model_lab.replay_backfill_seed_status == "collecting"
+    assert model_lab.replay_backfill_seed_count == 0
+    assert model_lab.can_use_replay_backfill_for_rehearsal is False
+    assert model_lab.can_promote_model_from_replay_seeds is False
     assert model_lab.can_run_live_backtest is True
     assert model_lab.reasons == []
 
@@ -1134,6 +1138,52 @@ def test_model_lab_readiness_excludes_rehearsal_examples_from_production() -> No
     assert model_lab.rehearsal_training_examples == 3
     assert model_lab.can_run_live_backtest is False
     assert any("rehearsal" in reason for reason in model_lab.reasons)
+
+
+def test_model_lab_readiness_exposes_replay_backfill_seeds_without_promotion() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(
+            data_mode="live",
+            persistence_enabled=True,
+            database_url="postgresql://tennis:tennis@localhost:5432/tennis_edge",
+        ),
+        StoreStub(
+            ingestion_runs=[
+                _replay_contract_run(generated_at=generated_at),
+                IngestionRunRecord(
+                    id="ingest_replay_ready_1",
+                    run_type="replay_run",
+                    source="api",
+                    status="completed",
+                    summary={
+                        "events_replayed": 3,
+                        "score_ticks": 1,
+                        "odds_ticks": 12,
+                        "resync_required": False,
+                    },
+                    started_at=generated_at,
+                    completed_at=generated_at,
+                ),
+            ],
+            training_examples_count=0,
+        ),
+    )
+
+    model_lab = service.model_lab_readiness()
+
+    assert model_lab.status == "collecting"
+    assert model_lab.training_examples == 0
+    assert model_lab.production_training_examples == 0
+    assert model_lab.can_run_live_backtest is False
+    assert model_lab.replay_backfill_seed_status == "ready"
+    assert model_lab.replay_backfill_seed_count == 37
+    assert model_lab.closing_line_proxy_seed_ready is True
+    assert model_lab.paper_learning_seed_ready is True
+    assert model_lab.signal_gate_regression_ready is True
+    assert model_lab.can_use_replay_backfill_for_rehearsal is True
+    assert model_lab.can_promote_model_from_replay_seeds is False
+    assert any("rehearsal/regression only" in reason for reason in model_lab.reasons)
 
 
 def test_model_lab_readiness_blocks_without_persistent_truth() -> None:

@@ -286,6 +286,14 @@ export type ModelLabReadinessSnapshot = {
   total_training_examples: number;
   production_training_examples: number;
   rehearsal_training_examples: number;
+  replay_backfill_seed_status: "ready" | "collecting" | "blocked";
+  replay_backfill_seed_count: number;
+  closing_line_proxy_seed_ready: boolean;
+  paper_learning_seed_ready: boolean;
+  signal_gate_regression_ready: boolean;
+  can_use_replay_backfill_for_rehearsal: boolean;
+  can_promote_model_from_replay_seeds: boolean;
+  replay_backfill_seed_notes: string[];
   can_run_live_backtest: boolean;
   reasons: string[];
 };

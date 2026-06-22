@@ -326,6 +326,12 @@ Hermes also reads `GET /api/v1/replay/backfill-evidence` as backend
 `ReplayBackfillEvidence`, so the contract can use canonical FastAPI evidence
 for closing-line proxy seeds, paper-learning seeds and signal-gate regression
 without spending provider quota.
+The weekly learning review additionally reads Model Lab's
+`replay_backfill_seed_status`, `replay_backfill_seed_count`,
+`can_use_replay_backfill_for_rehearsal` and
+`can_promote_model_from_replay_seeds=false` fields. This lets Hermes explain
+ready replay seeds without treating them as promotion evidence; if no production
+dataset exists it reports `replay_backfill_seeds_rehearsal_only`.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

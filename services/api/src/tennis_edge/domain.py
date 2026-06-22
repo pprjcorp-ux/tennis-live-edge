@@ -1088,6 +1088,14 @@ class ModelLabReadinessSnapshot(BaseModel):
     total_training_examples: int = 0
     production_training_examples: int = 0
     rehearsal_training_examples: int = 0
+    replay_backfill_seed_status: Literal["ready", "collecting", "blocked"] = "collecting"
+    replay_backfill_seed_count: int = 0
+    closing_line_proxy_seed_ready: bool = False
+    paper_learning_seed_ready: bool = False
+    signal_gate_regression_ready: bool = False
+    can_use_replay_backfill_for_rehearsal: bool = False
+    can_promote_model_from_replay_seeds: bool = False
+    replay_backfill_seed_notes: list[str] = Field(default_factory=list)
     can_run_live_backtest: bool
     reasons: list[str] = Field(default_factory=list)
 

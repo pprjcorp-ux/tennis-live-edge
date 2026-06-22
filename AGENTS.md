@@ -240,6 +240,11 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   but must not fetch, scrape, import, spend quota, create paper orders, or
   treat historical data as live state. License, attribution, commercial-use, and
   source-manifest gates must remain explicit.
+- Hermes enterprise/no-budget accuracy planning should consume
+  `npm run hermes:enterprise-accuracy-plan`; it ranks top-tier data/odds feeds
+  for Grand Slam scoreline prediction, lists access requirements and model
+  layers, and must stay read-only with `provider_api_call_allowed=false` until
+  operator contracts and budget-chain gates are complete.
 - Hermes wakeup policy should consume `npm run hermes:trigger-policy`; it maps
   runtime, events, source discovery, Grand Slam readiness, quota, and learning
   state into debounced triggers for cron/webhook/Telegram/dashboard/Cloudflare/
@@ -355,6 +360,7 @@ npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:source-route-matrix
 npm run hermes:historical-backfill-plan
+npm run hermes:enterprise-accuracy-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit

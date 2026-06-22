@@ -21,6 +21,9 @@ contracts.
   singles in the budget profile.
 - The local core can validate replay contracts and persisted operational truth
   without live provider calls.
+- `npm run hermes:enterprise-accuracy-plan` turns the no-budget provider stack,
+  access checklist, model layers, and Grand Slam scoreline forecast contract
+  into a read-only operator packet.
 - Daily live Grand Slam prediction requires healthy score, odds, cursor,
   persistence, and provider-health evidence. Replay-only evidence is useful for
   rehearsal, but it is not proof of live readiness.
@@ -51,8 +54,8 @@ walkovers, and match-status workflow.
 
 Target vendors:
 
-- Sportradar Tennis v3: schedules, live summaries, sport-event timeline, live
-  timelines, push events, push statistics, and historical/reference feeds.
+- Sportradar Tennis: official/enterprise score state and point-by-point spine
+  across global men's and women's competitions by coverage tier.
 - Tennis Data Innovations / ATP data route: official ATP and Challenger rights
   path where commercially available.
 - Stats Perform / Opta WTA: official WTA chair data, low-latency deep data, and
@@ -72,6 +75,10 @@ Priority 2 is price discovery from multiple independent odds routes:
   liquidity, and closing-line proxy. Real order placement stays hard-blocked in
   this track.
 - Odds-API.io WebSocket and TheOddsAPI remain comparison/fallback feeds.
+
+Use `hermes:enterprise-accuracy-plan` before contracting work. It ranks
+Sportradar, Stats Perform/Opta WTA, TXODDS, Betradar UOF, Betfair market data
+and fallback odds aggregators by the prediction layers they unlock.
 
 ### Context and historical base
 
@@ -147,6 +154,7 @@ documentation, replay fixtures, or parser tests.
 
 Hermes should operate as an event-driven supervisor:
 
+- emit `enterprise-accuracy-plan` for no-budget provider/access decisions;
 - check whether a Grand Slam live window is open;
 - summarize provider health and data freshness;
 - route anomalies to operator packets;
@@ -198,4 +206,5 @@ Local/free work we can do without those accesses:
 - model/report scaffolding;
 - dashboard readiness panels;
 - paper-only backtests;
-- Hermes operator packets.
+- Hermes operator packets;
+- `hermes:enterprise-accuracy-plan`.

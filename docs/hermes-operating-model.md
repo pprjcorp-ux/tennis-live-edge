@@ -185,6 +185,12 @@ attribution, commercial-clearance and source-manifest gates. It does not fetch
 or import data; future import scripts must be separate, operator-approved and
 license-aware.
 
+`hermes:enterprise-accuracy-plan` is the preferred packet for the no-budget
+enterprise branch. It turns top-tier scoring, point-by-point, shot-by-shot,
+exchange and odds-feed research into an operator-reviewed provider stack,
+access checklist, model architecture and Grand Slam scoreline forecast contract.
+It remains read-only and keeps `provider_api_call_allowed=false`.
+
 `hermes:grand-slam-mission` is the product-level mission packet. It answers:
 "Can Hermes supervise Grand Slam predictions today, and what is the next safe
 step?" It compiles operational truth, Grand Slam readiness, historical backfill,

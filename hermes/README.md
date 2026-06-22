@@ -282,6 +282,12 @@ operator-review only: it does not fetch, scrape, import, spend quota or create
 orders, and it flags license, attribution and commercial-clearance gates before
 any future importer exists.
 
+`hermes:enterprise-accuracy-plan` is the no-budget-limit accuracy packet. It
+ranks top-tier scoring, shot-by-shot and odds feeds, maps the model layers they
+unlock, and defines the Grand Slam scoreline forecast contract. It stays
+read-only: no provider calls, no scraping, no quota spend, no paper orders and
+no real execution.
+
 `hermes:grand-slam-mission` is the one-packet command for the core product
 goal: predicting and monitoring Grand Slam matches of the day. It compiles
 backend readiness, Grand Slam visibility, historical backfill, match pulse,

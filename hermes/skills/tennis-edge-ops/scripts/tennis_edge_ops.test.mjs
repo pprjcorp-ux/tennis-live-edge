@@ -2203,6 +2203,85 @@ test("historical-backfill-plan ranks allowed historical sources without fetching
   }
 });
 
+test("enterprise-accuracy-plan ranks no-budget provider stack without calls or bypass", async () => {
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/provider-health": [
+      { provider: "api_tennis", status: "healthy", cost_tier: "budget" },
+      { provider: "odds_api_io", status: "healthy", cost_tier: "budget" },
+      { provider: "theoddsapi", status: "healthy", cost_tier: "budget" },
+      { provider: "sportradar", status: "not_configured", cost_tier: "enterprise" },
+      { provider: "txodds", status: "not_configured", cost_tier: "enterprise" },
+    ],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2, match_freshness: [] },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          steps: [],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["enterprise-accuracy-plan", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "enterprise_accuracy_plan");
+    assert.equal(payload.status, "locked_on_budget_chain");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.budget_gate.enterprise_eligible, false);
+    assert.equal(payload.next_action.command, "npm run api:check:operational-truth -- --pretty");
+    const byId = Object.fromEntries(payload.no_budget_provider_stack.map((provider) => [provider.id, provider]));
+    assert.equal(byId.sportradar_tennis_tier1.rank, 1);
+    assert.equal(byId.sportradar_tennis_tier1.access_required.includes("SPORTRADAR_API_KEY"), true);
+    assert.equal(byId.stats_perform_opta_wta_fast_data.unlocks.includes("shot_by_shot_features"), true);
+    assert.equal(byId.txodds_fusion_in_running.unlocks.includes("market_microstructure"), true);
+    assert.equal(byId.betfair_exchange_stream_market_data.evidence.includes("execution remains hard-blocked; market data only in this phase"), true);
+    assert.equal(payload.access_requirements.some((item) => item.provider_id === "sportradar_tennis_tier1" && item.blocks_accuracy_lane), true);
+    assert.equal(payload.model_architecture.some((item) => item.id === "live_markov_point_engine"), true);
+    assert.equal(payload.scoreline_forecast_contract.acceptance_gates.includes("fresh_score_state"), true);
+    assert.equal(payload.hermes_operating_role.primary_role, "operator_orchestrator_not_model_or_executor");
+    assert.equal(payload.safe_jailbreak_policy.bypass_allowed, false);
+    assert.equal(payload.safe_jailbreak_policy.live_scoreboard_scraping_allowed, false);
+    assert.equal(payload.forbidden_actions.includes("provider_or_paywall_bypass"), true);
+    assert.equal(payload.safety.can_submit_real_orders, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("trigger-policy emits event wakeups without executing commands or live calls", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-trigger-policy-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

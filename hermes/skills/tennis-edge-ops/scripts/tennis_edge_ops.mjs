@@ -1655,6 +1655,33 @@ async function historicalBackfillPlan() {
   }));
 }
 
+async function enterpriseAccuracyPlan() {
+  const [loop, report, grandSlam] = await Promise.all([
+    safeLoopData(),
+    intelligenceData(),
+    grandSlamReadinessData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+  const historicalBackfill = buildHistoricalBackfillPlan({
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    grandSlam,
+  });
+  printJson(buildEnterpriseAccuracyPlan({
+    loop,
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    historicalBackfill,
+    grandSlam,
+  }));
+}
+
 async function triggerPolicy() {
   const [loop, report, grandSlam] = await Promise.all([
     safeLoopData(),
@@ -4584,6 +4611,395 @@ function historicalBackfillGates({ report, eventPlan, sourcePlan, sources }) {
 
 function historicalBackfillGate({ id, status, summary }) {
   return { id, status, summary };
+}
+
+function buildEnterpriseAccuracyPlan({
+  loop,
+  report,
+  eventPlan,
+  sourcePlan,
+  sourceRoutes,
+  historicalBackfill,
+  grandSlam,
+}) {
+  const budget = report.budget_chain_snapshot ?? {};
+  const enterpriseEligible = Boolean(budget.enterprise_eligible);
+  const stack = enterpriseAccuracyProviderStack({ enterpriseEligible, report, sourceRoutes });
+  const access = enterpriseAccuracyAccessRequirements(stack);
+  const nextProvider = stack.find((provider) => provider.status === "contract_required")
+    ?? stack.find((provider) => provider.status === "operator_ready")
+    ?? stack[0]
+    ?? null;
+  const nextAction = enterpriseAccuracyNextAction({ enterpriseEligible, budget, nextProvider });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "enterprise_accuracy_plan",
+    objective: "maximize_grand_slam_tennis_prediction_accuracy_without_budget_limit_or_unsafe_collection",
+    status: enterpriseEligible ? "ready_for_enterprise_contracting" : "locked_on_budget_chain",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    budget_gate: {
+      budget_chain_completed: Boolean(budget.budget_chain_completed),
+      enterprise_eligible: enterpriseEligible,
+      current_step: budget.current_step ?? null,
+      next_safe_command: enterpriseEligible
+        ? "npm --silent run hermes:enterprise-accuracy-plan"
+        : "npm run api:check:operational-truth -- --pretty",
+      reason: enterpriseEligible
+        ? "Budget evidence is complete enough to prepare enterprise contracting and adapters."
+        : "Enterprise stays locked until replay, smokes and healthy odds cursor prove the budget chain.",
+    },
+    grand_slam_context: {
+      status: grandSlam.status,
+      active_grand_slams: grandSlam.active_grand_slams ?? [],
+      visible_matches: grandSlam.matches?.grand_slam_visible ?? 0,
+      prediction_rows: grandSlam.matches?.prediction_rows ?? 0,
+      paper_ready: Boolean(grandSlam.paper_ready),
+    },
+    source_context: {
+      source_mode: sourcePlan.source_mode,
+      next_budget_route: sourceRoutes.next_route?.id ?? null,
+      historical_next_source: historicalBackfill.next_source?.id ?? null,
+      historical_license_review_required: historicalBackfill.review_summary?.license_review_required ?? 0,
+      trigger_events: eventPlan.events.map((event) => event.type),
+    },
+    no_budget_provider_stack: stack,
+    access_requirements: access,
+    model_architecture: enterpriseAccuracyModelArchitecture(),
+    scoreline_forecast_contract: enterpriseScorelineForecastContract(),
+    hermes_operating_role: enterpriseHermesOperatingRole({ loop, report }),
+    next_action: nextAction,
+    research_basis: enterpriseAccuracyResearchBasis(),
+    safe_jailbreak_policy: {
+      meaning: "Hermes may route around missing coverage only through licensed APIs, persisted replay, license-reviewed historical files and operator-provided notes.",
+      allowed_paths: [
+        "licensed_enterprise_api_contract",
+        "official_exchange_or_market_stream",
+        "persisted_postgres_replay",
+        "license_reviewed_historical_backfill",
+        "manual_operator_note_with_source_url",
+      ],
+      bypass_allowed: false,
+      anti_bot_bypass_allowed: false,
+      paywall_bypass_allowed: false,
+      geolocation_bypass_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      live_scoreboard_scraping_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+    forbidden_actions: [
+      ...(report.forbidden_collection_paths ?? []),
+      "live_scoreboard_scraping",
+      "sportsbook_ui_automation",
+      "provider_or_paywall_bypass",
+      "credential_or_session_extraction",
+      "provider_quota_spend_without_operator_contract",
+      "real_money_execution",
+    ],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block === true,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function enterpriseAccuracyProviderStack({ enterpriseEligible, report, sourceRoutes }) {
+  const status = enterpriseEligible ? "contract_required" : "locked_until_budget_gate";
+  return [
+    enterpriseAccuracyProvider({
+      id: "sportradar_tennis_tier1",
+      rank: 1,
+      provider: "Sportradar Tennis",
+      role: "primary official score_state and point_by_point spine",
+      coverage: ["ATP", "WTA", "ITF", "Grand Slam"],
+      unlocks: ["point_state_markov", "retirement_delay_walkover_events", "canonical_competitor_ids", "match_timeline_replay"],
+      latencyTarget: "official low-latency tennis feed by contracted tier",
+      status,
+      access: ["SPORTRADAR_API_KEY", "Sportradar sales contract", "coverage tier matrix"],
+      evidence: [
+        `enterprise_eligible=${enterpriseEligible}`,
+        `provider_mode=${report.data_snapshot?.provider_mode ?? "unknown"}`,
+      ],
+      sourceUrl: "https://developer.sportradar.com/tennis/docs/ig-api-basics",
+    }),
+    enterpriseAccuracyProvider({
+      id: "stats_perform_opta_wta_fast_data",
+      rank: 2,
+      provider: "Stats Perform / Opta WTA",
+      role: "official WTA shot_by_shot and deep match statistics",
+      coverage: ["WTA Tour", "WTA qualifiers", "WTA live video where licensed"],
+      unlocks: ["shot_by_shot_features", "serve_return_quality_live", "rally_length_pressure", "wta_scoreline_calibration"],
+      latencyTarget: "official WTA fast data by commercial contract",
+      status,
+      access: ["STATS_PERFORM_WTA_ACCESS", "commercial data agreement", "permitted-use terms"],
+      evidence: [`wta_grand_slam_budget_scope=${(report.coverage_scope ?? []).includes("grand_slam_women")}`],
+      sourceUrl: "https://www.statsperform.com/wta/",
+    }),
+    enterpriseAccuracyProvider({
+      id: "txodds_fusion_in_running",
+      rank: 3,
+      provider: "TXODDS",
+      role: "ultra_low_latency in_running odds and historical market archive",
+      coverage: ["global tennis odds", "in-play markets", "historical odds"],
+      unlocks: ["market_microstructure", "line_move_velocity", "suspension_timing", "closing_line_proxy"],
+      latencyTarget: "sub-second or better by contracted product",
+      status,
+      access: ["TXODDS_USER", "TXODDS_PASSWORD", "market package", "historical archive package"],
+      evidence: [`next_budget_route=${sourceRoutes.next_route?.id ?? "none"}`],
+      sourceUrl: "https://txodds.net/developer-hub/",
+    }),
+    enterpriseAccuracyProvider({
+      id: "betradar_uof_market_state",
+      rank: 4,
+      provider: "Betradar UOF",
+      role: "market_state, odds, suspensions and settlement-grade reference",
+      coverage: ["bookmaker market feeds", "in-running tennis markets"],
+      unlocks: ["market_suspension_block", "bookmaker_alias_mapping", "odds_consensus", "settlement_audit"],
+      latencyTarget: "enterprise feed by market package",
+      status,
+      access: ["BETRADAR_UOF_TOKEN", "UOF package", "bookmaker market rights"],
+      evidence: [`real_execution_hard_block=${report.safety?.real_execution_hard_block}`],
+      sourceUrl: "https://docs.sportradar.com/uof/introduction/overview",
+    }),
+    enterpriseAccuracyProvider({
+      id: "betfair_exchange_stream_market_data",
+      rank: 5,
+      provider: "Betfair Exchange Stream API",
+      role: "exchange order_book, traded_volume and closing_line_reference",
+      coverage: ["exchange tennis markets where account jurisdiction permits"],
+      unlocks: ["liquidity_weighted_edge", "queue_fill_simulation", "closing_line_value", "market_depth_confidence"],
+      latencyTarget: "streaming market data after account/KYC/app-key approval",
+      status,
+      access: ["BETFAIR_APP_KEY", "BETFAIR_CERT_PATH", "BETFAIR_KEY_PATH", "market data stream access"],
+      evidence: ["execution remains hard-blocked; market data only in this phase"],
+      sourceUrl: "https://support.developer.betfair.com/hc/en-us/articles/115003887871-How-do-I-get-access-to-the-Stream-API",
+    }),
+    enterpriseAccuracyProvider({
+      id: "opticodds_or_theoddsapi_consensus",
+      rank: 6,
+      provider: "OpticOdds / TheOddsAPI / Odds-API.io",
+      role: "odds consensus, archive fallback and provider disagreement checks",
+      coverage: ["bookmaker odds comparison", "REST archive", "WebSocket where licensed"],
+      unlocks: ["fallback_fair_price", "provider_disagreement", "quota_resilience", "book_availability"],
+      latencyTarget: "fallback/comparison, not primary enterprise line",
+      status: "budget_or_fallback",
+      access: ["THE_ODDS_API_KEY", "ODDS_API_IO_KEY", "OPTICODDS_API_KEY if chosen"],
+      evidence: ["keep as fallback even after enterprise providers are contracted"],
+      sourceUrl: "https://developer.opticodds.com/docs/odds-api-getting-started-guide",
+    }),
+  ];
+}
+
+function enterpriseAccuracyProvider({
+  id,
+  rank,
+  provider,
+  role,
+  coverage,
+  unlocks,
+  latencyTarget,
+  status,
+  access,
+  evidence,
+  sourceUrl,
+}) {
+  return {
+    id,
+    rank,
+    provider,
+    role,
+    coverage,
+    unlocks,
+    latency_target: latencyTarget,
+    status,
+    access_required: access,
+    evidence,
+    source_url: sourceUrl,
+    execute_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function enterpriseAccuracyAccessRequirements(stack) {
+  return stack.map((provider) => ({
+    provider_id: provider.id,
+    provider: provider.provider,
+    priority: provider.rank,
+    access_required: provider.access_required,
+    operator_action: provider.status === "locked_until_budget_gate"
+      ? "finish_budget_chain_before_contracting"
+      : "request_contract_or_sandbox_and_store_credentials_locally",
+    free_or_low_cost: provider.id === "opticodds_or_theoddsapi_consensus",
+    blocks_accuracy_lane: provider.rank <= 4,
+  }));
+}
+
+function enterpriseAccuracyModelArchitecture() {
+  return [
+    {
+      id: "prematch_strength_ensemble",
+      purpose: "Estimate baseline match win and set distribution before first point.",
+      inputs: ["surface_elo_glicko", "serve_return_strength", "rest_travel_fatigue", "rank_trend", "injury_retirement_history", "bookmaker_prior"],
+      output: ["match_win_probability", "set_score_distribution", "uncertainty_interval"],
+    },
+    {
+      id: "live_markov_point_engine",
+      purpose: "Update match and scoreline probabilities from point/game/set state.",
+      inputs: ["server", "point_score", "game_score", "set_score", "bo3_bo5", "tiebreak_rules", "bayesian_hold_break_updates"],
+      output: ["match_win_probability_live", "next_game_break_probability", "projected_final_score"],
+    },
+    {
+      id: "shot_and_rally_feature_layer",
+      purpose: "Use top-tier shot/rally feeds when available to improve live form and fatigue estimates.",
+      inputs: ["serve_speed", "first_serve_location", "return_depth", "rally_length", "forced_unforced_errors", "movement_or_video_metrics_if_licensed"],
+      output: ["serve_quality_now", "return_pressure_now", "fatigue_pressure_index"],
+    },
+    {
+      id: "market_microstructure_layer",
+      purpose: "Separate model edge from stale or information-lagged market prices.",
+      inputs: ["odds_velocity", "book_disagreement", "market_suspensions", "exchange_depth", "traded_volume", "closing_line_proxy"],
+      output: ["fair_market_probability", "price_confidence", "stale_or_sharp_move_block"],
+    },
+    {
+      id: "calibration_and_abstention",
+      purpose: "Improve ROI/CLV by refusing weak or uncalibrated forecasts.",
+      inputs: ["walk_forward_isotonic_calibration", "brier_log_loss", "roi_clv_bucket", "drawdown", "data_quality_tier"],
+      output: ["calibrated_edge", "confidence_tier", "abstain_or_paper_signal"],
+    },
+  ];
+}
+
+function enterpriseScorelineForecastContract() {
+  return {
+    output_schema: {
+      match_id: "canonical_match_id",
+      predicted_winner_id: "player_id",
+      projected_score: "e.g. 3-1 or 2-1 plus set-score bands",
+      match_win_probability: "0..1 calibrated",
+      scoreline_distribution: "top N exact set-score outcomes",
+      confidence_tier: "Alta | Media | Baixa",
+      uncertainty_drivers: ["data_quality", "surface_fit", "market_disagreement", "injury_or_retirement_hazard"],
+    },
+    acceptance_gates: [
+      "fresh_score_state",
+      "complete_moneyline_or_market_prior",
+      "canonical_player_mapping",
+      "surface_and_format_known",
+      "calibration_bucket_available",
+      "market_suspension_absent",
+    ],
+    blocked_states: [
+      "retirement_or_walkover_uncertain",
+      "score_feed_stale",
+      "odds_cursor_resync_required",
+      "single_source_marginal_edge",
+      "volatile_point_without_large_edge",
+    ],
+  };
+}
+
+function enterpriseHermesOperatingRole({ loop, report }) {
+  return {
+    primary_role: "operator_orchestrator_not_model_or_executor",
+    autonomy_ceiling: loop.autonomy?.active_ceiling?.id ?? loop.active_phase ?? "unknown",
+    responsibilities: [
+      "watch internal FastAPI/Postgres truth",
+      "route provider-health and cursor anomalies",
+      "schedule replay/backtest/model-readiness reports",
+      "summarize Grand Slam match-day readiness",
+      "prepare enterprise access checklists",
+      "create implementation handoffs from repeated local evidence",
+    ],
+    explicitly_not_allowed: [
+      "LLM per odds tick",
+      "scrape live scoreboards or sportsbooks",
+      "bypass paywalls, geolocation or anti-bot controls",
+      "hold provider secrets in prompts",
+      "submit real orders",
+    ],
+    current_runtime: {
+      status: loop.status,
+      provider_mode: report.data_snapshot?.provider_mode ?? "unknown",
+      real_execution_hard_block: report.safety?.real_execution_hard_block === true,
+    },
+  };
+}
+
+function enterpriseAccuracyNextAction({ enterpriseEligible, budget, nextProvider }) {
+  if (!enterpriseEligible) {
+    return {
+      id: "complete_budget_chain_before_enterprise_accuracy",
+      command: "npm run api:check:operational-truth -- --pretty",
+      reason: `Enterprise accuracy is locked until budget_chain_completed and enterprise_eligible pass; current_step=${budget.current_step ?? "unknown"}.`,
+      executes_now: false,
+      writes: false,
+      live_api_calls: false,
+      provider_api_call_allowed: false,
+      can_create_paper_orders: false,
+      can_submit_real_orders: false,
+      llm_per_tick_allowed: false,
+    };
+  }
+  return {
+    id: nextProvider?.id ?? "enterprise_provider_contracting",
+    command: "npm --silent run hermes:enterprise-accuracy-plan",
+    reason: nextProvider
+      ? `Start operator-reviewed contracting/sandbox setup for ${nextProvider.provider}; Hermes only tracks readiness.`
+      : "Review enterprise provider access requirements.",
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function enterpriseAccuracyResearchBasis() {
+  return [
+    {
+      id: "sportradar_tennis_api",
+      url: "https://developer.sportradar.com/tennis/docs/ig-api-basics",
+      takeaway: "Sportradar Tennis has tiered global tennis coverage and is the candidate primary official scoring/point data spine.",
+    },
+    {
+      id: "stats_perform_wta_fast_data",
+      url: "https://www.statsperform.com/wta/",
+      takeaway: "Stats Perform/Opta is the official WTA data and streaming partner with shot-by-shot and deep WTA data products.",
+    },
+    {
+      id: "txodds_developer_hub",
+      url: "https://txodds.net/developer-hub/",
+      takeaway: "TXODDS positions its feed around ultra-low-latency pre-match, live and historical odds for trading systems.",
+    },
+    {
+      id: "opticodds_api",
+      url: "https://developer.opticodds.com/docs/odds-api-getting-started-guide",
+      takeaway: "OpticOdds can be a fallback/comparison odds aggregator, not the only enterprise primary source.",
+    },
+    {
+      id: "the_odds_api_tennis",
+      url: "https://the-odds-api.com/sports/tennis-odds.html",
+      takeaway: "TheOddsAPI covers major tennis odds and remains useful for archive/fallback/comparison in private analysis.",
+    },
+  ];
 }
 
 function buildGrandSlamMission({
@@ -10850,6 +11266,7 @@ const commands = {
   "source-discovery": sourceDiscovery,
   "source-route-matrix": sourceRouteMatrix,
   "historical-backfill-plan": historicalBackfillPlan,
+  "enterprise-accuracy-plan": enterpriseAccuracyPlan,
   "trigger-policy": triggerPolicy,
   "ops-compiler": opsCompiler,
   "capability-audit": capabilityAudit,

@@ -254,6 +254,12 @@ historical datasets and licensed archive odds with license/attribution gates.
 It must not fetch, scrape, import, spend quota, create orders or treat old data
 as live state.
 
+Use `hermes:enterprise-accuracy-plan` when working on the no-budget-limit
+accuracy branch. It ranks the top-tier provider stack, access requirements,
+model layers and Grand Slam scoreline forecast contract. It is a planning
+packet only: no provider calls, scraping, quota spend, paper orders or real
+execution.
+
 Use `hermes:grand-slam-mission` as the product-level packet for Grand Slam
 match-day prediction. It compiles readiness, historical priors, collection,
 quota, live-controller and learning state into mission phases. It never creates

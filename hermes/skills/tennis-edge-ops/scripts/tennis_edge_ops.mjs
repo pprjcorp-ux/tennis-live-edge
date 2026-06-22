@@ -134,6 +134,17 @@ async function missionControl() {
   printJson(await missionControlData());
 }
 
+async function missionLedger() {
+  const mission = await missionControlData();
+  const ledger = buildMissionLedger(mission);
+  writeMissionLedger(ledger.record);
+  printJson(ledger);
+}
+
+async function missionLedgerReport() {
+  printJson(buildMissionLedgerReport(readMissionLedgerRecords()));
+}
+
 async function missionControlData() {
   const runtime = await runtimeCheckData();
   const channel = buildChannelReadiness(runtime);
@@ -4662,6 +4673,126 @@ function buildOperatorLedgerReport({ path, records, invalid_rows: invalidRows })
   };
 }
 
+function buildMissionLedger(mission) {
+  const path = missionLedgerPath();
+  const record = {
+    generated_at: new Date().toISOString(),
+    mode: "mission_ledger_record",
+    mission,
+    status: mission.status,
+    active_ceiling: mission.active_ceiling ?? null,
+    outcome: "observed",
+    action_executed: false,
+    mission_command_executed: false,
+    executed_commands: [],
+    next_action_lane: mission.next_action?.lane ?? null,
+    next_action_command: mission.next_action?.command ?? null,
+    blocked_lane_ids: (mission.lanes ?? [])
+      .filter((lane) => lane.status === "blocked")
+      .map((lane) => lane.id),
+    safety: mission.safety,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "mission_ledger",
+    status: mission.status,
+    active_ceiling: mission.active_ceiling ?? null,
+    read_only: false,
+    writes: true,
+    write_scope: "local_mission_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    ledger: {
+      path,
+      format: "jsonl",
+      retention_note: "Local Hermes mission-control trace; do not commit runtime logs.",
+    },
+    record,
+    safety: {
+      real_execution_hard_block: mission.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function missionLedgerPath() {
+  return process.env.HERMES_MISSION_LEDGER_PATH || "hermes/runs/mission-ledger.jsonl";
+}
+
+function writeMissionLedger(record) {
+  const path = missionLedgerPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function readMissionLedgerRecords() {
+  const path = missionLedgerPath();
+  if (!existsSync(path)) {
+    return { path, records: [], invalid_rows: 0 };
+  }
+  const content = readFileSync(path, "utf8");
+  let invalidRows = 0;
+  const records = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalidRows += 1;
+        return [];
+      }
+    });
+  return { path, records, invalid_rows: invalidRows };
+}
+
+function buildMissionLedgerReport({ path, records, invalid_rows: invalidRows }) {
+  const nextActionCounts = rankedCounts(records.map((record) => record.next_action_command).filter(Boolean));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "mission_ledger_report",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger: {
+      path,
+      format: "jsonl",
+      invalid_rows: invalidRows,
+    },
+    total_records: records.length,
+    action_executed_count: records.filter((record) => record.action_executed === true).length,
+    mission_command_executed_count: records.filter((record) => record.mission_command_executed === true).length,
+    status_counts: countValues(records.map((record) => record.status ?? record.mission?.status).filter(Boolean)),
+    active_ceiling_counts: countValues(records.map((record) => record.active_ceiling).filter(Boolean)),
+    next_lane_counts: countValues(records.map((record) => record.next_action_lane).filter(Boolean)),
+    blocked_lane_counts: countValues(records.flatMap((record) => record.blocked_lane_ids ?? [])),
+    next_action_counts: nextActionCounts,
+    top_next_action: nextActionCounts[0]?.command ?? null,
+    latest_record: records[records.length - 1] ?? null,
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
 function countValues(values) {
   return values.reduce((counts, value) => {
     counts[value] = (counts[value] ?? 0) + 1;
@@ -7048,6 +7179,8 @@ const commands = {
   "channel-readiness": channelReadiness,
   "backend-readiness": backendReadiness,
   "mission-control": missionControl,
+  "mission-ledger": missionLedger,
+  "mission-ledger-report": missionLedgerReport,
   intelligence,
   events,
   "unblock-plan": unblockPlan,

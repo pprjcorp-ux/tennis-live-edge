@@ -34,6 +34,8 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-check
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-readiness
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backend-readiness
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-control
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-ledger
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs unblock-plan
@@ -110,6 +112,10 @@ The `mission-control` command is the one-packet entrypoint for external agents:
 it merges backend readiness, channel readiness, source-route matrix and
 live-window into ordered lanes and one next action. It must not execute that
 action.
+The `mission-ledger` command records mission-control decisions as local JSONL
+with `action_executed=false` and `mission_command_executed=false`. The
+`mission-ledger-report` command summarizes repeated mission blockers and must
+remain read-only.
 Internal FastAPI requests are bounded by `HERMES_HTTP_TIMEOUT_MS` (default
 5000ms, clamped between 100ms and 30000ms). Composed commands must fail closed
 with `backend_api` blockers when the backend is unavailable or slow; they must

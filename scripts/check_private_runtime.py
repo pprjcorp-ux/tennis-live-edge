@@ -672,6 +672,8 @@ def main() -> int:
         "hermes:channel-readiness",
         "hermes:backend-readiness",
         "hermes:mission-control",
+        "hermes:mission-ledger",
+        "hermes:mission-ledger-report",
         "hermes:playbook",
         "hermes:live-stats",
         "hermes:live-window",

@@ -21,6 +21,8 @@ npm run hermes:runtime-check
 npm run hermes:channel-readiness
 npm run hermes:backend-readiness
 npm run hermes:mission-control
+npm run hermes:mission-ledger
+npm run hermes:mission-ledger-report
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:unblock-plan
@@ -104,6 +106,15 @@ Telegram, dashboard, Cloudflare Agent or any external orchestrator. It merges
 backend readiness, channel readiness, source-route matrix and live-window into
 ordered lanes and one `next_action`, while every lane remains non-executing and
 real execution stays blocked.
+
+Use `hermes:mission-ledger` when mission-control decisions should become
+durable local evidence. It appends one JSONL row with the full mission packet,
+the active ceiling, blocked lanes, next action, `outcome=observed`,
+`action_executed=false` and `mission_command_executed=false`.
+
+Use `hermes:mission-ledger-report` to review repeated mission blockers. It
+reads the local ledger and reports repeated next actions, blocked lanes, active
+ceilings and any rows that claim a mission command was executed.
 
 For higher autonomy, use `hermes:intelligence` as the default scheduled packet.
 It reads internal APIs only and emits one machine-readable recommendation:

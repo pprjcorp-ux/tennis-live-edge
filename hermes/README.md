@@ -35,6 +35,8 @@ npm run hermes:runtime-check
 npm run hermes:channel-readiness
 npm run hermes:backend-readiness
 npm run hermes:mission-control
+npm run hermes:mission-ledger
+npm run hermes:mission-ledger-report
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:unblock-plan
@@ -106,6 +108,15 @@ operator channels. It merges backend readiness, channel readiness, source-route
 matrix and live-window into one ordered `next_action`, preserving
 `executes_now=false`, `provider_api_call_allowed=false`, and
 `can_submit_real_orders=false` on every lane.
+
+`hermes:mission-ledger` appends that mission-control packet to
+`hermes/runs/mission-ledger.jsonl` by default. It records the recommendation as
+`observed` with `action_executed=false` and
+`mission_command_executed=false`; it does not execute the next action.
+
+`hermes:mission-ledger-report` summarizes the mission ledger without writing.
+It counts repeated next actions, blocked lanes, active ceilings and any rows
+that claim a mission command was executed.
 
 `hermes:intelligence` is the high-signal operator packet for cron/Telegram. It
 aggregates provider health, cursor gaps, data quality, cost, paper performance,

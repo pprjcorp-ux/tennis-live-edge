@@ -136,6 +136,13 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes mission control should consume `npm run hermes:mission-control`; it
   should merge backend readiness, channel readiness, source routes and
   live-window into one ordered next action without executing anything.
+- Hermes mission decision auditing should consume `npm run hermes:mission-ledger`;
+  it may write only local JSONL rows under `hermes/runs/` by default, must
+  record `action_executed=false` and `mission_command_executed=false`, and must
+  never execute the reported next action.
+- Hermes mission blocker review should consume `npm run hermes:mission-ledger-report`;
+  it is read-only and should summarize repeated mission next actions, blocked
+  lanes, ceilings and any accidental executed-action rows.
 - Hermes must defer enterprise-only cursor blockers while
   `enterprise_eligible=false`; Sportradar/Betradar/TXODDS placeholders should
   not block budget-chain work before enterprise activation.
@@ -272,6 +279,8 @@ npm run hermes:safe-loop
 npm run hermes:channel-readiness
 npm run hermes:backend-readiness
 npm run hermes:mission-control
+npm run hermes:mission-ledger
+npm run hermes:mission-ledger-report
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:source-route-matrix

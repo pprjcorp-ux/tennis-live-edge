@@ -206,6 +206,28 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Mission-control ledger every 5 minutes:
+
+```bash
+hermes cron add \
+  --name tennis-edge-mission-ledger \
+  --every 5m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:mission-ledger from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report status, active_ceiling, ledger path, next_action_lane, next_action_command, blocked_lane_ids, and safety. Do not execute the recorded next action, create orders, run provider smoke, spend provider quota, or submit real orders from this cron." \
+  --timeout-seconds 90
+```
+
+Mission-control blocker report hourly:
+
+```bash
+hermes cron add \
+  --name tennis-edge-mission-ledger-report \
+  --every 1h \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:mission-ledger-report from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report total_records, status_counts, active_ceiling_counts, next_lane_counts, blocked_lane_counts, top_next_action, action_executed_count, and mission_command_executed_count. Do not execute any reported command." \
+  --timeout-seconds 60
+```
+
 Local operator ledger every 5 minutes:
 
 ```bash

@@ -3617,6 +3617,109 @@ test("experiment-lab surfaces source-route backlog evidence", async () => {
   }
 });
 
+test("experiment-lab surfaces source-use backlog evidence", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-experiment-lab-source-use-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  const sourceUseLedgerPath = join(tempDir, "source-use-ledger.jsonl");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status: running'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('doctor: ok'); process.exit(0); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const sourceUseRows = [
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "blocked",
+      next_action_id: "review_operator_required_historical:jeff_sackmann_atp",
+      next_action_command: "npm --silent run hermes:source-use-manifest",
+      decision_counts: { operator_required: 1, deferred: 1, forbidden: 1 },
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["provider:sportradar"],
+      forbidden_source_ids: ["route:sportsbook_browser"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "blocked",
+      next_action_id: "review_operator_required_historical:jeff_sackmann_atp",
+      next_action_command: "npm --silent run hermes:source-use-manifest",
+      decision_counts: { operator_required: 1, deferred: 1, forbidden: 1 },
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["provider:sportradar"],
+      forbidden_source_ids: ["route:sportsbook_browser"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+  ];
+  writeFileSync(sourceUseLedgerPath, `${sourceUseRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["experiment-lab", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
+        PRIVATE_ALLOWED_EMAILS: "operator@example.com",
+        ADMIN_API_TOKEN: "local-admin",
+        HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
+        HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
+        HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
+        HERMES_LIVE_CONTROLLER_LEDGER_PATH: join(tempDir, "live-controller-ledger.jsonl"),
+        HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: join(tempDir, "grand-slam-mission-ledger.jsonl"),
+        HERMES_SOURCE_ROUTE_LEDGER_PATH: join(tempDir, "source-route-ledger.jsonl"),
+        HERMES_SOURCE_USE_LEDGER_PATH: sourceUseLedgerPath,
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "experiment_lab");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.backlog_guidance.next_item_id, "harden_source_use_feedback_loop");
+    assert.equal(payload.backlog_guidance.next_item_source.includes("source_use_ledger"), true);
+    const byId = Object.fromEntries(payload.experiments.map((experiment) => [experiment.id, experiment]));
+    assert.equal(byId.source_use_feedback_loop.command, "npm --silent run hermes:source-use-ledger-report");
+    assert.equal(byId.source_use_feedback_loop.executes_now, false);
+    assert.equal(byId.source_use_feedback_loop.provider_api_call_allowed, false);
+    assert.equal(byId.source_use_feedback_loop.can_submit_real_orders, false);
+    assert.equal(byId.source_use_feedback_loop.evidence.includes("backlog_next_item=harden_source_use_feedback_loop"), true);
+  } finally {
+    server.close();
+  }
+});
+
 test("experiment-ledger appends experiment recommendations without executing actions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-experiment-ledger-"));
   const ledgerPath = join(tempDir, "experiment-ledger.jsonl");
@@ -4108,6 +4211,108 @@ test("backlog-plan uses source-route ledger as implementation evidence", async (
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
+test("backlog-plan uses source-use ledger as implementation evidence", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-source-use-plan-"));
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const grandSlamMissionLedgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
+  const sourceRouteLedgerPath = join(tempDir, "source-route-ledger.jsonl");
+  const sourceUseLedgerPath = join(tempDir, "source-use-ledger.jsonl");
+  const sourceUseRows = [
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "blocked",
+      next_action_id: "review_operator_required_historical:jeff_sackmann_atp",
+      next_action_command: "npm --silent run hermes:source-use-manifest",
+      decision_counts: { operator_required: 1, deferred: 1, forbidden: 1 },
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["provider:sportradar"],
+      forbidden_source_ids: ["route:sportsbook_browser"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "blocked",
+      next_action_id: "review_operator_required_historical:jeff_sackmann_atp",
+      next_action_command: "npm --silent run hermes:source-use-manifest",
+      decision_counts: { operator_required: 1, deferred: 1, forbidden: 1 },
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["provider:sportradar"],
+      forbidden_source_ids: ["route:sportsbook_browser"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+  ];
+  writeFileSync(experimentLedgerPath, "");
+  writeFileSync(operatorLedgerPath, "");
+  writeFileSync(missionLedgerPath, "");
+  writeFileSync(controllerLedgerPath, "");
+  writeFileSync(grandSlamMissionLedgerPath, "");
+  writeFileSync(sourceRouteLedgerPath, "");
+  writeFileSync(sourceUseLedgerPath, `${sourceUseRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["backlog-plan"], {
+    env: {
+      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+      HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+      HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+      HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamMissionLedgerPath,
+      HERMES_SOURCE_ROUTE_LEDGER_PATH: sourceRouteLedgerPath,
+      HERMES_SOURCE_USE_LEDGER_PATH: sourceUseLedgerPath,
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "backlog_plan");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.items[0].id, "harden_source_use_feedback_loop");
+  assert.equal(payload.items[0].source.includes("source_use_ledger"), true);
+  assert.equal(payload.items[0].frequency, 2);
+  assert.equal(payload.items[0].validation_commands.includes("npm --silent run hermes:source-use-ledger-report"), true);
+  assert.equal(payload.items[0].validation_commands.includes("npm --silent run hermes:source-use-manifest"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("source_use_ledger.total_records>=2"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("source_use_ledger.top_operator_required_source=historical:jeff_sackmann_atp"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("source_use_ledger.top_deferred_source=provider:sportradar"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("source_use_ledger.top_forbidden_source=route:sportsbook_browser"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("manifest_command_executed_count=0"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("provider_command_executed_count=0"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("bypass_attempted_count=0"), true);
+  assert.equal(payload.items[0].executes_now, false);
+  assert.equal(payload.next_item.id, "harden_source_use_feedback_loop");
+  assert.equal(payload.evidence.source_use_ledger.total_records, 2);
+  assert.equal(payload.evidence.source_use_ledger.top_operator_required_source, "historical:jeff_sackmann_atp");
+  assert.equal(payload.evidence.source_use_ledger.top_deferred_source, "provider:sportradar");
+  assert.equal(payload.evidence.source_use_ledger.top_forbidden_source, "route:sportsbook_browser");
+  assert.equal(payload.evidence.source_use_ledger.operator_required_source_counts[0].count, 2);
+  assert.equal(payload.evidence.source_use_ledger.deferred_source_counts[0].count, 2);
+  assert.equal(payload.evidence.source_use_ledger.forbidden_source_counts[0].count, 2);
+  assert.equal(payload.evidence.source_use_ledger.manifest_command_executed_count, 0);
+  assert.equal(payload.evidence.source_use_ledger.provider_command_executed_count, 0);
+  assert.equal(payload.evidence.source_use_ledger.bypass_attempted_count, 0);
+  assert.equal(payload.safety.can_submit_real_orders, false);
+});
+
 test("backlog-plan uses grand-slam mission ledger as product prediction evidence", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-grand-slam-mission-plan-"));
   const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
@@ -4404,6 +4609,99 @@ test("autonomy-effectiveness includes repeated source-route pressure", async () 
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
+test("autonomy-effectiveness includes repeated source-use pressure", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-autonomy-effectiveness-source-use-"));
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const grandSlamLedgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
+  const sourceRouteLedgerPath = join(tempDir, "source-route-ledger.jsonl");
+  const sourceUseLedgerPath = join(tempDir, "source-use-ledger.jsonl");
+  const sourceUseRows = [
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "blocked",
+      next_action_id: "review_operator_required_historical:jeff_sackmann_atp",
+      next_action_command: "npm --silent run hermes:source-use-manifest",
+      decision_counts: { operator_required: 1, deferred: 1, forbidden: 1 },
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["provider:sportradar"],
+      forbidden_source_ids: ["route:sportsbook_browser"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "blocked",
+      next_action_id: "review_operator_required_historical:jeff_sackmann_atp",
+      next_action_command: "npm --silent run hermes:source-use-manifest",
+      decision_counts: { operator_required: 1, deferred: 1, forbidden: 1 },
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["provider:sportradar"],
+      forbidden_source_ids: ["route:sportsbook_browser"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+  ];
+  writeFileSync(experimentLedgerPath, "");
+  writeFileSync(operatorLedgerPath, "");
+  writeFileSync(missionLedgerPath, "");
+  writeFileSync(controllerLedgerPath, "");
+  writeFileSync(grandSlamLedgerPath, "");
+  writeFileSync(sourceRouteLedgerPath, "");
+  writeFileSync(sourceUseLedgerPath, `${sourceUseRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["autonomy-effectiveness"], {
+    env: {
+      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+      HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+      HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+      HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamLedgerPath,
+      HERMES_SOURCE_ROUTE_LEDGER_PATH: sourceRouteLedgerPath,
+      HERMES_SOURCE_USE_LEDGER_PATH: sourceUseLedgerPath,
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "autonomy_effectiveness");
+  assert.equal(payload.status, "needs_implementation");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.evidence_totals.total_records, 2);
+  assert.equal(payload.evidence_totals.source_use_records, 2);
+  assert.equal(payload.protected_action_claims.total, 0);
+  assert.equal(payload.protected_action_claims.manifest_commands, 0);
+  assert.equal(payload.protected_action_claims.provider_commands, 0);
+  assert.equal(payload.protected_action_claims.bypass_attempts, 0);
+  assert.equal(payload.repeat_pressure.source_use, 2);
+  assert.equal(payload.effectiveness_matrix.source_use.status, "repeated_blocker");
+  assert.equal(payload.effectiveness_matrix.source_use.top_signal, "historical:jeff_sackmann_atp");
+  assert.equal(payload.effectiveness_matrix.source_use.command, "npm --silent run hermes:source-use-manifest");
+  assert.equal(payload.backlog_feedback.next_item.id, "harden_source_use_feedback_loop");
+  assert.equal(payload.next_action.id, "harden_source_use_feedback_loop");
+  assert.equal(payload.next_action.command, "npm --silent run hermes:implementation-handoff");
+  assert.equal(payload.next_action.executes_now, false);
+  assert.equal(payload.safety.can_submit_real_orders, false);
+});
+
 test("implementation-handoff turns backlog priority into a safe work order", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-implementation-handoff-"));
   const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
@@ -4624,6 +4922,128 @@ test("implementation-handoff turns source-route pressure into a safe work order"
   assert.equal(payload.evidence.sources.includes("source_route_ledger"), true);
   assert.equal(payload.evidence.backlog_evidence.source_route_ledger.top_next_route, "replay_backfill");
   assert.equal(payload.evidence.backlog_evidence.source_route_ledger.bypass_attempted_count, 0);
+  assert.equal(payload.safety.sportsbook_bypass_allowed, false);
+  assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
+  assert.equal(payload.safety.anti_bot_bypass_allowed, false);
+  assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
+});
+
+test("implementation-handoff turns source-use pressure into a safe work order", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-implementation-source-use-"));
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const grandSlamMissionLedgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
+  const sourceRouteLedgerPath = join(tempDir, "source-route-ledger.jsonl");
+  const sourceUseLedgerPath = join(tempDir, "source-use-ledger.jsonl");
+  const sourceUseRows = [
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "blocked",
+      next_action_id: "review_operator_required_historical:jeff_sackmann_atp",
+      next_action_command: "npm --silent run hermes:source-use-manifest",
+      decision_counts: { operator_required: 1, deferred: 1, forbidden: 1 },
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["provider:sportradar"],
+      forbidden_source_ids: ["route:sportsbook_browser"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "blocked",
+      next_action_id: "review_operator_required_historical:jeff_sackmann_atp",
+      next_action_command: "npm --silent run hermes:source-use-manifest",
+      decision_counts: { operator_required: 1, deferred: 1, forbidden: 1 },
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["provider:sportradar"],
+      forbidden_source_ids: ["route:sportsbook_browser"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+  ];
+  writeFileSync(experimentLedgerPath, "");
+  writeFileSync(operatorLedgerPath, "");
+  writeFileSync(missionLedgerPath, "");
+  writeFileSync(controllerLedgerPath, "");
+  writeFileSync(grandSlamMissionLedgerPath, "");
+  writeFileSync(sourceRouteLedgerPath, "");
+  writeFileSync(sourceUseLedgerPath, `${sourceUseRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  let result;
+  try {
+    result = await runCli(["implementation-handoff", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+        HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+        HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+        HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+        HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamMissionLedgerPath,
+        HERMES_SOURCE_ROUTE_LEDGER_PATH: sourceRouteLedgerPath,
+        HERMES_SOURCE_USE_LEDGER_PATH: sourceUseLedgerPath,
+      },
+    });
+  } finally {
+    server.close();
+  }
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "implementation_handoff");
+  assert.equal(payload.status, "ready");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.source_plan.next_item_id, "harden_source_use_feedback_loop");
+  assert.equal(payload.work_order.id, "harden_source_use_feedback_loop");
+  assert.equal(payload.work_order.executes_now, false);
+  assert.equal(payload.work_order.provider_api_call_allowed, false);
+  assert.equal(payload.work_order.can_submit_real_orders, false);
+  assert.equal(payload.work_order.can_create_paper_orders, false);
+  assert.equal(payload.work_order.suggested_steps.includes("review_source_use_ledger_report_for_operator_required_deferred_and_forbidden_sources"), true);
+  assert.equal(payload.work_order.suggested_steps.includes("map_the_top_source_to_license_terms_contract_status_or_enterprise_deferred_gate"), true);
+  assert.equal(payload.work_order.suggested_steps.includes("keep_dataset_fetch_provider_quota_and_forbidden_routes_operator_gated"), true);
+  assert.equal(payload.work_order.suggested_steps.includes("prove_manifest_provider_and_bypass_counters_remain_zero"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:source-use-ledger-report"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:source-use-manifest"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("source_use_ledger.total_records>=2"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("manifest_command_executed_count=0"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("provider_command_executed_count=0"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("bypass_attempted_count=0"), true);
+  assert.equal(payload.work_order.prohibited_changes.includes("do not automate sportsbook browser sessions"), true);
+  assert.equal(payload.work_order.prohibited_changes.includes("do not bypass anti-bot, geolocation, paywall or Terms-of-Service controls"), true);
+  assert.equal(payload.implementation_policy.spend_provider_quota, false);
+  assert.equal(payload.implementation_policy.real_execution_allowed, false);
+  assert.equal(payload.evidence.sources.includes("source_use_ledger"), true);
+  assert.equal(payload.evidence.backlog_evidence.source_use_ledger.top_operator_required_source, "historical:jeff_sackmann_atp");
+  assert.equal(payload.evidence.backlog_evidence.source_use_ledger.provider_command_executed_count, 0);
+  assert.equal(payload.evidence.backlog_evidence.source_use_ledger.bypass_attempted_count, 0);
   assert.equal(payload.safety.sportsbook_bypass_allowed, false);
   assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
   assert.equal(payload.safety.anti_bot_bypass_allowed, false);

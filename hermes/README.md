@@ -358,7 +358,11 @@ bundle before collection/import changes.
 `bypass_attempted=false`. `hermes:source-use-ledger-report` summarizes repeated
 operator-required, deferred, forbidden and license-review sources so future
 work can prioritize the real blocker without fetching data or spending quota.
-The report JSON mode is `source_use_ledger_report`.
+The report JSON mode is `source_use_ledger_report`. `hermes:backlog-plan`,
+`hermes:experiment-lab`, `hermes:autonomy-effectiveness`, and
+`hermes:implementation-handoff` consume this report as the `source_use` lane,
+so repeated source-use blockers become implementation work before any importer,
+dataset fetch, provider quota spend, or enterprise feed activation.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam
@@ -457,6 +461,16 @@ When that work order is `harden_source_route_feedback_loop`, the suggested
 steps must map the top source route to replay/internal or licensed adapter
 contracts without executing it, keep browser scraping/sportsbook automation and
 bypass routes blocked, and prove route/provider/bypass counters remain zero.
+When that work order is `harden_source_use_feedback_loop`, the suggested steps
+must review operator-required, deferred and forbidden sources, map the top
+source to license terms, contract status or enterprise deferred gates, keep
+dataset fetch/provider quota/forbidden routes operator-gated, and prove
+manifest/provider/bypass counters remain zero.
+The machine-readable handoff evidence includes `source_use_records`,
+`source_use`, `review_source_use_ledger_report_for_operator_required_deferred_and_forbidden_sources`,
+`map_the_top_source_to_license_terms_contract_status_or_enterprise_deferred_gate`,
+`prove_manifest_provider_and_bypass_counters_remain_zero`, and
+`manifest_command_executed=false`.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

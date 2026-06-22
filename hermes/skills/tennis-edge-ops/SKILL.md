@@ -245,6 +245,9 @@ The `source-use-ledger` command records manifest decisions to local JSONL only,
 with no route execution, provider call or bypass. The
 `source-use-ledger-report` command summarizes repeated operator-required,
 deferred, forbidden and license-review sources before implementation work.
+Backlog, experiment, autonomy-effectiveness and implementation-handoff packets
+must consume that report as the `source_use` lane before adding importers,
+fetching datasets, spending provider quota or activating enterprise feeds.
 The `trigger-policy` command maps current state to debounced wakeup triggers
 for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
 read-only and must not execute trigger commands. Partial runtime should emit a
@@ -284,6 +287,11 @@ source-route ledger report, map the top route to replay/internal or licensed
 adapter contracts without executing it, keep browser scraping/sportsbook
 automation/bypass routes blocked, and prove route/provider/bypass counters
 remain zero.
+For `harden_source_use_feedback_loop`, the handoff should review the
+source-use ledger report, map operator-required/deferred/forbidden sources to
+license terms, contract status or enterprise deferred gates, keep dataset
+fetch/provider quota/forbidden routes operator-gated, and prove
+manifest/provider/bypass counters remain zero.
 Runtime commands should carry `runtime_findings` and non-executed diagnostic
 actions, with `mutates_runtime_if_run=true` for manual gateway/service changes.
 When `runtime_findings` already include a specific diagnostic action, the

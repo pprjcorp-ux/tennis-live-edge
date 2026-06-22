@@ -99,6 +99,10 @@ not modify LaunchAgents, daemons, gateway state, or credentials. It also emits
 model/provider or configured channel can still be used for read-only summaries
 and ledgers while doctor timeout blocks cron, channel escalation and paper
 autopilot.
+When that happens, the safe-loop status becomes `runtime_partial` and downstream
+operator packets include `read_only_runtime_route`. That route is a summary path
+only; it never enables provider calls, paper orders, channel activation, or real
+execution.
 
 Use `hermes:doctor-triage` when runtime diagnostics report `doctor_timed_out`.
 It runs bounded local probes for version/status/doctor, classifies the likely

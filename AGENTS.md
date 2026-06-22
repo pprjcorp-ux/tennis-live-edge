@@ -131,6 +131,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   expose `capability_summary`/`autonomy_impact` so a partial runtime can be used
   for read-only summaries without unlocking cron, channels, paper orders,
   provider calls, or real execution.
+  `safe-loop`, `operator-packet`, and `ops-compiler` should preserve this as
+  `runtime_partial` plus `read_only_runtime_route`; this route is summary-only
+  and must keep all protected action flags false.
 - Hermes doctor timeout triage should consume `npm run hermes:doctor-triage`;
   it is a bounded read-only probe for Hermes version/status/doctor and should
   classify likely doctor timeout causes without starting services, editing

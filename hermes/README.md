@@ -99,6 +99,10 @@ not start, stop, install, or repair Hermes services. It also exposes
 `capability_summary` and `autonomy_impact` so a partial runtime can still
 produce read-only packets when the gateway/model path is usable, while cron,
 channel escalation, paper autopilot and real execution stay blocked by gates.
+`hermes:safe-loop`, `hermes:operator-packet`, and `hermes:ops-compiler` surface
+that condition as `runtime_partial` plus `read_only_runtime_route`, currently
+`npm --silent run hermes:operator-packet`, so Hermes can keep producing compact
+operator summaries without spending provider quota or creating orders.
 
 `hermes:doctor-triage` runs bounded local probes for Hermes version, status and
 a short doctor attempt. Use it when `runtime-check` reports

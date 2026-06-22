@@ -308,6 +308,9 @@ separate "usable for read-only summaries/ledgers" from "eligible for cron,
 channels, paper autopilot or execution". A running gateway plus configured
 model/provider is useful evidence, but it is not a bypass around doctor,
 allowlist, admin-token, provider-quota or real-execution gates.
+Safe-loop now maps that state to `runtime_partial`, and operator/ops-compiler
+packets expose `read_only_runtime_route` so a partially usable Hermes can still
+produce summaries and ledgers while every protected action stays blocked.
 Specific runtime diagnostics outrank the generic runtime recheck. If the
 gateway is running but `hermes doctor` times out, the next action becomes
 `npm run hermes:doctor-triage`; if the gateway is stopped, manual gateway review

@@ -155,6 +155,37 @@ function eventRouterFixtures(overrides = {}) {
   };
 }
 
+function partialHermesScript() {
+  return [
+    "#!/usr/bin/env node",
+    "if (process.argv[2] === 'status') { console.log(`gateway: running",
+    "◆ Environment",
+    "  Project:      /Users/ppfahd/.hermes/hermes-agent",
+    "  Python:       3.11.15",
+    "  Model:        gpt-5.5",
+    "  Provider:     OpenAI API",
+    "◆ API Keys",
+    "  OpenAI        ✓ [REDACTED_API_KEY]",
+    "◆ Auth Providers",
+    "  Nous Portal   ✓ logged in",
+    "  OpenAI Codex  ✗ not logged in",
+    "◆ Terminal Backend",
+    "  Backend:      local",
+    "◆ Messaging Platforms",
+    "  Telegram      ✗ not configured",
+    "  Discord       ✓ configured (home: 123)",
+    "◆ Gateway Service",
+    "  Status:       ✓ running",
+    "◆ Scheduled Jobs",
+    "  Jobs:         0",
+    "◆ Sessions",
+    "  Active:       2 session(s)`); process.exit(0); }",
+    "else if (process.argv[2] === 'doctor') { console.log('◆ API Connectivity\\n  Running 26 connectivity checks in parallel...'); setInterval(() => {}, 1000); }",
+    "else { process.exit(2); }",
+    "",
+  ].join("\n");
+}
+
 test("autopilot aborts before protected action when preflight is blocked", async () => {
   let autopilotCalled = false;
   const { server, apiBase } = await startServer((request, response) => {
@@ -1691,6 +1722,51 @@ test("safe-loop aggregates runtime and budget signals without protected actions"
   }
 });
 
+test("safe-loop exposes partial Hermes runtime as read-only operator route", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-hermes-loop-partial-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(fakeHermes, partialHermesScript(), { mode: 0o755 });
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["safe-loop", `--api-base=${apiBase}`], {
+      env: { HERMES_BIN: fakeHermes },
+      timeoutMs: 8_000,
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "safe_loop");
+    assert.equal(payload.status, "runtime_partial");
+    assert.equal(payload.runtime.status, "degraded");
+    assert.equal(payload.runtime_capability.usable_for_internal_packets, true);
+    assert.equal(payload.runtime_autonomy_impact.status, "partial_runtime_available");
+    assert.equal(payload.read_only_runtime_route.id, "partial_runtime_operator_summary");
+    assert.equal(payload.read_only_runtime_route.command, "npm --silent run hermes:operator-packet");
+    assert.equal(payload.read_only_runtime_route.executes_now, false);
+    assert.equal(payload.read_only_runtime_route.provider_api_call_allowed, false);
+    assert.equal(payload.read_only_runtime_route.can_create_paper_orders, false);
+    assert.equal(payload.read_only_runtime_route.can_submit_real_orders, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("autonomy-brief consolidates safe Hermes operating decisions without executing actions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-autonomy-brief-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");
@@ -2408,17 +2484,7 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
 test("ops-compiler routes running-gateway doctor timeouts through doctor-triage", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-ops-compiler-doctor-timeout-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");
-  writeFileSync(
-    fakeHermes,
-    [
-      "#!/usr/bin/env node",
-      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✓ running'); process.exit(0); }",
-      "else if (process.argv[2] === 'doctor') { setTimeout(() => {}, 10000); }",
-      "else { process.exit(2); }",
-      "",
-    ].join("\n"),
-    { mode: 0o755 }
-  );
+  writeFileSync(fakeHermes, partialHermesScript(), { mode: 0o755 });
   const fixtures = eventRouterFixtures();
   const { server, apiBase } = await startServer((request, response) => {
     const payload = fixtures[request.url];
@@ -2440,8 +2506,12 @@ test("ops-compiler routes running-gateway doctor timeouts through doctor-triage"
     assert.equal(result.exit, 0);
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.mode, "ops_compiler");
+    assert.equal(payload.status, "runtime_partial");
     assert.equal(payload.compiled_action.command, "npm run hermes:doctor-triage");
     assert.equal(payload.operator_packet.next_action.command, "npm run hermes:doctor-triage");
+    assert.equal(payload.operator_packet.read_only_route.command, "npm --silent run hermes:operator-packet");
+    assert.equal(payload.operator_packet.read_only_route.executes_now, false);
+    assert.equal(payload.operator_packet.runtime.autonomy_impact.status, "partial_runtime_available");
     assert.equal(payload.trigger_policy.next_wakeup.command, "npm run hermes:doctor-triage");
     assert.equal(payload.compiled_action.executes_now, false);
     assert.equal(payload.provider_api_call_allowed, false);
@@ -3476,6 +3546,52 @@ test("operator-packet emits a compact channel-safe decision summary", async () =
     assert.equal(payload.short_message.length <= 700, true);
     assert.match(payload.short_message, /Next: npm run hermes:runtime-check/);
     assert.equal(payload.forbidden_actions.includes("sportsbook_ui_automation"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("operator-packet includes partial runtime read-only route without enabling actions", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-partial-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(fakeHermes, partialHermesScript(), { mode: 0o755 });
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["operator-packet", `--api-base=${apiBase}`], {
+      env: { HERMES_BIN: fakeHermes },
+      timeoutMs: 8_000,
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "operator_packet");
+    assert.equal(payload.status, "runtime_partial");
+    assert.equal(payload.priority, "high");
+    assert.equal(payload.read_only_route.id, "partial_runtime_operator_summary");
+    assert.equal(payload.read_only_route.command, "npm --silent run hermes:operator-packet");
+    assert.equal(payload.read_only_route.executes_now, false);
+    assert.equal(payload.read_only_route.provider_api_call_allowed, false);
+    assert.equal(payload.runtime.capability_summary.usable_for_internal_packets, true);
+    assert.equal(payload.runtime.autonomy_impact.status, "partial_runtime_available");
+    assert.match(payload.headline, /runtime_partial/);
+    assert.match(payload.short_message, /partial_runtime_available/);
+    assert.match(payload.short_message, /Read-only route: npm --silent run hermes:operator-packet/);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
   } finally {
     server.close();
   }

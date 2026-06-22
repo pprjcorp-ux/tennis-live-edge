@@ -3315,6 +3315,7 @@ function buildSafeLoop({
     quotaPlan,
   });
   const nextBestCommand = chooseSafeLoopCommand({ runtime, unblock, eventPlan, safeCommands });
+  const readOnlyRuntimeRoute = buildReadOnlyRuntimeRoute(runtime);
   return {
     generated_at: new Date().toISOString(),
     mode: "safe_loop",
@@ -3339,8 +3340,13 @@ function buildSafeLoop({
       })),
       next_actions: runtime.next_actions,
       runtime_findings: runtime.runtime_findings,
+      capability_summary: runtime.capability_summary,
+      autonomy_impact: runtime.autonomy_impact,
       diagnostic_actions: runtime.diagnostic_actions,
     },
+    runtime_capability: runtime.capability_summary ?? null,
+    runtime_autonomy_impact: runtime.autonomy_impact ?? null,
+    read_only_runtime_route: readOnlyRuntimeRoute,
     event_summary: {
       severity: eventPlan.severity,
       can_run_paper_autopilot: eventPlan.can_run_paper_autopilot,
@@ -3867,7 +3873,9 @@ function buildOpsCompiler({ loop, sourcePlan, triggerPlan, grandSlam, autonomyPl
       headline: operator.headline,
       short_message: operator.short_message,
       next_action: operator.next_action,
+      read_only_route: operator.read_only_route,
       cost_guard: operator.cost_guard,
+      runtime: operator.runtime,
     },
     source_discovery: {
       status: sourcePlan.status,
@@ -3991,6 +3999,7 @@ function graphNode({ id, command, reason, status }) {
 function buildOpsModelRouter({ loop, triggerPlan }) {
   const severe = loop.status === "safety_stop"
     || loop.status === "runtime_degraded"
+    || loop.status === "runtime_partial"
     || triggerPlan.triggers.some((trigger) => ["critical", "high"].includes(trigger.severity));
   return {
     routine_model: "gpt-5.4-mini",
@@ -6523,6 +6532,9 @@ function safeLoopStatus({ runtime, eventPlan }) {
   if (eventPlan.events.some((item) => item.type === "real_execution_safety_violation")) {
     return "safety_stop";
   }
+  if (runtimePartialAvailable(runtime)) {
+    return "runtime_partial";
+  }
   if (runtime.status !== "ready") {
     return "runtime_degraded";
   }
@@ -6598,6 +6610,31 @@ function safeLoopCommands({ runtime, eventPlan, budgetPlan, unblock, playbookPla
   return dedupeLoopCommands(commands);
 }
 
+function runtimePartialAvailable(runtime) {
+  return runtime?.autonomy_impact?.status === "partial_runtime_available";
+}
+
+function buildReadOnlyRuntimeRoute(runtime) {
+  if (!runtimePartialAvailable(runtime)) return null;
+  return {
+    id: "partial_runtime_operator_summary",
+    command: "npm --silent run hermes:operator-packet",
+    reason: runtime.autonomy_impact?.reason
+      ?? "Hermes can generate read-only operator packets while protected autonomy gates remain blocked.",
+    status: runtime.autonomy_impact?.status ?? "partial_runtime_available",
+    allowed_now: runtime.autonomy_impact?.allowed_now ?? [],
+    blocked_until_operator_fix: runtime.autonomy_impact?.blocked_until_operator_fix ?? [],
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    requires_admin_token: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
 function chooseSafeLoopCommand({ runtime, unblock, eventPlan, safeCommands }) {
   if (eventPlan.events.some((item) => item.type === "real_execution_safety_violation")) {
     return safeCommands.find((item) => item.id === "route_events") ?? safeCommands[0] ?? null;
@@ -6617,6 +6654,7 @@ function chooseSafeLoopCommand({ runtime, unblock, eventPlan, safeCommands }) {
 function buildOperatorPacket(loop) {
   const nextAction = loop.next_best_command ?? null;
   const priority = operatorPriority(loop);
+  const readOnlyRoute = loop.read_only_runtime_route ?? null;
   return {
     generated_at: new Date().toISOString(),
     mode: "operator_packet",
@@ -6633,6 +6671,7 @@ function buildOperatorPacket(loop) {
     can_create_paper_orders: false,
     llm_per_tick_allowed: false,
     next_action: nextAction,
+    read_only_route: readOnlyRoute,
     cost_guard: {
       throttle_level: loop.quota_plan?.throttle_level,
       budget_utilization: loop.quota_plan?.budget_utilization,
@@ -6642,6 +6681,8 @@ function buildOperatorPacket(loop) {
     runtime: {
       status: loop.runtime?.status,
       next_actions: loop.runtime?.next_actions ?? [],
+      capability_summary: loop.runtime_capability ?? loop.runtime?.capability_summary ?? null,
+      autonomy_impact: loop.runtime_autonomy_impact ?? loop.runtime?.autonomy_impact ?? null,
     },
     data_health: {
       event_severity: loop.event_summary?.severity,
@@ -7443,7 +7484,7 @@ function slug(value) {
 
 function operatorPriority(loop) {
   if (loop.status === "safety_stop") return "critical";
-  if (loop.status === "runtime_degraded") return "high";
+  if (["runtime_degraded", "runtime_partial"].includes(loop.status)) return "high";
   if (["critical", "high"].includes(loop.event_summary?.severity)) return "high";
   if (loop.status === "paper_candidate") return "medium";
   if (loop.quota_plan?.throttle_level && loop.quota_plan.throttle_level !== "normal") return "medium";
@@ -7458,11 +7499,18 @@ function operatorShortMessage(loop, nextAction, priority) {
   const budget = formatPercent(loop.quota_plan?.budget_utilization);
   const command = nextAction?.command ?? "none";
   const reason = nextAction?.reason ?? "No safe command selected.";
+  const runtimeImpact = loop.runtime_autonomy_impact?.status
+    ? `/${loop.runtime_autonomy_impact.status}`
+    : "";
+  const route = loop.read_only_runtime_route?.command
+    ? ` Read-only route: ${loop.read_only_runtime_route.command}.`
+    : "";
+  const reasonSentence = reason.endsWith(".") ? reason : `${reason}.`;
   return [
     `Hermes ${priority}: ${loop.status} in ${loop.active_phase}.`,
-    `Runtime=${loop.runtime?.status}; data=${loop.live_stats?.collection_status}/${loop.live_stats?.processing_status}; quota=${loop.quota_plan?.throttle_level ?? "unknown"} (${budget}).`,
+    `Runtime=${loop.runtime?.status}${runtimeImpact}; data=${loop.live_stats?.collection_status}/${loop.live_stats?.processing_status}; quota=${loop.quota_plan?.throttle_level ?? "unknown"} (${budget}).`,
     `Next: ${command}.`,
-    `Why: ${reason}`,
+    `Why: ${reasonSentence}${route}`,
     "No provider calls, paper orders, or real execution from this packet.",
   ].join(" ");
 }
@@ -7554,7 +7602,7 @@ function schedulerSchedule(loop, grandSlam = null) {
   const policy = loop.live_stats?.sampling_policy ?? {};
   const baseMinutes = Number(policy.poll_interval_minutes ?? 5);
   const grandSlamCadence = grandSlamScheduleCadence(grandSlam);
-  const safeLoopInterval = loop.status === "runtime_degraded"
+  const safeLoopInterval = ["runtime_degraded", "runtime_partial"].includes(loop.status)
     ? 5
     : baseMinutes > 0
       ? baseMinutes

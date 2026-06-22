@@ -115,6 +115,10 @@ It exposes `capability_summary` and `autonomy_impact` so a running gateway,
 configured model/provider and configured channels can still be used for
 read-only packets while doctor timeouts keep cron/channel/paper escalation
 blocked.
+The `safe-loop`, `operator-packet`, and `ops-compiler` commands should preserve
+that nuance as `runtime_partial` with a `read_only_runtime_route`; this is an
+observe/summary path, not permission to call providers, create paper orders, or
+activate real execution.
 The `doctor-triage` command runs bounded local probes for Hermes version,
 status, and a short doctor attempt. It should classify doctor timeouts without
 starting services, editing credentials, calling providers, or printing secrets.

@@ -231,6 +231,10 @@ changes and safety flags, but it must not edit files, run provider calls, create
 orders or mutate runtime services.
 Runtime commands should carry `runtime_findings` and non-executed diagnostic
 actions, with `mutates_runtime_if_run=true` for manual gateway/service changes.
+When `runtime_findings` already include a specific diagnostic action, the
+`runtime-fix-plan` command should prioritize that action over the generic
+`npm run hermes:runtime-check` fallback. For example, `doctor_timed_out` should
+route to bounded `npm run hermes:doctor-triage` before another runtime check.
 The `operator-packet` command compresses safe-loop into a short channel-safe
 decision for Telegram/OpenClaw. It is read-only and never executes the next
 safe action it reports.

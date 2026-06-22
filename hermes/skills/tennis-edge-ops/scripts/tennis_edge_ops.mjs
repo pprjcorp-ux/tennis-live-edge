@@ -6469,7 +6469,7 @@ function buildRuntimeFixPlan({ loop, rehearsal, proposal, activation }) {
 function runtimeFixActions(activation, runtime = {}) {
   const actions = (activation.checks ?? [])
     .filter((check) => check.status === "fail")
-    .map(runtimeFixActionFor)
+    .map((check) => runtimeFixActionFor(check, runtime))
     .filter(Boolean);
 
   actions.push(...runtimeDiagnosticFixActions(runtime));
@@ -6511,21 +6511,26 @@ function runtimeDiagnosticFixActions(runtime = {}) {
   }));
 }
 
-function runtimeFixActionFor(check) {
+function runtimeFixActionFor(check, runtime = {}) {
   const reason = check.summary;
   const checkId = check.id ?? check.name;
+  const runtimeDiagnosticActions = runtime.diagnostic_actions ?? [];
+  const hasSpecificRuntimeDiagnostic = checkId === "hermes_runtime_ready" && runtimeDiagnosticActions.length > 0;
   const actions = {
     hermes_runtime_ready: {
       id: "fix_hermes_runtime_ready",
-      priority: 10,
+      priority: hasSpecificRuntimeDiagnostic ? 19 : 10,
       lane: "local_runtime",
       command: "npm run hermes:runtime-check",
       reason,
       requiresHuman: false,
       notes: [
-        "Inspect Hermes status and doctor output.",
+        hasSpecificRuntimeDiagnostic
+          ? "Runtime-specific diagnostic action is prioritized ahead of this generic recheck."
+          : "Inspect Hermes status and doctor output.",
         "Do not restart, install, repair, or edit LaunchAgents from this command.",
       ],
+      supersededByDiagnosticAction: hasSpecificRuntimeDiagnostic,
     },
     telegram_allowlist_configured: {
       id: "fix_telegram_allowlist_configured",
@@ -6620,6 +6625,7 @@ function fixAction({
   reason,
   requiresHuman,
   mutatesRuntimeIfRun = false,
+  supersededByDiagnosticAction = false,
   notes = [],
 }) {
   return {
@@ -6636,6 +6642,7 @@ function fixAction({
     can_create_paper_orders: false,
     executes_now: false,
     mutates_runtime_if_run: Boolean(mutatesRuntimeIfRun),
+    superseded_by_diagnostic_action: Boolean(supersededByDiagnosticAction),
     notes,
   };
 }

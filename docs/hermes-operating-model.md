@@ -271,6 +271,10 @@ Runtime findings from `hermes:runtime-check` flow into this packet, including
 gateway service status, doctor timeout/failure state, auth notes, messaging
 notes, and manual commands marked with `mutates_runtime_if_run` when they would
 alter Hermes if an operator ran them.
+Specific runtime diagnostics outrank the generic runtime recheck. If the
+gateway is running but `hermes doctor` times out, the next action becomes
+`npm run hermes:doctor-triage`; if the gateway is stopped, manual gateway review
+outranks another broad runtime check. The packet still does not start services.
 
 `hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
 turns the internal intelligence packet into compact events such as

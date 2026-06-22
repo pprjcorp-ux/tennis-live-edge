@@ -264,7 +264,8 @@ rehearsal, learning review, and enterprise eligibility. The packet includes
 hypotheses, prerequisites, `success_metrics`, evidence and command previews,
 but it does not run experiments, spend provider quota or create orders. It also
 uses local `backlog-plan` evidence so repeated live-controller freezes,
-throttles or provider candidates can become the next safe experiment.
+source-route decisions, throttles or provider candidates can become the next
+safe experiment.
 
 `hermes:experiment-ledger` is the local trace for those experiment decisions.
 It appends JSONL rows under `hermes/runs/` with the lab payload, active ceiling,
@@ -278,7 +279,8 @@ ceilings, so the repo can prioritize changes from observed operating evidence
 instead of intuition.
 
 `hermes:backlog-plan` is the evidence-to-backlog compiler. It reads only local
-operator, mission, experiment and live-controller ledger reports, then emits
+operator, mission, experiment, live-controller, source-route and Grand Slam
+mission ledger reports, then emits
 implementation priorities with target files, validation commands, acceptance
 evidence and blocked gates. It does not edit code or run the listed validation
 commands.
@@ -305,8 +307,8 @@ ledger. It identifies recurrent blockers and repeated next actions so the
 backend can be improved from observed operations instead of intuition.
 
 `hermes:autonomy-effectiveness` is the closed-loop measurement packet. It reads
-local experiment, operator, mission, live-controller and Grand Slam mission
-ledger reports, scores evidence volume and repeated blockers, flags any
+local experiment, operator, mission, live-controller, source-route and Grand
+Slam mission ledger reports, scores evidence volume and repeated blockers, flags any
 protected-action claim, and recommends either more evidence, safety review or
 `implementation-handoff`. It does not execute the handoff or any reported
 command. The ops compiler, implementation handoff and scheduler/cron proposal

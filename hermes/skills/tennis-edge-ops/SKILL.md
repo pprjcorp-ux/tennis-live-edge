@@ -223,7 +223,9 @@ evidence and blocked conditions. Provider routes must remain operator-only with
 The `source-route-ledger` command records source-route matrix decisions as
 local JSONL evidence without executing route/provider commands or attempting
 bypass. The `source-route-ledger-report` command summarizes repeated route
-recommendations and accidental execution/bypass claims.
+recommendations and accidental execution/bypass claims. Backlog, experiment
+and autonomy-effectiveness packets must consume that report before adding
+provider spend or collection importers.
 The `trigger-policy` command maps current state to debounced wakeup triggers
 for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
 read-only and must not execute trigger commands. Partial runtime should emit a
@@ -245,12 +247,14 @@ experiments that match repeated operational blockers.
 The `experiment-ledger` command appends that lab decision to local JSONL with
 `experiment_command_executed=false`. The `experiment-ledger-report` command
 summarizes repeated experiment recommendations without writing or executing.
-The `backlog-plan` command reads local mission, operator, experiment and
-live-controller ledgers and emits non-executing implementation priorities with
-target files, validation commands, and acceptance evidence.
+The `backlog-plan` command reads local mission, operator, experiment,
+live-controller, source-route and Grand Slam mission ledgers and emits
+non-executing implementation priorities with target files, validation commands,
+and acceptance evidence.
 The `autonomy-effectiveness` command measures whether Hermes autonomy is
-improving from ledger evidence. It should score repeated blockers, protected
-action claims, and next handoff recommendations without executing anything.
+improving from ledger evidence. It should score repeated blockers, source-route
+pressure, protected action claims, and next handoff recommendations without
+executing anything.
 The `implementation-handoff` command turns the current `backlog-plan` priority
 into a read-only work order for Codex/Hermes operators. It includes target
 files, suggested steps, validation commands, acceptance criteria, prohibited

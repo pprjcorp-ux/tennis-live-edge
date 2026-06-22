@@ -298,6 +298,12 @@ durable local evidence. It appends the current matrix to JSONL with
 `route_command_executed=false`, `provider_command_executed=false`, and
 `bypass_attempted=false`. Use `hermes:source-route-ledger-report` to summarize
 repeated allowed routes before adding importers or spending provider quota.
+`backlog-plan`, `experiment-lab`, and `autonomy-effectiveness` consume this
+report so source-route pressure becomes reviewed implementation work, not an
+automatic provider call.
+The backlog item is `harden_source_route_feedback_loop`, the experiment row is
+`source_route_feedback_loop`, and autonomy evidence exposes
+`source_route_records` plus the `source_routes` effectiveness lane.
 
 Use `hermes:historical-backfill-plan` when Hermes needs more offline evidence
 for priors, calibration or backtests. It ranks internal replay, public
@@ -376,8 +382,8 @@ recommendations. It reports top experiments, repeated active ceilings, ready
 experiment counts, and any rows claiming an experiment command was executed.
 
 Use `hermes:backlog-plan` to turn ledger evidence into implementation
-priorities. It reads only local mission, operator, experiment, live-controller
-and Grand Slam mission ledgers, then emits non-executing backlog items with target files, validation commands,
+priorities. It reads only local mission, operator, experiment, live-controller,
+source-route and Grand Slam mission ledgers, then emits non-executing backlog items with target files, validation commands,
 acceptance evidence, and the gates each item blocks.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
@@ -418,7 +424,7 @@ activation commands are empty until every check passes.
 
 Use `hermes:autonomy-effectiveness` before implementation handoff or autonomy
 escalation. It reads only local ledgers, measures repeated blockers and
-protected-action claims, scores the current loop, and recommends a
+source-route pressure, flags protected-action claims, scores the current loop, and recommends a
 non-executing next action. It is the proof that Hermes is learning from
 operation rather than just producing more packets. The ops compiler,
 implementation handoff and cron proposal now include this measurement so

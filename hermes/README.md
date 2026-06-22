@@ -323,7 +323,9 @@ event triggers, cost tiers, success evidence and blocked conditions while keepin
 JSONL ledger without executing any route command. Use
 `hermes:source-route-ledger-report` to summarize repeated allowed-route
 recommendations, blocked routes, operator-required routes, and any accidental
-execution/bypass claims.
+execution/bypass claims. `hermes:backlog-plan`, `hermes:experiment-lab`, and
+`hermes:autonomy-effectiveness` consume this report so repeated allowed-route
+decisions become implementation work before provider spend or importer code.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam
@@ -408,8 +410,8 @@ it never runs the experiment command it records.
 recommendations and active ceilings from the local ledger without writing or
 executing commands.
 
-`hermes:backlog-plan` compiles local mission/operator/experiment/live-control
-and Grand Slam mission ledger evidence into non-executing implementation priorities. Each item includes
+`hermes:backlog-plan` compiles local mission/operator/experiment/live-control,
+source-route and Grand Slam mission ledger evidence into non-executing implementation priorities. Each item includes
 target files, validation commands, acceptance evidence and the gates it would
 unblock.
 

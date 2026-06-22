@@ -1986,6 +1986,7 @@ async function experimentLabData() {
   const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
   const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
   const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
+  const sourceRouteReport = buildSourceRouteLedgerReport(readSourceRouteLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
   const backlogPlan = buildBacklogPlan({
     experimentReport,
@@ -1993,6 +1994,7 @@ async function experimentLabData() {
     missionReport,
     liveControllerReport,
     grandSlamMissionReport,
+    sourceRouteReport,
     runtimePriorities,
   });
   const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
@@ -2057,6 +2059,7 @@ function autonomyEffectivenessData() {
   const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
   const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
   const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
+  const sourceRouteReport = buildSourceRouteLedgerReport(readSourceRouteLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
   const backlog = buildBacklogPlan({
     experimentReport,
@@ -2064,6 +2067,7 @@ function autonomyEffectivenessData() {
     missionReport,
     liveControllerReport,
     grandSlamMissionReport,
+    sourceRouteReport,
     runtimePriorities,
   });
   const effectiveness = buildAutonomyEffectiveness({
@@ -2072,6 +2076,7 @@ function autonomyEffectivenessData() {
     missionReport,
     liveControllerReport,
     grandSlamMissionReport,
+    sourceRouteReport,
     runtimePriorities,
     backlog,
   });
@@ -2081,6 +2086,7 @@ function autonomyEffectivenessData() {
     missionReport,
     liveControllerReport,
     grandSlamMissionReport,
+    sourceRouteReport,
     runtimePriorities,
     backlog,
     effectiveness,
@@ -6977,24 +6983,41 @@ function buildExperimentRows({ loop, report, eventPlan, sourcePlan, capabilityAu
 
 function experimentFromBacklogGuidance(backlogPlan) {
   const nextItem = backlogPlan.next_item;
-  if (nextItem?.id !== "harden_live_controller_feedback_loop") {
-    return null;
+  if (nextItem?.id === "harden_live_controller_feedback_loop") {
+    return experimentRow({
+      id: "live_controller_feedback_loop",
+      title: "Convert repeated live-controller decisions into safer collection work",
+      status: "ready",
+      priorityScore: Math.min(100, 92 + Number(nextItem.frequency ?? 0) * 4),
+      command: "npm --silent run hermes:backlog-plan",
+      hypothesis: "Using observed live-controller ledger patterns should improve collection cadence and data-quality work without granting execution authority.",
+      prerequisites: ["live_controller_ledger", "backlog_plan", "provider_commands_not_executed"],
+      successMetrics: ["top_repeated_action", "throttle_counts", "provider_command_executed_count", "paper_order_created_count"],
+      evidence: [
+        `backlog_next_item=${nextItem.id}`,
+        `frequency=${nextItem.frequency ?? 0}`,
+        `source=${(nextItem.source ?? []).join(",")}`,
+      ],
+    });
   }
-  return experimentRow({
-    id: "live_controller_feedback_loop",
-    title: "Convert repeated live-controller decisions into safer collection work",
-    status: "ready",
-    priorityScore: Math.min(100, 92 + Number(nextItem.frequency ?? 0) * 4),
-    command: "npm --silent run hermes:backlog-plan",
-    hypothesis: "Using observed live-controller ledger patterns should improve collection cadence and data-quality work without granting execution authority.",
-    prerequisites: ["live_controller_ledger", "backlog_plan", "provider_commands_not_executed"],
-    successMetrics: ["top_repeated_action", "throttle_counts", "provider_command_executed_count", "paper_order_created_count"],
-    evidence: [
-      `backlog_next_item=${nextItem.id}`,
-      `frequency=${nextItem.frequency ?? 0}`,
-      `source=${(nextItem.source ?? []).join(",")}`,
-    ],
-  });
+  if (nextItem?.id === "harden_source_route_feedback_loop") {
+    return experimentRow({
+      id: "source_route_feedback_loop",
+      title: "Convert repeated source-route decisions into safer collection work",
+      status: "ready",
+      priorityScore: Math.min(100, 90 + Number(nextItem.frequency ?? 0) * 4),
+      command: "npm --silent run hermes:source-route-ledger-report",
+      hypothesis: "Using observed source-route patterns should improve collection/backfill work without provider quota spend, scraping or bypass.",
+      prerequisites: ["source_route_ledger", "backlog_plan", "route_commands_not_executed"],
+      successMetrics: ["top_next_route", "blocked_route_counts", "provider_command_executed_count", "bypass_attempted_count"],
+      evidence: [
+        `backlog_next_item=${nextItem.id}`,
+        `frequency=${nextItem.frequency ?? 0}`,
+        `source=${(nextItem.source ?? []).join(",")}`,
+      ],
+    });
+  }
+  return null;
 }
 
 function experimentRow({
@@ -7150,6 +7173,7 @@ function buildBacklogPlan({
   missionReport,
   liveControllerReport,
   grandSlamMissionReport,
+  sourceRouteReport = emptySourceRouteLedgerReport(),
   runtimePriorities,
 }) {
   const items = buildBacklogItems({
@@ -7158,6 +7182,7 @@ function buildBacklogPlan({
     missionReport,
     liveControllerReport,
     grandSlamMissionReport,
+    sourceRouteReport,
     runtimePriorities,
   })
     .sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
@@ -7220,6 +7245,18 @@ function buildBacklogPlan({
         provider_command_executed_count: grandSlamMissionReport.provider_command_executed_count,
         paper_order_created_count: grandSlamMissionReport.paper_order_created_count,
       },
+      source_route_ledger: {
+        path: sourceRouteReport.ledger?.path,
+        total_records: sourceRouteReport.total_records,
+        top_next_route: sourceRouteReport.top_next_route,
+        top_next_command: sourceRouteReport.top_next_command,
+        next_route_counts: sourceRouteReport.next_route_counts,
+        blocked_route_counts: sourceRouteReport.blocked_route_counts,
+        operator_required_route_counts: sourceRouteReport.operator_required_route_counts,
+        route_command_executed_count: sourceRouteReport.route_command_executed_count,
+        provider_command_executed_count: sourceRouteReport.provider_command_executed_count,
+        bypass_attempted_count: sourceRouteReport.bypass_attempted_count,
+      },
       runtime_priorities: {
         next_priority: runtimePriorities.next_priority,
         total_priorities: runtimePriorities.priorities.length,
@@ -7233,6 +7270,10 @@ function buildBacklogPlan({
       browser_sportsbook_automation_allowed: false,
     },
   };
+}
+
+function emptySourceRouteLedgerReport() {
+  return buildSourceRouteLedgerReport({ path: sourceRouteLedgerPath(), records: [], invalid_rows: 0 });
 }
 
 function buildBacklogPlanWithEnterpriseReadiness(backlogPlan, enterpriseReadiness) {
@@ -7372,6 +7413,7 @@ function buildAutonomyEffectiveness({
   missionReport,
   liveControllerReport,
   grandSlamMissionReport,
+  sourceRouteReport = emptySourceRouteLedgerReport(),
   runtimePriorities,
   backlog,
 }) {
@@ -7381,6 +7423,7 @@ function buildAutonomyEffectiveness({
     missionReport,
     liveControllerReport,
     grandSlamMissionReport,
+    sourceRouteReport,
   });
   const protectedClaims = autonomyProtectedActionClaims({
     experimentReport,
@@ -7388,6 +7431,7 @@ function buildAutonomyEffectiveness({
     missionReport,
     liveControllerReport,
     grandSlamMissionReport,
+    sourceRouteReport,
   });
   const repeatPressure = autonomyRepeatPressure({
     experimentReport,
@@ -7395,6 +7439,7 @@ function buildAutonomyEffectiveness({
     missionReport,
     liveControllerReport,
     grandSlamMissionReport,
+    sourceRouteReport,
     runtimePriorities,
   });
   const score = autonomyEffectivenessScore({ evidenceTotals, protectedClaims, repeatPressure });
@@ -7428,6 +7473,12 @@ function buildAutonomyEffectiveness({
         repeated_count: repeatPressure.live_collection,
         top_signal: liveControllerReport.top_repeated_action,
         command: liveControllerReport.top_next_safe_command ?? "npm --silent run hermes:live-controller",
+      }),
+      source_routes: effectivenessLane({
+        id: "source_routes",
+        repeated_count: repeatPressure.source_routes,
+        top_signal: sourceRouteReport.top_next_route,
+        command: sourceRouteReport.top_next_command ?? "npm --silent run hermes:source-route-matrix",
       }),
       grand_slam_prediction: effectivenessLane({
         id: "grand_slam_prediction",
@@ -7492,6 +7543,7 @@ function autonomyEvidenceTotals({
   missionReport,
   liveControllerReport,
   grandSlamMissionReport,
+  sourceRouteReport = emptySourceRouteLedgerReport(),
 }) {
   const total_records = sumNumbers([
     experimentReport.total_records,
@@ -7499,6 +7551,7 @@ function autonomyEvidenceTotals({
     missionReport.total_records,
     liveControllerReport.total_records,
     grandSlamMissionReport.total_records,
+    sourceRouteReport.total_records,
   ]);
   return {
     total_records,
@@ -7507,12 +7560,14 @@ function autonomyEvidenceTotals({
     mission_records: missionReport.total_records,
     live_controller_records: liveControllerReport.total_records,
     grand_slam_mission_records: grandSlamMissionReport.total_records,
+    source_route_records: sourceRouteReport.total_records,
     has_multi_lane_evidence: [
       experimentReport.total_records,
       operatorReport.total_records,
       missionReport.total_records,
       liveControllerReport.total_records,
       grandSlamMissionReport.total_records,
+      sourceRouteReport.total_records,
     ].filter((count) => Number(count ?? 0) > 0).length >= 2,
   };
 }
@@ -7523,6 +7578,7 @@ function autonomyProtectedActionClaims({
   missionReport,
   liveControllerReport,
   grandSlamMissionReport,
+  sourceRouteReport = emptySourceRouteLedgerReport(),
 }) {
   return {
     total: sumNumbers([
@@ -7539,12 +7595,19 @@ function autonomyProtectedActionClaims({
       grandSlamMissionReport.mission_command_executed_count,
       grandSlamMissionReport.provider_command_executed_count,
       grandSlamMissionReport.paper_order_created_count,
+      sourceRouteReport.action_executed_count,
+      sourceRouteReport.route_command_executed_count,
+      sourceRouteReport.provider_command_executed_count,
+      sourceRouteReport.bypass_attempted_count,
     ]),
     operator_actions: operatorReport.action_executed_count,
     provider_commands: sumNumbers([
       liveControllerReport.provider_command_executed_count,
       grandSlamMissionReport.provider_command_executed_count,
+      sourceRouteReport.provider_command_executed_count,
     ]),
+    route_commands: sourceRouteReport.route_command_executed_count,
+    bypass_attempts: sourceRouteReport.bypass_attempted_count,
     paper_orders: sumNumbers([
       liveControllerReport.paper_order_created_count,
       grandSlamMissionReport.paper_order_created_count,
@@ -7563,6 +7626,7 @@ function autonomyRepeatPressure({
   missionReport,
   liveControllerReport,
   grandSlamMissionReport,
+  sourceRouteReport = emptySourceRouteLedgerReport(),
   runtimePriorities,
 }) {
   const runtime = Math.max(
@@ -7584,14 +7648,20 @@ function autonomyRepeatPressure({
     firstCount(experimentReport.next_experiment_counts),
     maxObjectValue(experimentReport.ready_experiment_counts),
   );
+  const sourceRoutes = Math.max(
+    firstCount(sourceRouteReport.next_route_counts),
+    maxObjectValue(sourceRouteReport.blocked_route_counts),
+    maxObjectValue(sourceRouteReport.operator_required_route_counts),
+  );
   const operator = firstCount(operatorReport.next_action_counts);
   return {
     runtime,
     live_collection: liveCollection,
+    source_routes: sourceRoutes,
     grand_slam: grandSlam,
     experiment,
     operator,
-    max_repeated_count: Math.max(runtime, liveCollection, grandSlam, experiment, operator),
+    max_repeated_count: Math.max(runtime, liveCollection, sourceRoutes, grandSlam, experiment, operator),
   };
 }
 
@@ -7847,6 +7917,7 @@ function buildBacklogItems({
   missionReport,
   liveControllerReport,
   grandSlamMissionReport,
+  sourceRouteReport = emptySourceRouteLedgerReport(),
   runtimePriorities,
 }) {
   const items = [];
@@ -7862,6 +7933,11 @@ function buildBacklogItems({
   const controllerThrottleFrequency = controllerActionCounts.throttle_internal_watch ?? 0;
   const controllerProviderCandidateFrequency = controllerActionCounts.operator_provider_candidate ?? 0;
   const controllerPaperCandidateFrequency = controllerActionCounts.paper_autopilot_candidate ?? 0;
+  const sourceRouteCounts = sourceRouteReport.next_route_counts ?? [];
+  const sourceRouteTopRoute = sourceRouteReport.top_next_route;
+  const sourceRouteFrequency = firstCount(sourceRouteCounts);
+  const sourceRouteBlockedFrequency = maxObjectValue(sourceRouteReport.blocked_route_counts);
+  const sourceRouteOperatorFrequency = maxObjectValue(sourceRouteReport.operator_required_route_counts);
   const grandSlamPhaseCounts = grandSlamMissionReport.active_phase_counts ?? {};
   const grandSlamRestoreFrequency = grandSlamPhaseCounts.restore_operational_truth ?? 0;
   const grandSlamBackfillFrequency = grandSlamPhaseCounts.offline_backfill ?? 0;
@@ -7950,6 +8026,35 @@ function buildBacklogItems({
         "allowed_collection_paths include internal/replay/licensed routes",
       ],
       blocks: ["live_collection_cadence"],
+    }));
+  }
+
+  if (sourceRouteFrequency > 0 || sourceRouteBlockedFrequency > 0 || sourceRouteOperatorFrequency > 0) {
+    items.push(backlogItem({
+      id: "harden_source_route_feedback_loop",
+      title: "Harden source-route feedback before adding collection code",
+      priority: 22,
+      source: ["source_route_ledger"],
+      frequency: Math.max(sourceRouteFrequency, sourceRouteBlockedFrequency, sourceRouteOperatorFrequency),
+      rationale: "Repeated source-route decisions show which allowed collection path should be improved next; convert replay/internal/provider/manual route evidence into implementation work before spending quota or writing importers.",
+      targetFiles: [
+        "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+        "docs/hermes-agent-ops.md",
+        "docs/hermes-operating-model.md",
+      ],
+      validationCommands: [
+        "npm --silent run hermes:source-route-ledger-report",
+        "npm --silent run hermes:source-route-matrix",
+        "python3 scripts/check_private_runtime.py",
+      ],
+      acceptanceEvidence: [
+        `source_route_ledger.top_next_route=${sourceRouteTopRoute ?? "none"}`,
+        "route_command_executed_count=0",
+        "provider_command_executed_count=0",
+        "bypass_attempted_count=0",
+        "provider_api_call_allowed=false",
+      ],
+      blocks: ["live_collection_cadence", "historical_backfill_importers", "provider_spend_review"],
     }));
   }
 

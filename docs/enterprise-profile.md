@@ -3,6 +3,11 @@
 The enterprise branch is the full local-first operating system for ROI/CLV
 paper trading. It keeps real execution hard-blocked by default.
 
+For the no-budget-limit prediction roadmap, use
+[Enterprise Accuracy Track](enterprise-accuracy-track.md). That track prepares
+top-tier data contracts, replay evidence, and model-quality gates without
+enabling enterprise feeds or real execution automatically.
+
 ## Defaults
 
 - `TENNIS_EDGE_RUNTIME_PROFILE=enterprise_roi_clv`

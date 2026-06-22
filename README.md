@@ -81,6 +81,7 @@ example without any live API calls.
 - [Strategic refactor plan](docs/strategic-refactor-plan.md)
 - [Budget profile](docs/budget-profile.md)
 - [Enterprise profile](docs/enterprise-profile.md)
+- [Enterprise accuracy track](docs/enterprise-accuracy-track.md)
 - [Execution safety](docs/execution-safety.md)
 - [Provider access runbook](docs/provider-access-runbook.md)
 - [Hermes Agent Ops](docs/hermes-agent-ops.md)

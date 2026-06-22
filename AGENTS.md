@@ -31,6 +31,9 @@ Do not commit `.env`, `.logs/`, `.venv/`, `.next/`, `node_modules/`,
 - `docs`: shared architecture plus branch-specific operating docs.
 - `docs/strategic-refactor-plan.md`: current product objective, best v2
   direction, refactor order, and Hermes/Cloudflare/provider strategy.
+- `docs/enterprise-accuracy-track.md`: no-budget-limit accuracy roadmap for
+  top-tier tennis feeds, replay-first enterprise contracts, and Hermes'
+  supervisory role.
 - `docs/hermes-operating-model.md`: safe Hermes autonomy ladder, collection
   boundaries, and cron/event structure.
 

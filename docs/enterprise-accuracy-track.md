@@ -182,8 +182,12 @@ Hermes should not:
 1. Keep `budget` green: operational truth, Postgres, replay contracts, dashboard,
    and paper trading.
 2. Add enterprise provider contract specs as deferred shadow contracts.
+   Implemented as `ENTERPRISE_PROVIDER_CONTRACT_SPECS`; these contracts are
+   shadow/deferred and do not run provider calls.
 3. Add offline fixture samples for Sportradar timeline, Betradar market state,
-   TXODDS odds, and Betfair market stream.
+   TXODDS odds, and Betfair market stream. Implemented through
+   `sample_enterprise_shadow_payloads`; fixtures remain separate from the
+   budget replay contract runner.
 4. Extend Replay Lab to display enterprise fixture readiness separately from
    budget chain readiness.
 5. Add model lab reports for accuracy by Grand Slam, gender, surface, round,

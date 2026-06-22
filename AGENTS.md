@@ -80,6 +80,12 @@ Replay Lab is the provider rehearsal surface. Keep
 adding or debugging paid APIs. It must expose `budget_replay_fixtures`, fake
 API-Tennis/Odds-API.io/TheOddsAPI contracts, and healthy/gap/resync scenarios
 without live keys or vendor quota.
+Enterprise provider contracts live separately in
+`ENTERPRISE_PROVIDER_CONTRACT_SPECS` and must remain shadow/deferred until the
+budget chain is complete. Offline enterprise fixtures for Sportradar timeline,
+Betradar market state, TXODDS odds, and Betfair market stream may validate
+contract shape, but they must not be wired into the budget replay runner or
+spend provider quota.
 Live mode must not fall back to sample payloads implicitly; use
 `/api/v1/replay/run` with `use_fixture_seed=true` only for explicit admin
 rehearsal runs. Use `POST /api/v1/replay/contracts/run` before adding or

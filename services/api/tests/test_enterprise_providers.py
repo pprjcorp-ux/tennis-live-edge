@@ -19,10 +19,14 @@ from tennis_edge.providers.the_odds_api import TheOddsApiClient
 from tennis_edge.providers.txodds import parse_txodds_moneyline
 from tennis_edge.sample_data import sample_raw_payloads
 from tennis_edge.services.budget_replay_fixtures import sample_budget_replay_payloads
+from tennis_edge.services.enterprise_replay_fixtures import (
+    sample_enterprise_shadow_payloads,
+)
 from tennis_edge.services.normalizer import dedupe_payloads, normalize_name, payload_checksum, similarity
 from tennis_edge.services.provider_adapters import (
     ArchiveOddsProviderAdapter,
     BUDGET_PROVIDER_CONTRACT_SPECS,
+    ENTERPRISE_PROVIDER_CONTRACT_SPECS,
     OddsProviderAdapter,
     ScoreProviderAdapter,
     canonical_match_from_provider_payload,
@@ -175,6 +179,66 @@ def test_budget_provider_contract_specs_freeze_internal_artifacts() -> None:
         "ProviderLatency",
     )
     assert all(spec.status == "covered" for spec in BUDGET_PROVIDER_CONTRACT_SPECS)
+
+
+def test_enterprise_provider_contract_specs_are_shadow_deferred() -> None:
+    matrix = {spec.provider: spec for spec in ENTERPRISE_PROVIDER_CONTRACT_SPECS}
+    all_contracts = {
+        contract
+        for spec in ENTERPRISE_PROVIDER_CONTRACT_SPECS
+        for contract in [*spec.input_contracts, *spec.output_contracts]
+    }
+
+    assert set(matrix) == {
+        Provider.SPORTRADAR,
+        Provider.BETRADAR_UOF,
+        Provider.TXODDS,
+        Provider.BETFAIR,
+    }
+    assert all(spec.status == "deferred" for spec in ENTERPRISE_PROVIDER_CONTRACT_SPECS)
+    assert all(
+        any("provider_api_call_allowed=false" in note for note in spec.notes)
+        for spec in ENTERPRISE_PROVIDER_CONTRACT_SPECS
+    )
+    assert len(BUDGET_PROVIDER_CONTRACT_SPECS) == 3
+    assert all_contracts.issuperset(
+        {
+            "timeline_events",
+            "MarketState",
+            "market_suspension",
+            "OddsTick",
+            "exchange_market_depth",
+            "traded_volume",
+        }
+    )
+    assert matrix[Provider.SPORTRADAR].fake_api.startswith("Offline Sportradar")
+    assert matrix[Provider.BETRADAR_UOF].fake_api.startswith("Offline Betradar")
+    assert matrix[Provider.TXODDS].fake_api.startswith("Offline TXODDS")
+    assert matrix[Provider.BETFAIR].fake_api.startswith("Offline Betfair")
+
+
+def test_enterprise_shadow_fixtures_are_offline_and_budget_chain_safe() -> None:
+    payloads = sample_enterprise_shadow_payloads()
+    replay = ReplayEngine().replay(payloads)
+
+    assert {payload.provider for payload in payloads} == {
+        Provider.SPORTRADAR,
+        Provider.BETRADAR_UOF,
+        Provider.TXODDS,
+        Provider.BETFAIR,
+    }
+    assert all(isinstance(payload, RawProviderPayload) for payload in payloads)
+    assert all(payload.payload["provider_api_call_allowed"] is False for payload in payloads)
+    assert all(payload.payload["fixture_mode"] == "offline_shadow" for payload in payloads)
+    assert len(BUDGET_PROVIDER_CONTRACT_SPECS) == 3
+
+    assert len(replay.score_ticks) == 1
+    assert len(replay.market_states) == 1
+    assert len(replay.odds_quotes) == 2
+    assert any(
+        "betfair/odds" in note and "not supported" in note
+        for note in replay.notes
+    )
 
 
 def test_replay_mode_provider_clients_use_fake_api_without_live_calls() -> None:

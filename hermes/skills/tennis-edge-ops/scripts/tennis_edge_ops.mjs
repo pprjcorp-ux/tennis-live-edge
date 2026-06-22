@@ -202,6 +202,12 @@ async function autonomyBrief() {
   printJson(buildAutonomyBrief({ loop, runtimePriorities }));
 }
 
+async function sourceDiscovery() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  printJson(buildSourceDiscovery({ report, eventPlan }));
+}
+
 async function operatorPacket() {
   const loop = await safeLoopData();
   printJson(buildOperatorPacket(loop));
@@ -1230,6 +1236,220 @@ function buildAutonomyBrief({ loop, runtimePriorities }) {
   };
 }
 
+function buildSourceDiscovery({ report, eventPlan }) {
+  const cursorsBlocked = report.cursor_summary?.resync_required > 0
+    || eventPlan.events.some((event) => event.type === "cursor_resync_required");
+  const budgetCompleted = Boolean(report.budget_chain_snapshot?.budget_chain_completed);
+  const providerRoutes = buildProviderRoutes(report, cursorsBlocked);
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "source_discovery",
+    status: cursorsBlocked || eventPlan.severity === "high" ? "blocked" : "monitor",
+    source_mode: report.mode,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    discovery_scope: [
+      "score_state",
+      "odds_live",
+      "odds_archive",
+      "closing_line_proxy",
+      "live_statistics",
+      "public_context",
+      "operator_notes",
+      "replay_backfill",
+    ],
+    acquisition_matrix: {
+      score_state: acquisitionRoute({
+        primaryPath: "licensed_provider_api",
+        status: budgetCompleted ? "candidate" : "monitor",
+        command: "npm --silent run hermes:budget-chain",
+        reason: "Score state must come from licensed score adapters or persisted replay, never page scraping.",
+      }),
+      odds_live: acquisitionRoute({
+        primaryPath: "provider_websocket",
+        status: cursorsBlocked ? "blocked" : "candidate",
+        command: cursorsBlocked ? "npm --silent run hermes:events" : "npm --silent run hermes:collection-plan",
+        reason: cursorsBlocked
+          ? "Odds websocket cursor requires resync; freeze live odds decisions until internal state clears."
+          : "Live odds may be watched only through configured provider websocket and backend gates.",
+        blockers: cursorsBlocked ? ["cursor_resync_required"] : [],
+      }),
+      odds_archive: acquisitionRoute({
+        primaryPath: "licensed_provider_api",
+        status: "candidate",
+        command: "npm --silent run hermes:budget-chain",
+        reason: "Archive odds are the lowest-risk paid smoke path for budget onboarding.",
+      }),
+      closing_line_proxy: acquisitionRoute({
+        primaryPath: "persisted_postgres_replay",
+        status: "monitor",
+        command: "npm run api:check:operational-truth -- --pretty",
+        reason: "Use stored odds ticks and settlements before relying on live closing-line claims.",
+      }),
+      live_statistics: acquisitionRoute({
+        primaryPath: "internal_fastapi_endpoint",
+        status: "monitor",
+        command: "npm --silent run hermes:live-stats",
+        reason: "Statistics are derived from canonical backend state; Hermes summarizes thresholds only.",
+      }),
+      public_context: acquisitionRoute({
+        primaryPath: "public_allowed_research",
+        status: "operator_note_only",
+        command: "Record a manual operator note; do not scrape restricted sites.",
+        reason: "Public news/research may explain injuries or schedule context only when access is allowed.",
+      }),
+      operator_notes: acquisitionRoute({
+        primaryPath: "manual_operator_note",
+        status: "operator_note_only",
+        command: "Add a local operator note with source and timestamp.",
+        reason: "Human-verified context is allowed when it stays local and does not include secrets.",
+      }),
+      replay_backfill: acquisitionRoute({
+        primaryPath: "persisted_postgres_replay",
+        status: "ready",
+        command: "npm run api:check:operational-truth -- --pretty",
+        reason: "Replay is the safest way to validate collection and processing before live spend.",
+      }),
+    },
+    provider_routes: providerRoutes,
+    next_safe_command: chooseSourceDiscoveryCommand({ cursorsBlocked, budgetCompleted, providerRoutes }),
+    safe_jailbreak_policy: {
+      meaning: "Find lower-cost allowed routes through licensed APIs, internal endpoints, replay and operator notes.",
+      bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      provider_quota_spend_requires_operator: true,
+    },
+    allowed_collection_paths: report.allowed_collection_paths ?? [],
+    forbidden_actions: report.forbidden_collection_paths ?? [],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      can_create_paper_orders: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function acquisitionRoute({
+  primaryPath,
+  status,
+  command,
+  reason,
+  blockers = [],
+}) {
+  return {
+    primary_path: primaryPath,
+    status,
+    command,
+    reason,
+    blockers,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
+function buildProviderRoutes(report, cursorsBlocked) {
+  const healthRows = report.evidence?.provider_health ?? [];
+  const onboarding = report.budget_chain_snapshot ?? {};
+  const currentStep = (onboarding.steps ?? []).find((step) => step.current)
+    ?? parseBudgetChainStep(onboarding.current_step);
+  const providers = new Map();
+  for (const health of healthRows) {
+    providers.set(health.provider, {
+      provider: health.provider,
+      status: health.status,
+      route: providerRouteType(health.provider),
+      configured: health.status !== "missing_key",
+      cursor_blocked: false,
+      operator_only: true,
+      provider_api_call_allowed: false,
+      command: "npm --silent run hermes:budget-chain",
+    });
+  }
+  for (const cursor of report.evidence?.provider_cursors ?? []) {
+    const row = providers.get(cursor.provider) ?? {
+      provider: cursor.provider,
+      status: "cursor_seen",
+      route: providerRouteType(cursor.provider),
+      configured: true,
+      operator_only: true,
+      provider_api_call_allowed: false,
+      command: "npm --silent run hermes:events",
+    };
+    row.cursor_blocked = Boolean(cursor.resync_required) || (cursorsBlocked && cursor.provider === "odds_api_io");
+    providers.set(cursor.provider, row);
+  }
+  if (currentStep?.provider && !providers.has(currentStep.provider)) {
+    providers.set(currentStep.provider, {
+      provider: currentStep.provider,
+      status: currentStep.status ?? "current_step",
+      route: providerRouteType(currentStep.provider),
+      configured: Boolean(currentStep.configured),
+      cursor_blocked: false,
+      operator_only: true,
+      provider_api_call_allowed: false,
+      command: currentStep.smoke_command ?? "npm --silent run hermes:budget-chain",
+    });
+  }
+  return [...providers.values()].sort((a, b) => a.provider.localeCompare(b.provider));
+}
+
+function parseBudgetChainStep(value) {
+  const match = String(value ?? "").match(/^\d+\.\s*([^:]+):(.+)$/);
+  if (!match) return null;
+  return {
+    provider: match[1],
+    capability: match[2],
+    status: "current_step",
+    configured: false,
+  };
+}
+
+function providerRouteType(provider) {
+  const normalized = String(provider ?? "").toLowerCase();
+  if (normalized === "api_tennis") return "score_livescore";
+  if (normalized === "odds_api_io") return "odds_websocket";
+  if (normalized === "theoddsapi") return "archive_odds";
+  if (["sportradar", "betradar", "txodds"].includes(normalized)) return "enterprise_deferred";
+  return "operator_review";
+}
+
+function chooseSourceDiscoveryCommand({ cursorsBlocked, budgetCompleted, providerRoutes }) {
+  if (!budgetCompleted || providerRoutes.some((route) => route.status === "ready_next")) {
+    return sourceCommand("npm --silent run hermes:budget-chain", "Review the next budget provider onboarding step without spending quota.");
+  }
+  if (cursorsBlocked) {
+    return sourceCommand("npm --silent run hermes:events", "Resolve cursor or stale-feed blockers before any provider route changes.");
+  }
+  return sourceCommand("npm --silent run hermes:collection-plan", "Review collection cadence candidates without executing provider calls.");
+}
+
+function sourceCommand(command, reason) {
+  return {
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
 function chooseAutonomyLane(loop, runtimePriorities) {
   if (loop.status === "safety_stop") {
     return autonomyLane("safety_stop", 0, "safety", "Stop all automation and inspect real-execution safety.");
@@ -1889,6 +2109,12 @@ function schedulerSchedule(loop) {
       command: "npm --silent run hermes:autonomy-brief",
       everyMinutes: safeLoopInterval,
       reason: "Refresh the highest-level autonomy matrix and action queue without executing actions.",
+    }),
+    schedulerItem({
+      id: "source_discovery",
+      command: "npm --silent run hermes:source-discovery",
+      everyMinutes: 15,
+      reason: "Review allowed acquisition paths and blocked source routes without spending provider quota.",
     }),
     schedulerItem({
       id: "runtime_check",
@@ -3960,6 +4186,7 @@ const commands = {
   "provider-smoke": providerSmoke,
   "safe-loop": safeLoop,
   "autonomy-brief": autonomyBrief,
+  "source-discovery": sourceDiscovery,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,

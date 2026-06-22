@@ -165,6 +165,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes maximum-autonomy planning should consume `npm run hermes:autonomy-brief`;
   it is read-only, event-driven, no LLM per tick, and must treat "jailbreak" as
   allowed-path discovery only, never bypass or sportsbook automation.
+- Hermes data-source discovery should consume `npm run hermes:source-discovery`;
+  it maps score, odds, archive, public context, operator notes, and replay to
+  allowed acquisition paths without live provider calls or scraping.
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
   `next_action` it reports.
@@ -217,6 +220,7 @@ npm run hermes:quota-plan
 npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:autonomy-brief
+npm run hermes:source-discovery
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist

@@ -96,6 +96,17 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Source discovery every 15 minutes during collection buildout:
+
+```bash
+hermes cron add \
+  --name tennis-edge-source-discovery \
+  --every 15m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:source-discovery from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report discovery_scope, acquisition_matrix, provider_routes, next_safe_command, safe_jailbreak_policy, and forbidden_actions. Do not execute next_safe_command, scrape sites, create orders, run provider smoke, spend provider quota, or submit real orders from this cron." \
+  --timeout-seconds 90
+```
+
 Compact operator packet every 5 minutes for Telegram/OpenClaw:
 
 ```bash

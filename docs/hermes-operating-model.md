@@ -102,6 +102,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes during active windows: `npm run hermes:intelligence`.
 - Every 5 minutes when Hermes needs one autonomous packet: `npm run hermes:safe-loop`.
 - Every 5 minutes when Hermes needs the highest-level autonomy decision: `npm run hermes:autonomy-brief`.
+- Every 5-15 minutes during collection work: `npm run hermes:source-discovery`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
 - Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
@@ -145,6 +146,14 @@ licensed APIs, websockets, internal endpoints, persisted replay, manual notes
 and public research are allowed; sportsbook UI automation, anti-bot bypass,
 geolocation bypass, credential/session extraction and real-money execution are
 not.
+
+`hermes:source-discovery` is the preferred packet for improving data coverage
+without expanding authority. It maps score state, live odds, archive odds,
+closing-line proxy, live statistics, public context, manual notes and replay
+backfill to allowed acquisition paths. It can say "use public allowed research"
+or "record a manual operator note", but it must never scrape restricted pages,
+open sportsbook UIs, bypass anti-bot/geolocation controls, extract sessions, or
+spend provider quota.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

@@ -32,6 +32,7 @@ npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:autonomy-brief
+npm run hermes:source-discovery
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -155,6 +156,11 @@ It turns safe-loop state, live-window gates, quota throttles and ledger
 priorities into an autonomy matrix and action queue. It is the recommended
 packet for "jailbreak" requests because it explicitly lists allowed collection
 paths and forbidden bypasses while keeping every action non-executing.
+
+Use `hermes:source-discovery` when Hermes needs to improve collection coverage
+without spending quota or scraping. It maps score state, live odds, archive
+odds, closing-line proxy, live statistics, public context, operator notes and
+replay backfill to allowed acquisition paths and blocked routes.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard

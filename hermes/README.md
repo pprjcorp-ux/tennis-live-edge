@@ -46,6 +46,7 @@ npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:autonomy-brief
+npm run hermes:source-discovery
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -171,6 +172,11 @@ state, quota throttle and local ledger priorities into one operating packet. It
 is the preferred "maximum autonomy without more authority" view: read-only,
 event-driven, no LLM per tick, no provider calls, no paper orders, and no real
 execution.
+
+`hermes:source-discovery` maps every useful data class to safe acquisition
+paths: licensed provider APIs, provider websocket, internal FastAPI endpoints,
+persisted replay, public allowed research, or manual operator notes. It is
+read-only and turns "jailbreak" into route discovery, not bypass.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

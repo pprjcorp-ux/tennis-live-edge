@@ -1018,6 +1018,107 @@ test("autonomy-brief consolidates safe Hermes operating decisions without execut
   }
 });
 
+test("source-discovery maps safe data acquisition paths without bypasses or live calls", async () => {
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/provider-health": [
+      { provider: "api_tennis", status: "healthy", cost_tier: "budget" },
+      { provider: "odds_api_io", status: "degraded", cost_tier: "budget" },
+      { provider: "theoddsapi", status: "healthy", cost_tier: "budget" },
+    ],
+    "/api/v1/provider-cursors": [
+      {
+        provider: "odds_api_io",
+        stream: "tennis:moneyline",
+        resync_required: true,
+        last_seq: 10,
+        last_seen_at: "2026-06-21T20:00:00Z",
+      },
+    ],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: {
+          total_matches: 2,
+          persisted_matches: 2,
+          match_freshness: [
+            { match_id: "match_1", source: "replay", persisted: true, score_age_ms: 90000, odds_age_ms: 120000 },
+            { match_id: "match_2", source: "persisted_fallback", persisted: true, score_age_ms: 30000, odds_age_ms: 45000 },
+          ],
+        },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          steps: [
+            {
+              order: 1,
+              provider: "theoddsapi",
+              capability: "archive_odds",
+              status: "ready_next",
+              configured: true,
+              current: true,
+              smoke_completed: false,
+              required_before_enable: [],
+              next_action: "Run archive smoke manually.",
+              notes: [],
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["source-discovery", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "source_discovery");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.source_mode, "investigate");
+    assert.equal(payload.discovery_scope.includes("score_state"), true);
+    assert.equal(payload.acquisition_matrix.score_state.primary_path, "licensed_provider_api");
+    assert.equal(payload.acquisition_matrix.odds_live.status, "blocked");
+    assert.equal(payload.acquisition_matrix.odds_live.blockers.includes("cursor_resync_required"), true);
+    assert.equal(payload.acquisition_matrix.replay_backfill.primary_path, "persisted_postgres_replay");
+    assert.equal(payload.acquisition_matrix.public_context.primary_path, "public_allowed_research");
+    assert.equal(payload.acquisition_matrix.operator_notes.primary_path, "manual_operator_note");
+    assert.equal(payload.provider_routes.some((route) => route.provider === "theoddsapi"), true);
+    assert.equal(payload.next_safe_command.command, "npm --silent run hermes:budget-chain");
+    assert.equal(payload.forbidden_actions.includes("credential_or_session_extraction"), true);
+    assert.equal(payload.forbidden_actions.includes("sportsbook_ui_automation"), true);
+    assert.equal(payload.safe_jailbreak_policy.bypass_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("operator-packet emits a compact channel-safe decision summary", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

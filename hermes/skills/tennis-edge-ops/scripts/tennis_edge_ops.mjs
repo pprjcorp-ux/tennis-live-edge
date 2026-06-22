@@ -5815,6 +5815,7 @@ function buildSourceIntakeLedger(plan) {
     recommended_action_id: plan.recommended_action?.id ?? null,
     recommended_action_command: plan.recommended_action?.command ?? null,
     allowed_contract_ids: (plan.intake_queues?.allowed_contracts ?? []).map((item) => item.id),
+    allowed_contract_detail_ids: (plan.intake_contracts ?? []).map((contract) => contract.id),
     operator_review_ids: (plan.intake_queues?.operator_review ?? []).map((item) => item.id),
     deferred_ids: (plan.intake_queues?.deferred ?? []).map((item) => item.id),
     forbidden_quarantine_ids: (plan.intake_queues?.forbidden_quarantine ?? []).map((item) => item.id),
@@ -5893,6 +5894,7 @@ function buildSourceIntakeLedgerReport({ path, records, invalid_rows: invalidRow
   const nextIntakeCommandCounts = rankedCounts(records.map((record) => record.next_intake_command).filter(Boolean));
   const recommendedActionCounts = rankedCounts(records.map((record) => record.recommended_action_id).filter(Boolean));
   const allowedContractCounts = rankedCounts(records.flatMap((record) => record.allowed_contract_ids ?? []));
+  const allowedContractDetailCounts = rankedCounts(records.flatMap((record) => record.allowed_contract_detail_ids ?? []));
   const operatorReviewCounts = rankedCounts(records.flatMap((record) => record.operator_review_ids ?? []));
   const deferredCounts = rankedCounts(records.flatMap((record) => record.deferred_ids ?? []));
   const forbiddenCounts = rankedCounts(records.flatMap((record) => record.forbidden_quarantine_ids ?? []));
@@ -5923,6 +5925,7 @@ function buildSourceIntakeLedgerReport({ path, records, invalid_rows: invalidRow
     next_intake_command_counts: nextIntakeCommandCounts,
     recommended_action_counts: recommendedActionCounts,
     allowed_contract_counts: allowedContractCounts,
+    allowed_contract_detail_counts: allowedContractDetailCounts,
     operator_review_counts: operatorReviewCounts,
     deferred_counts: deferredCounts,
     forbidden_quarantine_counts: forbiddenCounts,
@@ -5930,6 +5933,7 @@ function buildSourceIntakeLedgerReport({ path, records, invalid_rows: invalidRow
     top_next_intake_lane: nextIntakeLaneCounts[0]?.command ?? null,
     top_next_intake_command: nextIntakeCommandCounts[0]?.command ?? null,
     top_allowed_contract: allowedContractCounts[0]?.command ?? null,
+    top_allowed_contract_detail: allowedContractDetailCounts[0]?.command ?? null,
     top_operator_review: operatorReviewCounts[0]?.command ?? null,
     top_deferred: deferredCounts[0]?.command ?? null,
     top_forbidden_quarantine: forbiddenCounts[0]?.command ?? null,
@@ -8999,10 +9003,12 @@ function buildBacklogPlan({
         top_next_intake_lane: sourceIntakeReport.top_next_intake_lane,
         top_next_intake_command: sourceIntakeReport.top_next_intake_command,
         top_allowed_contract: sourceIntakeReport.top_allowed_contract,
+        top_allowed_contract_detail: sourceIntakeReport.top_allowed_contract_detail,
         top_operator_review: sourceIntakeReport.top_operator_review,
         top_deferred: sourceIntakeReport.top_deferred,
         top_forbidden_quarantine: sourceIntakeReport.top_forbidden_quarantine,
         allowed_contract_counts: sourceIntakeReport.allowed_contract_counts,
+        allowed_contract_detail_counts: sourceIntakeReport.allowed_contract_detail_counts,
         operator_review_counts: sourceIntakeReport.operator_review_counts,
         deferred_counts: sourceIntakeReport.deferred_counts,
         forbidden_quarantine_counts: sourceIntakeReport.forbidden_quarantine_counts,
@@ -9896,11 +9902,13 @@ function buildBacklogItems({
     sourceUseLicenseFrequency,
   );
   const sourceIntakeAllowedFrequency = firstCount(sourceIntakeReport.allowed_contract_counts);
+  const sourceIntakeAllowedDetailFrequency = firstCount(sourceIntakeReport.allowed_contract_detail_counts);
   const sourceIntakeOperatorFrequency = firstCount(sourceIntakeReport.operator_review_counts);
   const sourceIntakeDeferredFrequency = firstCount(sourceIntakeReport.deferred_counts);
   const sourceIntakeForbiddenFrequency = firstCount(sourceIntakeReport.forbidden_quarantine_counts);
   const sourceIntakeFrequency = Math.max(
     sourceIntakeAllowedFrequency,
+    sourceIntakeAllowedDetailFrequency,
     sourceIntakeOperatorFrequency,
     sourceIntakeDeferredFrequency,
     sourceIntakeForbiddenFrequency,
@@ -10080,6 +10088,7 @@ function buildBacklogItems({
       acceptanceEvidence: [
         "source_intake_ledger.total_records>=2",
         `source_intake_ledger.top_allowed_contract=${sourceIntakeReport.top_allowed_contract ?? "none"}`,
+        `source_intake_ledger.top_allowed_contract_detail=${sourceIntakeReport.top_allowed_contract_detail ?? "none"}`,
         `source_intake_ledger.top_operator_review=${sourceIntakeReport.top_operator_review ?? "none"}`,
         `source_intake_ledger.top_deferred=${sourceIntakeReport.top_deferred ?? "none"}`,
         "intake_command_executed_count=0",

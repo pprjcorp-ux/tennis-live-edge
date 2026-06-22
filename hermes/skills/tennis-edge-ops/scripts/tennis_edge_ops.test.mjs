@@ -2635,6 +2635,7 @@ test("replay-backfill-contract accepts source-intake allowed contract evidence",
       recommended_action_id: "prepare_replay_backfill_contract",
       recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
       allowed_contract_ids: ["route:replay_backfill", "route:live_statistics"],
+      allowed_contract_detail_ids: ["replay_backfill_intake_contract", "live_stats_feature_intake_contract"],
       operator_review_ids: ["historical:jeff_sackmann_atp"],
       deferred_ids: ["enterprise:sportradar"],
       forbidden_quarantine_ids: ["route:sportsbook_browser"],
@@ -2654,6 +2655,7 @@ test("replay-backfill-contract accepts source-intake allowed contract evidence",
       recommended_action_id: "prepare_replay_backfill_contract",
       recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
       allowed_contract_ids: ["route:replay_backfill"],
+      allowed_contract_detail_ids: ["replay_backfill_intake_contract"],
       operator_review_ids: ["historical:jeff_sackmann_atp", "historical:tennis_data_results_odds"],
       deferred_ids: ["enterprise:sportradar"],
       forbidden_quarantine_ids: ["route:sportsbook_browser"],
@@ -2949,6 +2951,8 @@ test("source-intake-ledger records intake decisions without executing contracts"
     assert.equal(payload.record.next_intake_lane, "allowed_contract");
     assert.equal(payload.record.allowed_contract_ids.includes("route:replay_backfill"), true);
     assert.equal(payload.record.allowed_contract_ids.includes("route:live_statistics"), true);
+    assert.equal(payload.record.allowed_contract_detail_ids.includes("replay_backfill_intake_contract"), true);
+    assert.equal(payload.record.allowed_contract_detail_ids.includes("live_stats_feature_intake_contract"), true);
     assert.equal(payload.record.operator_review_ids.includes("historical:jeff_sackmann_atp"), true);
     assert.equal(payload.record.queue_summary.allowed_contracts, 2);
     assert.equal(payload.safety.dataset_fetch_allowed, false);
@@ -2978,6 +2982,7 @@ test("source-intake-ledger-report summarizes repeated intake queues", async () =
       recommended_action_id: "prepare_replay_backfill_contract",
       recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
       allowed_contract_ids: ["route:replay_backfill", "route:live_statistics"],
+      allowed_contract_detail_ids: ["replay_backfill_intake_contract", "live_stats_feature_intake_contract"],
       operator_review_ids: ["historical:jeff_sackmann_atp"],
       deferred_ids: ["enterprise:sportradar"],
       forbidden_quarantine_ids: [],
@@ -2997,6 +3002,7 @@ test("source-intake-ledger-report summarizes repeated intake queues", async () =
       recommended_action_id: "prepare_replay_backfill_contract",
       recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
       allowed_contract_ids: ["route:replay_backfill"],
+      allowed_contract_detail_ids: ["replay_backfill_intake_contract"],
       operator_review_ids: ["historical:jeff_sackmann_atp", "historical:tennis_data_results_odds"],
       deferred_ids: ["enterprise:sportradar"],
       forbidden_quarantine_ids: ["route:sportsbook_browser"],
@@ -3026,6 +3032,8 @@ test("source-intake-ledger-report summarizes repeated intake queues", async () =
   assert.equal(payload.top_next_intake_lane, "allowed_contract");
   assert.equal(payload.top_next_intake_command, "npm --silent run hermes:replay-backfill-contract");
   assert.equal(payload.top_allowed_contract, "route:replay_backfill");
+  assert.equal(payload.top_allowed_contract_detail, "replay_backfill_intake_contract");
+  assert.equal(payload.allowed_contract_detail_counts.some((item) => item.command === "live_stats_feature_intake_contract"), true);
   assert.equal(payload.top_operator_review, "historical:jeff_sackmann_atp");
   assert.equal(payload.top_deferred, "enterprise:sportradar");
   assert.equal(payload.top_forbidden_quarantine, "route:sportsbook_browser");
@@ -4232,6 +4240,7 @@ test("experiment-lab surfaces source-intake backlog evidence", async () => {
       recommended_action_id: "prepare_replay_backfill_contract",
       recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
       allowed_contract_ids: ["route:replay_backfill", "route:live_statistics"],
+      allowed_contract_detail_ids: ["replay_backfill_intake_contract", "live_stats_feature_intake_contract"],
       operator_review_ids: ["historical:jeff_sackmann_atp"],
       deferred_ids: ["enterprise:sportradar"],
       forbidden_quarantine_ids: ["route:sportsbook_browser"],
@@ -4251,6 +4260,7 @@ test("experiment-lab surfaces source-intake backlog evidence", async () => {
       recommended_action_id: "prepare_replay_backfill_contract",
       recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
       allowed_contract_ids: ["route:replay_backfill"],
+      allowed_contract_detail_ids: ["replay_backfill_intake_contract"],
       operator_review_ids: ["historical:jeff_sackmann_atp", "historical:tennis_data_results_odds"],
       deferred_ids: ["enterprise:sportradar"],
       forbidden_quarantine_ids: ["route:sportsbook_browser"],
@@ -4928,6 +4938,7 @@ test("backlog-plan uses source-intake ledger as implementation evidence", async 
       recommended_action_id: "prepare_replay_backfill_contract",
       recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
       allowed_contract_ids: ["route:replay_backfill", "route:live_statistics"],
+      allowed_contract_detail_ids: ["replay_backfill_intake_contract", "live_stats_feature_intake_contract"],
       operator_review_ids: ["historical:jeff_sackmann_atp"],
       deferred_ids: ["enterprise:sportradar"],
       forbidden_quarantine_ids: ["route:sportsbook_browser"],
@@ -4947,6 +4958,7 @@ test("backlog-plan uses source-intake ledger as implementation evidence", async 
       recommended_action_id: "prepare_replay_backfill_contract",
       recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
       allowed_contract_ids: ["route:replay_backfill"],
+      allowed_contract_detail_ids: ["replay_backfill_intake_contract"],
       operator_review_ids: ["historical:jeff_sackmann_atp", "historical:tennis_data_results_odds"],
       deferred_ids: ["enterprise:sportradar"],
       forbidden_quarantine_ids: ["route:sportsbook_browser"],
@@ -4989,6 +5001,7 @@ test("backlog-plan uses source-intake ledger as implementation evidence", async 
   assert.equal(payload.items[0].validation_commands.includes("npm --silent run hermes:source-intake-plan"), true);
   assert.equal(payload.items[0].acceptance_evidence.includes("source_intake_ledger.total_records>=2"), true);
   assert.equal(payload.items[0].acceptance_evidence.includes("source_intake_ledger.top_allowed_contract=route:replay_backfill"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("source_intake_ledger.top_allowed_contract_detail=replay_backfill_intake_contract"), true);
   assert.equal(payload.items[0].acceptance_evidence.includes("source_intake_ledger.top_operator_review=historical:jeff_sackmann_atp"), true);
   assert.equal(payload.items[0].acceptance_evidence.includes("source_intake_ledger.top_deferred=enterprise:sportradar"), true);
   assert.equal(payload.items[0].acceptance_evidence.includes("intake_command_executed_count=0"), true);
@@ -4999,6 +5012,8 @@ test("backlog-plan uses source-intake ledger as implementation evidence", async 
   assert.equal(payload.next_item.id, "harden_source_intake_feedback_loop");
   assert.equal(payload.evidence.source_intake_ledger.total_records, 2);
   assert.equal(payload.evidence.source_intake_ledger.top_allowed_contract, "route:replay_backfill");
+  assert.equal(payload.evidence.source_intake_ledger.top_allowed_contract_detail, "replay_backfill_intake_contract");
+  assert.equal(payload.evidence.source_intake_ledger.allowed_contract_detail_counts.some((item) => item.command === "live_stats_feature_intake_contract"), true);
   assert.equal(payload.evidence.source_intake_ledger.top_operator_review, "historical:jeff_sackmann_atp");
   assert.equal(payload.evidence.source_intake_ledger.top_deferred, "enterprise:sportradar");
   assert.equal(payload.evidence.source_intake_ledger.top_forbidden_quarantine, "route:sportsbook_browser");

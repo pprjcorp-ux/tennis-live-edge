@@ -413,6 +413,11 @@ must not fetch public datasets, spend provider quota, scrape, bypass controls
 or create paper/real orders.
 It emits `intake_contracts` for every allowed internal contract, including
 `replay_backfill_intake_contract` and `live_stats_feature_intake_contract`.
+`hermes:source-intake-ledger` records those concrete contract IDs as
+`allowed_contract_detail_ids`, and `hermes:source-intake-ledger-report` exposes
+`allowed_contract_detail_counts` plus `top_allowed_contract_detail` so backlog
+and implementation handoff can prioritize the actual internal contract, not
+only the high-level route.
 The live-stats contract maps `live_stats_feature_contract` into
 `LiveFeatureSnapshotSeed`, `CollectionCadenceSeed`, `SignalGateContextSeed`,
 and `LearningReviewSeed` without provider calls, live API calls, dataset

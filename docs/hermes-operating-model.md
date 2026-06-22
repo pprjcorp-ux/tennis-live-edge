@@ -482,6 +482,11 @@ first-class internal intake contract while preserving
 `provider_api_call_allowed=false`, `live_api_calls=false`,
 `dataset_fetch_allowed=false`, `browser_scraping_allowed=false`, and
 `llm_per_tick_allowed=false`.
+`hermes:source-intake-ledger` records these concrete contract IDs as
+`allowed_contract_detail_ids`; `hermes:source-intake-ledger-report` summarizes
+them with `allowed_contract_detail_counts` and `top_allowed_contract_detail`.
+This lets backlog and implementation-handoff turn repeated source-intake
+evidence into work on the exact internal feature contract.
 
 `hermes:live-window` is the preferred go/no-go packet for an active live
 window. It reuses the deterministic event and live-stats gates, returns

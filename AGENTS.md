@@ -125,6 +125,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes provider onboarding should consume `npm run hermes:budget-chain`; it
   is dry-run only and must not spend provider quota unless the operator
   intentionally runs the reported smoke command.
+- Hermes provider smoke execution must go through `npm run hermes:provider-smoke`;
+  without `--execute-provider-call` it is blocked dry-run only. Never place that
+  flag in cron, Telegram, webhook, or autonomous LLM routes.
 - Real execution requires a separate compliance/account/API activation task.
 
 ## Verification

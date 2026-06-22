@@ -803,3 +803,72 @@ test("budget-chain emits a dry-run provider onboarding plan without spending quo
     server.close();
   }
 });
+
+test("provider-smoke defaults to blocked dry-run and does not spend provider quota", async () => {
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          warnings: [],
+          steps: [
+            {
+              order: 1,
+              provider: "theoddsapi",
+              capability: "archive_odds",
+              status: "ready_next",
+              configured: true,
+              current: true,
+              last_smoke_status: null,
+              last_smoke_at: null,
+              smoke_completed: false,
+              required_before_enable: [],
+              next_action: "Run TheOddsAPI archive-sync smoke and confirm persisted payload evidence.",
+              notes: ["Lowest-risk paid provider to connect first."],
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["provider-smoke", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "dry_run");
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.reason, "explicit_provider_call_flag_required");
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.executed, false);
+    assert.equal(payload.current_step.provider, "theoddsapi");
+    assert.equal(payload.current_step.capability, "archive_odds");
+    assert.equal(payload.would_run, "npm run api:ingest:archive-odds -- --pretty");
+    assert.equal(payload.safety.can_submit_real_orders, false);
+  } finally {
+    server.close();
+  }
+});

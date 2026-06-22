@@ -103,6 +103,70 @@ async function budgetChain() {
   printJson(buildBudgetChainPlan(report, eventPlan));
 }
 
+async function providerSmoke() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  const plan = buildBudgetChainPlan(report, eventPlan);
+  const currentStep = plan.current_step;
+  const execute = process.argv.includes("--execute-provider-call");
+
+  if (!execute) {
+    printJson(providerSmokeBlocked({
+      plan,
+      currentStep,
+      reason: "explicit_provider_call_flag_required",
+    }));
+    return;
+  }
+
+  if (!currentStep) {
+    printJson(providerSmokeBlocked({ plan, currentStep, reason: "no_current_budget_step" }));
+    return;
+  }
+
+  if (plan.blockers.includes("real_execution_safety_violation")) {
+    printJson(providerSmokeBlocked({
+      plan,
+      currentStep,
+      reason: "real_execution_safety_violation",
+    }));
+    return;
+  }
+
+  if (currentStep.required_before_enable.length) {
+    printJson(providerSmokeBlocked({
+      plan,
+      currentStep,
+      reason: "required_before_enable_not_satisfied",
+    }));
+    return;
+  }
+
+  const smoke = executableProviderSmokeFor(currentStep);
+  if (!smoke) {
+    printJson(providerSmokeBlocked({
+      plan,
+      currentStep,
+      reason: "unsupported_provider_smoke",
+    }));
+    return;
+  }
+
+  const result = await runNpmJson(smoke.script, smoke.args);
+  printJson({
+    generated_at: new Date().toISOString(),
+    mode: "execute_provider_call",
+    status: "executed",
+    reason: null,
+    current_step: currentStep,
+    command: smoke.command,
+    provider_api_call_allowed: true,
+    executed: true,
+    result,
+    safety: plan.safety,
+  });
+}
+
 async function intelligenceData() {
   const [
     briefing,
@@ -1274,6 +1338,37 @@ function smokeCommandFor(step) {
   }[key] ?? "npm run api:check:operational-truth -- --pretty";
 }
 
+function executableProviderSmokeFor(step) {
+  const key = `${step.provider}:${step.capability}`;
+  return {
+    "theoddsapi:archive_odds": {
+      script: "api:ingest:archive-odds",
+      args: ["--pretty"],
+      command: "npm run api:ingest:archive-odds -- --pretty",
+    },
+  }[key] ?? null;
+}
+
+function providerSmokeBlocked({ plan, currentStep, reason }) {
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "dry_run",
+    status: "blocked",
+    reason,
+    current_step: currentStep,
+    would_run: currentStep?.smoke_command ?? null,
+    provider_api_call_allowed: false,
+    executed: false,
+    blockers: plan.blockers,
+    safety: plan.safety,
+    policy: {
+      execute_provider_api_calls_by_default: false,
+      explicit_flag_required: "--execute-provider-call",
+      note: "Provider smoke commands can spend quota; Hermes will not run them without an explicit local operator flag.",
+    },
+  };
+}
+
 function budgetBlockers({ budget, eventPlan, currentStep }) {
   const blockers = [];
   if (!budget.core_ready) {
@@ -1301,6 +1396,7 @@ const commands = {
   playbook,
   "live-stats": liveStats,
   "budget-chain": budgetChain,
+  "provider-smoke": providerSmoke,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

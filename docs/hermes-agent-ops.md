@@ -22,6 +22,7 @@ npm run hermes:events
 npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:budget-chain
+npm run hermes:provider-smoke
 ADMIN_API_TOKEN=... npm run hermes:ops:daily
 ADMIN_API_TOKEN=... npm run hermes:autopilot
 ```
@@ -82,6 +83,11 @@ Use `hermes:budget-chain` before running any paid provider smoke. It reports
 the active onboarding step and the exact command to run, while keeping
 `provider_api_call_allowed=false` and requiring explicit operator
 confirmation before quota-consuming API calls.
+
+Use `hermes:provider-smoke` only as the local confirmation gate. The default
+run is blocked dry-run output. Adding `--execute-provider-call` may spend
+provider quota, so that flag must remain out of cron, Telegram, webhooks, and
+LLM-triggered automation.
 
 ## Audit Trail
 

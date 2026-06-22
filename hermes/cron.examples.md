@@ -116,6 +116,10 @@ hermes cron add \
   --timeout-seconds 45
 ```
 
+Do not schedule `npm run hermes:provider-smoke -- --execute-provider-call`.
+Provider smoke execution may spend quota and is reserved for a local operator
+shell after reviewing the dry-run `hermes:budget-chain` packet.
+
 Paper autopilot every 5 minutes during live windows, only after
 `ADMIN_API_TOKEN` is available to Hermes as a local secret:
 

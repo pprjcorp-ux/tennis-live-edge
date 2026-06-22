@@ -36,6 +36,7 @@ npm run hermes:events
 npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:budget-chain
+npm run hermes:provider-smoke
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
@@ -82,6 +83,12 @@ analysis on every tick.
 plan. It reports the current provider, required prerequisites, and exact smoke
 command, but defaults `provider_api_call_allowed=false` so Hermes cannot spend
 vendor quota without an explicit operator action.
+
+`hermes:provider-smoke` is the explicit execution gate for the current budget
+provider smoke. Without `--execute-provider-call`, it returns a blocked dry-run
+packet with `provider_api_call_allowed=false` and the command it would run. Do
+not put `--execute-provider-call` in cron or Telegram automation; use it only
+from a local operator shell when you intentionally want to spend provider quota.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

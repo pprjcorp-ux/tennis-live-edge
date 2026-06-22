@@ -140,6 +140,11 @@ provider, capability, prerequisites, exact command, and quota policy. It never
 runs provider APIs by default; the operator must intentionally execute the
 reported command when ready.
 
+`hermes:provider-smoke` is the narrow local gate for that intentional step. Its
+default output is blocked dry-run JSON; `--execute-provider-call` is required
+before it runs a supported provider smoke. That flag is operator-only and must
+not be used in scheduled Hermes jobs.
+
 ## Evidence Required Before More Autonomy
 
 - `npm run api:check:operational-truth -- --pretty` passes.

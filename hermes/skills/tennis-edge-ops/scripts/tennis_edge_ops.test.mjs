@@ -2388,6 +2388,7 @@ test("backlog-plan turns repeated ledgers into non-executing implementation prio
   assert.equal(payload.items.length >= 2, true);
   assert.equal(payload.items[0].id, "stabilize_hermes_runtime_channels");
   assert.equal(payload.items[0].source.includes("experiment_ledger"), true);
+  assert.equal(payload.items[0].source.includes("mission_ledger"), false);
   assert.equal(payload.items[0].validation_commands.includes("npm run hermes:runtime-check"), true);
   assert.equal(payload.items[0].executes_now, false);
   assert.equal(payload.items.every((item) => item.executes_now === false), true);

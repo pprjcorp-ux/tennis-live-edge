@@ -3613,6 +3613,8 @@ function buildBacklogItems({ experimentReport, operatorReport, missionReport, ru
   const missionLaneCounts = missionReport.blocked_lane_counts ?? {};
   const missionNextLaneCounts = missionReport.next_lane_counts ?? {};
   const runtimePriority = runtimePriorities.next_priority;
+  const experimentRuntimeFrequency = countFor(experimentReport.next_experiment_counts, "runtime_channel_recovery");
+  const operatorRuntimeFrequency = countFor(operatorReport.next_action_counts, "npm run hermes:runtime-check");
   const missionRuntimeFrequency = Math.max(
     countFor(missionReport.next_action_counts, "hermes gateway start"),
     countFor(missionReport.next_action_counts, "npm run api:dev"),
@@ -3621,6 +3623,9 @@ function buildBacklogItems({ experimentReport, operatorReport, missionReport, ru
     missionNextLaneCounts.backend ?? 0,
     missionNextLaneCounts.channel ?? 0,
   );
+  const runtimePriorityFrequency = runtimePriority?.id === "stabilize_hermes_runtime"
+    ? runtimePriority.frequency ?? 1
+    : 0;
 
   if (topExperiment === "runtime_channel_recovery"
     || topBlocker === "npm run hermes:runtime-check"
@@ -3631,12 +3636,17 @@ function buildBacklogItems({ experimentReport, operatorReport, missionReport, ru
       id: "stabilize_hermes_runtime_channels",
       title: "Stabilize Hermes runtime and channel readiness before more autonomy",
       priority: 10,
-      source: ["experiment_ledger", "operator_ledger", "mission_ledger", "runtime_priorities"],
-      frequency: Math.max(
-        countFor(experimentReport.next_experiment_counts, "runtime_channel_recovery"),
-        countFor(operatorReport.next_action_counts, "npm run hermes:runtime-check"),
+      source: backlogRuntimeSources({
+        experimentRuntimeFrequency,
+        operatorRuntimeFrequency,
         missionRuntimeFrequency,
-        runtimePriority?.frequency ?? 0,
+        runtimePriorityFrequency,
+      }),
+      frequency: Math.max(
+        experimentRuntimeFrequency,
+        operatorRuntimeFrequency,
+        missionRuntimeFrequency,
+        runtimePriorityFrequency,
       ),
       rationale: "Runtime/channel blockers are the recurring ceiling; model, collection and paper work should wait for this proof.",
       targetFiles: [
@@ -3758,6 +3768,20 @@ function buildBacklogItems({ experimentReport, operatorReport, missionReport, ru
   }
 
   return dedupeBacklogItems(items);
+}
+
+function backlogRuntimeSources({
+  experimentRuntimeFrequency,
+  operatorRuntimeFrequency,
+  missionRuntimeFrequency,
+  runtimePriorityFrequency,
+}) {
+  const sources = [];
+  if (experimentRuntimeFrequency > 0) sources.push("experiment_ledger");
+  if (operatorRuntimeFrequency > 0) sources.push("operator_ledger");
+  if (missionRuntimeFrequency > 0) sources.push("mission_ledger");
+  if (runtimePriorityFrequency > 0) sources.push("runtime_priorities");
+  return sources;
 }
 
 function backlogItem({

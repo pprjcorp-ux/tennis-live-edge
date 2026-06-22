@@ -275,6 +275,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   reads only local mission/operator/experiment ledgers and converts repeated
   evidence into non-executing implementation priorities with target files,
   validation commands, and acceptance evidence.
+- Hermes autonomy effectiveness should consume
+  `npm run hermes:autonomy-effectiveness`; it reads only local ledgers, scores
+  repeated blockers and protected-action claims, and recommends the next
+  non-executing handoff without provider calls, paper orders, or real execution.
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
   `next_action` it reports. It should preserve `read_only_route` when Hermes can
@@ -356,6 +360,7 @@ npm run hermes:experiment-lab
 npm run hermes:experiment-ledger
 npm run hermes:experiment-ledger-report
 npm run hermes:backlog-plan
+npm run hermes:autonomy-effectiveness
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist

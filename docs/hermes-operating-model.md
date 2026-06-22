@@ -115,6 +115,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 15 minutes to audit experiment recommendations locally: `npm run hermes:experiment-ledger`.
 - Hourly/daily to review experiment recommendation quality: `npm run hermes:experiment-ledger-report`.
 - Hourly/daily to convert ledger evidence into implementation priorities: `npm run hermes:backlog-plan`.
+- Before handoff work or autonomy escalation: `npm run hermes:autonomy-effectiveness`.
 - Before coding from Hermes evidence: `npm run hermes:implementation-handoff`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
@@ -277,6 +278,13 @@ quality without granting more authority.
 `hermes:operator-ledger-report` is the read-only quality summary over that
 ledger. It identifies recurrent blockers and repeated next actions so the
 backend can be improved from observed operations instead of intuition.
+
+`hermes:autonomy-effectiveness` is the closed-loop measurement packet. It reads
+local experiment, operator, mission, live-controller and Grand Slam mission
+ledger reports, scores evidence volume and repeated blockers, flags any
+protected-action claim, and recommends either more evidence, safety review or
+`implementation-handoff`. It does not execute the handoff or any reported
+command.
 
 `hermes:runtime-fix-priorities` maps those recurrent blockers into a ranked
 non-mutating remediation queue. It is the bridge from observation to local

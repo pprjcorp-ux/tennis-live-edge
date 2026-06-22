@@ -1850,6 +1850,32 @@ async function backlogPlan() {
   }));
 }
 
+async function autonomyEffectiveness() {
+  const experimentReport = buildExperimentLedgerReport(readExperimentLedgerRecords());
+  const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
+  const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
+  const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
+  const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
+  const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
+  const backlog = buildBacklogPlan({
+    experimentReport,
+    operatorReport,
+    missionReport,
+    liveControllerReport,
+    grandSlamMissionReport,
+    runtimePriorities,
+  });
+  printJson(buildAutonomyEffectiveness({
+    experimentReport,
+    operatorReport,
+    missionReport,
+    liveControllerReport,
+    grandSlamMissionReport,
+    runtimePriorities,
+    backlog,
+  }));
+}
+
 async function implementationHandoff() {
   const experimentReport = buildExperimentLedgerReport(readExperimentLedgerRecords());
   const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
@@ -5363,6 +5389,313 @@ function buildBacklogPlan({
       browser_sportsbook_automation_allowed: false,
     },
   };
+}
+
+function buildAutonomyEffectiveness({
+  experimentReport,
+  operatorReport,
+  missionReport,
+  liveControllerReport,
+  grandSlamMissionReport,
+  runtimePriorities,
+  backlog,
+}) {
+  const evidenceTotals = autonomyEvidenceTotals({
+    experimentReport,
+    operatorReport,
+    missionReport,
+    liveControllerReport,
+    grandSlamMissionReport,
+  });
+  const protectedClaims = autonomyProtectedActionClaims({
+    experimentReport,
+    operatorReport,
+    missionReport,
+    liveControllerReport,
+    grandSlamMissionReport,
+  });
+  const repeatPressure = autonomyRepeatPressure({
+    experimentReport,
+    operatorReport,
+    missionReport,
+    liveControllerReport,
+    grandSlamMissionReport,
+    runtimePriorities,
+  });
+  const score = autonomyEffectivenessScore({ evidenceTotals, protectedClaims, repeatPressure });
+  const status = autonomyEffectivenessStatus({ evidenceTotals, protectedClaims, repeatPressure, backlog });
+  const nextAction = autonomyEffectivenessNextAction({ status, evidenceTotals, protectedClaims, backlog });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "autonomy_effectiveness",
+    objective: "measure_whether_hermes_autonomy_routes_reduce_operational_friction_without_increasing_risk",
+    status,
+    score,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    evidence_totals: evidenceTotals,
+    protected_action_claims: protectedClaims,
+    repeat_pressure: repeatPressure,
+    effectiveness_matrix: {
+      runtime: effectivenessLane({
+        id: "runtime",
+        repeated_count: repeatPressure.runtime,
+        top_signal: operatorReport.top_blocker ?? runtimePriorities.next_priority?.id ?? null,
+        command: runtimePriorities.next_priority?.diagnostic_command ?? "npm run hermes:runtime-check",
+      }),
+      live_collection: effectivenessLane({
+        id: "live_collection",
+        repeated_count: repeatPressure.live_collection,
+        top_signal: liveControllerReport.top_repeated_action,
+        command: liveControllerReport.top_next_safe_command ?? "npm --silent run hermes:live-controller",
+      }),
+      grand_slam_prediction: effectivenessLane({
+        id: "grand_slam_prediction",
+        repeated_count: repeatPressure.grand_slam,
+        top_signal: grandSlamMissionReport.top_active_phase,
+        command: grandSlamMissionReport.top_next_action ?? "npm --silent run hermes:grand-slam-mission",
+      }),
+      operator_channel: effectivenessLane({
+        id: "operator_channel",
+        repeated_count: repeatPressure.operator,
+        top_signal: operatorReport.top_blocker,
+        command: operatorReport.top_blocker ?? "npm --silent run hermes:operator-packet",
+      }),
+      experiment_loop: effectivenessLane({
+        id: "experiment_loop",
+        repeated_count: repeatPressure.experiment,
+        top_signal: experimentReport.top_experiment,
+        command: experimentReport.next_experiment_command_counts?.[0]?.command ?? "npm --silent run hermes:experiment-lab",
+      }),
+    },
+    backlog_feedback: {
+      next_item: backlog.next_item,
+      total_items: backlog.items.length,
+      evidence: backlog.evidence,
+    },
+    next_action: nextAction,
+    evaluation_policy: {
+      count_ledgers_not_intent: true,
+      no_llm_per_tick: true,
+      compare_repeated_blockers_before_more_autonomy: true,
+      real_execution_review_allowed: false,
+      provider_quota_spend_allowed: false,
+    },
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      anti_bot_bypass_allowed: false,
+      geolocation_bypass_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function autonomyEvidenceTotals({
+  experimentReport,
+  operatorReport,
+  missionReport,
+  liveControllerReport,
+  grandSlamMissionReport,
+}) {
+  const total_records = sumNumbers([
+    experimentReport.total_records,
+    operatorReport.total_records,
+    missionReport.total_records,
+    liveControllerReport.total_records,
+    grandSlamMissionReport.total_records,
+  ]);
+  return {
+    total_records,
+    experiment_records: experimentReport.total_records,
+    operator_records: operatorReport.total_records,
+    mission_records: missionReport.total_records,
+    live_controller_records: liveControllerReport.total_records,
+    grand_slam_mission_records: grandSlamMissionReport.total_records,
+    has_multi_lane_evidence: [
+      experimentReport.total_records,
+      operatorReport.total_records,
+      missionReport.total_records,
+      liveControllerReport.total_records,
+      grandSlamMissionReport.total_records,
+    ].filter((count) => Number(count ?? 0) > 0).length >= 2,
+  };
+}
+
+function autonomyProtectedActionClaims({
+  experimentReport,
+  operatorReport,
+  missionReport,
+  liveControllerReport,
+  grandSlamMissionReport,
+}) {
+  return {
+    total: sumNumbers([
+      experimentReport.action_executed_count,
+      experimentReport.experiment_command_executed_count,
+      operatorReport.action_executed_count,
+      missionReport.action_executed_count,
+      missionReport.mission_command_executed_count,
+      liveControllerReport.action_executed_count,
+      liveControllerReport.collection_command_executed_count,
+      liveControllerReport.provider_command_executed_count,
+      liveControllerReport.paper_order_created_count,
+      grandSlamMissionReport.action_executed_count,
+      grandSlamMissionReport.mission_command_executed_count,
+      grandSlamMissionReport.provider_command_executed_count,
+      grandSlamMissionReport.paper_order_created_count,
+    ]),
+    operator_actions: operatorReport.action_executed_count,
+    provider_commands: sumNumbers([
+      liveControllerReport.provider_command_executed_count,
+      grandSlamMissionReport.provider_command_executed_count,
+    ]),
+    paper_orders: sumNumbers([
+      liveControllerReport.paper_order_created_count,
+      grandSlamMissionReport.paper_order_created_count,
+    ]),
+    experiment_commands: experimentReport.experiment_command_executed_count,
+    mission_commands: sumNumbers([
+      missionReport.mission_command_executed_count,
+      grandSlamMissionReport.mission_command_executed_count,
+    ]),
+  };
+}
+
+function autonomyRepeatPressure({
+  experimentReport,
+  operatorReport,
+  missionReport,
+  liveControllerReport,
+  grandSlamMissionReport,
+  runtimePriorities,
+}) {
+  const runtime = Math.max(
+    runtimePriorities.next_priority?.frequency ?? 0,
+    firstCount(operatorReport.next_action_counts),
+    missionReport.blocked_lane_counts?.channel ?? 0,
+    missionReport.blocked_lane_counts?.backend ?? 0,
+  );
+  const liveCollection = Math.max(
+    maxObjectValue(liveControllerReport.action_counts),
+    firstCount(liveControllerReport.next_safe_command_counts),
+    liveControllerReport.throttle_counts?.blocked ?? 0,
+  );
+  const grandSlam = Math.max(
+    maxObjectValue(grandSlamMissionReport.active_phase_counts),
+    firstCount(grandSlamMissionReport.next_action_counts),
+  );
+  const experiment = Math.max(
+    firstCount(experimentReport.next_experiment_counts),
+    maxObjectValue(experimentReport.ready_experiment_counts),
+  );
+  const operator = firstCount(operatorReport.next_action_counts);
+  return {
+    runtime,
+    live_collection: liveCollection,
+    grand_slam: grandSlam,
+    experiment,
+    operator,
+    max_repeated_count: Math.max(runtime, liveCollection, grandSlam, experiment, operator),
+  };
+}
+
+function autonomyEffectivenessScore({ evidenceTotals, protectedClaims, repeatPressure }) {
+  if (!evidenceTotals.total_records) return 0;
+  const evidenceScore = Math.min(35, evidenceTotals.total_records * 5);
+  const diversityScore = evidenceTotals.has_multi_lane_evidence ? 20 : 5;
+  const repeatPenalty = Math.min(40, repeatPressure.max_repeated_count * 8);
+  const protectedPenalty = Math.min(60, protectedClaims.total * 30);
+  return clampScore(45 + evidenceScore + diversityScore - repeatPenalty - protectedPenalty);
+}
+
+function autonomyEffectivenessStatus({ evidenceTotals, protectedClaims, repeatPressure, backlog }) {
+  if (protectedClaims.total > 0) return "unsafe_review";
+  if (!evidenceTotals.total_records) return "collecting";
+  if (repeatPressure.max_repeated_count >= 2 || backlog.next_item) return "needs_implementation";
+  if (evidenceTotals.has_multi_lane_evidence) return "monitoring";
+  return "collecting";
+}
+
+function autonomyEffectivenessNextAction({ status, evidenceTotals, protectedClaims, backlog }) {
+  if (protectedClaims.total > 0) {
+    return effectivenessAction({
+      id: "review_protected_action_claims",
+      command: "npm --silent run hermes:autonomy-gates",
+      reason: "A local ledger claims an action executed; inspect gates before increasing autonomy.",
+    });
+  }
+  if (!evidenceTotals.total_records) {
+    return effectivenessAction({
+      id: "collect_autonomy_evidence",
+      command: "npm --silent run hermes:operator-ledger",
+      reason: "No local ledger evidence exists yet; collect read-only operator decisions before changing autonomy.",
+    });
+  }
+  if (backlog.next_item) {
+    return effectivenessAction({
+      id: backlog.next_item.id,
+      command: "npm --silent run hermes:implementation-handoff",
+      reason: backlog.next_item.rationale,
+    });
+  }
+  return effectivenessAction({
+    id: "keep_monitoring",
+    command: "npm --silent run hermes:autonomy-brief",
+    reason: "No repeated blocker is strong enough for implementation; keep collecting safe autonomy evidence.",
+  });
+}
+
+function effectivenessLane({ id, repeated_count, top_signal, command }) {
+  return {
+    id,
+    repeated_count,
+    top_signal,
+    command,
+    status: repeated_count >= 2 ? "repeated_blocker" : repeated_count === 1 ? "observed" : "no_evidence",
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
+function effectivenessAction({ id, command, reason }) {
+  return {
+    id,
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    requires_admin_token: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
+function firstCount(rows = []) {
+  return rows[0]?.count ?? 0;
+}
+
+function maxObjectValue(value = {}) {
+  return Math.max(0, ...Object.values(value).map((item) => Number(item ?? 0)).filter(Number.isFinite));
+}
+
+function sumNumbers(values) {
+  return values.reduce((total, value) => total + (Number(value ?? 0) || 0), 0);
 }
 
 function buildImplementationHandoff(backlogPlan) {
@@ -10499,6 +10832,7 @@ const commands = {
   "experiment-ledger": experimentLedger,
   "experiment-ledger-report": experimentLedgerReport,
   "backlog-plan": backlogPlan,
+  "autonomy-effectiveness": autonomyEffectiveness,
   "implementation-handoff": implementationHandoff,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,

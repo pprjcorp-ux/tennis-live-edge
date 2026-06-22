@@ -68,6 +68,7 @@ npm run hermes:experiment-lab
 npm run hermes:experiment-ledger
 npm run hermes:experiment-ledger-report
 npm run hermes:backlog-plan
+npm run hermes:autonomy-effectiveness
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -244,6 +245,13 @@ and any accidental executed-action rows.
 improvement priorities. It is read-only and never runs the repeated commands it
 surfaces.
 
+`hermes:autonomy-effectiveness` is the closed-loop measurement packet for
+Hermes autonomy. It reads the local experiment, operator, mission,
+live-controller and Grand Slam mission ledgers, scores repeated blockers,
+flags any protected-action claim, and recommends the next non-executing
+handoff. It measures ledgers, not intent, and keeps provider spend, paper
+orders and real execution blocked.
+
 `hermes:autonomy-brief` consolidates the safe loop, event routing, live-window
 state, quota throttle and local ledger priorities into one operating packet. It
 is the preferred "maximum autonomy without more authority" view: read-only,
@@ -334,6 +342,11 @@ executing commands.
 and Grand Slam mission ledger evidence into non-executing implementation priorities. Each item includes
 target files, validation commands, acceptance evidence and the gates it would
 unblock.
+
+`hermes:autonomy-effectiveness` should run before handoff work when enough
+ledger evidence exists. It decides whether Hermes is still only collecting
+evidence, has repeated blockers that justify implementation, or needs safety
+review because a ledger claims a protected action ran.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

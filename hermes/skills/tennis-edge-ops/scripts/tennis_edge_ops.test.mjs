@@ -3485,6 +3485,126 @@ test("backlog-plan uses grand-slam mission ledger as product prediction evidence
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
+test("autonomy-effectiveness collects evidence when no local ledgers exist", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-autonomy-effectiveness-empty-"));
+  const result = await runCli(["autonomy-effectiveness"], {
+    env: {
+      HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
+      HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
+      HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
+      HERMES_LIVE_CONTROLLER_LEDGER_PATH: join(tempDir, "live-controller-ledger.jsonl"),
+      HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: join(tempDir, "grand-slam-mission-ledger.jsonl"),
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "autonomy_effectiveness");
+  assert.equal(payload.status, "collecting");
+  assert.equal(payload.score, 0);
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.evidence_totals.total_records, 0);
+  assert.equal(payload.protected_action_claims.total, 0);
+  assert.equal(payload.next_action.id, "collect_autonomy_evidence");
+  assert.equal(payload.next_action.command, "npm --silent run hermes:operator-ledger");
+  assert.equal(payload.next_action.executes_now, false);
+  assert.equal(payload.safety.sportsbook_bypass_allowed, false);
+});
+
+test("autonomy-effectiveness turns repeated ledgers into implementation feedback", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-autonomy-effectiveness-repeat-"));
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const grandSlamLedgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
+  const operatorRows = [
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    },
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    },
+  ];
+  const controllerRows = [
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "blocked",
+      action: "freeze_collection",
+      next_safe_command: "npm --silent run hermes:events",
+      throttle_level: "blocked",
+      source_route_id: "replay_backfill",
+    },
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "blocked",
+      action: "freeze_collection",
+      next_safe_command: "npm --silent run hermes:events",
+      throttle_level: "blocked",
+      source_route_id: "replay_backfill",
+    },
+  ];
+  writeFileSync(experimentLedgerPath, "");
+  writeFileSync(operatorLedgerPath, `${operatorRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  writeFileSync(missionLedgerPath, "");
+  writeFileSync(controllerLedgerPath, `${controllerRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  writeFileSync(grandSlamLedgerPath, "");
+
+  const result = await runCli(["autonomy-effectiveness"], {
+    env: {
+      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+      HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+      HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+      HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamLedgerPath,
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "autonomy_effectiveness");
+  assert.equal(payload.status, "needs_implementation");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.evidence_totals.total_records, 4);
+  assert.equal(payload.evidence_totals.has_multi_lane_evidence, true);
+  assert.equal(payload.protected_action_claims.total, 0);
+  assert.equal(payload.repeat_pressure.runtime, 2);
+  assert.equal(payload.repeat_pressure.live_collection, 2);
+  assert.equal(payload.effectiveness_matrix.runtime.status, "repeated_blocker");
+  assert.equal(payload.effectiveness_matrix.live_collection.status, "repeated_blocker");
+  assert.equal(payload.backlog_feedback.next_item.id, "stabilize_hermes_runtime_channels");
+  assert.equal(payload.next_action.command, "npm --silent run hermes:implementation-handoff");
+  assert.equal(payload.next_action.executes_now, false);
+  assert.equal(payload.evaluation_policy.count_ledgers_not_intent, true);
+  assert.equal(payload.safety.can_submit_real_orders, false);
+});
+
 test("implementation-handoff turns backlog priority into a safe work order", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-implementation-handoff-"));
   const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");

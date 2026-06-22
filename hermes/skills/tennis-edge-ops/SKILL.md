@@ -71,6 +71,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-lab
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backlog-plan
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-effectiveness
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report
@@ -241,6 +242,9 @@ summarizes repeated experiment recommendations without writing or executing.
 The `backlog-plan` command reads local mission, operator, experiment and
 live-controller ledgers and emits non-executing implementation priorities with
 target files, validation commands, and acceptance evidence.
+The `autonomy-effectiveness` command measures whether Hermes autonomy is
+improving from ledger evidence. It should score repeated blockers, protected
+action claims, and next handoff recommendations without executing anything.
 The `implementation-handoff` command turns the current `backlog-plan` priority
 into a read-only work order for Codex/Hermes operators. It includes target
 files, suggested steps, validation commands, acceptance criteria, prohibited

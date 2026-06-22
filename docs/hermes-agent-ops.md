@@ -54,6 +54,7 @@ npm run hermes:experiment-lab
 npm run hermes:experiment-ledger
 npm run hermes:experiment-ledger-report
 npm run hermes:backlog-plan
+npm run hermes:autonomy-effectiveness
 npm run hermes:implementation-handoff
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
@@ -347,6 +348,12 @@ manual cron creation. It checks Hermes runtime health, Telegram allowlist,
 private-access email allowlist, local admin token presence, cron manifest
 safety, no executed commands, and the real-execution hard block. Manual
 activation commands are empty until every check passes.
+
+Use `hermes:autonomy-effectiveness` before implementation handoff or autonomy
+escalation. It reads only local ledgers, measures repeated blockers and
+protected-action claims, scores the current loop, and recommends a
+non-executing next action. It is the proof that Hermes is learning from
+operation rather than just producing more packets.
 
 Use `hermes:runtime-fix-plan` when activation is blocked and the operator needs
 the next safest remediation step. It derives ordered actions from failed

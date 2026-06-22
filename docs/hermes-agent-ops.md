@@ -17,9 +17,15 @@ npm run hermes:briefing
 npm run hermes:anomalies
 npm run hermes:runs
 npm run hermes:preflight
+npm run hermes:intelligence
 ADMIN_API_TOKEN=... npm run hermes:ops:daily
 ADMIN_API_TOKEN=... npm run hermes:autopilot
 ```
+
+For machine-readable JSON without npm's banner, call
+`npm --silent run hermes:intelligence` or the direct `node
+hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence`
+entrypoint.
 
 The skill lives in `hermes/skills/tennis-edge-ops`. Copy it into
 `~/.hermes/skills/tennis-edge-ops` for the Hermes runtime to discover it.
@@ -40,6 +46,14 @@ Model Lab `training_examples` backtest path while reporting `live_api_calls=0`.
 The auto-settlement response includes structured per-order `decisions`, so
 Hermes can summarize settled, skipped, failed, and training-example-missing
 outcomes without parsing free-form reason strings.
+
+For higher autonomy, use `hermes:intelligence` as the default scheduled packet.
+It reads internal APIs only and emits one machine-readable recommendation:
+`investigate`, `budget_chain_buildout`, `paper_autopilot_candidate`,
+`collect_learning_data`, `replay_lab_hardening`, or `steady_state_monitoring`.
+This gives Hermes enough state to choose between monitoring, safe paper
+autopilot, replay hardening, provider onboarding, and weekly learning review
+without scraping or bypassing external systems.
 
 ## Audit Trail
 
@@ -102,3 +116,10 @@ risk gates, and orders remain deterministic backend code.
 Hermes must not read `.env`, print secrets, call Betfair directly, or automate
 bookmaker/sportsbook browsers. It may call internal FastAPI endpoints that
 enforce deterministic gates.
+
+Treat requests for "jailbreak" in this project as requests for safe operational
+leverage, not bypass. Allowed collection paths are licensed provider APIs,
+provider websockets, internal FastAPI endpoints, persisted Postgres replay, and
+manual operator notes. Forbidden paths are sportsbook UI automation, anti-bot
+bypass, geolocation bypass, credential/session extraction, and paywall/ToS
+circumvention.

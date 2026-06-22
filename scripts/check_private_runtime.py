@@ -451,6 +451,9 @@ def main() -> int:
     hermes_skill = ROOT / "hermes/skills/tennis-edge-ops/SKILL.md"
     hermes_script = ROOT / "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs"
     hermes_policy = ROOT / "hermes/hermes.autopilot.example.json"
+    hermes_readme = ROOT / "hermes/README.md"
+    hermes_ops_doc = ROOT / "docs/hermes-agent-ops.md"
+    hermes_model_doc = ROOT / "docs/hermes-operating-model.md"
 
     errors: list[str] = []
     if "api.edge.example.com" not in config.read_text():
@@ -544,11 +547,38 @@ def main() -> int:
         for forbidden in ["readFileSync", "readFile(", "betfair.com", "placeOrders"]:
             if forbidden in script_text:
                 errors.append(f"Hermes script contains forbidden reference {forbidden}")
+        for required in [
+            "async function intelligence()",
+            "buildIntelligenceReport",
+            "sportsbook_bypass_allowed: false",
+            "anti_bot_bypass",
+            "geolocation_bypass",
+            "credential_or_session_extraction",
+            "paywall_or_tos_circumvention",
+        ]:
+            if required not in script_text:
+                errors.append(f"Hermes intelligence script missing {required}")
     if hermes_policy.exists():
         policy_text = hermes_policy.read_text()
         for required in ["\"critical_model\": \"gpt-5.5\"", "\"allow_betfair_direct_api\": false"]:
             if required not in policy_text:
                 errors.append(f"Hermes policy missing {required}")
+    hermes_docs = ""
+    for path in [hermes_readme, hermes_skill, hermes_ops_doc, hermes_model_doc]:
+        if path.exists():
+            hermes_docs += path.read_text()
+    for required in [
+        "hermes:intelligence",
+        "licensed provider APIs",
+        "internal FastAPI endpoints",
+        "sportsbook UI automation",
+        "anti-bot bypass",
+        "geolocation bypass",
+        "credential/session extraction",
+        "paywall or Terms-of-Service circumvention",
+    ]:
+        if required not in hermes_docs:
+            errors.append(f"Hermes docs missing {required}")
 
     if errors:
         sys.stderr.write("\n".join(errors) + "\n")

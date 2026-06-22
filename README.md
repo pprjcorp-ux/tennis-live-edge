@@ -84,6 +84,7 @@ example without any live API calls.
 - [Execution safety](docs/execution-safety.md)
 - [Provider access runbook](docs/provider-access-runbook.md)
 - [Hermes Agent Ops](docs/hermes-agent-ops.md)
+- [Hermes operating model](docs/hermes-operating-model.md)
 - [Cloudflare private access](infra/cloudflare/README.md)
 
 ## Budget Defaults

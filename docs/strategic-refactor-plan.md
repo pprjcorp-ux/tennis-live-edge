@@ -67,6 +67,7 @@ or execution decisions out of the deterministic backend.
 
 Use Hermes as an operations layer:
 
+- safe intelligence packets from internal APIs;
 - daily briefing;
 - feed/cursor anomaly monitoring;
 - paper-autopilot through internal APIs only;
@@ -79,6 +80,7 @@ Do not use Hermes for:
 - model math;
 - direct Betfair calls;
 - sportsbook browser automation;
+- anti-bot, geolocation, credential/session, paywall, or ToS bypass;
 - reading `.env`;
 - storing secrets;
 - changing execution flags automatically.

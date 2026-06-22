@@ -254,3 +254,114 @@ test("ops-daily calls the protected operational endpoint and prints a compact re
     server.close();
   }
 });
+
+test("intelligence produces a safe operator packet from internal APIs only", async () => {
+  const called = [];
+  const fixtures = {
+    "/api/v1/agent/briefing": {
+      summary: "Hermes can monitor 2 matches.",
+      autopilot_enabled: true,
+      entry_signals: 1,
+      provider_alerts: 0,
+      readiness_status: "collecting",
+    },
+    "/api/v1/agent/preflight": {
+      status: "ready",
+      checks: [{ name: "real_execution_hard_block", status: "pass", summary: "blocked" }],
+      generated_at: "2026-06-21T20:00:00Z",
+    },
+    "/api/v1/agent/anomalies": [],
+    "/api/v1/provider-health": [
+      { provider: "api_tennis", status: "healthy" },
+      { provider: "odds_api_io", status: "healthy" },
+    ],
+    "/api/v1/provider-cursors": [],
+    "/api/v1/data-quality": [],
+    "/api/v1/cost-profile": {
+      active_plan: "lean_atp",
+      estimated_monthly_spend_usd: 377,
+      monthly_budget_usd: 500,
+    },
+    "/api/v1/cost-report/daily": {
+      live_api_calls: 3,
+      cost_per_signal_usd: 0.25,
+    },
+    "/api/v1/paper/performance": {
+      readiness_status: "collecting",
+      roi: 0.02,
+      clv: 0.01,
+      settled_orders: 42,
+    },
+    "/api/v1/execution/status": {
+      real_execution_hard_block: true,
+      can_submit_real_orders: false,
+      stage: "paper",
+    },
+    "/api/v1/bankroll": {
+      balance: 10000,
+      currency: "USD",
+      open_exposure: 0,
+      daily_pnl: 0,
+      weekly_pnl: 0,
+    },
+    "/api/v1/signals/live": [
+      { id: "sig_1", status: "Entrada" },
+      { id: "sig_2", status: "Bloqueado" },
+    ],
+    "/api/v1/ingestion/runs": [
+      {
+        id: "ingest_1",
+        run_type: "live_budget_cycle",
+        source: "cli",
+        status: "completed",
+      },
+    ],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: { budget_chain_completed: true },
+      },
+    },
+  };
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["intelligence", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "paper_autopilot_candidate");
+    assert.equal(payload.safety.real_execution_hard_block, true);
+    assert.equal(payload.safety.sportsbook_bypass_allowed, false);
+    assert.equal(payload.signal_snapshot.entry_signals, 1);
+    assert.deepEqual(payload.allowed_collection_paths, [
+      "licensed_provider_api",
+      "provider_websocket",
+      "internal_fastapi_endpoint",
+      "persisted_postgres_replay",
+      "manual_operator_note",
+    ]);
+    assert.equal(payload.forbidden_collection_paths.includes("anti_bot_bypass"), true);
+  } finally {
+    server.close();
+  }
+});

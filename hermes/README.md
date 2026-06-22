@@ -31,9 +31,14 @@ npm run hermes:briefing
 npm run hermes:anomalies
 npm run hermes:runs
 npm run hermes:preflight
+npm run hermes:intelligence
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
+
+Use `npm --silent run hermes:intelligence` or the direct `node
+hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence` command
+when another tool needs pure JSON without the npm banner.
 
 `hermes:ops:daily` and `hermes:autopilot` read `ADMIN_API_TOKEN` from the
 repo-local `.env` in the npm wrapper and pass it to the skill through stdin. The
@@ -43,6 +48,12 @@ skill script itself does not read `.env` files or print secret values.
 rehearsal without live API calls. `hermes:autopilot` only creates paper orders
 for backend-approved `Entrada` signals. Real execution remains blocked by
 `REAL_EXECUTION_HARD_BLOCK=true`.
+
+`hermes:intelligence` is the high-signal operator packet for cron/Telegram. It
+aggregates provider health, cursor gaps, data quality, cost, paper performance,
+bankroll, live signals, replay lab and onboarding state. It recommends one safe
+mode: investigate, budget-chain buildout, paper-autopilot candidate, collect
+learning data, replay-lab hardening, or steady monitoring.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.
@@ -66,3 +77,11 @@ keys, and the real-execution hard block.
 
 The model router is for explanations and reports. Edge math, Markov logic, risk
 gates, and order decisions remain deterministic Python backend code.
+
+## Collection Boundary
+
+Hermes may accelerate collection by orchestrating licensed provider APIs,
+websockets, internal FastAPI endpoints, persisted Postgres replay, and manual
+operator notes. It must not use sportsbook UI automation, anti-bot bypass,
+geolocation bypass, credential/session extraction, or paywall/ToS
+circumvention.

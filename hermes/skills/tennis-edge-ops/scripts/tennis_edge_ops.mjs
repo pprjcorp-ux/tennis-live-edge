@@ -75,6 +75,56 @@ async function preflight() {
   });
 }
 
+async function intelligence() {
+  const [
+    briefing,
+    preflightData,
+    anomaliesData,
+    providerHealth,
+    providerCursors,
+    dataQuality,
+    costProfile,
+    costReport,
+    paperPerformance,
+    executionStatus,
+    bankroll,
+    liveSignals,
+    ingestionRuns,
+    dashboardState,
+  ] = await Promise.all([
+    request("/api/v1/agent/briefing"),
+    request("/api/v1/agent/preflight"),
+    request("/api/v1/agent/anomalies"),
+    request("/api/v1/provider-health"),
+    request("/api/v1/provider-cursors"),
+    request("/api/v1/data-quality"),
+    request("/api/v1/cost-profile"),
+    request("/api/v1/cost-report/daily"),
+    request("/api/v1/paper/performance"),
+    request("/api/v1/execution/status"),
+    request("/api/v1/bankroll"),
+    request("/api/v1/signals/live"),
+    request("/api/v1/ingestion/runs"),
+    request("/api/v1/dashboard/live-state"),
+  ]);
+  printJson(buildIntelligenceReport({
+    briefing,
+    preflightData,
+    anomaliesData,
+    providerHealth,
+    providerCursors,
+    dataQuality,
+    costProfile,
+    costReport,
+    paperPerformance,
+    executionStatus,
+    bankroll,
+    liveSignals,
+    ingestionRuns,
+    dashboardState,
+  }));
+}
+
 async function ingestionRuns() {
   const data = await request("/api/v1/ingestion/runs");
   printJson(data);
@@ -206,11 +256,282 @@ function summarizeFailedChecks(checks = []) {
   return failed.map((check) => `${check.name}: ${check.summary}`).join("; ");
 }
 
+function buildIntelligenceReport({
+  briefing,
+  preflightData,
+  anomaliesData,
+  providerHealth,
+  providerCursors,
+  dataQuality,
+  costProfile,
+  costReport,
+  paperPerformance,
+  executionStatus,
+  bankroll,
+  liveSignals,
+  ingestionRuns,
+  dashboardState,
+}) {
+  const failedPreflight = (preflightData.checks ?? []).filter((check) => check.status === "fail");
+  const warningPreflight = (preflightData.checks ?? []).filter((check) => check.status === "warn");
+  const unhealthyProviders = providerHealth.filter(
+    (health) => health.status !== "healthy" && !String(health.status ?? "").includes("disabled by")
+  );
+  const cursorsRequiringResync = providerCursors.filter((cursor) => cursor.resync_required);
+  const staleQuality = dataQuality.filter((snapshot) => {
+    const sequenceHealth = Number(snapshot.sequence_health ?? 1);
+    const staleTicks = Number(snapshot.stale_ticks ?? 0);
+    const blockedSignals = Number(snapshot.blocked_signals ?? 0);
+    return sequenceHealth < 1 || staleTicks > 0 || blockedSignals > 0;
+  });
+  const entrySignals = liveSignals.filter((signal) => signal.status === "Entrada");
+  const blockedSignals = liveSignals.filter((signal) => signal.status === "Bloqueado");
+  const recentIngestionFailures = ingestionRuns
+    .filter((run) => ["failed", "degraded"].includes(run.status))
+    .slice(0, 5);
+  const operationalState = dashboardState.operational_state ?? {};
+  const sourceSummary = operationalState.source_summary ?? {};
+  const replayLab = operationalState.replay_lab ?? {};
+  const modelLab = operationalState.model_lab ?? {};
+  const apiOnboarding = operationalState.api_onboarding ?? {};
+  const blockers = [
+    ...failedPreflight.map((check) => `preflight:${check.name}`),
+    ...unhealthyProviders.map((health) => `provider:${health.provider}:${health.status}`),
+    ...cursorsRequiringResync.map((cursor) => `cursor:${cursor.provider}:${cursor.stream}`),
+    ...staleQuality.map((snapshot) => (
+      `data_quality:${snapshot.provider ?? "unknown"}:${snapshot.feed ?? snapshot.id ?? "unknown"}`
+    )),
+    ...(executionStatus.can_submit_real_orders ? ["execution:real_orders_enabled"] : []),
+  ];
+  const recommendedMode = chooseRecommendedMode({
+    blockers,
+    entrySignals,
+    paperPerformance,
+    modelLab,
+    apiOnboarding,
+    replayLab,
+  });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: recommendedMode.mode,
+    severity: recommendedMode.severity,
+    summary: recommendedMode.summary,
+    recommended_actions: recommendedMode.actions,
+    safety: {
+      real_execution_hard_block: executionStatus.real_execution_hard_block,
+      can_submit_real_orders: executionStatus.can_submit_real_orders,
+      execution_stage: executionStatus.stage,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+    signal_snapshot: {
+      entry_signals: entrySignals.length,
+      blocked_signals: blockedSignals.length,
+      total_signals: liveSignals.length,
+      briefing_entry_signals: briefing.entry_signals,
+    },
+    data_snapshot: {
+      provider_mode: operationalState.provider_mode,
+      source_total_matches: sourceSummary.total_matches ?? 0,
+      persisted_matches: sourceSummary.persisted_matches ?? 0,
+      replay_contract_ready: replayLab.status ?? "unknown",
+      data_quality_non_pass: staleQuality.length,
+      unhealthy_providers: unhealthyProviders.length,
+      cursors_requiring_resync: cursorsRequiringResync.length,
+      recent_ingestion_failures: recentIngestionFailures.length,
+    },
+    learning_snapshot: {
+      readiness_status: paperPerformance.readiness_status,
+      roi: paperPerformance.roi,
+      clv: paperPerformance.clv,
+      settled_orders: paperPerformance.settled_orders,
+      model_lab_status: modelLab.status,
+      production_training_examples: modelLab.production_training_examples,
+      can_run_live_backtest: modelLab.can_run_live_backtest,
+    },
+    cost_snapshot: {
+      active_plan: costProfile.active_plan,
+      estimated_monthly_spend_usd: costProfile.estimated_monthly_spend_usd,
+      monthly_budget_usd: costProfile.monthly_budget_usd,
+      daily_live_api_calls: costReport.live_api_calls,
+      cost_per_signal_usd: costReport.cost_per_signal_usd,
+    },
+    bankroll_snapshot: {
+      balance: bankroll.balance,
+      currency: bankroll.currency,
+      open_exposure: bankroll.open_exposure,
+      daily_pnl: bankroll.daily_pnl,
+      weekly_pnl: bankroll.weekly_pnl,
+    },
+    blockers,
+    degraded_items: {
+      preflight_failed: failedPreflight,
+      preflight_warnings: warningPreflight,
+      provider_health: unhealthyProviders.map(compactProviderHealth),
+      provider_cursors: cursorsRequiringResync.map(compactProviderCursor),
+      data_quality: staleQuality.map(compactDataQuality),
+      ingestion_runs: recentIngestionFailures.map(compactIngestionRun),
+    },
+    allowed_collection_paths: [
+      "licensed_provider_api",
+      "provider_websocket",
+      "internal_fastapi_endpoint",
+      "persisted_postgres_replay",
+      "manual_operator_note",
+    ],
+    forbidden_collection_paths: [
+      "sportsbook_ui_automation",
+      "anti_bot_bypass",
+      "geolocation_bypass",
+      "credential_or_session_extraction",
+      "paywall_or_tos_circumvention",
+    ],
+  };
+}
+
+function compactProviderHealth(health) {
+  return {
+    provider: health.provider,
+    configured: health.configured,
+    healthy: health.healthy,
+    status: health.status,
+    latency_ms: health.latency_ms,
+    quota_used: health.quota_used,
+    quota_limit: health.quota_limit,
+    last_message_at: health.last_message_at,
+  };
+}
+
+function compactProviderCursor(cursor) {
+  return {
+    provider: cursor.provider,
+    stream: cursor.stream,
+    status: cursor.status,
+    last_seq: cursor.last_seq,
+    expected_next_seq: cursor.expected_next_seq,
+    gap_count: cursor.gap_count,
+    resync_required: cursor.resync_required,
+    note: cursor.note,
+  };
+}
+
+function compactDataQuality(snapshot) {
+  return {
+    id: snapshot.id,
+    provider: snapshot.provider,
+    feed: snapshot.feed,
+    sequence_health: snapshot.sequence_health,
+    stale_ticks: snapshot.stale_ticks,
+    blocked_signals: snapshot.blocked_signals,
+    latency_ms: snapshot.latency_ms,
+    notes: (snapshot.notes ?? []).slice(0, 3),
+  };
+}
+
+function compactIngestionRun(run) {
+  return {
+    id: run.id,
+    run_type: run.run_type,
+    source: run.source,
+    status: run.status,
+    started_at: run.started_at,
+    completed_at: run.completed_at,
+    summary: {
+      run_kind: run.summary?.run_kind,
+      source: run.summary?.source,
+      final_status: run.summary?.final_status,
+      replay_passed: run.summary?.passed,
+      resync_required: run.summary?.resync_required,
+      live_api_calls: run.summary?.live_api_calls,
+      notes: (run.summary?.notes ?? []).slice(0, 3),
+    },
+  };
+}
+
+function chooseRecommendedMode({
+  blockers,
+  entrySignals,
+  paperPerformance,
+  modelLab,
+  apiOnboarding,
+  replayLab,
+}) {
+  if (blockers.length) {
+    return {
+      mode: "investigate",
+      severity: "high",
+      summary: "Operational blockers detected; keep Hermes in monitor/report mode.",
+      actions: [
+        "Run npm run hermes:preflight and inspect failed checks.",
+        "Do not run paper autopilot until blockers clear.",
+        "Use replay/contracts and provider cursor evidence before adding paid API traffic.",
+      ],
+    };
+  }
+  if (entrySignals.length) {
+    return {
+      mode: "paper_autopilot_candidate",
+      severity: "medium",
+      summary: "Backend has actionable paper candidates; Hermes may request paper-only autopilot.",
+      actions: [
+        "Run npm run hermes:autopilot with ADMIN_API_TOKEN via stdin.",
+        "Confirm created orders remain paper-only and persisted.",
+        "Review CLV/ROI after settlement before changing model or stake policy.",
+      ],
+    };
+  }
+  if (!apiOnboarding.budget_chain_completed) {
+    return {
+      mode: "budget_chain_buildout",
+      severity: "medium",
+      summary: "Budget chain is still collecting/rehearsing; prioritize provider onboarding evidence.",
+      actions: [
+        "Keep enterprise feeds disabled.",
+        "Run npm run api:check:operational-truth -- --pretty.",
+        "Onboard only the next budget provider smoke shown by API onboarding.",
+      ],
+    };
+  }
+  if (!modelLab.can_run_live_backtest || paperPerformance.readiness_status !== "ready_for_review") {
+    return {
+      mode: "collect_learning_data",
+      severity: "low",
+      summary: "No urgent blockers; collect more settled paper examples before promotion review.",
+      actions: [
+        "Keep Hermes on scheduled briefing, anomaly scan, and daily ops rehearsal.",
+        "Avoid model promotion until persisted production training examples are sufficient.",
+        "Use critical model only for weekly readiness or severe anomaly review.",
+      ],
+    };
+  }
+  if (replayLab.status !== "ready") {
+    return {
+      mode: "replay_lab_hardening",
+      severity: "medium",
+      summary: "Learning data is close, but replay lab is not ready enough for higher autonomy.",
+      actions: [
+        "Run replay contract scenarios and inspect persisted evidence.",
+        "Keep live API traffic gated until replay lab is green.",
+      ],
+    };
+  }
+  return {
+    mode: "steady_state_monitoring",
+    severity: "low",
+    summary: "System is in steady paper-first monitoring mode.",
+    actions: [
+      "Keep scheduled intelligence and daily ops reports running.",
+      "Review weekly ROI/CLV/calibration before any execution change.",
+    ],
+  };
+}
+
 const commands = {
   briefing,
   anomalies,
   runs,
   preflight,
+  intelligence,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

@@ -159,7 +159,11 @@ calls providers, or creates orders.
 local-only recovery packet. It prints required environment variable names,
 configured counts, `secret_value_printed=false`, verification commands and
 human-only steps without printing secret values, editing `.env`, starting
-services or creating cron jobs.
+services or creating cron jobs. It also emits `operator_channel_bootstrap`, a
+read-only `.env` template packet with aliases, acceptance evidence, and
+verification commands. The bootstrap packet has
+`automated_env_write_allowed=false`; it never writes `.env`, generates tokens,
+or prints secret values.
 
 `hermes:backend-readiness` verifies the local FastAPI side of Hermes without
 starting services: preflight, dashboard live-state, live matches, provider

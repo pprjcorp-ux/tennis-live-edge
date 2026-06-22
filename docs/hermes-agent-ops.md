@@ -158,7 +158,11 @@ ordered manual actions and acceptance evidence while keeping
 Use `hermes:channel-recovery-plan` when channel readiness is blocked. It
 summarizes failed gates, local env names, configured counts, verification
 commands, `secret_value_printed=false`, and human-only steps without printing
-secret values or mutating the runtime.
+secret values or mutating the runtime. It also emits
+`operator_channel_bootstrap`, a read-only `.env` template packet with aliases,
+acceptance evidence, verification commands and
+`automated_env_write_allowed=false`, so external agents can guide local setup
+without writing `.env` or printing secret values.
 
 Use `hermes:backend-readiness` to prove the FastAPI side before relying on
 live-window, match-pulse, source-route or paper-autopilot packets. It checks

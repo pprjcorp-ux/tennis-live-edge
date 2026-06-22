@@ -1221,6 +1221,26 @@ test("channel-recovery-plan summarizes local-only recovery gates without exposin
   assert.equal(envById.telegram_allowlist.configured, false);
   assert.equal(envById.local_admin_token.secret_value_printed, false);
   assert.equal(JSON.stringify(payload).includes("local-admin"), false);
+  assert.equal(payload.operator_channel_bootstrap.mode, "operator_channel_bootstrap");
+  assert.equal(payload.operator_channel_bootstrap.status, "needs_local_env");
+  assert.equal(payload.operator_channel_bootstrap.writes, false);
+  assert.equal(payload.operator_channel_bootstrap.automated_env_write_allowed, false);
+  assert.equal(payload.operator_channel_bootstrap.manual_env_write_required, true);
+  assert.equal(payload.operator_channel_bootstrap.target_file, ".env");
+  assert.equal(payload.operator_channel_bootstrap.secret_value_printed, false);
+  assert.equal(payload.operator_channel_bootstrap.provider_api_call_allowed, false);
+  assert.equal(payload.operator_channel_bootstrap.can_submit_real_orders, false);
+  assert.equal(payload.operator_channel_bootstrap.env_template_lines.includes("ADMIN_API_TOKEN=<random-32-byte-local-token>"), true);
+  assert.equal(payload.operator_channel_bootstrap.env_template_lines.includes("TENNIS_EDGE_ADMIN_API_TOKEN=<random-32-byte-local-token>"), true);
+  const bootstrapGroups = Object.fromEntries(payload.operator_channel_bootstrap.required_groups.map((item) => [item.id, item]));
+  assert.deepEqual(bootstrapGroups.telegram_allowlist.names, [
+    "HERMES_TELEGRAM_ALLOWED_USER_IDS",
+    "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS",
+  ]);
+  assert.equal(bootstrapGroups.local_admin_token.secret, true);
+  assert.equal(bootstrapGroups.local_admin_token.secret_value_printed, false);
+  assert.equal(payload.operator_channel_bootstrap.acceptance_evidence.includes("work_order.id!=configure_hermes_operator_channel_secrets"), true);
+  assert.equal(payload.operator_channel_bootstrap.verification_commands.includes("npm --silent run hermes:implementation-handoff"), true);
   assert.equal(payload.verification_commands.includes("npm run hermes:runtime-check"), true);
   assert.equal(payload.verification_commands.includes("npm run hermes:channel-readiness"), true);
   assert.equal(payload.verification_commands.includes("npm run hermes:activation-checklist"), true);

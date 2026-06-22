@@ -916,6 +916,7 @@ function buildChannelRecoveryPlan({ runtime, channel }) {
       evidence: check.evidence ?? {},
     })),
     local_env_requirements: channelRecoveryEnvRequirements(),
+    operator_channel_bootstrap: buildOperatorChannelBootstrapPacket(channel),
     verification_commands: [
       "npm run hermes:runtime-check",
       "npm run hermes:channel-readiness",
@@ -934,6 +935,69 @@ function buildChannelRecoveryPlan({ runtime, channel }) {
       browser_sportsbook_automation_allowed: false,
       llm_per_tick_allowed: false,
     },
+  };
+}
+
+function buildOperatorChannelBootstrapPacket(channel) {
+  const requirements = channelRecoveryEnvRequirements();
+  return {
+    mode: "operator_channel_bootstrap",
+    status: requirements.every((requirement) => requirement.configured) ? "ready" : "needs_local_env",
+    read_only: true,
+    writes: false,
+    automated_env_write_allowed: false,
+    manual_env_write_required: requirements.some((requirement) => !requirement.configured),
+    target_file: ".env",
+    secret_value_printed: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    env_template_lines: [
+      "HERMES_TELEGRAM_ALLOWED_USER_IDS=<telegram-user-id>",
+      "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS=<telegram-user-id>",
+      "PRIVATE_ALLOWED_EMAILS=<operator-email>",
+      "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS=<operator-email>",
+      "ADMIN_API_TOKEN=<random-32-byte-local-token>",
+      "TENNIS_EDGE_ADMIN_API_TOKEN=<random-32-byte-local-token>",
+    ],
+    required_groups: requirements.map((requirement) => ({
+      id: requirement.id,
+      names: requirement.names,
+      configured: requirement.configured,
+      configured_count: requirement.configured_count,
+      secret: requirement.secret,
+      required_count: 1,
+      note: requirement.secret
+        ? "Generate locally with a password manager or local shell and paste only into .env."
+        : "Use an explicit allowlist value; do not use wildcard access.",
+      secret_value_printed: false,
+    })),
+    verification_commands: [
+      "npm --silent run hermes:channel-readiness",
+      "npm --silent run hermes:activation-checklist",
+      "npm --silent run hermes:implementation-handoff",
+    ],
+    acceptance_evidence: [
+      "doctor_passed=pass",
+      "telegram_allowlist_configured=pass",
+      "private_access_allowlist_configured=pass",
+      "local_admin_secret_available=pass",
+      "secret_value_printed=false",
+      "work_order.id!=configure_hermes_operator_channel_secrets",
+    ],
+    next_action_after_local_env: channel.next_action?.id === "run_activation_checklist"
+      ? channel.next_action
+      : {
+        id: "rerun_channel_readiness",
+        command: "npm --silent run hermes:channel-readiness",
+        reason: "Rerun the read-only channel gate after local .env values are present.",
+        executes_now: false,
+        writes: false,
+        provider_api_call_allowed: false,
+        can_submit_real_orders: false,
+        can_create_paper_orders: false,
+      },
   };
 }
 

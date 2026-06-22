@@ -1669,6 +1669,7 @@ async function grandSlamMissionData() {
   const liveControllerPlan = buildLiveController({
     report,
     eventPlan,
+    liveStatsPlan,
     liveWindowPlan,
     pulse,
     collection,
@@ -1710,6 +1711,7 @@ async function liveControllerData() {
   return buildLiveController({
     report,
     eventPlan,
+    liveStatsPlan,
     liveWindowPlan,
     pulse,
     collection,
@@ -11233,6 +11235,7 @@ function buildLiveControllerLedger(controller) {
     protected_backend_command: decision.protected_backend_action?.command ?? null,
     throttle_level: controller.quota?.throttle?.level ?? null,
     source_route_id: decision.source_route_id ?? null,
+    feature_contract_status: controller.feature_contract?.status ?? decision.feature_contract_status ?? null,
     top_match_id: decision.top_match_id ?? null,
     safety: controller.safety,
   };
@@ -11326,6 +11329,7 @@ function buildLiveControllerLedgerReport({ path, records, invalid_rows: invalidR
     action_counts: countValues(records.map((record) => record.action).filter(Boolean)),
     throttle_counts: countValues(records.map((record) => record.throttle_level).filter(Boolean)),
     source_route_counts: countValues(records.map((record) => record.source_route_id).filter(Boolean)),
+    feature_contract_status_counts: countValues(records.map((record) => record.feature_contract_status).filter(Boolean)),
     next_safe_command_counts: nextCommandCounts,
     provider_candidate_counts: providerCandidateCounts,
     top_repeated_action: rankedCounts(records.map((record) => record.action).filter(Boolean))[0]?.command ?? null,
@@ -14400,14 +14404,17 @@ function quotaProviderCommands(collection, throttle) {
 function buildLiveController({
   report,
   eventPlan,
+  liveStatsPlan,
   liveWindowPlan,
   pulse,
   collection,
   quota,
   sourceRoutes,
 }) {
+  const featureContract = liveStatsPlan?.feature_contract ?? null;
   const decision = chooseLiveControllerDecision({
     eventPlan,
+    featureContract,
     liveWindowPlan,
     pulse,
     collection,
@@ -14418,7 +14425,7 @@ function buildLiveController({
     generated_at: new Date().toISOString(),
     mode: "live_controller",
     status: liveControllerStatus({ liveWindowPlan, quota }),
-    summary: `Hermes live controller: action=${decision.action}, live_window=${liveWindowPlan.status}, quota=${quota.throttle?.level}`,
+    summary: `Hermes live controller: action=${decision.action}, live_window=${liveWindowPlan.status}, quota=${quota.throttle?.level}, feature_contract=${featureContract?.status ?? "unknown"}`,
     read_only: true,
     writes: false,
     live_api_calls: false,
@@ -14428,6 +14435,15 @@ function buildLiveController({
     llm_per_tick_allowed: false,
     provider_mode: liveWindowPlan.provider_mode,
     operator_decision: decision,
+    feature_contract: featureContract ? {
+      id: featureContract.id,
+      status: featureContract.status,
+      purpose: featureContract.purpose,
+      next_use: featureContract.next_use,
+      outputs: featureContract.outputs ?? [],
+      gates: featureContract.gates ?? {},
+      forbidden_actions: featureContract.forbidden_actions ?? [],
+    } : null,
     live_window: {
       status: liveWindowPlan.status,
       window_open: liveWindowPlan.window_open,
@@ -14461,6 +14477,7 @@ function buildLiveController({
       event_driven_not_tick_driven: true,
       allowed_route_optimization_only: true,
       provider_spend_requires_operator: true,
+      internal_feature_contract_required: true,
       provider_commands_execute_now: false,
       strong_model_per_tick_allowed: false,
       sportsbook_bypass_allowed: false,
@@ -14495,6 +14512,7 @@ function liveControllerStatus({ liveWindowPlan, quota }) {
 
 function chooseLiveControllerDecision({
   eventPlan,
+  featureContract,
   liveWindowPlan,
   pulse,
   collection,
@@ -14509,6 +14527,19 @@ function chooseLiveControllerDecision({
       nextCommand: command,
       cadence: "frozen",
       sourceRoute: sourceRoutes.next_route,
+      featureContract,
+    });
+  }
+  if (featureContract?.status === "blocked") {
+    const command = collection.safe_commands[0] ?? liveWindowPlan.next_action;
+    return liveControllerDecision({
+      action: "freeze_feature_ingestion",
+      reason: "Live stats feature contract is blocked; freeze feature ingestion until safety and data blockers clear.",
+      nextCommand: command,
+      cadence: "frozen",
+      sourceRoute: sourceRoutes.next_route,
+      topMatch: pulse.top_match,
+      featureContract,
     });
   }
   if (quota.status === "throttled") {
@@ -14518,6 +14549,7 @@ function chooseLiveControllerDecision({
       nextCommand: quota.safe_commands[0],
       cadence: "throttled",
       sourceRoute: sourceRoutes.next_route,
+      featureContract,
     });
   }
   if (liveWindowPlan.autopilot_candidate && eventPlan.can_run_paper_autopilot) {
@@ -14529,6 +14561,18 @@ function chooseLiveControllerDecision({
       cadence: "hot_watch",
       sourceRoute: sourceRoutes.next_route,
       topMatch: pulse.top_match,
+      featureContract,
+    });
+  }
+  if (featureContract?.status === "degraded") {
+    return liveControllerDecision({
+      action: "repair_live_feature_contract",
+      reason: "Live stats feature contract is degraded; repair freshness or signal visibility before provider cadence escalation.",
+      nextCommand: collection.safe_commands[0] ?? liveWindowPlan.next_action,
+      cadence: "repair_watch",
+      sourceRoute: sourceRoutes.next_route,
+      topMatch: pulse.top_match,
+      featureContract,
     });
   }
   if (collection.status === "live_watch") {
@@ -14540,6 +14584,7 @@ function chooseLiveControllerDecision({
       cadence: "event_driven_watchlist",
       sourceRoute: sourceRoutes.next_route,
       topMatch: pulse.top_match,
+      featureContract,
     });
   }
   return liveControllerDecision({
@@ -14549,6 +14594,7 @@ function chooseLiveControllerDecision({
     cadence: "monitor",
     sourceRoute: sourceRoutes.next_route,
     topMatch: pulse.top_match,
+    featureContract,
   });
 }
 
@@ -14561,6 +14607,7 @@ function liveControllerDecision({
   cadence,
   sourceRoute,
   topMatch = null,
+  featureContract = null,
 }) {
   return {
     action,
@@ -14572,6 +14619,8 @@ function liveControllerDecision({
     source_route_id: sourceRoute?.id ?? null,
     source_route_lane: sourceRoute?.lane ?? null,
     top_match_id: topMatch?.match_id ?? null,
+    feature_contract_status: featureContract?.status ?? null,
+    feature_contract_next_use: featureContract?.next_use ?? null,
     executes_now: false,
     provider_api_call_allowed: false,
     can_submit_real_orders: false,

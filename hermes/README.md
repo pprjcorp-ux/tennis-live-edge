@@ -263,6 +263,14 @@ keeps the plan read-only, can slow or freeze desired cadence near monthly
 budget limits, and suppresses provider command candidates when the budget guard
 is active.
 
+`hermes:live-controller` consumes the `live_stats_feature_contract` before
+turning match-pulse, collection-plan and quota-plan into an operator decision.
+A blocked feature contract freezes feature ingestion, a degraded contract routes
+to repair, and a ready contract can feed the next internal watch/paper-learning
+step. The explicit actions are `freeze_feature_ingestion` and
+`repair_live_feature_contract`. The controller still never executes provider
+commands, paper orders or real orders by itself.
+
 `hermes:learning-review` is the weekly readiness packet. It summarizes
 settled paper evidence, production training examples, ROI/CLV readiness and
 high-severity blockers, routes interpretation to `gpt-5.5`, and still returns

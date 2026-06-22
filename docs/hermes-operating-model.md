@@ -491,6 +491,13 @@ Hermes/Telegram/Cloudflare/OpenClaw-style channels because it avoids stitching
 together multiple command outputs and weakening the safety contract. It remains
 read-only: no provider quota spend, no provider command execution, no paper
 order creation by itself, no real execution, and no LLM per tick.
+The controller consumes `live_stats_feature_contract` from `hermes:live-stats`
+as a first-class gate: blocked contracts freeze feature ingestion, degraded
+contracts route to freshness/signal repair, and ready contracts can feed
+match-pulse, collection-plan and learning review. Ledger rows persist
+`feature_contract_status` so repeated contract degradation becomes backlog
+evidence without running collection commands. The non-executing action names
+are `freeze_feature_ingestion` and `repair_live_feature_contract`.
 
 `hermes:live-controller-ledger` is the local trace for those live-control
 decisions. It appends JSONL rows with the controller packet, chosen action,

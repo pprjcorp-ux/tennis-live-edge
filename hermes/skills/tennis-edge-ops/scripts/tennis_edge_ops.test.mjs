@@ -4595,6 +4595,7 @@ test("backlog-plan uses live-controller ledger as implementation evidence", asyn
       protected_backend_command: null,
       throttle_level: "blocked",
       source_route_id: "replay_backfill",
+      feature_contract_status: "blocked",
     },
     {
       mode: "live_controller_ledger_record",
@@ -4610,6 +4611,7 @@ test("backlog-plan uses live-controller ledger as implementation evidence", asyn
       protected_backend_command: null,
       throttle_level: "blocked",
       source_route_id: "replay_backfill",
+      feature_contract_status: "blocked",
     },
   ];
   writeFileSync(experimentLedgerPath, "");
@@ -8714,7 +8716,12 @@ test("live-controller compiles live data decisions without executing collection"
     assert.equal(payload.can_submit_real_orders, false);
     assert.equal(payload.can_create_paper_orders, false);
     assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.feature_contract.id, "live_stats_feature_contract");
+    assert.equal(payload.feature_contract.status, "ready");
+    assert.equal(payload.feature_contract.gates.provider_api_call_allowed, false);
+    assert.equal(payload.feature_contract.gates.llm_per_tick_allowed, false);
     assert.equal(payload.operator_decision.action, "paper_autopilot_candidate");
+    assert.equal(payload.operator_decision.feature_contract_status, "ready");
     assert.equal(payload.operator_decision.protected_backend_action.command, "npm run hermes:autopilot");
     assert.equal(payload.operator_decision.protected_backend_action.executes_now, false);
     assert.equal(payload.operator_decision.protected_backend_action.provider_api_call_allowed, false);
@@ -8761,7 +8768,9 @@ test("live-controller compiles live data decisions without executing collection"
     assert.equal(result.exit, 0);
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.status, "blocked");
+    assert.equal(payload.feature_contract.status, "blocked");
     assert.equal(payload.operator_decision.action, "freeze_collection");
+    assert.equal(payload.operator_decision.feature_contract_status, "blocked");
     assert.equal(payload.operator_decision.next_safe_command.command, "npm --silent run hermes:events");
     assert.equal(payload.operator_decision.next_safe_command.executes_now, false);
     assert.equal(payload.match_pulse.target_summary.lanes.frozen, 1);
@@ -8814,6 +8823,7 @@ test("live-controller-ledger appends controller decisions without executing acti
     assert.equal(payload.record.collection_command_executed, false);
     assert.equal(payload.record.provider_command_executed, false);
     assert.equal(payload.record.paper_order_created, false);
+    assert.equal(typeof payload.record.feature_contract_status, "string");
     const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
     assert.equal(lines.length, 1);
     const audit = JSON.parse(lines[0]);
@@ -8844,6 +8854,7 @@ test("live-controller-ledger-report summarizes repeated control decisions", asyn
       protected_backend_command: null,
       throttle_level: "blocked",
       source_route_id: "replay_backfill",
+      feature_contract_status: "blocked",
     },
     {
       mode: "live_controller_ledger_record",
@@ -8859,6 +8870,7 @@ test("live-controller-ledger-report summarizes repeated control decisions", asyn
       protected_backend_command: null,
       throttle_level: "blocked",
       source_route_id: "replay_backfill",
+      feature_contract_status: "blocked",
     },
     {
       mode: "live_controller_ledger_record",
@@ -8874,6 +8886,7 @@ test("live-controller-ledger-report summarizes repeated control decisions", asyn
       protected_backend_command: "npm run hermes:autopilot",
       throttle_level: "normal",
       source_route_id: "live_statistics",
+      feature_contract_status: "ready",
     },
   ];
   writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
@@ -8899,6 +8912,8 @@ test("live-controller-ledger-report summarizes repeated control decisions", asyn
   assert.equal(payload.status_counts.blocked, 2);
   assert.equal(payload.action_counts.freeze_collection, 2);
   assert.equal(payload.throttle_counts.blocked, 2);
+  assert.equal(payload.feature_contract_status_counts.blocked, 2);
+  assert.equal(payload.feature_contract_status_counts.ready, 1);
   assert.equal(payload.source_route_counts.replay_backfill, 2);
   assert.equal(payload.next_safe_command_counts[0].command, "npm --silent run hermes:events");
   assert.equal(payload.next_safe_command_counts[0].count, 2);

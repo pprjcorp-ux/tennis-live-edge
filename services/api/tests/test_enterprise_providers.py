@@ -220,6 +220,9 @@ def test_enterprise_provider_contract_specs_are_shadow_deferred() -> None:
 def test_enterprise_shadow_fixtures_are_offline_and_budget_chain_safe() -> None:
     payloads = sample_enterprise_shadow_payloads()
     replay = ReplayEngine().replay(payloads)
+    contract_fixtures = {
+        spec.provider: spec.fake_api for spec in ENTERPRISE_PROVIDER_CONTRACT_SPECS
+    }
 
     assert {payload.provider for payload in payloads} == {
         Provider.SPORTRADAR,
@@ -230,7 +233,18 @@ def test_enterprise_shadow_fixtures_are_offline_and_budget_chain_safe() -> None:
     assert all(isinstance(payload, RawProviderPayload) for payload in payloads)
     assert all(payload.payload["provider_api_call_allowed"] is False for payload in payloads)
     assert all(payload.payload["fixture_mode"] == "offline_shadow" for payload in payloads)
+    assert all(payload.payload["contract_status"] == "deferred" for payload in payloads)
+    assert all(
+        payload.payload["contract_source"] == "ENTERPRISE_PROVIDER_CONTRACT_SPECS"
+        for payload in payloads
+    )
+    assert {
+        payload.provider: payload.payload["contract_fixture"] for payload in payloads
+    } == contract_fixtures
     assert len(BUDGET_PROVIDER_CONTRACT_SPECS) == 3
+    assert not {spec.provider for spec in ENTERPRISE_PROVIDER_CONTRACT_SPECS}.intersection(
+        {spec.provider for spec in BUDGET_PROVIDER_CONTRACT_SPECS}
+    )
 
     assert len(replay.score_ticks) == 1
     assert len(replay.market_states) == 1

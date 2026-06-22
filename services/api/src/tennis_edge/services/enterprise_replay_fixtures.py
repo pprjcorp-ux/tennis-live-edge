@@ -5,10 +5,14 @@ from typing import Any
 
 from tennis_edge.domain import Provider, RawProviderPayload
 from tennis_edge.services.normalizer import payload_checksum
+from tennis_edge.services.provider_adapters import ENTERPRISE_PROVIDER_CONTRACT_SPECS
 
 
 ENTERPRISE_SHADOW_FIXTURE_MATCH_ID = "match_enterprise_shadow_001"
 _BASE_TS = datetime(2026, 5, 24, 14, 0, tzinfo=timezone.utc)
+_CONTRACT_FIXTURE_BY_PROVIDER = {
+    spec.provider: spec.fake_api for spec in ENTERPRISE_PROVIDER_CONTRACT_SPECS
+}
 
 
 def sample_enterprise_shadow_payloads(
@@ -35,8 +39,7 @@ def sample_enterprise_shadow_payloads(
                 "home_score": {"sets": 1, "games": 4, "point": "40"},
                 "away_score": {"sets": 0, "games": 3, "point": "30"},
                 "server": "atp_shadow_p1",
-                "provider_api_call_allowed": False,
-                "fixture_mode": "offline_shadow",
+                **_shadow_contract_metadata(Provider.SPORTRADAR),
                 "timeline": [
                     {
                         "id": 451,
@@ -73,8 +76,7 @@ def sample_enterprise_shadow_payloads(
                 "reason": "betstop while point is under review",
                 "market_id": "uof:market:shadow:ml",
                 "producer": "liveodds_shadow",
-                "provider_api_call_allowed": False,
-                "fixture_mode": "offline_shadow",
+                **_shadow_contract_metadata(Provider.BETRADAR_UOF),
             },
         ),
         _payload(
@@ -87,8 +89,7 @@ def sample_enterprise_shadow_payloads(
                 "bookmaker": "TXODDSShadow",
                 "market": "ML",
                 "sequence": 9842201,
-                "provider_api_call_allowed": False,
-                "fixture_mode": "offline_shadow",
+                **_shadow_contract_metadata(Provider.TXODDS),
                 "odds": {
                     "atp_shadow_p1": 1.74,
                     "atp_shadow_p2": 2.18,
@@ -105,8 +106,7 @@ def sample_enterprise_shadow_payloads(
                 "stream_type": "market_book",
                 "marketId": "1.234567890",
                 "publishTime": "2026-05-24T14:00:06Z",
-                "provider_api_call_allowed": False,
-                "fixture_mode": "offline_shadow",
+                **_shadow_contract_metadata(Provider.BETFAIR),
                 "marketDefinition": {
                     "status": "OPEN",
                     "bettingType": "ODDS",
@@ -139,6 +139,16 @@ def sample_enterprise_shadow_payloads(
             },
         ),
     ]
+
+
+def _shadow_contract_metadata(provider: Provider) -> dict[str, Any]:
+    return {
+        "provider_api_call_allowed": False,
+        "fixture_mode": "offline_shadow",
+        "contract_source": "ENTERPRISE_PROVIDER_CONTRACT_SPECS",
+        "contract_status": "deferred",
+        "contract_fixture": _CONTRACT_FIXTURE_BY_PROVIDER[provider],
+    }
 
 
 def _payload(

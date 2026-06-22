@@ -60,6 +60,9 @@ It reads internal APIs only and emits one machine-readable recommendation:
 This gives Hermes enough state to choose between monitoring, safe paper
 autopilot, replay hardening, provider onboarding, and weekly learning review
 without scraping or bypassing external systems.
+Deferred enterprise cursors are separated into `deferred_enterprise_cursors`
+until the budget chain is complete and enterprise is eligible, preventing
+Sportradar/Betradar/TXODDS placeholders from blocking lean budget work.
 
 Use `hermes:events` when Hermes cron, webhook, Telegram, or the dashboard needs
 an action router instead of a broad status packet. It converts the intelligence

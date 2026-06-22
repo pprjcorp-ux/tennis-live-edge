@@ -561,6 +561,8 @@ def main() -> int:
             "buildLiveStats",
             "buildLearningReview",
             "buildBudgetChainPlan",
+            "isDeferredEnterpriseProvider",
+            "deferred_enterprise_cursors",
             "explicit_provider_call_flag_required",
             "--execute-provider-call",
             "hard_boundaries",

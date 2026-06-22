@@ -71,6 +71,8 @@ The `intelligence` command is the preferred cron/Telegram status packet. It
 reads only internal FastAPI endpoints and produces a redacted JSON decision
 brief with operational mode, blockers, allowed collection paths, forbidden
 collection paths, learning state, cost state, and safety state.
+Enterprise-only cursors are deferred while enterprise is ineligible and must
+not block budget-chain operation.
 The `events` command converts the intelligence packet into deterministic
 dispatch events for cron/webhook/Telegram. It reports an allowed command,
 admin-token requirement, and paper-order permission for each event; it never

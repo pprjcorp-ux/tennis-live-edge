@@ -117,6 +117,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it may only create paper orders when that router reports
   `can_run_paper_autopilot=true` and the backend still approves the protected
   `hermes:autopilot` call.
+- Hermes must defer enterprise-only cursor blockers while
+  `enterprise_eligible=false`; Sportradar/Betradar/TXODDS placeholders should
+  not block budget-chain work before enterprise activation.
 - Hermes operator handoff should consume `npm run hermes:playbook`; it is a
   planner only and must not execute listed commands or bypass backend gates.
 - Hermes high-frequency monitoring should consume `npm run hermes:live-stats`;

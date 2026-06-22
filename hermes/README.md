@@ -60,6 +60,9 @@ aggregates provider health, cursor gaps, data quality, cost, paper performance,
 bankroll, live signals, replay lab and onboarding state. It recommends one safe
 mode: investigate, budget-chain buildout, paper-autopilot candidate, collect
 learning data, replay-lab hardening, or steady monitoring.
+Enterprise-only cursors such as Sportradar/Betradar/TXODDS are reported as
+`deferred_enterprise_cursors` while the budget chain is incomplete, so they do
+not block lean ATP/Grand Slam operation before enterprise is eligible.
 
 `hermes:events` converts that packet into deterministic event triggers for
 cron/webhook routing. It can recommend commands such as `hermes:preflight`,

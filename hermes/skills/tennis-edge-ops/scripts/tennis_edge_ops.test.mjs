@@ -560,6 +560,66 @@ test("events blocks paper autopilot when provider cursor requires resync", async
   }
 });
 
+test("events ignore deferred enterprise cursor while budget chain is not enterprise eligible", async () => {
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+    "/api/v1/provider-cursors": [
+      {
+        provider: "sportradar",
+        stream: "tennis:score",
+        status: "resync_required",
+        last_seq: null,
+        expected_next_seq: null,
+        gap_count: 0,
+        resync_required: true,
+        note: "Enterprise score cursor waits for Sportradar contract payload validation.",
+      },
+    ],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          steps: [],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["events", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.source_mode, "budget_chain_buildout");
+    assert.equal(payload.events.some((event) => event.type === "cursor_resync_required"), false);
+    assert.equal(payload.events.some((event) => event.type === "budget_chain_next_step"), true);
+    assert.equal(payload.can_run_paper_autopilot, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("playbook prioritizes data stabilization when cursor resync is required", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/provider-cursors": [

@@ -393,10 +393,16 @@ function buildIntelligenceReport({
   const replayLab = operationalState.replay_lab ?? {};
   const modelLab = operationalState.model_lab ?? {};
   const apiOnboarding = operationalState.api_onboarding ?? {};
+  const activeCursorsRequiringResync = cursorsRequiringResync.filter((cursor) => (
+    !isDeferredEnterpriseProvider(cursor.provider, apiOnboarding)
+  ));
+  const deferredEnterpriseCursors = cursorsRequiringResync.filter((cursor) => (
+    isDeferredEnterpriseProvider(cursor.provider, apiOnboarding)
+  ));
   const blockers = [
     ...failedPreflight.map((check) => `preflight:${check.name}`),
     ...unhealthyProviders.map((health) => `provider:${health.provider}:${health.status}`),
-    ...cursorsRequiringResync.map((cursor) => `cursor:${cursor.provider}:${cursor.stream}`),
+    ...activeCursorsRequiringResync.map((cursor) => `cursor:${cursor.provider}:${cursor.stream}`),
     ...staleQuality.map((snapshot) => (
       `data_quality:${snapshot.provider ?? "unknown"}:${snapshot.feed ?? snapshot.id ?? "unknown"}`
     )),
@@ -437,7 +443,8 @@ function buildIntelligenceReport({
       replay_contract_ready: replayLab.status ?? "unknown",
       data_quality_non_pass: staleQuality.length,
       unhealthy_providers: unhealthyProviders.length,
-      cursors_requiring_resync: cursorsRequiringResync.length,
+      cursors_requiring_resync: activeCursorsRequiringResync.length,
+      deferred_enterprise_cursors: deferredEnterpriseCursors.length,
       recent_ingestion_failures: recentIngestionFailures.length,
     },
     learning_snapshot: {
@@ -477,7 +484,8 @@ function buildIntelligenceReport({
       preflight_failed: failedPreflight,
       preflight_warnings: warningPreflight,
       provider_health: unhealthyProviders.map(compactProviderHealth),
-      provider_cursors: cursorsRequiringResync.map(compactProviderCursor),
+      provider_cursors: activeCursorsRequiringResync.map(compactProviderCursor),
+      deferred_enterprise_cursors: deferredEnterpriseCursors.map(compactProviderCursor),
       data_quality: staleQuality.map(compactDataQuality),
       ingestion_runs: recentIngestionFailures.map(compactIngestionRun),
     },
@@ -496,6 +504,12 @@ function buildIntelligenceReport({
       "paywall_or_tos_circumvention",
     ],
   };
+}
+
+function isDeferredEnterpriseProvider(provider, apiOnboarding) {
+  const enterpriseEligible = Boolean(apiOnboarding?.enterprise_eligible);
+  const budgetChainCompleted = Boolean(apiOnboarding?.budget_chain_completed);
+  return !enterpriseEligible && !budgetChainCompleted && ["sportradar", "betradar", "txodds"].includes(String(provider));
 }
 
 function compactProviderHealth(health) {

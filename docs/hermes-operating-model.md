@@ -119,6 +119,9 @@ turns the internal intelligence packet into compact events such as
 `paper_autopilot_candidate`, and `real_execution_safety_violation`. Each event
 includes one allowed command, whether an admin token is required, and whether
 paper orders may be created. It never marks real order submission as allowed.
+Enterprise provider cursors stay deferred while `enterprise_eligible=false`,
+so budget operations are not escalated to `cursor_resync_required` because of
+Sportradar/Betradar/TXODDS contracts that are intentionally inactive.
 
 `hermes:playbook` is the preferred human/operator handoff. It groups the event
 state into phases: `observe`, `stabilize_data`, `budget_chain`,

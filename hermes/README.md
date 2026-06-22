@@ -103,6 +103,7 @@ npm run hermes:replay-backfill-contract
 npm run hermes:source-use-manifest
 npm run hermes:source-use-ledger
 npm run hermes:source-use-ledger-report
+npm run hermes:source-intake-plan
 npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
@@ -363,6 +364,20 @@ The report JSON mode is `source_use_ledger_report`. `hermes:backlog-plan`,
 `hermes:implementation-handoff` consume this report as the `source_use` lane,
 so repeated source-use blockers become implementation work before any importer,
 dataset fetch, provider quota spend, or enterprise feed activation.
+
+`hermes:source-intake-plan` converts the source-use manifest plus ledger
+pressure into four read-only queues: allowed contracts, operator review,
+deferred providers and forbidden quarantine. It is the bridge from "Hermes
+found a possible data route" to "Codex may implement an offline/internal
+contract". The command sets `dataset_fetch_allowed=false`,
+`provider_api_call_allowed=false` and `can_submit_real_orders=false`; it may
+recommend `hermes:replay-backfill-contract` or `hermes:live-stats`, but it
+must not fetch public datasets, spend provider quota, scrape, bypass controls
+or create paper/real orders.
+The JSON mode is `source_intake_plan`, and the acceptance contract includes
+`source_intake_plan.mode=source_intake_plan`,
+`allowed_contracts_before_operator_review_before_deferred_before_forbidden`,
+and `forbidden_quarantine`.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam

@@ -1836,6 +1836,42 @@ async function sourceUseLedgerReport() {
   printJson(buildSourceUseLedgerReport(readSourceUseLedgerRecords()));
 }
 
+async function sourceIntakePlan() {
+  const [report, grandSlam] = await Promise.all([
+    intelligenceData(),
+    grandSlamReadinessData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+  const historicalBackfill = buildHistoricalBackfillPlan({
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    grandSlam,
+  });
+  const enterpriseReadiness = buildEnterpriseReadinessPacket({ report, eventPlan });
+  const manifest = buildSourceUseManifest({
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    historicalBackfill,
+    enterpriseReadiness,
+  });
+  const sourceUseReport = buildSourceUseLedgerReport(readSourceUseLedgerRecords());
+  printJson(buildSourceIntakePlan({
+    report,
+    eventPlan,
+    sourcePlan,
+    historicalBackfill,
+    enterpriseReadiness,
+    manifest,
+    sourceUseReport,
+  }));
+}
+
 async function historicalBackfillPlan() {
   const [report, grandSlam] = await Promise.all([
     intelligenceData(),
@@ -5287,6 +5323,253 @@ function sourceUseLedgerAction({ id, command, reason }) {
     provider_api_call_allowed: false,
     can_submit_real_orders: false,
     can_create_paper_orders: false,
+  };
+}
+
+function buildSourceIntakePlan({
+  report,
+  eventPlan,
+  sourcePlan,
+  historicalBackfill,
+  enterpriseReadiness,
+  manifest,
+  sourceUseReport,
+}) {
+  const rows = manifest.manifest ?? [];
+  const allowedContracts = rows
+    .filter((row) => row.decision === "allowed" && row.import_allowed_now === true)
+    .map((row) => sourceIntakeItem({ row, lane: "allowed_contract" }));
+  const operatorReviewQueue = rows
+    .filter((row) => row.decision === "operator_required")
+    .map((row) => sourceIntakeItem({ row, lane: "operator_review" }));
+  const deferredQueue = rows
+    .filter((row) => row.decision === "deferred")
+    .map((row) => sourceIntakeItem({ row, lane: "deferred" }));
+  const forbiddenQuarantine = rows
+    .filter((row) => row.decision === "forbidden")
+    .map((row) => sourceIntakeItem({ row, lane: "forbidden_quarantine" }));
+  const nextIntake = allowedContracts[0] ?? operatorReviewQueue[0] ?? deferredQueue[0] ?? forbiddenQuarantine[0] ?? null;
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "source_intake_plan",
+    objective: "turn_source_use_manifest_into_safe_offline_import_contracts_without_fetching_data",
+    status: nextIntake ? "ready" : "collecting",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    next_intake: nextIntake,
+    intake_queues: {
+      allowed_contracts: allowedContracts,
+      operator_review: operatorReviewQueue,
+      deferred: deferredQueue,
+      forbidden_quarantine: forbiddenQuarantine,
+    },
+    queue_summary: {
+      allowed_contracts: allowedContracts.length,
+      operator_review: operatorReviewQueue.length,
+      deferred: deferredQueue.length,
+      forbidden_quarantine: forbiddenQuarantine.length,
+      license_review_required: operatorReviewQueue.filter((item) => item.license_review_required).length,
+      source_use_ledger_records: sourceUseReport.total_records,
+      top_operator_required_source: sourceUseReport.top_operator_required_source,
+      top_deferred_source: sourceUseReport.top_deferred_source,
+      top_forbidden_source: sourceUseReport.top_forbidden_source,
+    },
+    manifest_status: {
+      status: manifest.status,
+      missing_required_ids: manifest.summary?.missing_required_ids ?? [],
+      budget_chain_completed: Boolean(manifest.summary?.budget_chain_completed),
+      enterprise_eligible: Boolean(manifest.summary?.enterprise_eligible),
+      cursor_resync_required: Number(manifest.summary?.cursor_resync_required ?? 0),
+    },
+    source_context: {
+      source_mode: sourcePlan.source_mode,
+      historical_next_source: historicalBackfill.next_source?.id ?? null,
+      historical_license_review_required: historicalBackfill.review_summary?.license_review_required ?? 0,
+      enterprise_readiness_status: enterpriseReadiness.status,
+      active_events: eventPlan.events.map((event) => event.type),
+    },
+    recommended_action: sourceIntakeRecommendedAction({ nextIntake, sourceUseReport, manifest }),
+    intake_contract: sourceIntakeContract(nextIntake),
+    validation_commands: [
+      "npm --silent run hermes:source-intake-plan",
+      "npm --silent run hermes:source-use-manifest",
+      "npm --silent run hermes:source-use-ledger-report",
+      "npm --silent run hermes:historical-backfill-plan",
+      "python3 scripts/check_private_runtime.py",
+    ],
+    acceptance_criteria: [
+      "source_intake_plan.mode=source_intake_plan",
+      "allowed_contracts_before_operator_review_before_deferred_before_forbidden",
+      "dataset_fetch_allowed=false",
+      "provider_api_call_allowed=false",
+      "can_submit_real_orders=false",
+      "sportsbook_browser_automation_allowed=false",
+      "license_review_required_sources_are_operator_gated",
+    ],
+    safe_jailbreak_policy: {
+      meaning: "Hermes may route around missing coverage only by selecting allowed contracts, internal replay, operator-reviewed licenses, deferred enterprise contracts and forbidden-route quarantine.",
+      allowed_paths: [
+        "persisted_postgres_replay",
+        "internal_fastapi_read_model",
+        "license_reviewed_historical_file",
+        "operator_reviewed_provider_contract",
+        "manual_operator_note_with_source_manifest",
+      ],
+      forbidden_paths: manifest.safe_jailbreak_policy?.forbidden_paths ?? [],
+      bypass_allowed: false,
+      dataset_fetch_allowed: false,
+      provider_quota_spend_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block === true,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      anti_bot_bypass_allowed: false,
+      geolocation_bypass_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      paywall_or_terms_bypass_allowed: false,
+      dataset_fetch_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function sourceIntakeItem({ row, lane }) {
+  return {
+    id: row.id,
+    source_id: row.source_id,
+    source_type: row.source_type,
+    lane,
+    decision: row.decision,
+    status: row.status,
+    priority: row.priority,
+    provider: row.provider ?? null,
+    dataset: row.dataset ?? null,
+    command: sourceIntakeCommand(row),
+    cost_tier: row.cost_tier ?? null,
+    license_review_required: Boolean(row.license_review_required),
+    commercial_clearance_required: Boolean(row.commercial_clearance_required),
+    attribution_required: Boolean(row.attribution_required),
+    import_allowed_now: row.decision === "allowed" && row.import_allowed_now === true,
+    required_evidence: row.required_evidence ?? [],
+    blocked_when: row.blocked_when ?? [],
+    forbidden_actions: row.forbidden_actions ?? [],
+    source_url: row.source_url ?? null,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    dataset_fetch_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function sourceIntakeCommand(row) {
+  if (row.id === "route:replay_backfill") return "npm --silent run hermes:replay-backfill-contract";
+  if (row.id === "route:live_statistics") return "npm --silent run hermes:live-stats";
+  if (row.source_type === "enterprise_shadow_contract") return "npm --silent run hermes:enterprise-readiness";
+  if (row.source_type === "historical_backfill_source") return "npm --silent run hermes:historical-backfill-plan";
+  return row.command ?? "npm --silent run hermes:source-use-manifest";
+}
+
+function sourceIntakeRecommendedAction({ nextIntake, sourceUseReport, manifest }) {
+  if (!nextIntake) {
+    return sourceIntakeAction({
+      id: "collect_source_intake_evidence",
+      command: "npm --silent run hermes:source-use-manifest",
+      reason: "No source-use manifest rows are available; collect read-only source-use evidence before import work.",
+    });
+  }
+  if (!sourceUseReport.total_records && manifest.status !== "ready") {
+    return sourceIntakeAction({
+      id: "persist_source_use_decisions",
+      command: "npm --silent run hermes:source-use-ledger",
+      reason: "Source-use manifest has review blockers; persist local ledger evidence before implementing importers.",
+    });
+  }
+  if (nextIntake.lane === "allowed_contract") {
+    return sourceIntakeAction({
+      id: `prepare_${nextIntake.source_id}_contract`,
+      command: nextIntake.command,
+      reason: `${nextIntake.id} is allowed for offline/internal intake and can become an implementation contract without provider spend.`,
+    });
+  }
+  if (nextIntake.lane === "operator_review") {
+    return sourceIntakeAction({
+      id: `operator_review_${nextIntake.source_id}`,
+      command: "npm --silent run hermes:source-use-ledger-report",
+      reason: `${nextIntake.id} requires license, attribution, quota or operator review before any fetch/import.`,
+    });
+  }
+  if (nextIntake.lane === "deferred") {
+    return sourceIntakeAction({
+      id: `defer_${nextIntake.source_id}`,
+      command: "npm --silent run hermes:enterprise-readiness",
+      reason: `${nextIntake.id} remains deferred behind budget-chain and enterprise gates.`,
+    });
+  }
+  return sourceIntakeAction({
+    id: `quarantine_${nextIntake.source_id}`,
+    command: "npm --silent run hermes:source-use-manifest",
+    reason: `${nextIntake.id} is forbidden or blocked; keep it quarantined and do not implement collection.`,
+  });
+}
+
+function sourceIntakeAction({ id, command, reason }) {
+  return {
+    id,
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    dataset_fetch_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function sourceIntakeContract(nextIntake) {
+  if (!nextIntake) return null;
+  if (nextIntake.lane !== "allowed_contract") {
+    return {
+      id: `${nextIntake.source_id}_operator_gate`,
+      status: nextIntake.lane,
+      reason: "Not an allowed contract yet; operator/license/deferred/quarantine gates must close first.",
+      provider_api_call_allowed: false,
+      dataset_fetch_allowed: false,
+      can_submit_real_orders: false,
+    };
+  }
+  return {
+    id: `${nextIntake.source_id}_intake_contract`,
+    status: "ready",
+    source_id: nextIntake.source_id,
+    input_contracts: nextIntake.source_id === "replay_backfill"
+      ? ["OperationalStateSnapshot", "ReplayLabSnapshot", "PersistedTicks"]
+      : ["InternalFastApiReadModel", "ProviderHealthSnapshot", "DataQualitySnapshot"],
+    output_contracts: nextIntake.source_id === "replay_backfill"
+      ? ["ReplayBackfillEvidence", "ClosingLineProxySeed", "FeatureBackfillSeed"]
+      : ["LiveStatsSnapshot", "FreshnessSignal", "CollectionThrottleEvidence"],
+    validation_command: nextIntake.command,
+    provider_api_call_allowed: false,
+    dataset_fetch_allowed: false,
+    can_submit_real_orders: false,
   };
 }
 
@@ -11251,6 +11534,12 @@ function schedulerSchedule(loop, grandSlam = null) {
       reason: "Persist source-use decisions locally so repeated license/quota/deferred blockers become visible.",
     }),
     schedulerItem({
+      id: "source_intake_plan",
+      command: "npm --silent run hermes:source-intake-plan",
+      everyMinutes: 60,
+      reason: "Convert source-use evidence into allowed, operator-review, deferred and forbidden intake queues without fetching data.",
+    }),
+    schedulerItem({
       id: "trigger_policy",
       command: "npm --silent run hermes:trigger-policy",
       everyMinutes: 5,
@@ -14111,6 +14400,7 @@ const commands = {
   "source-use-manifest": sourceUseManifest,
   "source-use-ledger": sourceUseLedger,
   "source-use-ledger-report": sourceUseLedgerReport,
+  "source-intake-plan": sourceIntakePlan,
   "historical-backfill-plan": historicalBackfillPlan,
   "enterprise-accuracy-plan": enterpriseAccuracyPlan,
   "enterprise-readiness": enterpriseReadiness,

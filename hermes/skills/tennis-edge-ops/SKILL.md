@@ -68,6 +68,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs replay-backfill-c
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-manifest
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-ledger-report
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-intake-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs historical-backfill-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
@@ -248,6 +249,12 @@ deferred, forbidden and license-review sources before implementation work.
 Backlog, experiment, autonomy-effectiveness and implementation-handoff packets
 must consume that report as the `source_use` lane before adding importers,
 fetching datasets, spending provider quota or activating enterprise feeds.
+The `source-intake-plan` command turns the source-use manifest plus ledger
+pressure into allowed-contract, operator-review, deferred and forbidden
+quarantine queues. It is read-only and must keep `dataset_fetch_allowed=false`,
+`provider_api_call_allowed=false`, and `can_submit_real_orders=false`; use it
+to choose the next offline/internal contract, not to download data or call a
+provider.
 The `trigger-policy` command maps current state to debounced wakeup triggers
 for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
 read-only and must not execute trigger commands. Partial runtime should emit a

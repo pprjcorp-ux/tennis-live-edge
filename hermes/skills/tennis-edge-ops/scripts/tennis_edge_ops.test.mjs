@@ -2553,6 +2553,113 @@ test("historical-backfill-plan ranks allowed historical sources without fetching
   }
 });
 
+test("source-intake-plan turns manifest and ledger evidence into safe intake queues", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-source-intake-plan-"));
+  const sourceUseLedgerPath = join(tempDir, "source-use-ledger.jsonl");
+  const sourceUseRows = [
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "blocked",
+      next_action_id: "review_operator_required_historical:jeff_sackmann_atp",
+      next_action_command: "npm --silent run hermes:source-use-manifest",
+      decision_counts: { operator_required: 1, deferred: 1, forbidden: 1 },
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["enterprise:sportradar"],
+      forbidden_source_ids: ["route:sportsbook_browser"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "blocked",
+      next_action_id: "review_operator_required_historical:jeff_sackmann_atp",
+      next_action_command: "npm --silent run hermes:source-use-manifest",
+      decision_counts: { operator_required: 1, deferred: 1, forbidden: 1 },
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["enterprise:sportradar"],
+      forbidden_source_ids: ["route:sportsbook_browser"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+  ];
+  writeFileSync(sourceUseLedgerPath, `${sourceUseRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["source-intake-plan", `--api-base=${apiBase}`], {
+      env: { HERMES_SOURCE_USE_LEDGER_PATH: sourceUseLedgerPath },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "source_intake_plan");
+    assert.equal(payload.status, "ready");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.next_intake.id, "route:replay_backfill");
+    assert.equal(payload.next_intake.lane, "allowed_contract");
+    assert.equal(payload.next_intake.command, "npm --silent run hermes:replay-backfill-contract");
+    assert.equal(payload.next_intake.dataset_fetch_allowed, false);
+    assert.equal(payload.intake_queues.allowed_contracts.some((item) => item.id === "route:live_statistics"), true);
+    assert.equal(payload.intake_queues.operator_review.some((item) => item.id === "historical:jeff_sackmann_atp" && item.license_review_required), true);
+    assert.equal(payload.intake_queues.deferred.some((item) => item.id === "enterprise:sportradar"), true);
+    assert.equal(payload.queue_summary.source_use_ledger_records, 2);
+    assert.equal(payload.queue_summary.top_operator_required_source, "historical:jeff_sackmann_atp");
+    assert.equal(payload.queue_summary.top_deferred_source, "enterprise:sportradar");
+    assert.equal(payload.queue_summary.top_forbidden_source, "route:sportsbook_browser");
+    assert.equal(payload.recommended_action.id, "prepare_replay_backfill_contract");
+    assert.equal(payload.recommended_action.command, "npm --silent run hermes:replay-backfill-contract");
+    assert.equal(payload.recommended_action.provider_api_call_allowed, false);
+    assert.equal(payload.recommended_action.dataset_fetch_allowed, false);
+    assert.equal(payload.intake_contract.id, "replay_backfill_intake_contract");
+    assert.equal(payload.intake_contract.input_contracts.includes("OperationalStateSnapshot"), true);
+    assert.equal(payload.intake_contract.output_contracts.includes("ReplayBackfillEvidence"), true);
+    assert.equal(payload.intake_contract.provider_api_call_allowed, false);
+    assert.equal(payload.intake_contract.dataset_fetch_allowed, false);
+    assert.equal(payload.safe_jailbreak_policy.dataset_fetch_allowed, false);
+    assert.equal(payload.safe_jailbreak_policy.provider_quota_spend_allowed, false);
+    assert.equal(payload.safe_jailbreak_policy.browser_sportsbook_automation_allowed, false);
+    assert.equal(payload.safety.dataset_fetch_allowed, false);
+    assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
+    assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
+    assert.equal(payload.validation_commands.includes("npm --silent run hermes:source-intake-plan"), true);
+    assert.equal(payload.acceptance_criteria.includes("dataset_fetch_allowed=false"), true);
+  } finally {
+    server.close();
+  }
+});
+
 test("enterprise-accuracy-plan ranks no-budget provider stack without calls or bypass", async () => {
   const called = [];
   const fixtures = eventRouterFixtures({
@@ -5585,6 +5692,12 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(sourceUseLedgerItem.provider_api_call_allowed, false);
     assert.equal(sourceUseLedgerItem.can_create_paper_orders, false);
     assert.equal(sourceUseLedgerItem.can_submit_real_orders, false);
+    const sourceIntakeItem = payload.schedule.find((item) => item.id === "source_intake_plan");
+    assert.equal(sourceIntakeItem.command, "npm --silent run hermes:source-intake-plan");
+    assert.equal(sourceIntakeItem.every_minutes, 60);
+    assert.equal(sourceIntakeItem.provider_api_call_allowed, false);
+    assert.equal(sourceIntakeItem.can_create_paper_orders, false);
+    assert.equal(sourceIntakeItem.can_submit_real_orders, false);
     const effectivenessItem = payload.schedule.find((item) => item.id === "autonomy_effectiveness");
     assert.equal(effectivenessItem.command, "npm --silent run hermes:autonomy-effectiveness");
     assert.equal(effectivenessItem.every_minutes, 60);

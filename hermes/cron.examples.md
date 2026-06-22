@@ -106,6 +106,17 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Operator ledger quality report hourly:
+
+```bash
+hermes cron add \
+  --name tennis-edge-operator-ledger-report \
+  --every 1h \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:operator-ledger-report from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report total_records, priority_counts, status_counts, outcome_counts, next_action_counts, top_blocker, and action_executed_count. Do not execute any reported command." \
+  --timeout-seconds 60
+```
+
 Scheduler rehearsal before creating or changing real cron jobs:
 
 ```bash

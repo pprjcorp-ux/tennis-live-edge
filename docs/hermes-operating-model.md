@@ -103,6 +103,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes when Hermes needs one autonomous packet: `npm run hermes:safe-loop`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
+- Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
 - Before any real cron change: `npm run hermes:scheduler-rehearsal`.
 - To generate a reviewable cron manifest: `npm run hermes:cron-proposal`.
 - Final gate before manual cron creation: `npm run hermes:activation-checklist`.
@@ -141,6 +142,10 @@ cost guard and safety flags for Telegram/OpenClaw without executing anything.
 appends JSONL rows under `hermes/runs/` with `outcome=observed` and
 `action_executed=false`, giving us data to evaluate Hermes recommendation
 quality without granting more authority.
+
+`hermes:operator-ledger-report` is the read-only quality summary over that
+ledger. It identifies recurrent blockers and repeated next actions so the
+backend can be improved from observed operations instead of intuition.
 
 `hermes:scheduler-rehearsal` is the dry-run bridge between safe-loop output and
 real Hermes cron configuration. It computes proposed intervals, chooses the

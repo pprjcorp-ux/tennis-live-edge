@@ -46,6 +46,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs scheduler-rehearsal
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs cron-proposal
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs activation-checklist
@@ -131,6 +132,8 @@ decision for Telegram/OpenClaw. It is read-only and never executes the next
 safe action it reports.
 The `operator-ledger` command appends the channel packet to local JSONL with
 `action_executed=false`. It writes only the local audit row.
+The `operator-ledger-report` command summarizes that local JSONL without
+writing or executing actions.
 The `scheduler-rehearsal` command turns safe-loop output into a proposed local
 schedule and writes only a local JSONL audit row. It must not create cron jobs
 or execute scheduled commands.

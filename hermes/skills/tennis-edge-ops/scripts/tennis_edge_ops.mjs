@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 const command = process.argv[2] ?? "briefing";
@@ -207,6 +207,10 @@ async function operatorLedger() {
   const ledger = buildOperatorLedger(packet);
   writeOperatorLedger(ledger.record);
   printJson(ledger);
+}
+
+async function operatorLedgerReport() {
+  printJson(buildOperatorLedgerReport(readOperatorLedgerRecords()));
 }
 
 async function safeLoopData() {
@@ -1362,6 +1366,76 @@ function writeOperatorLedger(record) {
   const path = operatorLedgerPath();
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function readOperatorLedgerRecords() {
+  const path = operatorLedgerPath();
+  if (!existsSync(path)) {
+    return { path, records: [], invalid_rows: 0 };
+  }
+  const content = readFileSync(path, "utf8");
+  let invalidRows = 0;
+  const records = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalidRows += 1;
+        return [];
+      }
+    });
+  return { path, records, invalid_rows: invalidRows };
+}
+
+function buildOperatorLedgerReport({ path, records, invalid_rows: invalidRows }) {
+  const nextActionCounts = rankedCounts(records.map((record) => record.next_action_command).filter(Boolean));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "operator_ledger_report",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger: {
+      path,
+      format: "jsonl",
+      invalid_rows: invalidRows,
+    },
+    total_records: records.length,
+    action_executed_count: records.filter((record) => record.action_executed === true).length,
+    priority_counts: countValues(records.map((record) => record.packet?.priority).filter(Boolean)),
+    status_counts: countValues(records.map((record) => record.packet?.status).filter(Boolean)),
+    outcome_counts: countValues(records.map((record) => record.outcome).filter(Boolean)),
+    throttle_counts: countValues(records.map((record) => record.packet?.cost_guard?.throttle_level).filter(Boolean)),
+    next_action_counts: nextActionCounts,
+    top_blocker: nextActionCounts[0]?.command ?? null,
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+  };
+}
+
+function countValues(values) {
+  return values.reduce((counts, value) => {
+    counts[value] = (counts[value] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function rankedCounts(values) {
+  const counts = countValues(values);
+  return Object.entries(counts)
+    .map(([command, count]) => ({ command, count }))
+    .sort((a, b) => b.count - a.count || a.command.localeCompare(b.command));
 }
 
 function operatorPriority(loop) {
@@ -3558,6 +3632,7 @@ const commands = {
   "safe-loop": safeLoop,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
+  "operator-ledger-report": operatorLedgerReport,
   "scheduler-rehearsal": schedulerRehearsal,
   "cron-proposal": cronProposal,
   "activation-checklist": activationChecklist,

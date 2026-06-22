@@ -544,9 +544,11 @@ def main() -> int:
             errors.append(f"Hermes artifact missing {path.relative_to(ROOT)}")
     if hermes_script.exists():
         script_text = hermes_script.read_text()
-        for forbidden in ["readFileSync", "readFile(", "betfair.com", "placeOrders"]:
+        for forbidden in ["readFile(", "betfair.com", "placeOrders"]:
             if forbidden in script_text:
                 errors.append(f"Hermes script contains forbidden reference {forbidden}")
+        if "readFileSync" in script_text and "operatorLedgerPath()" not in script_text:
+            errors.append("Hermes script may only read the local operator ledger path")
         for required in [
             "async function intelligence()",
             "async function events()",
@@ -564,6 +566,7 @@ def main() -> int:
             "async function safeLoop()",
             "async function operatorPacket()",
             "async function operatorLedger()",
+            "async function operatorLedgerReport()",
             "async function schedulerRehearsal()",
             "async function cronProposal()",
             "async function activationChecklist()",
@@ -641,6 +644,7 @@ def main() -> int:
         "hermes:safe-loop",
         "hermes:operator-packet",
         "hermes:operator-ledger",
+        "hermes:operator-ledger-report",
         "hermes:scheduler-rehearsal",
         "hermes:cron-proposal",
         "hermes:activation-checklist",

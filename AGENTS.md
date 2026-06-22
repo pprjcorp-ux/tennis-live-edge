@@ -168,6 +168,8 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes operator decision auditing should consume `npm run hermes:operator-ledger`;
   it may write only local JSONL rows under `hermes/runs/` and must record
   `action_executed=false`.
+- Hermes operator quality review should consume `npm run hermes:operator-ledger-report`;
+  it is read-only and must never execute repeated next-action commands.
 - Hermes scheduler rehearsal should consume `npm run hermes:scheduler-rehearsal`;
   it may write only local JSONL audit rows under `hermes/runs/`, must not create
   real cron jobs, and must never execute the commands it schedules.

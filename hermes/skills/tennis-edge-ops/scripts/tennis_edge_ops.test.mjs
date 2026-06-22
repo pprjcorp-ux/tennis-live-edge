@@ -1033,6 +1033,74 @@ test("operator-ledger appends operator packet decisions without executing action
   }
 });
 
+test("operator-ledger-report summarizes local recommendations without executing actions", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-ledger-report-"));
+  const ledgerPath = join(tempDir, "operator-ledger.jsonl");
+  const rows = [
+    {
+      generated_at: "2026-06-21T20:00:00Z",
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: {
+        priority: "high",
+        status: "runtime_degraded",
+        cost_guard: { throttle_level: "blocked" },
+      },
+    },
+    {
+      generated_at: "2026-06-21T20:05:00Z",
+      mode: "operator_ledger_record",
+      outcome: "ignored",
+      action_executed: false,
+      next_action_command: "npm --silent run hermes:events",
+      packet: {
+        priority: "medium",
+        status: "blocked",
+        cost_guard: { throttle_level: "cost_watch" },
+      },
+    },
+    {
+      generated_at: "2026-06-21T20:10:00Z",
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: {
+        priority: "high",
+        status: "runtime_degraded",
+        cost_guard: { throttle_level: "blocked" },
+      },
+    },
+  ];
+  writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["operator-ledger-report"], {
+    env: { HERMES_OPERATOR_LEDGER_PATH: ledgerPath },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "operator_ledger_report");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.ledger.path, ledgerPath);
+  assert.equal(payload.total_records, 3);
+  assert.equal(payload.action_executed_count, 0);
+  assert.equal(payload.priority_counts.high, 2);
+  assert.equal(payload.priority_counts.medium, 1);
+  assert.equal(payload.status_counts.runtime_degraded, 2);
+  assert.equal(payload.outcome_counts.observed, 2);
+  assert.equal(payload.next_action_counts[0].command, "npm run hermes:runtime-check");
+  assert.equal(payload.next_action_counts[0].count, 2);
+  assert.equal(payload.throttle_counts.blocked, 2);
+  assert.equal(payload.top_blocker, "npm run hermes:runtime-check");
+});
+
 test("scheduler-rehearsal records a safe loop plan without executing commands", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-scheduler-"));
   const runLog = join(tempDir, "scheduler-runs.jsonl");

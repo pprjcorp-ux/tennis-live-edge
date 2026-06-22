@@ -33,6 +33,7 @@ npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
+npm run hermes:operator-ledger-report
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist
@@ -154,6 +155,10 @@ and safety flags while staying read-only.
 Use `hermes:operator-ledger` when an operator-channel decision should be
 audited locally. It appends one JSONL row with the packet, `outcome=observed`
 and `action_executed=false`; it never executes the reported next action.
+
+Use `hermes:operator-ledger-report` for operational quality review. It reads
+the local ledger and reports repeated priorities, statuses, outcomes, throttle
+states, next actions and any rows that claim an action was executed.
 
 Use `hermes:scheduler-rehearsal` before creating or changing real Hermes cron
 jobs. It converts the current safe-loop packet into proposed intervals and

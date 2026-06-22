@@ -282,6 +282,12 @@ summarize `feedback_blocker_ids` plus `feedback_next_action_ids` so repeated
 freezes become implementation evidence. The controller still never executes
 provider commands, paper orders or real orders by itself.
 
+`hermes:live-repair-plan` consumes the current `feedback_plan` plus the local
+live-controller ledger report and selects one next repair. It is an operator
+selector, not an executor: the selected repair and full queue keep
+`executes_now=false`, `provider_api_call_allowed=false`, and
+`can_submit_real_orders=false`.
+
 `hermes:learning-review` is the weekly readiness packet. It summarizes
 settled paper evidence, production training examples, ROI/CLV readiness and
 high-severity blockers, routes interpretation to `gpt-5.5`, and still returns

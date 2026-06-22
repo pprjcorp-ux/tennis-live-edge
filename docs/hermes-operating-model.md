@@ -558,6 +558,13 @@ recurring next commands, recurring provider candidates, top feedback blockers,
 and top safe repair actions, so the repo can prioritize improvements from
 observed live-control evidence without granting Hermes execution authority.
 
+`hermes:live-repair-plan` is the next-step selector for those feedback
+contracts. It reads the current live-controller packet and the ledger report,
+then sorts safe repair actions by deterministic priority and repeated ledger
+evidence. The selected repair is still non-executing; it is meant for Codex,
+Hermes, Telegram or an operator to decide the next implementation task without
+spending provider quota, creating paper orders, or enabling real execution.
+
 `hermes:backlog-plan` also consumes the Grand Slam mission ledger report. When
 Grand Slam visibility, model-input or paper-learning phases repeat, it emits a
 non-executing `harden_grand_slam_prediction_loop` priority before enterprise

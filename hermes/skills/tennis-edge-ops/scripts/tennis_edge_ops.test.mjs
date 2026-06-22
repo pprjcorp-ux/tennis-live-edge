@@ -9270,6 +9270,80 @@ test("live-controller-ledger-report summarizes repeated control decisions", asyn
   assert.equal(typeof payload.top_feedback_next_action, "string");
 });
 
+test("live-repair-plan selects one safe repair from controller feedback without executing it", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-live-repair-plan-"));
+  const ledgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const rows = [
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "blocked",
+      action: "freeze_collection",
+      next_safe_command: "npm --silent run hermes:events",
+      throttle_level: "blocked",
+      source_route_id: "replay_backfill",
+      feature_contract_status: "blocked",
+      feedback_blocker_ids: ["data_quality_degraded:high", "fresh_odds"],
+      feedback_next_action_ids: ["inspect_data_quality", "repair_odds_cursor_or_freshness"],
+    },
+  ];
+  writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  const fixtures = eventRouterFixtures({
+    "/api/v1/provider-cursors": [
+      {
+        provider: "odds_api_io",
+        stream: "tennis.live",
+        status: "gap",
+        resync_required: true,
+        last_seq: 30,
+        expected_next_seq: 31,
+        gap_count: 1,
+      },
+    ],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["live-repair-plan", `--api-base=${apiBase}`], {
+      env: { HERMES_LIVE_CONTROLLER_LEDGER_PATH: ledgerPath },
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "live_repair_plan");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.status, "repair_required");
+    assert.equal(typeof payload.selected_repair.id, "string");
+    assert.equal(payload.selected_repair.executes_now, false);
+    assert.equal(payload.selected_repair.provider_api_call_allowed, false);
+    assert.equal(payload.repair_queue.every((action) => action.executes_now === false), true);
+    assert.equal(payload.repair_queue.every((action) => action.provider_api_call_allowed === false), true);
+    assert.equal(payload.repeated_feedback.top_next_action, "inspect_data_quality");
+    assert.equal(payload.evidence.includes("provider_command_executed_count=0"), true);
+    assert.equal(payload.evidence.includes("paper_order_created_count=0"), true);
+    assert.equal(payload.safety.can_submit_real_orders, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("budget-chain emits a dry-run provider onboarding plan without spending quota", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/signals/live": [],

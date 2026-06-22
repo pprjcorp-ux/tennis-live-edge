@@ -203,6 +203,10 @@ local JSONL audit file with `action_executed=false`,
 `live-controller-ledger-report` command summarizes repeated live-controller
 actions, throttles, source routes, provider candidates, feedback blockers and
 safe repair actions without writing or executing anything.
+The `live-repair-plan` command selects one next safe repair from the current
+`feedback_plan` and repeated ledger evidence. Treat its selected repair as a
+work-order recommendation only; it must not execute commands, spend provider
+quota, create paper orders, or submit real orders.
 The `learning-review` command emits a weekly readiness packet for ROI, CLV,
 production training examples, model review gates, and real-execution hard
 blocking. It is read-only and does not promote models.

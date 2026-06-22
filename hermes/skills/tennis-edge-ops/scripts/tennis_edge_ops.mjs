@@ -1754,6 +1754,12 @@ async function liveControllerLedgerReport() {
   printJson(buildLiveControllerLedgerReport(readLiveControllerLedgerRecords()));
 }
 
+async function liveRepairPlan() {
+  const controller = await liveControllerData();
+  const ledgerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
+  printJson(buildLiveRepairPlan(controller, ledgerReport));
+}
+
 async function learningReview() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -15049,6 +15055,85 @@ function dedupeFeedbackActions(actions) {
   });
 }
 
+function buildLiveRepairPlan(controller, ledgerReport) {
+  const feedback = controller.feedback_plan ?? {};
+  const repeatedActions = Object.fromEntries((ledgerReport.feedback_next_action_counts ?? []).map((row) => [row.command, row.count]));
+  const repeatedBlockers = Object.fromEntries((ledgerReport.feedback_blocker_counts ?? []).map((row) => [row.command, row.count]));
+  const repairQueue = (feedback.safe_repair_queue ?? [])
+    .map((action) => ({
+      ...action,
+      priority: liveRepairActionPriority(action, feedback.blocker_ids ?? []),
+      repeated_count: repeatedActions[action.id] ?? 0,
+      executes_now: false,
+      writes: false,
+      live_api_calls: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      llm_per_tick_allowed: false,
+    }))
+    .sort((a, b) => a.priority - b.priority || b.repeated_count - a.repeated_count || a.id.localeCompare(b.id));
+  const selected = repairQueue[0] ?? null;
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "live_repair_plan",
+    status: feedback.status === "clear" ? "clear" : selected ? "repair_required" : "blocked_without_repair",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    controller_status: controller.status,
+    controller_action: controller.operator_decision?.action ?? null,
+    provider_mode: controller.provider_mode,
+    primary_blocker: feedback.primary_blocker ?? null,
+    blocker_ids: feedback.blocker_ids ?? [],
+    repeated_feedback: {
+      top_blocker: ledgerReport.top_feedback_blocker ?? null,
+      top_next_action: ledgerReport.top_feedback_next_action ?? null,
+      action_counts: ledgerReport.feedback_next_action_counts ?? [],
+      blocker_counts: ledgerReport.feedback_blocker_counts ?? [],
+    },
+    selected_repair: selected,
+    repair_queue: repairQueue,
+    evidence: [
+      ...(feedback.evidence ?? []),
+      `ledger_total_records=${ledgerReport.total_records ?? 0}`,
+      `top_feedback_blocker=${ledgerReport.top_feedback_blocker ?? "none"}`,
+      `top_feedback_next_action=${ledgerReport.top_feedback_next_action ?? "none"}`,
+      `provider_command_executed_count=${ledgerReport.provider_command_executed_count ?? 0}`,
+      `paper_order_created_count=${ledgerReport.paper_order_created_count ?? 0}`,
+      ...Object.entries(repeatedBlockers).slice(0, 3).map(([id, count]) => `repeated_blocker:${id}=${count}`),
+    ],
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function liveRepairActionPriority(action, blockerIds) {
+  const id = action?.id ?? "";
+  if (id === "route_high_severity_events") return 5;
+  if (id === "inspect_provider_preflight") return 10;
+  if (id === "inspect_data_quality") return 15;
+  if (id === "repair_odds_cursor_or_freshness") return 20;
+  if (id === "prove_operational_truth") return 25;
+  if (id === "inspect_budget_chain") return 30;
+  if (id === "repair_live_stats_feature_contract") return 35;
+  if (id === "inspect_quota_throttle") return 40;
+  if (id === "inspect_paper_learning_gate") return 45;
+  if (id.startsWith("source_route_")) return 50;
+  if (id.startsWith("decision_")) return blockerIds.length ? 60 : 90;
+  return 80;
+}
+
 function chooseLiveControllerDecision({
   eventPlan,
   featureContract,
@@ -15586,6 +15671,7 @@ const commands = {
   "live-controller": liveController,
   "live-controller-ledger": liveControllerLedger,
   "live-controller-ledger-report": liveControllerLedgerReport,
+  "live-repair-plan": liveRepairPlan,
   "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,

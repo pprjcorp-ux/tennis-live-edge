@@ -101,6 +101,8 @@ npm run hermes:source-route-ledger
 npm run hermes:source-route-ledger-report
 npm run hermes:replay-backfill-contract
 npm run hermes:source-use-manifest
+npm run hermes:source-use-ledger
+npm run hermes:source-use-ledger-report
 npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
@@ -351,6 +353,12 @@ cron packets cannot hide source-use review behind source-route summaries.
 `hermes:scheduler-rehearsal` schedules it every 15 minutes, and
 `hermes:implementation-handoff` includes it in every work-order validation
 bundle before collection/import changes.
+`hermes:source-use-ledger` appends manifest decisions to local JSONL with
+`action_executed=false`, `provider_command_executed=false` and
+`bypass_attempted=false`. `hermes:source-use-ledger-report` summarizes repeated
+operator-required, deferred, forbidden and license-review sources so future
+work can prioritize the real blocker without fetching data or spending quota.
+The report JSON mode is `source_use_ledger_report`.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam

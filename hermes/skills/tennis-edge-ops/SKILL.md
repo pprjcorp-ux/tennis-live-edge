@@ -66,6 +66,8 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-ledg
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs replay-backfill-contract
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-manifest
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-ledger
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs historical-backfill-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
@@ -239,6 +241,10 @@ allowed/deferred/operator-required status, license and attribution gates,
 quota permissions, required evidence and forbidden actions. It is read-only
 and must not fetch datasets, call providers, scrape, bypass, create paper
 orders or submit real orders.
+The `source-use-ledger` command records manifest decisions to local JSONL only,
+with no route execution, provider call or bypass. The
+`source-use-ledger-report` command summarizes repeated operator-required,
+deferred, forbidden and license-review sources before implementation work.
 The `trigger-policy` command maps current state to debounced wakeup triggers
 for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
 read-only and must not execute trigger commands. Partial runtime should emit a

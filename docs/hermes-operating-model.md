@@ -105,6 +105,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5-15 minutes during collection work: `npm run hermes:source-discovery`.
 - During Grand Slam windows: `npm run hermes:grand-slam-mission`.
 - Before collection/import work from any new route: `npm run hermes:source-use-manifest`.
+- Hourly/daily to audit repeated source-use blockers: `npm run hermes:source-use-ledger-report`.
 - Manual/weekly review for offline priors: `npm run hermes:historical-backfill-plan`.
 - Every 5 minutes for cron/webhook wakeup policy: `npm run hermes:trigger-policy`.
 - Every 5 minutes for an all-in-one agent-channel payload: `npm run hermes:ops-compiler`.
@@ -193,6 +194,10 @@ receive source-use status alongside source discovery, enterprise readiness and
 Grand Slam readiness. Scheduler rehearsal keeps it in the recurring read-only
 loop, and implementation handoff includes it as a required validation command
 for every work order.
+`hermes:source-use-ledger` and `hermes:source-use-ledger-report` make that
+contract observable over time. They write/read local JSONL only and count
+repeated operator-required, deferred, forbidden and license-review sources
+without executing collection commands or calling providers.
 
 `hermes:historical-backfill-plan` is the preferred packet for offline priors and
 backtest depth. It ranks internal persisted replay, Jeff Sackmann ATP/WTA/Slam

@@ -5159,6 +5159,12 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(sourceUseItem.provider_api_call_allowed, false);
     assert.equal(sourceUseItem.can_create_paper_orders, false);
     assert.equal(sourceUseItem.can_submit_real_orders, false);
+    const sourceUseLedgerItem = payload.schedule.find((item) => item.id === "source_use_ledger");
+    assert.equal(sourceUseLedgerItem.command, "npm --silent run hermes:source-use-ledger");
+    assert.equal(sourceUseLedgerItem.every_minutes, 60);
+    assert.equal(sourceUseLedgerItem.provider_api_call_allowed, false);
+    assert.equal(sourceUseLedgerItem.can_create_paper_orders, false);
+    assert.equal(sourceUseLedgerItem.can_submit_real_orders, false);
     const effectivenessItem = payload.schedule.find((item) => item.id === "autonomy_effectiveness");
     assert.equal(effectivenessItem.command, "npm --silent run hermes:autonomy-effectiveness");
     assert.equal(effectivenessItem.every_minutes, 60);
@@ -7729,6 +7735,130 @@ test("source-use-manifest audits allowed routes before collection or import", as
   } finally {
     server.close();
   }
+});
+
+test("source-use-ledger records manifest decisions without executing collection", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-source-use-ledger-"));
+  const ledgerPath = join(tempDir, "source-use-ledger.jsonl");
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["source-use-ledger", `--api-base=${apiBase}`], {
+      env: { HERMES_SOURCE_USE_LEDGER_PATH: ledgerPath },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    assert.equal(existsSync(ledgerPath), true);
+    const payload = JSON.parse(result.stdout);
+    const records = readFileSync(ledgerPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(payload.mode, "source_use_ledger");
+    assert.equal(payload.read_only, false);
+    assert.equal(payload.writes, true);
+    assert.equal(payload.write_scope, "local_source_use_jsonl_only");
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.record.mode, "source_use_ledger_record");
+    assert.equal(payload.record.action_executed, false);
+    assert.equal(payload.record.manifest_command_executed, false);
+    assert.equal(payload.record.provider_command_executed, false);
+    assert.equal(payload.record.bypass_attempted, false);
+    assert.equal(payload.record.decision_counts.allowed > 0, true);
+    assert.equal(payload.record.operator_required_source_ids.includes("historical:jeff_sackmann_atp"), true);
+    assert.equal(payload.record.deferred_source_ids.includes("enterprise:sportradar"), true);
+    assert.equal(payload.record.license_review_source_ids.includes("historical:tennis_data_results_odds"), true);
+    assert.equal(payload.record.quota_spend_allowed_source_ids.length, 0);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].mode, "source_use_ledger_record");
+  } finally {
+    server.close();
+  }
+});
+
+test("source-use-ledger-report summarizes repeated manifest blockers", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-source-use-ledger-report-"));
+  const ledgerPath = join(tempDir, "source-use-ledger.jsonl");
+  const rows = [
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "review_required",
+      next_action_id: "implement_allowed_replay_or_internal_route",
+      next_action_command: "npm --silent run hermes:replay-backfill-contract",
+      decision_counts: { allowed: 2, operator_required: 3, deferred: 4 },
+      allowed_source_ids: ["route:replay_backfill"],
+      operator_required_source_ids: ["historical:jeff_sackmann_atp", "historical:tennis_data_results_odds"],
+      deferred_source_ids: ["enterprise:sportradar", "enterprise:txodds"],
+      forbidden_source_ids: [],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+    {
+      mode: "source_use_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      manifest_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "review_required",
+      next_action_id: "implement_allowed_replay_or_internal_route",
+      next_action_command: "npm --silent run hermes:replay-backfill-contract",
+      decision_counts: { allowed: 2, operator_required: 3, deferred: 4 },
+      allowed_source_ids: ["route:replay_backfill"],
+      operator_required_source_ids: ["historical:jeff_sackmann_atp"],
+      deferred_source_ids: ["enterprise:sportradar"],
+      forbidden_source_ids: ["route:odds_live_websocket"],
+      license_review_source_ids: ["historical:jeff_sackmann_atp"],
+      quota_spend_allowed_source_ids: [],
+      safe_jailbreak_bypass_allowed: false,
+    },
+  ];
+  writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["source-use-ledger-report"], {
+    env: { HERMES_SOURCE_USE_LEDGER_PATH: ledgerPath },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "source_use_ledger_report");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.total_records, 2);
+  assert.equal(payload.action_executed_count, 0);
+  assert.equal(payload.manifest_command_executed_count, 0);
+  assert.equal(payload.provider_command_executed_count, 0);
+  assert.equal(payload.bypass_attempted_count, 0);
+  assert.equal(payload.decision_counts.operator_required, 6);
+  assert.equal(payload.decision_counts.deferred, 8);
+  assert.equal(payload.top_operator_required_source, "historical:jeff_sackmann_atp");
+  assert.equal(payload.top_deferred_source, "enterprise:sportradar");
+  assert.equal(payload.top_forbidden_source, "route:odds_live_websocket");
+  assert.equal(payload.next_recommendation.command, "npm --silent run hermes:source-use-manifest");
+  assert.equal(payload.safety.provider_api_call_allowed, false);
 });
 
 test("enterprise-readiness reports shadow contracts without provider calls", async () => {

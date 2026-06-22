@@ -59,6 +59,8 @@
     "hermes:source-route-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-ledger-report",
     "hermes:replay-backfill-contract": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs replay-backfill-contract",
     "hermes:source-use-manifest": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-manifest",
+    "hermes:source-use-ledger": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-ledger",
+    "hermes:source-use-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-ledger-report",
     "hermes:historical-backfill-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs historical-backfill-plan",
     "hermes:enterprise-accuracy-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs enterprise-accuracy-plan",
     "hermes:enterprise-readiness": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs enterprise-readiness",

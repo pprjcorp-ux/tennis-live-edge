@@ -1796,6 +1796,10 @@ async function replayBackfillContract() {
 }
 
 async function sourceUseManifest() {
+  printJson(await sourceUseManifestData());
+}
+
+async function sourceUseManifestData() {
   const [report, grandSlam] = await Promise.all([
     intelligenceData(),
     grandSlamReadinessData(),
@@ -1811,14 +1815,25 @@ async function sourceUseManifest() {
     grandSlam,
   });
   const enterpriseReadiness = buildEnterpriseReadinessPacket({ report, eventPlan });
-  printJson(buildSourceUseManifest({
+  return buildSourceUseManifest({
     report,
     eventPlan,
     sourcePlan,
     sourceRoutes,
     historicalBackfill,
     enterpriseReadiness,
-  }));
+  });
+}
+
+async function sourceUseLedger() {
+  const manifest = await sourceUseManifestData();
+  const ledger = buildSourceUseLedger(manifest);
+  writeSourceUseLedger(ledger.record);
+  printJson(ledger);
+}
+
+async function sourceUseLedgerReport() {
+  printJson(buildSourceUseLedgerReport(readSourceUseLedgerRecords()));
 }
 
 async function historicalBackfillPlan() {
@@ -5067,6 +5082,216 @@ function sourceUseManifestNextAction({ failingGates, operatorRows, deferredRows,
     can_submit_real_orders: false,
     can_create_paper_orders: false,
   };
+}
+
+function buildSourceUseLedger(manifest) {
+  const path = sourceUseLedgerPath();
+  const rows = manifest.manifest ?? [];
+  const record = {
+    generated_at: new Date().toISOString(),
+    mode: "source_use_ledger_record",
+    outcome: "observed",
+    action_executed: false,
+    manifest_command_executed: false,
+    provider_command_executed: false,
+    bypass_attempted: false,
+    status: manifest.status,
+    next_action_id: manifest.next_action?.id ?? null,
+    next_action_command: manifest.next_action?.command ?? null,
+    decision_counts: countValues(rows.map((row) => row.decision).filter(Boolean)),
+    allowed_source_ids: rows.filter((row) => row.decision === "allowed").map((row) => row.id),
+    operator_required_source_ids: rows.filter((row) => row.decision === "operator_required").map((row) => row.id),
+    deferred_source_ids: rows.filter((row) => row.decision === "deferred").map((row) => row.id),
+    forbidden_source_ids: rows.filter((row) => row.decision === "forbidden").map((row) => row.id),
+    license_review_source_ids: rows.filter((row) => row.license_review_required).map((row) => row.id),
+    quota_spend_allowed_source_ids: rows.filter((row) => row.quota_spend_allowed === true).map((row) => row.id),
+    safe_jailbreak_bypass_allowed: false,
+    manifest,
+    safety: manifest.safety,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "source_use_ledger",
+    status: manifest.status,
+    read_only: false,
+    writes: true,
+    write_scope: "local_source_use_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    ledger: {
+      path,
+      format: "jsonl",
+      retention_note: "Local Hermes source-use trace; do not commit runtime logs.",
+    },
+    record,
+    safety: {
+      real_execution_hard_block: manifest.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function sourceUseLedgerPath() {
+  return process.env.HERMES_SOURCE_USE_LEDGER_PATH || "hermes/runs/source-use-ledger.jsonl";
+}
+
+function writeSourceUseLedger(record) {
+  const path = sourceUseLedgerPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function readSourceUseLedgerRecords() {
+  const path = sourceUseLedgerPath();
+  if (!existsSync(path)) {
+    return { path, records: [], invalid_rows: 0 };
+  }
+  const content = readFileSync(path, "utf8");
+  let invalidRows = 0;
+  const records = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalidRows += 1;
+        return [];
+      }
+    });
+  return { path, records, invalid_rows: invalidRows };
+}
+
+function buildSourceUseLedgerReport({ path, records, invalid_rows: invalidRows }) {
+  const nextActionCounts = rankedCounts(records.map((record) => record.next_action_id).filter(Boolean));
+  const nextCommandCounts = rankedCounts(records.map((record) => record.next_action_command).filter(Boolean));
+  const operatorRequiredCounts = rankedCounts(records.flatMap((record) => record.operator_required_source_ids ?? []));
+  const deferredCounts = rankedCounts(records.flatMap((record) => record.deferred_source_ids ?? []));
+  const forbiddenCounts = rankedCounts(records.flatMap((record) => record.forbidden_source_ids ?? []));
+  const licenseReviewCounts = rankedCounts(records.flatMap((record) => record.license_review_source_ids ?? []));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "source_use_ledger_report",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger: {
+      path,
+      format: "jsonl",
+      invalid_rows: invalidRows,
+    },
+    total_records: records.length,
+    action_executed_count: records.filter((record) => record.action_executed === true).length,
+    manifest_command_executed_count: records.filter((record) => record.manifest_command_executed === true).length,
+    provider_command_executed_count: records.filter((record) => record.provider_command_executed === true).length,
+    bypass_attempted_count: records.filter((record) => record.bypass_attempted === true || record.safe_jailbreak_bypass_allowed === true).length,
+    status_counts: countValues(records.map((record) => record.status).filter(Boolean)),
+    decision_counts: sumObjectCounts(records.map((record) => record.decision_counts ?? {})),
+    next_action_counts: nextActionCounts,
+    next_action_command_counts: nextCommandCounts,
+    operator_required_source_counts: operatorRequiredCounts,
+    deferred_source_counts: deferredCounts,
+    forbidden_source_counts: forbiddenCounts,
+    license_review_source_counts: licenseReviewCounts,
+    quota_spend_allowed_count: records.flatMap((record) => record.quota_spend_allowed_source_ids ?? []).length,
+    top_next_action: nextActionCounts[0]?.command ?? null,
+    top_operator_required_source: operatorRequiredCounts[0]?.command ?? null,
+    top_deferred_source: deferredCounts[0]?.command ?? null,
+    top_forbidden_source: forbiddenCounts[0]?.command ?? null,
+    latest_record: records[records.length - 1] ?? null,
+    next_recommendation: sourceUseLedgerRecommendation({
+      records,
+      nextActionCounts,
+      operatorRequiredCounts,
+      deferredCounts,
+      forbiddenCounts,
+    }),
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function sourceUseLedgerRecommendation({
+  records,
+  nextActionCounts,
+  operatorRequiredCounts,
+  deferredCounts,
+  forbiddenCounts,
+}) {
+  if (!records.length) {
+    return sourceUseLedgerAction({
+      id: "collect_source_use_evidence",
+      command: "npm --silent run hermes:source-use-ledger",
+      reason: "No source-use evidence exists yet; collect a local JSONL row before changing collection or import code.",
+    });
+  }
+  if (forbiddenCounts[0]) {
+    return sourceUseLedgerAction({
+      id: `review_forbidden_${forbiddenCounts[0].command}`,
+      command: "npm --silent run hermes:source-use-manifest",
+      reason: `Source-use ledger repeatedly marks ${forbiddenCounts[0].command} as forbidden; keep implementation blocked until the route is removed or justified by allowed access.`,
+    });
+  }
+  if (operatorRequiredCounts[0]) {
+    return sourceUseLedgerAction({
+      id: `review_operator_required_${operatorRequiredCounts[0].command}`,
+      command: "npm --silent run hermes:source-use-manifest",
+      reason: `${operatorRequiredCounts[0].command} repeatedly requires operator/license/quota review before import or provider spend.`,
+    });
+  }
+  if (deferredCounts[0]) {
+    return sourceUseLedgerAction({
+      id: `keep_deferred_${deferredCounts[0].command}`,
+      command: "npm --silent run hermes:enterprise-readiness",
+      reason: `${deferredCounts[0].command} remains deferred until budget-chain and enterprise gates pass.`,
+    });
+  }
+  return sourceUseLedgerAction({
+    id: nextActionCounts[0] ? `review_${nextActionCounts[0].command}` : "review_source_use_manifest",
+    command: "npm --silent run hermes:source-use-manifest",
+    reason: "Review source-use evidence before adding collection/import code or spending provider quota.",
+  });
+}
+
+function sourceUseLedgerAction({ id, command, reason }) {
+  return {
+    id,
+    command,
+    reason,
+    executes_now: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+  };
+}
+
+function sumObjectCounts(items) {
+  const totals = {};
+  for (const item of items) {
+    for (const [key, value] of Object.entries(item ?? {})) {
+      totals[key] = (totals[key] ?? 0) + Number(value ?? 0);
+    }
+  }
+  return totals;
 }
 
 function buildTriggerPolicy({ loop, sourcePlan, grandSlam = null }) {
@@ -10888,6 +11113,12 @@ function schedulerSchedule(loop, grandSlam = null) {
       reason: "Audit source-use, license, attribution and quota gates before collection/import work.",
     }),
     schedulerItem({
+      id: "source_use_ledger",
+      command: "npm --silent run hermes:source-use-ledger",
+      everyMinutes: 60,
+      reason: "Persist source-use decisions locally so repeated license/quota/deferred blockers become visible.",
+    }),
+    schedulerItem({
       id: "trigger_policy",
       command: "npm --silent run hermes:trigger-policy",
       everyMinutes: 5,
@@ -13746,6 +13977,8 @@ const commands = {
   "source-route-ledger-report": sourceRouteLedgerReport,
   "replay-backfill-contract": replayBackfillContract,
   "source-use-manifest": sourceUseManifest,
+  "source-use-ledger": sourceUseLedger,
+  "source-use-ledger-report": sourceUseLedgerReport,
   "historical-backfill-plan": historicalBackfillPlan,
   "enterprise-accuracy-plan": enterpriseAccuracyPlan,
   "enterprise-readiness": enterpriseReadiness,

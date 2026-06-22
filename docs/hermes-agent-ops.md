@@ -49,6 +49,8 @@ npm run hermes:source-route-ledger
 npm run hermes:source-route-ledger-report
 npm run hermes:replay-backfill-contract
 npm run hermes:source-use-manifest
+npm run hermes:source-use-ledger
+npm run hermes:source-use-ledger-report
 npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
@@ -331,6 +333,11 @@ scrape, bypass, create paper orders or submit real orders.
 contract before implementation handoff. `scheduler-rehearsal` schedules it as a
 recurring read-only check, and `implementation-handoff` adds it to every
 work-order validation command list.
+Use `hermes:source-use-ledger` to append manifest decisions to local JSONL
+without executing collection, provider or bypass commands. Use
+`hermes:source-use-ledger-report` to summarize repeated license-review,
+operator-required, deferred and forbidden source blockers before prioritizing
+importer work.
 
 Use `hermes:historical-backfill-plan` when Hermes needs more offline evidence
 for priors, calibration or backtests. It ranks internal replay, public

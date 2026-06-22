@@ -1729,6 +1729,12 @@ async function enterpriseAccuracyPlan() {
   }));
 }
 
+async function enterpriseReadiness() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  printJson(buildEnterpriseReadinessPacket({ report, eventPlan }));
+}
+
 async function triggerPolicy() {
   const [loop, report, grandSlam] = await Promise.all([
     safeLoopData(),
@@ -2979,6 +2985,7 @@ function buildIntelligenceReport({
   const replayLab = operationalState.replay_lab ?? {};
   const modelLab = operationalState.model_lab ?? {};
   const apiOnboarding = operationalState.api_onboarding ?? {};
+  const enterpriseShadowProviders = replayLab.enterprise_shadow_providers ?? [];
   const activeCursorsRequiringResync = cursorsRequiringResync.filter((cursor) => (
     !isDeferredEnterpriseProvider(cursor.provider, apiOnboarding)
   ));
@@ -3028,6 +3035,8 @@ function buildIntelligenceReport({
       persisted_matches: sourceSummary.persisted_matches ?? 0,
       match_freshness: compactMatchFreshness(sourceSummary.match_freshness ?? []),
       replay_contract_ready: replayLab.status ?? "unknown",
+      enterprise_shadow_providers: enterpriseShadowProviders.map(compactReplayContractProvider),
+      enterprise_shadow_provider_count: enterpriseShadowProviders.length,
       data_quality_non_pass: staleQuality.length,
       unhealthy_providers: unhealthyProviders.length,
       cursors_requiring_resync: activeCursorsRequiringResync.length,
@@ -3185,6 +3194,18 @@ function compactApiOnboardingSteps(steps) {
     next_action: step.next_action,
     notes: step.notes ?? [],
   }));
+}
+
+function compactReplayContractProvider(provider) {
+  return {
+    provider: provider.provider,
+    adapter_contract: provider.adapter_contract,
+    fake_api: provider.fake_api,
+    status: provider.status,
+    scenarios: (provider.scenarios ?? []).slice(0, 6),
+    output_contracts: (provider.output_contracts ?? []).slice(0, 8),
+    notes: (provider.notes ?? []).slice(0, 3),
+  };
 }
 
 function chooseRecommendedMode({
@@ -4826,6 +4847,198 @@ function buildEnterpriseAccuracyPlan({
       browser_sportsbook_automation_allowed: false,
       llm_per_tick_allowed: false,
     },
+  };
+}
+
+function buildEnterpriseReadinessPacket({ report, eventPlan }) {
+  const budget = report.budget_chain_snapshot ?? {};
+  const data = report.data_snapshot ?? {};
+  const learning = report.learning_snapshot ?? {};
+  const safety = report.safety ?? {};
+  const shadowProviders = data.enterprise_shadow_providers ?? [];
+  const providerIds = new Set(shadowProviders.map((provider) => provider.provider));
+  const requiredProviders = ["sportradar", "betradar_uof", "txodds", "betfair"];
+  const missingShadowProviders = requiredProviders.filter((provider) => !providerIds.has(provider));
+  const budgetChainCompleted = Boolean(budget.budget_chain_completed);
+  const enterpriseEligible = Boolean(budget.enterprise_eligible);
+  const backendUnavailable = (report.blockers ?? []).some((blocker) => (
+    String(blocker).startsWith("backend_api:")
+  ));
+  const safetyHardBlocked = safety.real_execution_hard_block === true
+    && safety.can_submit_real_orders === false;
+  const replayReady = data.replay_contract_ready === "ready";
+  const activationBlockers = [
+    ...(backendUnavailable ? ["backend_evidence_unavailable"] : []),
+    ...(!budgetChainCompleted ? ["budget_chain_incomplete"] : []),
+    ...(!enterpriseEligible ? ["enterprise_eligible_false"] : []),
+    ...(!replayReady ? ["budget_replay_lab_not_ready"] : []),
+    ...(!safetyHardBlocked ? ["real_execution_hard_block_not_proven"] : []),
+    ...missingShadowProviders.map((provider) => `missing_shadow_provider:${provider}`),
+  ];
+  const operatorContractReviewAllowed = activationBlockers.length === 0;
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "enterprise_readiness_packet",
+    status: enterpriseReadinessStatus({
+      budgetChainCompleted,
+      enterpriseEligible,
+      replayReady,
+      missingShadowProviders,
+      safetyHardBlocked,
+      backendUnavailable,
+    }),
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    operator_contract_review_allowed: operatorContractReviewAllowed,
+    budget_gate: {
+      budget_chain_completed: budgetChainCompleted,
+      enterprise_eligible: enterpriseEligible,
+      current_step: budget.current_step ?? null,
+      core_ready: Boolean(budget.core_ready),
+      warnings: budget.warnings ?? [],
+    },
+    replay_gate: {
+      budget_replay_status: data.replay_contract_ready ?? "unknown",
+      shadow_contract_source: "operational_state.replay_lab.enterprise_shadow_providers",
+      shadow_provider_count: shadowProviders.length,
+      required_shadow_providers: requiredProviders,
+      missing_shadow_providers: missingShadowProviders,
+      providers: shadowProviders,
+    },
+    learning_gate: {
+      model_lab_status: learning.model_lab_status ?? "unknown",
+      production_training_examples: learning.production_training_examples ?? 0,
+      can_run_live_backtest: Boolean(learning.can_run_live_backtest),
+      readiness_status: learning.readiness_status ?? "unknown",
+      note: "Learning evidence is required for model activation, not for offline enterprise contract visibility.",
+    },
+    event_context: {
+      mode: report.mode,
+      blockers: report.blockers ?? [],
+      trigger_events: eventPlan.events.map((event) => event.type),
+      degraded_items: report.degraded_items ?? {},
+    },
+    activation_blockers: activationBlockers,
+    next_action: enterpriseReadinessNextAction({
+      budgetChainCompleted,
+      enterpriseEligible,
+      replayReady,
+      missingShadowProviders,
+      safetyHardBlocked,
+      backendUnavailable,
+    }),
+    safe_jailbreak_policy: {
+      meaning: "Hermes may find lower-cost permitted routes around missing data only through internal APIs, offline fixtures, persisted replay, licensed provider contracts and operator-provided notes.",
+      allowed_routes: [
+        "internal_fastapi_read_model",
+        "enterprise_shadow_fixture",
+        "persisted_postgres_replay",
+        "licensed_provider_contract_or_sandbox",
+        "operator_note_with_source_manifest",
+      ],
+      browser_or_sportsbook_automation_allowed: false,
+      anti_bot_bypass_allowed: false,
+      geolocation_bypass_allowed: false,
+      paywall_bypass_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      provider_quota_spend_allowed_from_this_command: false,
+    },
+    safety: {
+      real_execution_hard_block: safety.real_execution_hard_block === true,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function enterpriseReadinessStatus({
+  budgetChainCompleted,
+  enterpriseEligible,
+  replayReady,
+  missingShadowProviders,
+  safetyHardBlocked,
+  backendUnavailable,
+}) {
+  if (backendUnavailable) return "blocked_by_backend_evidence";
+  if (!safetyHardBlocked) return "blocked_by_safety";
+  if (missingShadowProviders.length) return "missing_shadow_contracts";
+  if (!replayReady) return "blocked_by_replay_lab";
+  if (!budgetChainCompleted) return "locked_on_budget_chain";
+  if (!enterpriseEligible) return "blocked_by_enterprise_gate";
+  return "ready_for_operator_contract_review";
+}
+
+function enterpriseReadinessNextAction({
+  budgetChainCompleted,
+  enterpriseEligible,
+  replayReady,
+  missingShadowProviders,
+  safetyHardBlocked,
+  backendUnavailable,
+}) {
+  if (backendUnavailable) {
+    return enterpriseReadinessAction({
+      id: "restore_backend_evidence",
+      command: "npm --silent run hermes:backend-latency-triage",
+      reason: "FastAPI evidence is unavailable or timing out; restore backend read models before enterprise readiness review.",
+    });
+  }
+  if (!safetyHardBlocked) {
+    return enterpriseReadinessAction({
+      id: "restore_real_execution_hard_block",
+      command: "npm --silent run hermes:preflight",
+      reason: "Safety evidence is not hard-blocked; inspect preflight before any enterprise work.",
+    });
+  }
+  if (missingShadowProviders.length) {
+    return enterpriseReadinessAction({
+      id: "complete_enterprise_shadow_contracts",
+      command: "npm --silent run hermes:enterprise-accuracy-plan",
+      reason: `Missing shadow providers: ${missingShadowProviders.join(", ")}.`,
+    });
+  }
+  if (!replayReady) {
+    return enterpriseReadinessAction({
+      id: "harden_budget_replay_lab",
+      command: "npm run api:replay:contracts",
+      reason: "Budget replay lab must be ready before enterprise activation review.",
+    });
+  }
+  if (!budgetChainCompleted || !enterpriseEligible) {
+    return enterpriseReadinessAction({
+      id: "complete_budget_chain_before_enterprise",
+      command: "npm --silent run hermes:budget-chain",
+      reason: "Enterprise remains locked until budget_chain_completed and enterprise_eligible are true.",
+    });
+  }
+  return enterpriseReadinessAction({
+    id: "operator_enterprise_contract_review",
+    command: "npm --silent run hermes:enterprise-accuracy-plan",
+    reason: "Enterprise shadow evidence is complete; prepare human-reviewed provider contract/sample-payload requests.",
+  });
+}
+
+function enterpriseReadinessAction({ id, command, reason }) {
+  return {
+    id,
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
   };
 }
 
@@ -12053,6 +12266,7 @@ const commands = {
   "source-route-matrix": sourceRouteMatrix,
   "historical-backfill-plan": historicalBackfillPlan,
   "enterprise-accuracy-plan": enterpriseAccuracyPlan,
+  "enterprise-readiness": enterpriseReadiness,
   "trigger-policy": triggerPolicy,
   "ops-compiler": opsCompiler,
   "capability-audit": capabilityAudit,

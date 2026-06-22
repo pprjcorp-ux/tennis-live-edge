@@ -262,6 +262,14 @@ sample-payload requirements, proof artifacts and acceptance tests. It is a
 planning packet only: no provider calls, scraping, quota spend, paper orders or
 real execution.
 
+Use `hermes:enterprise-readiness` when deciding whether the enterprise track is
+ready for human contract/sample-payload review. It consumes
+`operational_state.replay_lab.enterprise_shadow_providers`, budget-chain
+evidence, replay status, safety state and learning readiness. It is visibility
+only: no provider calls, scraping, quota spend, paper orders or real execution.
+Its safe-jailbreak policy must keep
+`provider_quota_spend_allowed_from_this_command=false`.
+
 Use `hermes:grand-slam-mission` as the product-level packet for Grand Slam
 match-day prediction. It compiles readiness, historical priors, collection,
 quota, live-controller and learning state into mission phases. It never creates

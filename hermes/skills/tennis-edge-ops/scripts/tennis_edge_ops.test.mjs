@@ -6700,6 +6700,115 @@ test("budget-chain emits a dry-run provider onboarding plan without spending quo
   }
 });
 
+test("enterprise-readiness reports shadow contracts without provider calls", async () => {
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2, match_freshness: [] },
+        replay_lab: {
+          status: "ready",
+          enterprise_shadow_providers: [
+            {
+              provider: "sportradar",
+              adapter_contract: "EnterpriseTimelineProviderAdapter",
+              fake_api: "Offline Sportradar live timeline fixture",
+              status: "deferred",
+              scenarios: ["timeline_point", "timeline_delay", "timeline_retirement"],
+              output_contracts: ["ScoreTick", "PointEvent", "ProviderLatency"],
+              notes: ["provider_api_call_allowed=false"],
+            },
+            {
+              provider: "betradar_uof",
+              adapter_contract: "EnterpriseMarketStateProviderAdapter",
+              fake_api: "Offline Betradar UOF market-state fixture",
+              status: "deferred",
+              scenarios: ["market_open", "market_suspended", "market_settled"],
+              output_contracts: ["MarketState", "ProviderLatency"],
+              notes: ["provider_api_call_allowed=false"],
+            },
+            {
+              provider: "txodds",
+              adapter_contract: "EnterpriseInRunningOddsProviderAdapter",
+              fake_api: "Offline TXODDS in-running tennis odds fixture",
+              status: "deferred",
+              scenarios: ["in_running_odds", "price_move", "stale_quote"],
+              output_contracts: ["OddsTick", "ProviderLatency"],
+              notes: ["provider_api_call_allowed=false"],
+            },
+            {
+              provider: "betfair",
+              adapter_contract: "EnterpriseExchangeMarketStreamAdapter",
+              fake_api: "Offline Betfair exchange market stream fixture",
+              status: "deferred",
+              scenarios: ["market_book", "price_ladder", "market_closed"],
+              output_contracts: ["ProviderLatency", "exchange_market_depth"],
+              notes: ["provider_api_call_allowed=false"],
+            },
+          ],
+        },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "2. api_tennis:score_livescore",
+          warnings: [],
+          steps: [],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["enterprise-readiness", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "enterprise_readiness_packet");
+    assert.equal(payload.status, "locked_on_budget_chain");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.operator_contract_review_allowed, false);
+    assert.equal(payload.budget_gate.budget_chain_completed, false);
+    assert.equal(payload.budget_gate.enterprise_eligible, false);
+    assert.equal(payload.replay_gate.shadow_provider_count, 4);
+    assert.deepEqual(payload.replay_gate.missing_shadow_providers, []);
+    assert.equal(payload.replay_gate.providers[0].provider, "sportradar");
+    assert.equal(payload.activation_blockers.includes("budget_chain_incomplete"), true);
+    assert.equal(payload.activation_blockers.includes("enterprise_eligible_false"), true);
+    assert.equal(payload.next_action.command, "npm --silent run hermes:budget-chain");
+    assert.equal(payload.safe_jailbreak_policy.anti_bot_bypass_allowed, false);
+    assert.equal(payload.safe_jailbreak_policy.provider_quota_spend_allowed_from_this_command, false);
+    assert.equal(payload.safety.real_execution_hard_block, true);
+  } finally {
+    server.close();
+  }
+});
+
 test("provider-smoke defaults to blocked dry-run and does not spend provider quota", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/signals/live": [],

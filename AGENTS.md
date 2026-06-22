@@ -258,6 +258,11 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   gates are complete. Ops compiler, experiment lab, scheduler rehearsal, and
   cron proposal should include this packet as review evidence only, never as
   provider activation.
+- Hermes enterprise readiness should consume `npm run hermes:enterprise-readiness`;
+  it reads `enterprise_shadow_providers`, replay status, budget-chain gates,
+  learning state and execution safety to report whether enterprise is still
+  locked or ready only for human contract/sample-payload review. It must never
+  run provider smokes or activate credentials.
 - Hermes Grand Slam scoreline forecasting should consume
   `npm run hermes:grand-slam-scoreline-forecast`; it projects winners and
   plausible set scorelines (`3-0/3-1/3-2` for ATP Grand Slam BO5,

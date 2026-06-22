@@ -194,6 +194,13 @@ payloads, prove required fields, define replay contracts and reject any provider
 that cannot supply timestamped, license-cleared evidence. It remains read-only
 and keeps `provider_api_call_allowed=false`.
 
+`hermes:enterprise-readiness` is the operational gate packet for that branch.
+It reads backend evidence from `enterprise_shadow_providers`, budget-chain
+status, replay readiness, learning state and execution safety, then reports
+whether the system is still locked, missing shadow contracts, blocked by replay
+or ready only for human provider-contract review. It never executes provider
+smokes or activates credentials.
+
 `hermes:grand-slam-scoreline-forecast` is the preferred packet for the concrete
 Grand Slam match-day output: projected winner plus plausible set scoreline.
 It consumes internal FastAPI prediction rows only, maps ATP Grand Slam singles

@@ -126,6 +126,30 @@ async function channelReadiness() {
   printJson(buildChannelReadiness(runtime));
 }
 
+async function backendReadiness() {
+  printJson(await backendReadinessData());
+}
+
+async function backendReadinessData() {
+  const responses = await Promise.all([
+    safeRequest("/api/v1/agent/preflight", backendUnavailablePreflight, "preflight"),
+    safeRequest("/api/v1/dashboard/live-state", backendUnavailableDashboardState, "dashboard_state"),
+    safeRequest("/api/v1/live/matches", [], "live_matches"),
+    safeRequest("/api/v1/provider-health", backendUnavailableProviderHealth, "provider_health"),
+    safeRequest("/api/v1/cost-profile", backendUnavailableCostProfile, "cost_profile"),
+    safeRequest("/api/v1/execution/status", backendUnavailableExecutionStatus, "execution_status"),
+  ]);
+  return buildBackendReadiness({
+    preflightData: responses[0].data,
+    dashboardState: responses[1].data,
+    liveMatches: responses[2].data,
+    providerHealth: responses[3].data,
+    costProfile: responses[4].data,
+    executionStatus: responses[5].data,
+    requestErrors: responses.map((response) => response.error).filter(Boolean),
+  });
+}
+
 async function runtimeCheckData() {
   const hermesBin = process.env.HERMES_BIN || "hermes";
   const commands = [
@@ -347,6 +371,230 @@ function channelReadinessActions({ checks, runtime }) {
 }
 
 function channelReadinessAction({
+  id,
+  priority,
+  lane,
+  command,
+  reason,
+  mutatesRuntimeIfRun = false,
+  requiresOperatorConfirmation = false,
+}) {
+  return {
+    id,
+    priority,
+    lane,
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    mutates_runtime_if_run: Boolean(mutatesRuntimeIfRun),
+    requires_operator_confirmation: Boolean(requiresOperatorConfirmation),
+  };
+}
+
+function buildBackendReadiness({
+  preflightData,
+  dashboardState,
+  liveMatches,
+  providerHealth,
+  costProfile,
+  executionStatus,
+  requestErrors = [],
+}) {
+  const checks = backendReadinessChecks({
+    preflightData,
+    dashboardState,
+    liveMatches,
+    providerHealth,
+    costProfile,
+    executionStatus,
+    requestErrors,
+  });
+  const failedChecks = checks.filter((check) => check.status === "fail");
+  const actions = backendReadinessActions({ checks, requestErrors });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "backend_readiness",
+    status: failedChecks.length ? "blocked" : "ready",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    api_base: API_BASE,
+    checks,
+    request_errors: requestErrors,
+    next_action: actions[0] ?? null,
+    actions,
+    endpoint_summary: {
+      preflight_status: preflightData?.status ?? "unknown",
+      provider_mode: dashboardState?.operational_state?.provider_mode ?? "unknown",
+      live_match_count: Array.isArray(liveMatches) ? liveMatches.length : 0,
+      provider_health_count: Array.isArray(providerHealth) ? providerHealth.length : 0,
+      active_plan: costProfile?.active_plan ?? "unknown",
+      execution_stage: executionStatus?.stage ?? "unknown",
+    },
+    acceptance_evidence: [
+      "preflight endpoint reachable",
+      "dashboard live-state endpoint reachable",
+      "live matches endpoint reachable",
+      "provider health endpoint reachable",
+      "cost profile endpoint reachable",
+      "execution status reports can_submit_real_orders=false",
+    ],
+    operator_notes: failedChecks.length
+      ? [
+        "Restore or inspect the local FastAPI process before Hermes live-window/paper routing.",
+        "This command does not start the API server, Docker, Postgres, dashboard, or provider ingestion.",
+      ]
+      : [
+        "Backend readiness is sufficient for read-only Hermes packets.",
+        "Run npm --silent run hermes:live-window before any protected paper-autopilot path.",
+      ],
+    safety: {
+      real_execution_hard_block: executionStatus?.real_execution_hard_block === true,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function backendReadinessChecks({
+  preflightData,
+  dashboardState,
+  liveMatches,
+  providerHealth,
+  costProfile,
+  executionStatus,
+  requestErrors,
+}) {
+  const errorLabels = new Set(requestErrors.map((error) => error.label));
+  return [
+    backendReadinessCheck({
+      id: "internal_api_reachable",
+      status: requestErrors.length ? "fail" : "pass",
+      summary: requestErrors.length
+        ? "One or more internal FastAPI endpoints did not answer within the bounded timeout."
+        : "All sampled internal FastAPI endpoints answered.",
+      evidence: {
+        failed_labels: [...errorLabels],
+      },
+    }),
+    backendReadinessCheck({
+      id: "preflight_endpoint_reachable",
+      status: errorLabels.has("preflight") ? "fail" : "pass",
+      summary: `Preflight status is ${preflightData?.status ?? "unknown"}.`,
+      evidence: {
+        status: preflightData?.status ?? "unknown",
+        failed_checks: (preflightData?.checks ?? [])
+          .filter((check) => check.status === "fail")
+          .map((check) => check.name ?? check.id),
+      },
+    }),
+    backendReadinessCheck({
+      id: "dashboard_state_available",
+      status: errorLabels.has("dashboard_state") ? "fail" : "pass",
+      summary: `Dashboard provider mode is ${dashboardState?.operational_state?.provider_mode ?? "unknown"}.`,
+      evidence: {
+        provider_mode: dashboardState?.operational_state?.provider_mode ?? "unknown",
+      },
+    }),
+    backendReadinessCheck({
+      id: "live_matches_endpoint_reachable",
+      status: errorLabels.has("live_matches") ? "fail" : "pass",
+      summary: `${Array.isArray(liveMatches) ? liveMatches.length : 0} live match rows are visible to Hermes.`,
+      evidence: {
+        count: Array.isArray(liveMatches) ? liveMatches.length : 0,
+      },
+    }),
+    backendReadinessCheck({
+      id: "provider_health_visible",
+      status: errorLabels.has("provider_health") ? "fail" : "pass",
+      summary: `${Array.isArray(providerHealth) ? providerHealth.length : 0} provider health rows are visible.`,
+      evidence: {
+        count: Array.isArray(providerHealth) ? providerHealth.length : 0,
+      },
+    }),
+    backendReadinessCheck({
+      id: "cost_profile_visible",
+      status: errorLabels.has("cost_profile") ? "fail" : "pass",
+      summary: `Cost profile active plan is ${costProfile?.active_plan ?? "unknown"}.`,
+      evidence: {
+        active_plan: costProfile?.active_plan ?? "unknown",
+      },
+    }),
+    backendReadinessCheck({
+      id: "real_execution_hard_block",
+      status: executionStatus?.can_submit_real_orders === false ? "pass" : "fail",
+      summary: "Backend execution status must keep real order submission impossible.",
+      evidence: {
+        real_execution_hard_block: executionStatus?.real_execution_hard_block,
+        can_submit_real_orders: executionStatus?.can_submit_real_orders,
+        stage: executionStatus?.stage,
+      },
+    }),
+  ];
+}
+
+function backendReadinessCheck({ id, status, summary, evidence = {} }) {
+  return { id, status, summary, evidence };
+}
+
+function backendReadinessActions({ checks, requestErrors }) {
+  const byId = Object.fromEntries(checks.map((check) => [check.id, check]));
+  const actions = [];
+  if (requestErrors.length || byId.internal_api_reachable?.status !== "pass") {
+    actions.push(backendReadinessAction({
+      id: "start_or_inspect_fastapi_manual_review",
+      priority: 10,
+      lane: "local_backend",
+      command: "npm run api:dev",
+      reason: "Hermes cannot use live-window or backend-gated paper routes until the local FastAPI service is reachable.",
+      mutatesRuntimeIfRun: true,
+      requiresOperatorConfirmation: true,
+    }));
+    actions.push(backendReadinessAction({
+      id: "check_operational_truth_after_backend_start",
+      priority: 20,
+      lane: "local_backend",
+      command: "npm run api:check:operational-truth -- --pretty",
+      reason: "After FastAPI is reachable, verify persisted replay, fail-closed signals, and real-execution hard block.",
+    }));
+  }
+  if (byId.real_execution_hard_block?.status !== "pass") {
+    actions.push(backendReadinessAction({
+      id: "restore_real_execution_hard_block",
+      priority: 1,
+      lane: "execution_safety",
+      command: "Stop automation and restore REAL_EXECUTION_HARD_BLOCK=true before continuing.",
+      reason: "Hermes must not proceed while the backend reports real order submission as possible.",
+      requiresOperatorConfirmation: true,
+    }));
+  }
+  if (!actions.length) {
+    actions.push(backendReadinessAction({
+      id: "run_live_window",
+      priority: 100,
+      lane: "live_window",
+      command: "npm --silent run hermes:live-window",
+      reason: "Backend readiness is clean enough for read-only live-window evaluation.",
+    }));
+  }
+  return actions.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+}
+
+function backendReadinessAction({
   id,
   priority,
   lane,
@@ -6579,6 +6827,7 @@ const commands = {
   preflight,
   "runtime-check": runtimeCheck,
   "channel-readiness": channelReadiness,
+  "backend-readiness": backendReadiness,
   intelligence,
   events,
   "unblock-plan": unblockPlan,

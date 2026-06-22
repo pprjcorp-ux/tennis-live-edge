@@ -33,6 +33,7 @@ npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:runtime-check
 npm run hermes:channel-readiness
+npm run hermes:backend-readiness
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:unblock-plan
@@ -92,6 +93,12 @@ running state, bounded doctor status, Telegram allowlist, private Access
 allowlist, and local admin token presence. Failed checks become ordered manual
 actions; the command never starts the gateway, edits `.env`, creates cron jobs,
 calls providers, or creates orders.
+
+`hermes:backend-readiness` verifies the local FastAPI side of Hermes without
+starting services: preflight, dashboard live-state, live matches, provider
+health, cost profile and execution status. It confirms real execution remains
+hard-blocked and emits manual actions such as `npm run api:dev` only when the
+API is unavailable.
 
 `hermes:intelligence` is the high-signal operator packet for cron/Telegram. It
 aggregates provider health, cursor gaps, data quality, cost, paper performance,

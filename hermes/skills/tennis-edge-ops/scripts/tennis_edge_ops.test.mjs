@@ -880,6 +880,111 @@ test("channel-readiness proves channel_ready only when runtime and local allowli
   assert.equal(payload.safety.provider_api_call_allowed, false);
 });
 
+test("backend-readiness proves internal API endpoints without protected actions", async () => {
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          steps: [],
+          warnings: [],
+        },
+      },
+    },
+    "/api/v1/live/matches": [
+      { match_id: "match_1", status: "live" },
+      { match_id: "match_2", status: "scheduled" },
+    ],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["backend-readiness", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "backend_readiness");
+    assert.equal(payload.status, "ready");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.request_errors.length, 0);
+    assert.equal(payload.checks.every((check) => check.status === "pass"), true);
+    assert.equal(payload.endpoint_summary.live_match_count, 2);
+    assert.equal(payload.endpoint_summary.provider_mode, "replay");
+    assert.equal(payload.next_action.command, "npm --silent run hermes:live-window");
+    assert.equal(payload.next_action.executes_now, false);
+    assert.equal(payload.safety.real_execution_hard_block, true);
+  } finally {
+    server.close();
+  }
+});
+
+test("backend-readiness fails closed when FastAPI hangs", async () => {
+  const called = [];
+  const { server, apiBase } = await startServer((request) => {
+    called.push({ url: request.url, method: request.method });
+  });
+
+  try {
+    const result = await runCli(["backend-readiness", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_HTTP_TIMEOUT_MS: "100",
+      },
+      timeoutMs: 5_000,
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.some((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "backend_readiness");
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.request_errors.length >= 1, true);
+    const checks = Object.fromEntries(payload.checks.map((check) => [check.id, check]));
+    assert.equal(checks.internal_api_reachable.status, "fail");
+    assert.equal(checks.real_execution_hard_block.status, "pass");
+    assert.equal(payload.next_action.command, "npm run api:dev");
+    assert.equal(payload.next_action.executes_now, false);
+    assert.equal(payload.next_action.mutates_runtime_if_run, true);
+    assert.equal(payload.actions.some((action) => action.command.includes("api:check:operational-truth")), true);
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+  }
+});
+
 test("safe-loop aggregates runtime and budget signals without protected actions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-hermes-loop-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

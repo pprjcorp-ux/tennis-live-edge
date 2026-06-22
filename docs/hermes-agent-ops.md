@@ -19,6 +19,7 @@ npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:runtime-check
 npm run hermes:channel-readiness
+npm run hermes:backend-readiness
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:unblock-plan
@@ -90,6 +91,12 @@ prerequisites: Hermes CLI, gateway running state, bounded doctor pass, Telegram
 allowlist, private Access allowlist, and local admin token presence. It emits
 ordered manual actions and acceptance evidence while keeping
 `executes_now=false`.
+
+Use `hermes:backend-readiness` to prove the FastAPI side before relying on
+live-window, match-pulse, source-route or paper-autopilot packets. It checks
+preflight, dashboard live-state, live matches, provider health, cost profile and
+execution status with bounded internal GETs, then fails closed into manual
+actions if the backend is unavailable.
 
 For higher autonomy, use `hermes:intelligence` as the default scheduled packet.
 It reads internal APIs only and emits one machine-readable recommendation:

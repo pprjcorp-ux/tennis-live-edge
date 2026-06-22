@@ -1837,6 +1837,10 @@ async function sourceUseLedgerReport() {
 }
 
 async function sourceIntakePlan() {
+  printJson(await sourceIntakePlanData());
+}
+
+async function sourceIntakePlanData() {
   const [report, grandSlam] = await Promise.all([
     intelligenceData(),
     grandSlamReadinessData(),
@@ -1861,7 +1865,7 @@ async function sourceIntakePlan() {
     enterpriseReadiness,
   });
   const sourceUseReport = buildSourceUseLedgerReport(readSourceUseLedgerRecords());
-  printJson(buildSourceIntakePlan({
+  return buildSourceIntakePlan({
     report,
     eventPlan,
     sourcePlan,
@@ -1869,7 +1873,18 @@ async function sourceIntakePlan() {
     enterpriseReadiness,
     manifest,
     sourceUseReport,
-  }));
+  });
+}
+
+async function sourceIntakeLedger() {
+  const plan = await sourceIntakePlanData();
+  const ledger = buildSourceIntakeLedger(plan);
+  writeSourceIntakeLedger(ledger.record);
+  printJson(ledger);
+}
+
+async function sourceIntakeLedgerReport() {
+  printJson(buildSourceIntakeLedgerReport(readSourceIntakeLedgerRecords()));
 }
 
 async function historicalBackfillPlan() {
@@ -5571,6 +5586,204 @@ function sourceIntakeContract(nextIntake) {
     dataset_fetch_allowed: false,
     can_submit_real_orders: false,
   };
+}
+
+function buildSourceIntakeLedger(plan) {
+  const path = sourceIntakeLedgerPath();
+  const record = {
+    generated_at: new Date().toISOString(),
+    mode: "source_intake_ledger_record",
+    outcome: "observed",
+    action_executed: false,
+    intake_command_executed: false,
+    dataset_fetch_attempted: false,
+    provider_command_executed: false,
+    bypass_attempted: false,
+    status: plan.status,
+    next_intake_id: plan.next_intake?.id ?? null,
+    next_intake_lane: plan.next_intake?.lane ?? null,
+    next_intake_command: plan.next_intake?.command ?? null,
+    recommended_action_id: plan.recommended_action?.id ?? null,
+    recommended_action_command: plan.recommended_action?.command ?? null,
+    allowed_contract_ids: (plan.intake_queues?.allowed_contracts ?? []).map((item) => item.id),
+    operator_review_ids: (plan.intake_queues?.operator_review ?? []).map((item) => item.id),
+    deferred_ids: (plan.intake_queues?.deferred ?? []).map((item) => item.id),
+    forbidden_quarantine_ids: (plan.intake_queues?.forbidden_quarantine ?? []).map((item) => item.id),
+    queue_summary: plan.queue_summary,
+    manifest_status: plan.manifest_status,
+    source_context: plan.source_context,
+    source_intake_plan: plan,
+    safety: plan.safety,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "source_intake_ledger",
+    status: plan.status,
+    read_only: false,
+    writes: true,
+    write_scope: "local_source_intake_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    ledger: {
+      path,
+      format: "jsonl",
+      retention_note: "Local Hermes source-intake trace; do not commit runtime logs.",
+    },
+    record,
+    safety: {
+      real_execution_hard_block: plan.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      dataset_fetch_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function sourceIntakeLedgerPath() {
+  return process.env.HERMES_SOURCE_INTAKE_LEDGER_PATH || "hermes/runs/source-intake-ledger.jsonl";
+}
+
+function writeSourceIntakeLedger(record) {
+  const path = sourceIntakeLedgerPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function readSourceIntakeLedgerRecords() {
+  const path = sourceIntakeLedgerPath();
+  if (!existsSync(path)) {
+    return { path, records: [], invalid_rows: 0 };
+  }
+  const content = readFileSync(path, "utf8");
+  let invalidRows = 0;
+  const records = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalidRows += 1;
+        return [];
+      }
+    });
+  return { path, records, invalid_rows: invalidRows };
+}
+
+function buildSourceIntakeLedgerReport({ path, records, invalid_rows: invalidRows }) {
+  const nextIntakeCounts = rankedCounts(records.map((record) => record.next_intake_id).filter(Boolean));
+  const nextIntakeLaneCounts = rankedCounts(records.map((record) => record.next_intake_lane).filter(Boolean));
+  const nextIntakeCommandCounts = rankedCounts(records.map((record) => record.next_intake_command).filter(Boolean));
+  const recommendedActionCounts = rankedCounts(records.map((record) => record.recommended_action_id).filter(Boolean));
+  const allowedContractCounts = rankedCounts(records.flatMap((record) => record.allowed_contract_ids ?? []));
+  const operatorReviewCounts = rankedCounts(records.flatMap((record) => record.operator_review_ids ?? []));
+  const deferredCounts = rankedCounts(records.flatMap((record) => record.deferred_ids ?? []));
+  const forbiddenCounts = rankedCounts(records.flatMap((record) => record.forbidden_quarantine_ids ?? []));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "source_intake_ledger_report",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger: {
+      path,
+      format: "jsonl",
+      invalid_rows: invalidRows,
+    },
+    total_records: records.length,
+    action_executed_count: records.filter((record) => record.action_executed === true).length,
+    intake_command_executed_count: records.filter((record) => record.intake_command_executed === true).length,
+    dataset_fetch_attempted_count: records.filter((record) => record.dataset_fetch_attempted === true).length,
+    provider_command_executed_count: records.filter((record) => record.provider_command_executed === true).length,
+    bypass_attempted_count: records.filter((record) => record.bypass_attempted === true).length,
+    status_counts: countValues(records.map((record) => record.status).filter(Boolean)),
+    next_intake_counts: nextIntakeCounts,
+    next_intake_lane_counts: nextIntakeLaneCounts,
+    next_intake_command_counts: nextIntakeCommandCounts,
+    recommended_action_counts: recommendedActionCounts,
+    allowed_contract_counts: allowedContractCounts,
+    operator_review_counts: operatorReviewCounts,
+    deferred_counts: deferredCounts,
+    forbidden_quarantine_counts: forbiddenCounts,
+    top_next_intake: nextIntakeCounts[0]?.command ?? null,
+    top_next_intake_lane: nextIntakeLaneCounts[0]?.command ?? null,
+    top_next_intake_command: nextIntakeCommandCounts[0]?.command ?? null,
+    top_allowed_contract: allowedContractCounts[0]?.command ?? null,
+    top_operator_review: operatorReviewCounts[0]?.command ?? null,
+    top_deferred: deferredCounts[0]?.command ?? null,
+    top_forbidden_quarantine: forbiddenCounts[0]?.command ?? null,
+    latest_record: records[records.length - 1] ?? null,
+    next_recommendation: sourceIntakeLedgerRecommendation({
+      records,
+      nextIntakeCounts,
+      operatorReviewCounts,
+      deferredCounts,
+      forbiddenCounts,
+    }),
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      dataset_fetch_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function sourceIntakeLedgerRecommendation({
+  records,
+  nextIntakeCounts,
+  operatorReviewCounts,
+  deferredCounts,
+  forbiddenCounts,
+}) {
+  if (!records.length) {
+    return sourceIntakeAction({
+      id: "collect_source_intake_evidence",
+      command: "npm --silent run hermes:source-intake-ledger",
+      reason: "No source-intake evidence exists yet; collect a local JSONL row before implementing an intake contract.",
+    });
+  }
+  if (forbiddenCounts[0]) {
+    return sourceIntakeAction({
+      id: `quarantine_${forbiddenCounts[0].command}`,
+      command: "npm --silent run hermes:source-intake-plan",
+      reason: `${forbiddenCounts[0].command} repeatedly lands in forbidden quarantine; keep it blocked before implementation.`,
+    });
+  }
+  if (operatorReviewCounts[0]) {
+    return sourceIntakeAction({
+      id: `operator_review_${operatorReviewCounts[0].command}`,
+      command: "npm --silent run hermes:source-use-ledger-report",
+      reason: `${operatorReviewCounts[0].command} repeatedly requires operator/license review before any fetch or import.`,
+    });
+  }
+  if (deferredCounts[0]) {
+    return sourceIntakeAction({
+      id: `defer_${deferredCounts[0].command}`,
+      command: "npm --silent run hermes:enterprise-readiness",
+      reason: `${deferredCounts[0].command} repeatedly remains deferred behind enterprise gates.`,
+    });
+  }
+  return sourceIntakeAction({
+    id: nextIntakeCounts[0] ? `prepare_${nextIntakeCounts[0].command}` : "review_source_intake_plan",
+    command: "npm --silent run hermes:source-intake-plan",
+    reason: "Review repeated intake decisions before implementing the next offline/internal source contract.",
+  });
 }
 
 function sumObjectCounts(items) {
@@ -11540,6 +11753,12 @@ function schedulerSchedule(loop, grandSlam = null) {
       reason: "Convert source-use evidence into allowed, operator-review, deferred and forbidden intake queues without fetching data.",
     }),
     schedulerItem({
+      id: "source_intake_ledger",
+      command: "npm --silent run hermes:source-intake-ledger",
+      everyMinutes: 120,
+      reason: "Persist source-intake queue decisions locally so repeated import-contract choices become visible.",
+    }),
+    schedulerItem({
       id: "trigger_policy",
       command: "npm --silent run hermes:trigger-policy",
       everyMinutes: 5,
@@ -14401,6 +14620,8 @@ const commands = {
   "source-use-ledger": sourceUseLedger,
   "source-use-ledger-report": sourceUseLedgerReport,
   "source-intake-plan": sourceIntakePlan,
+  "source-intake-ledger": sourceIntakeLedger,
+  "source-intake-ledger-report": sourceIntakeLedgerReport,
   "historical-backfill-plan": historicalBackfillPlan,
   "enterprise-accuracy-plan": enterpriseAccuracyPlan,
   "enterprise-readiness": enterpriseReadiness,

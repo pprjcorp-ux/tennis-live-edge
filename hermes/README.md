@@ -104,6 +104,8 @@ npm run hermes:source-use-manifest
 npm run hermes:source-use-ledger
 npm run hermes:source-use-ledger-report
 npm run hermes:source-intake-plan
+npm run hermes:source-intake-ledger
+npm run hermes:source-intake-ledger-report
 npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
@@ -378,6 +380,14 @@ The JSON mode is `source_intake_plan`, and the acceptance contract includes
 `source_intake_plan.mode=source_intake_plan`,
 `allowed_contracts_before_operator_review_before_deferred_before_forbidden`,
 and `forbidden_quarantine`.
+`hermes:source-intake-ledger` appends the selected intake queues and next
+contract to local JSONL only, with `intake_command_executed=false`,
+`dataset_fetch_attempted=false`, `provider_command_executed=false`, and
+`bypass_attempted=false`. `hermes:source-intake-ledger-report` summarizes
+repeated `allowed_contract`, `operator_review`, `deferred`, and
+`forbidden_quarantine` decisions before any importer or provider activation.
+The ledger write scope is `local_source_intake_jsonl_only`, and the report JSON
+mode is `source_intake_ledger_report`.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam

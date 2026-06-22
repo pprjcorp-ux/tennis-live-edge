@@ -69,6 +69,8 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-manife
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-use-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-intake-plan
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-intake-ledger
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-intake-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs historical-backfill-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
@@ -255,6 +257,11 @@ quarantine queues. It is read-only and must keep `dataset_fetch_allowed=false`,
 `provider_api_call_allowed=false`, and `can_submit_real_orders=false`; use it
 to choose the next offline/internal contract, not to download data or call a
 provider.
+The `source-intake-ledger` command records the selected queues and next intake
+contract as local JSONL only, with no contract execution, dataset fetch,
+provider command or bypass. The `source-intake-ledger-report` command
+summarizes repeated allowed-contract, operator-review, deferred and forbidden
+quarantine decisions before importer or provider work.
 The `trigger-policy` command maps current state to debounced wakeup triggers
 for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
 read-only and must not execute trigger commands. Partial runtime should emit a

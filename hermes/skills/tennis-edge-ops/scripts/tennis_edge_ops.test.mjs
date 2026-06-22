@@ -2660,6 +2660,142 @@ test("source-intake-plan turns manifest and ledger evidence into safe intake que
   }
 });
 
+test("source-intake-ledger records intake decisions without executing contracts", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-source-intake-ledger-"));
+  const sourceUseLedgerPath = join(tempDir, "source-use-ledger.jsonl");
+  const sourceIntakeLedgerPath = join(tempDir, "source-intake-ledger.jsonl");
+  writeFileSync(sourceUseLedgerPath, "");
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["source-intake-ledger", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_SOURCE_USE_LEDGER_PATH: sourceUseLedgerPath,
+        HERMES_SOURCE_INTAKE_LEDGER_PATH: sourceIntakeLedgerPath,
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    assert.equal(existsSync(sourceIntakeLedgerPath), true);
+    const payload = JSON.parse(result.stdout);
+    const records = readFileSync(sourceIntakeLedgerPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(payload.mode, "source_intake_ledger");
+    assert.equal(payload.read_only, false);
+    assert.equal(payload.writes, true);
+    assert.equal(payload.write_scope, "local_source_intake_jsonl_only");
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.record.mode, "source_intake_ledger_record");
+    assert.equal(payload.record.action_executed, false);
+    assert.equal(payload.record.intake_command_executed, false);
+    assert.equal(payload.record.dataset_fetch_attempted, false);
+    assert.equal(payload.record.provider_command_executed, false);
+    assert.equal(payload.record.bypass_attempted, false);
+    assert.equal(payload.record.next_intake_id, "route:replay_backfill");
+    assert.equal(payload.record.next_intake_lane, "allowed_contract");
+    assert.equal(payload.record.allowed_contract_ids.includes("route:replay_backfill"), true);
+    assert.equal(payload.record.allowed_contract_ids.includes("route:live_statistics"), true);
+    assert.equal(payload.record.operator_review_ids.includes("historical:jeff_sackmann_atp"), true);
+    assert.equal(payload.record.queue_summary.allowed_contracts, 2);
+    assert.equal(payload.safety.dataset_fetch_allowed, false);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].mode, "source_intake_ledger_record");
+  } finally {
+    server.close();
+  }
+});
+
+test("source-intake-ledger-report summarizes repeated intake queues", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-source-intake-ledger-report-"));
+  const ledgerPath = join(tempDir, "source-intake-ledger.jsonl");
+  const rows = [
+    {
+      mode: "source_intake_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      intake_command_executed: false,
+      dataset_fetch_attempted: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "ready",
+      next_intake_id: "route:replay_backfill",
+      next_intake_lane: "allowed_contract",
+      next_intake_command: "npm --silent run hermes:replay-backfill-contract",
+      recommended_action_id: "prepare_replay_backfill_contract",
+      recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
+      allowed_contract_ids: ["route:replay_backfill", "route:live_statistics"],
+      operator_review_ids: ["historical:jeff_sackmann_atp"],
+      deferred_ids: ["enterprise:sportradar"],
+      forbidden_quarantine_ids: [],
+    },
+    {
+      mode: "source_intake_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      intake_command_executed: false,
+      dataset_fetch_attempted: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "ready",
+      next_intake_id: "route:replay_backfill",
+      next_intake_lane: "allowed_contract",
+      next_intake_command: "npm --silent run hermes:replay-backfill-contract",
+      recommended_action_id: "prepare_replay_backfill_contract",
+      recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
+      allowed_contract_ids: ["route:replay_backfill"],
+      operator_review_ids: ["historical:jeff_sackmann_atp", "historical:tennis_data_results_odds"],
+      deferred_ids: ["enterprise:sportradar"],
+      forbidden_quarantine_ids: ["route:sportsbook_browser"],
+    },
+  ];
+  writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["source-intake-ledger-report"], {
+    env: { HERMES_SOURCE_INTAKE_LEDGER_PATH: ledgerPath },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "source_intake_ledger_report");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.total_records, 2);
+  assert.equal(payload.action_executed_count, 0);
+  assert.equal(payload.intake_command_executed_count, 0);
+  assert.equal(payload.dataset_fetch_attempted_count, 0);
+  assert.equal(payload.provider_command_executed_count, 0);
+  assert.equal(payload.bypass_attempted_count, 0);
+  assert.equal(payload.top_next_intake, "route:replay_backfill");
+  assert.equal(payload.top_next_intake_lane, "allowed_contract");
+  assert.equal(payload.top_next_intake_command, "npm --silent run hermes:replay-backfill-contract");
+  assert.equal(payload.top_allowed_contract, "route:replay_backfill");
+  assert.equal(payload.top_operator_review, "historical:jeff_sackmann_atp");
+  assert.equal(payload.top_deferred, "enterprise:sportradar");
+  assert.equal(payload.top_forbidden_quarantine, "route:sportsbook_browser");
+  assert.equal(payload.next_recommendation.command, "npm --silent run hermes:source-intake-plan");
+  assert.equal(payload.safety.dataset_fetch_allowed, false);
+  assert.equal(payload.safety.provider_api_call_allowed, false);
+});
+
 test("enterprise-accuracy-plan ranks no-budget provider stack without calls or bypass", async () => {
   const called = [];
   const fixtures = eventRouterFixtures({
@@ -5698,6 +5834,12 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(sourceIntakeItem.provider_api_call_allowed, false);
     assert.equal(sourceIntakeItem.can_create_paper_orders, false);
     assert.equal(sourceIntakeItem.can_submit_real_orders, false);
+    const sourceIntakeLedgerItem = payload.schedule.find((item) => item.id === "source_intake_ledger");
+    assert.equal(sourceIntakeLedgerItem.command, "npm --silent run hermes:source-intake-ledger");
+    assert.equal(sourceIntakeLedgerItem.every_minutes, 120);
+    assert.equal(sourceIntakeLedgerItem.provider_api_call_allowed, false);
+    assert.equal(sourceIntakeLedgerItem.can_create_paper_orders, false);
+    assert.equal(sourceIntakeLedgerItem.can_submit_real_orders, false);
     const effectivenessItem = payload.schedule.find((item) => item.id === "autonomy_effectiveness");
     assert.equal(effectivenessItem.command, "npm --silent run hermes:autonomy-effectiveness");
     assert.equal(effectivenessItem.every_minutes, 60);

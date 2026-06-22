@@ -126,6 +126,10 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 1-5 minutes during active windows: `npm run hermes:quota-plan`.
 - Every 1-5 minutes when a channel needs one live-data decision:
   `npm run hermes:live-controller`.
+- Every 5-15 minutes during active windows to audit controller decisions:
+  `npm run hermes:live-controller-ledger`.
+- Hourly/daily to review repeated live-control decisions:
+  `npm run hermes:live-controller-ledger-report`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
 - Every 5 minutes while blocked: `npm run hermes:unblock-plan`.
@@ -321,6 +325,18 @@ Hermes/Telegram/Cloudflare/OpenClaw-style channels because it avoids stitching
 together multiple command outputs and weakening the safety contract. It remains
 read-only: no provider quota spend, no provider command execution, no paper
 order creation by itself, no real execution, and no LLM per tick.
+
+`hermes:live-controller-ledger` is the local trace for those live-control
+decisions. It appends JSONL rows with the controller packet, chosen action,
+next safe command, provider candidate, throttle level, source route and safety
+snapshot while marking `action_executed=false`,
+`provider_command_executed=false`, and `paper_order_created=false`.
+
+`hermes:live-controller-ledger-report` is the read-only quality summary over
+that trace. It identifies repeated freeze/throttle/paper-candidate decisions,
+recurring next commands and recurring provider candidates, so the repo can
+prioritize improvements from observed live-control evidence without granting
+Hermes execution authority.
 
 `hermes:learning-review` is the preferred weekly packet. It packages the
 learning gates, ROI, CLV, settled paper volume, production training examples,

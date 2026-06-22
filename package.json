@@ -41,6 +41,8 @@
     "hermes:collection-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs collection-plan",
     "hermes:quota-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs quota-plan",
     "hermes:live-controller": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-controller",
+    "hermes:live-controller-ledger": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-controller-ledger",
+    "hermes:live-controller-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-controller-ledger-report",
     "hermes:learning-review": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review",
     "hermes:budget-chain": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain",
     "hermes:provider-smoke": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke",

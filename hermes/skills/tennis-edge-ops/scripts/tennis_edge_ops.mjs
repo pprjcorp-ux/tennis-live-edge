@@ -1407,6 +1407,10 @@ async function quotaPlan() {
 }
 
 async function liveController() {
+  printJson(await liveControllerData());
+}
+
+async function liveControllerData() {
   const [report, matches] = await Promise.all([
     intelligenceData(),
     liveMatchesData(),
@@ -1420,7 +1424,7 @@ async function liveController() {
   const quota = buildQuotaPlan({ report, collection });
   const sourcePlan = buildSourceDiscovery({ report, eventPlan });
   const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
-  printJson(buildLiveController({
+  return buildLiveController({
     report,
     eventPlan,
     liveWindowPlan,
@@ -1428,7 +1432,18 @@ async function liveController() {
     collection,
     quota,
     sourceRoutes,
-  }));
+  });
+}
+
+async function liveControllerLedger() {
+  const controller = await liveControllerData();
+  const ledger = buildLiveControllerLedger(controller);
+  writeLiveControllerLedger(ledger.record);
+  printJson(ledger);
+}
+
+async function liveControllerLedgerReport() {
+  printJson(buildLiveControllerLedgerReport(readLiveControllerLedgerRecords()));
 }
 
 async function learningReview() {
@@ -5249,6 +5264,135 @@ function buildOperatorLedgerReport({ path, records, invalid_rows: invalidRows })
   };
 }
 
+function buildLiveControllerLedger(controller) {
+  const path = liveControllerLedgerPath();
+  const decision = controller.operator_decision ?? {};
+  const record = {
+    generated_at: new Date().toISOString(),
+    mode: "live_controller_ledger_record",
+    controller,
+    outcome: "observed",
+    action_executed: false,
+    collection_command_executed: false,
+    provider_command_executed: false,
+    paper_order_created: false,
+    status: controller.status,
+    action: decision.action ?? null,
+    next_safe_command: decision.next_safe_command?.command ?? null,
+    provider_candidate_command: decision.provider_candidate?.command ?? null,
+    protected_backend_command: decision.protected_backend_action?.command ?? null,
+    throttle_level: controller.quota?.throttle?.level ?? null,
+    source_route_id: decision.source_route_id ?? null,
+    top_match_id: decision.top_match_id ?? null,
+    safety: controller.safety,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "live_controller_ledger",
+    status: controller.status,
+    action: decision.action ?? null,
+    read_only: false,
+    writes: true,
+    write_scope: "local_live_controller_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    ledger: {
+      path,
+      format: "jsonl",
+      retention_note: "Local Hermes live-controller trace; do not commit runtime logs.",
+    },
+    record,
+    safety: {
+      real_execution_hard_block: controller.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function liveControllerLedgerPath() {
+  return process.env.HERMES_LIVE_CONTROLLER_LEDGER_PATH || "hermes/runs/live-controller-ledger.jsonl";
+}
+
+function writeLiveControllerLedger(record) {
+  const path = liveControllerLedgerPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function readLiveControllerLedgerRecords() {
+  const path = liveControllerLedgerPath();
+  if (!existsSync(path)) {
+    return { path, records: [], invalid_rows: 0 };
+  }
+  const content = readFileSync(path, "utf8");
+  let invalidRows = 0;
+  const records = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalidRows += 1;
+        return [];
+      }
+    });
+  return { path, records, invalid_rows: invalidRows };
+}
+
+function buildLiveControllerLedgerReport({ path, records, invalid_rows: invalidRows }) {
+  const nextCommandCounts = rankedCounts(records.map((record) => record.next_safe_command).filter(Boolean));
+  const providerCandidateCounts = rankedCounts(records.map((record) => record.provider_candidate_command).filter(Boolean));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "live_controller_ledger_report",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger: {
+      path,
+      format: "jsonl",
+      invalid_rows: invalidRows,
+    },
+    total_records: records.length,
+    action_executed_count: records.filter((record) => record.action_executed === true).length,
+    collection_command_executed_count: records.filter((record) => record.collection_command_executed === true).length,
+    provider_command_executed_count: records.filter((record) => record.provider_command_executed === true).length,
+    paper_order_created_count: records.filter((record) => record.paper_order_created === true).length,
+    status_counts: countValues(records.map((record) => record.status).filter(Boolean)),
+    action_counts: countValues(records.map((record) => record.action).filter(Boolean)),
+    throttle_counts: countValues(records.map((record) => record.throttle_level).filter(Boolean)),
+    source_route_counts: countValues(records.map((record) => record.source_route_id).filter(Boolean)),
+    next_safe_command_counts: nextCommandCounts,
+    provider_candidate_counts: providerCandidateCounts,
+    top_repeated_action: rankedCounts(records.map((record) => record.action).filter(Boolean))[0]?.command ?? null,
+    top_next_safe_command: nextCommandCounts[0]?.command ?? null,
+    top_provider_candidate: providerCandidateCounts[0]?.command ?? null,
+    latest_record: records[records.length - 1] ?? null,
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
 function buildMissionLedger(mission) {
   const path = missionLedgerPath();
   const record = {
@@ -8009,6 +8153,8 @@ const commands = {
   "collection-plan": collectionPlan,
   "quota-plan": quotaPlan,
   "live-controller": liveController,
+  "live-controller-ledger": liveControllerLedger,
+  "live-controller-ledger-report": liveControllerLedgerReport,
   "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,

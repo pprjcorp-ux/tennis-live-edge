@@ -49,6 +49,8 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs match-pulse
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs collection-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs quota-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-controller
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-controller-ledger
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-controller-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
@@ -169,6 +171,12 @@ source-route-matrix into one operator decision for observation, throttling,
 provider-candidate review, or protected paper autopilot. It is read-only,
 never spends provider quota, never executes provider commands, never creates
 paper orders by itself, and keeps real execution impossible.
+The `live-controller-ledger` command appends the live-controller decision to a
+local JSONL audit file with `action_executed=false`,
+`provider_command_executed=false`, and `paper_order_created=false`. The
+`live-controller-ledger-report` command summarizes repeated live-controller
+actions, throttles, source routes and provider candidates without writing or
+executing anything.
 The `learning-review` command emits a weekly readiness packet for ROI, CLV,
 production training examples, model review gates, and real-execution hard
 blocking. It is read-only and does not promote models.

@@ -4392,6 +4392,140 @@ test("live-controller compiles live data decisions without executing collection"
   }
 });
 
+test("live-controller-ledger appends controller decisions without executing actions", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-live-controller-ledger-"));
+  const ledgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["live-controller-ledger", `--api-base=${apiBase}`], {
+      env: { HERMES_LIVE_CONTROLLER_LEDGER_PATH: ledgerPath },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "live_controller_ledger");
+    assert.equal(payload.writes, true);
+    assert.equal(payload.write_scope, "local_live_controller_jsonl_only");
+    assert.equal(payload.executed_commands.length, 0);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.ledger.path, ledgerPath);
+    assert.equal(payload.record.mode, "live_controller_ledger_record");
+    assert.equal(payload.record.controller.mode, "live_controller");
+    assert.equal(payload.record.action_executed, false);
+    assert.equal(payload.record.collection_command_executed, false);
+    assert.equal(payload.record.provider_command_executed, false);
+    assert.equal(payload.record.paper_order_created, false);
+    const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const audit = JSON.parse(lines[0]);
+    assert.equal(audit.mode, "live_controller_ledger_record");
+    assert.equal(audit.action_executed, false);
+    assert.equal(audit.provider_command_executed, false);
+    assert.equal(audit.paper_order_created, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("live-controller-ledger-report summarizes repeated control decisions", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-live-controller-ledger-report-"));
+  const ledgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const rows = [
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "blocked",
+      action: "freeze_collection",
+      next_safe_command: "npm --silent run hermes:events",
+      provider_candidate_command: null,
+      protected_backend_command: null,
+      throttle_level: "blocked",
+      source_route_id: "replay_backfill",
+    },
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "blocked",
+      action: "freeze_collection",
+      next_safe_command: "npm --silent run hermes:events",
+      provider_candidate_command: null,
+      protected_backend_command: null,
+      throttle_level: "blocked",
+      source_route_id: "replay_backfill",
+    },
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "paper_ready",
+      action: "paper_autopilot_candidate",
+      next_safe_command: "npm run hermes:autopilot",
+      provider_candidate_command: "npm run api:ingest:live-budget",
+      protected_backend_command: "npm run hermes:autopilot",
+      throttle_level: "normal",
+      source_route_id: "live_statistics",
+    },
+  ];
+  writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["live-controller-ledger-report"], {
+    env: { HERMES_LIVE_CONTROLLER_LEDGER_PATH: ledgerPath },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "live_controller_ledger_report");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.ledger.path, ledgerPath);
+  assert.equal(payload.total_records, 3);
+  assert.equal(payload.action_executed_count, 0);
+  assert.equal(payload.collection_command_executed_count, 0);
+  assert.equal(payload.provider_command_executed_count, 0);
+  assert.equal(payload.paper_order_created_count, 0);
+  assert.equal(payload.status_counts.blocked, 2);
+  assert.equal(payload.action_counts.freeze_collection, 2);
+  assert.equal(payload.throttle_counts.blocked, 2);
+  assert.equal(payload.source_route_counts.replay_backfill, 2);
+  assert.equal(payload.next_safe_command_counts[0].command, "npm --silent run hermes:events");
+  assert.equal(payload.next_safe_command_counts[0].count, 2);
+  assert.equal(payload.provider_candidate_counts[0].command, "npm run api:ingest:live-budget");
+  assert.equal(payload.top_repeated_action, "freeze_collection");
+  assert.equal(payload.top_next_safe_command, "npm --silent run hermes:events");
+  assert.equal(payload.top_provider_candidate, "npm run api:ingest:live-budget");
+});
+
 test("budget-chain emits a dry-run provider onboarding plan without spending quota", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/signals/live": [],

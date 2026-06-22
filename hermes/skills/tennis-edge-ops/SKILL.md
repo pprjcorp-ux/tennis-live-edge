@@ -51,6 +51,8 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs capability-audit
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-gates
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-lab
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-ledger
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report
@@ -157,6 +159,9 @@ The `experiment-lab` command ranks safe research/test paths with hypotheses,
 prerequisites, `success_metrics`, evidence, and command previews. It is
 read-only and must not execute experiments, spend provider quota, or create
 orders.
+The `experiment-ledger` command appends that lab decision to local JSONL with
+`experiment_command_executed=false`. The `experiment-ledger-report` command
+summarizes repeated experiment recommendations without writing or executing.
 Runtime commands should carry `runtime_findings` and non-executed diagnostic
 actions, with `mutates_runtime_if_run=true` for manual gateway/service changes.
 The `operator-packet` command compresses safe-loop into a short channel-safe

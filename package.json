@@ -43,6 +43,8 @@
     "hermes:capability-audit": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs capability-audit",
     "hermes:autonomy-gates": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-gates",
     "hermes:experiment-lab": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-lab",
+    "hermes:experiment-ledger": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-ledger",
+    "hermes:experiment-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-ledger-report",
     "hermes:operator-packet": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet",
     "hermes:operator-ledger": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger",
     "hermes:operator-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report",

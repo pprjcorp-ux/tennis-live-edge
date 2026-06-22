@@ -1581,6 +1581,135 @@ test("experiment-lab ranks safe Hermes experiments without executing actions", a
   }
 });
 
+test("experiment-ledger appends experiment recommendations without executing actions", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-experiment-ledger-"));
+  const ledgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: stopped'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.error('gateway unreachable'); process.exit(1); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["experiment-ledger", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_EXPERIMENT_LEDGER_PATH: ledgerPath,
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "experiment_ledger");
+    assert.equal(payload.writes, true);
+    assert.equal(payload.write_scope, "local_experiment_jsonl_only");
+    assert.equal(payload.executed_commands.length, 0);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.ledger.path, ledgerPath);
+    assert.equal(payload.record.lab.mode, "experiment_lab");
+    assert.equal(payload.record.next_experiment_id, "runtime_channel_recovery");
+    assert.equal(payload.record.action_executed, false);
+    assert.equal(payload.record.experiment_command_executed, false);
+    const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const audit = JSON.parse(lines[0]);
+    assert.equal(audit.mode, "experiment_ledger_record");
+    assert.equal(audit.next_experiment_id, "runtime_channel_recovery");
+    assert.equal(audit.action_executed, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("experiment-ledger-report summarizes repeated experiment recommendations", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-experiment-ledger-report-"));
+  const ledgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const rows = [
+    {
+      generated_at: "2026-06-21T20:00:00Z",
+      mode: "experiment_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      experiment_command_executed: false,
+      active_ceiling_id: "observe",
+      next_experiment_id: "runtime_channel_recovery",
+      next_experiment_command: "npm run hermes:runtime-fix-plan",
+      ready_experiment_ids: ["runtime_channel_recovery", "source_discovery_backfill"],
+      lab: { status: "ready" },
+    },
+    {
+      generated_at: "2026-06-21T20:15:00Z",
+      mode: "experiment_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      experiment_command_executed: false,
+      active_ceiling_id: "observe",
+      next_experiment_id: "runtime_channel_recovery",
+      next_experiment_command: "npm run hermes:runtime-fix-plan",
+      ready_experiment_ids: ["runtime_channel_recovery"],
+      lab: { status: "ready" },
+    },
+    {
+      generated_at: "2026-06-21T20:30:00Z",
+      mode: "experiment_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      experiment_command_executed: false,
+      active_ceiling_id: "paper_ready",
+      next_experiment_id: "paper_autopilot_rehearsal",
+      next_experiment_command: "npm run hermes:autopilot",
+      ready_experiment_ids: ["paper_autopilot_rehearsal"],
+      lab: { status: "ready" },
+    },
+  ];
+  writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["experiment-ledger-report"], {
+    env: { HERMES_EXPERIMENT_LEDGER_PATH: ledgerPath },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "experiment_ledger_report");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.ledger.path, ledgerPath);
+  assert.equal(payload.total_records, 3);
+  assert.equal(payload.action_executed_count, 0);
+  assert.equal(payload.experiment_command_executed_count, 0);
+  assert.equal(payload.top_experiment, "runtime_channel_recovery");
+  assert.equal(payload.next_experiment_counts[0].command, "runtime_channel_recovery");
+  assert.equal(payload.active_ceiling_counts.observe, 2);
+  assert.equal(payload.ready_experiment_counts.runtime_channel_recovery, 2);
+});
+
 test("operator-packet emits a compact channel-safe decision summary", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

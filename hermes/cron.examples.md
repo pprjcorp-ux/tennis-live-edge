@@ -162,6 +162,28 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Experiment ledger every 15 minutes to persist the recommendation locally:
+
+```bash
+hermes cron add \
+  --name tennis-edge-experiment-ledger \
+  --every 15m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:experiment-ledger from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report status, ledger path, active_ceiling_id, next_experiment_id, ready_experiment_ids, and safety. Do not execute experiment commands, create paper orders, spend provider quota, or submit real orders from this cron." \
+  --timeout-seconds 90
+```
+
+Experiment ledger quality report hourly:
+
+```bash
+hermes cron add \
+  --name tennis-edge-experiment-ledger-report \
+  --every 1h \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:experiment-ledger-report from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report total_records, top_experiment, active_ceiling_counts, ready_experiment_counts, action_executed_count, and experiment_command_executed_count. Do not execute any reported command." \
+  --timeout-seconds 60
+```
+
 Compact operator packet every 5 minutes for Telegram/OpenClaw:
 
 ```bash

@@ -38,6 +38,8 @@ npm run hermes:ops-compiler
 npm run hermes:capability-audit
 npm run hermes:autonomy-gates
 npm run hermes:experiment-lab
+npm run hermes:experiment-ledger
+npm run hermes:experiment-ledger-report
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -195,6 +197,15 @@ recovery, source discovery, live collection cadence, paper autopilot rehearsal,
 learning review, and enterprise eligibility. Each experiment carries a
 hypothesis, prerequisites, `success_metrics`, and a command preview, but the
 lab never executes commands or creates paper orders.
+
+Use `hermes:experiment-ledger` to preserve the lab recommendation as local
+evidence. It appends one JSONL row with the lab payload, active ceiling,
+ready experiment ids, next experiment id, and
+`experiment_command_executed=false`. It never runs the recommended experiment.
+
+Use `hermes:experiment-ledger-report` to review repeated research/test
+recommendations. It reports top experiments, repeated active ceilings, ready
+experiment counts, and any rows claiming an experiment command was executed.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard

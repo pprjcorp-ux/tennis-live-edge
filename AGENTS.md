@@ -190,6 +190,15 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   learning, and enterprise readiness with hypotheses and success metrics, but
   must not execute the experiment command, spend provider quota, or create
   paper orders itself.
+- Hermes experiment decision auditing should consume
+  `npm run hermes:experiment-ledger`; it may write only local JSONL rows under
+  `hermes/runs/`, must record `action_executed=false` and
+  `experiment_command_executed=false`, and must never execute the chosen
+  experiment command.
+- Hermes experiment quality review should consume
+  `npm run hermes:experiment-ledger-report`; it is read-only and should
+  summarize repeated experiment recommendations, active ceilings, and ready
+  experiment counts without executing commands.
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
   `next_action` it reports.
@@ -248,6 +257,8 @@ npm run hermes:ops-compiler
 npm run hermes:capability-audit
 npm run hermes:autonomy-gates
 npm run hermes:experiment-lab
+npm run hermes:experiment-ledger
+npm run hermes:experiment-ledger-report
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist

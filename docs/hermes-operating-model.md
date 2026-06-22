@@ -108,6 +108,8 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 15 minutes or before autonomy escalation: `npm run hermes:capability-audit`.
 - Every 5 minutes before channel/cron/paper escalation: `npm run hermes:autonomy-gates`.
 - Every 15 minutes to rank safe operational experiments: `npm run hermes:experiment-lab`.
+- Every 15 minutes to audit experiment recommendations locally: `npm run hermes:experiment-ledger`.
+- Hourly/daily to review experiment recommendation quality: `npm run hermes:experiment-ledger-report`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
 - Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
@@ -192,6 +194,17 @@ runtime recovery, source discovery, live collection cadence, paper autopilot
 rehearsal, learning review, and enterprise eligibility. The packet includes
 hypotheses, prerequisites, `success_metrics`, evidence and command previews,
 but it does not run experiments, spend provider quota or create orders.
+
+`hermes:experiment-ledger` is the local trace for those experiment decisions.
+It appends JSONL rows under `hermes/runs/` with the lab payload, active ceiling,
+ready experiment ids, next experiment id and `experiment_command_executed=false`.
+This gives the operation evidence about which experiments keep blocking value
+without giving Hermes permission to run them.
+
+`hermes:experiment-ledger-report` is the read-only quality summary over that
+experiment ledger. It identifies repeated experiment recommendations and active
+ceilings, so the repo can prioritize changes from observed operating evidence
+instead of intuition.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

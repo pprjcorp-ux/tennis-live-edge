@@ -547,8 +547,10 @@ def main() -> int:
         for forbidden in ["readFile(", "betfair.com", "placeOrders"]:
             if forbidden in script_text:
                 errors.append(f"Hermes script contains forbidden reference {forbidden}")
-        if "readFileSync" in script_text and "operatorLedgerPath()" not in script_text:
-            errors.append("Hermes script may only read the local operator ledger path")
+        if "readFileSync" in script_text and not all(
+            marker in script_text for marker in ["operatorLedgerPath()", "experimentLedgerPath()"]
+        ):
+            errors.append("Hermes script may only read the local operator/experiment ledger paths")
         for required in [
             "async function intelligence()",
             "async function events()",
@@ -571,6 +573,8 @@ def main() -> int:
             "async function capabilityAudit()",
             "async function autonomyGates()",
             "async function experimentLab()",
+            "async function experimentLedger()",
+            "async function experimentLedgerReport()",
             "async function operatorPacket()",
             "async function operatorLedger()",
             "async function operatorLedgerReport()",
@@ -589,14 +593,19 @@ def main() -> int:
             "buildRuntimeFixPlan",
             "buildAutonomyGates",
             "buildExperimentLab",
+            "buildExperimentLedger",
+            "buildExperimentLedgerReport",
             "runtime_fix_plan",
             "autonomy_gates",
             "experiment_lab",
+            "experiment_ledger",
+            "experiment_ledger_report",
             "active_ceiling",
             "next_required_gate",
             "research_question",
             "next_experiment",
             "success_metrics",
+            "experiment_command_executed",
             "live_window",
             "match_pulse",
             "collection_plan",
@@ -671,6 +680,8 @@ def main() -> int:
         "hermes:capability-audit",
         "hermes:autonomy-gates",
         "hermes:experiment-lab",
+        "hermes:experiment-ledger",
+        "hermes:experiment-ledger-report",
         "hermes:operator-packet",
         "hermes:operator-ledger",
         "hermes:operator-ledger-report",
@@ -683,6 +694,7 @@ def main() -> int:
         "active_ceiling",
         "next_required_gate",
         "success_metrics",
+        "experiment_command_executed=false",
         "can_submit_real_orders=false",
         "llm_per_tick_allowed=false",
         "provider_api_call_allowed=false",

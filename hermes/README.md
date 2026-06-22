@@ -52,6 +52,8 @@ npm run hermes:ops-compiler
 npm run hermes:capability-audit
 npm run hermes:autonomy-gates
 npm run hermes:experiment-lab
+npm run hermes:experiment-ledger
+npm run hermes:experiment-ledger-report
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -211,6 +213,15 @@ returns experiments with hypotheses, prerequisites, `success_metrics`, evidence
 and command previews for runtime, source discovery, live collection, paper
 learning and enterprise readiness. It is read-only and does not execute the
 reported experiments.
+
+`hermes:experiment-ledger` appends the experiment lab packet to
+`hermes/runs/experiment-ledger.jsonl` by default. It records the active ceiling,
+ready experiment ids, next experiment and `experiment_command_executed=false`;
+it never runs the experiment command it records.
+
+`hermes:experiment-ledger-report` summarizes repeated experiment
+recommendations and active ceilings from the local ledger without writing or
+executing commands.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

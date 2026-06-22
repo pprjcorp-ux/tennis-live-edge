@@ -309,6 +309,10 @@ async function autonomyGates() {
 }
 
 async function experimentLab() {
+  printJson(await experimentLabData());
+}
+
+async function experimentLabData() {
   const [loop, report] = await Promise.all([
     safeLoopData(),
     intelligenceData(),
@@ -345,14 +349,25 @@ async function experimentLab() {
     capabilityAuditPlan,
     activation,
   });
-  printJson(buildExperimentLab({
+  return buildExperimentLab({
     loop,
     report,
     eventPlan,
     sourcePlan,
     capabilityAuditPlan,
     gates,
-  }));
+  });
+}
+
+async function experimentLedger() {
+  const lab = await experimentLabData();
+  const ledger = buildExperimentLedger(lab);
+  writeExperimentLedger(ledger.record);
+  printJson(ledger);
+}
+
+async function experimentLedgerReport() {
+  printJson(buildExperimentLedgerReport(readExperimentLedgerRecords()));
 }
 
 async function operatorPacket() {
@@ -2241,6 +2256,120 @@ function experimentRow({
     can_submit_real_orders: false,
     can_create_paper_orders: false,
     llm_per_tick_allowed: false,
+  };
+}
+
+function buildExperimentLedger(lab) {
+  const path = experimentLedgerPath();
+  const record = {
+    generated_at: new Date().toISOString(),
+    mode: "experiment_ledger_record",
+    lab,
+    outcome: "observed",
+    action_executed: false,
+    experiment_command_executed: false,
+    active_ceiling_id: lab.active_ceiling?.id ?? null,
+    next_experiment_id: lab.next_experiment?.id ?? null,
+    next_experiment_command: lab.next_experiment?.command ?? null,
+    ready_experiment_ids: (lab.experiments ?? [])
+      .filter((experiment) => experiment.status === "ready")
+      .map((experiment) => experiment.id),
+    safety: lab.safety,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "experiment_ledger",
+    status: lab.status,
+    read_only: false,
+    writes: true,
+    write_scope: "local_experiment_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    ledger: {
+      path,
+      format: "jsonl",
+      retention_note: "Local Hermes experiment trace; do not commit runtime logs.",
+    },
+    record,
+    safety: {
+      real_execution_hard_block: lab.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+  };
+}
+
+function experimentLedgerPath() {
+  return process.env.HERMES_EXPERIMENT_LEDGER_PATH || "hermes/runs/experiment-ledger.jsonl";
+}
+
+function writeExperimentLedger(record) {
+  const path = experimentLedgerPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function readExperimentLedgerRecords() {
+  const path = experimentLedgerPath();
+  if (!existsSync(path)) {
+    return { path, records: [], invalid_rows: 0 };
+  }
+  const content = readFileSync(path, "utf8");
+  let invalidRows = 0;
+  const records = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalidRows += 1;
+        return [];
+      }
+    });
+  return { path, records, invalid_rows: invalidRows };
+}
+
+function buildExperimentLedgerReport({ path, records, invalid_rows: invalidRows }) {
+  const nextExperimentCounts = rankedCounts(records.map((record) => record.next_experiment_id).filter(Boolean));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "experiment_ledger_report",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger: {
+      path,
+      format: "jsonl",
+      invalid_rows: invalidRows,
+    },
+    total_records: records.length,
+    action_executed_count: records.filter((record) => record.action_executed === true).length,
+    experiment_command_executed_count: records.filter((record) => record.experiment_command_executed === true).length,
+    status_counts: countValues(records.map((record) => record.lab?.status).filter(Boolean)),
+    active_ceiling_counts: countValues(records.map((record) => record.active_ceiling_id).filter(Boolean)),
+    ready_experiment_counts: countValues(records.flatMap((record) => record.ready_experiment_ids ?? [])),
+    next_experiment_counts: nextExperimentCounts,
+    next_experiment_command_counts: rankedCounts(records.map((record) => record.next_experiment_command).filter(Boolean)),
+    top_experiment: nextExperimentCounts[0]?.command ?? null,
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
   };
 }
 
@@ -5532,6 +5661,8 @@ const commands = {
   "capability-audit": capabilityAudit,
   "autonomy-gates": autonomyGates,
   "experiment-lab": experimentLab,
+  "experiment-ledger": experimentLedger,
+  "experiment-ledger-report": experimentLedgerReport,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,

@@ -4868,6 +4868,11 @@ test("backlog-plan uses live-controller ledger as implementation evidence", asyn
   assert.equal(payload.items[0].source.includes("live_controller_ledger"), true);
   assert.equal(payload.items[0].frequency, 2);
   assert.equal(payload.items[0].validation_commands.includes("npm --silent run hermes:live-controller-ledger-report"), true);
+  assert.equal(payload.items[0].validation_commands.includes("npm --silent run hermes:live-repair-plan"), true);
+  assert.equal(payload.items[0].validation_commands.includes("npm --silent run hermes:live-repair-ledger-report"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("top_feedback_blocker=feature_contract:blocked"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("top_feedback_next_action=inspect_quota_throttle"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("feedback_repair_ready=true"), true);
   assert.equal(payload.items[0].executes_now, false);
   assert.equal(payload.next_item.id, "harden_live_controller_feedback_loop");
   assert.equal(payload.evidence.live_controller_ledger.total_records, 2);
@@ -5838,6 +5843,8 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
       protected_backend_command: null,
       throttle_level: "blocked",
       source_route_id: "replay_backfill",
+      feedback_blocker_ids: ["budget_chain_completed"],
+      feedback_next_action_ids: ["inspect_budget_chain"],
     },
     {
       mode: "live_controller_ledger_record",
@@ -5853,6 +5860,8 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
       protected_backend_command: null,
       throttle_level: "blocked",
       source_route_id: "replay_backfill",
+      feedback_blocker_ids: ["budget_chain_completed"],
+      feedback_next_action_ids: ["inspect_budget_chain"],
     },
   ];
   writeFileSync(experimentLedgerPath, "");
@@ -5907,9 +5916,22 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
   assert.equal(payload.work_order.can_create_paper_orders, false);
   assert.equal(payload.work_order.target_files.includes("hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs"), true);
   assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:live-controller-ledger-report"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:live-repair-plan"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:live-repair-ledger-report"), true);
   assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:source-use-manifest"), true);
   assert.equal(payload.work_order.validation_commands.includes("npm run hermes:test"), true);
   assert.equal(payload.work_order.validation_commands.includes("python3 scripts/check_private_runtime.py"), true);
+  assert.equal(
+    payload.work_order.suggested_steps.includes("review_top_feedback_blocker_and_next_safe_repair_from_live_controller_ledger"),
+    true,
+  );
+  assert.equal(
+    payload.work_order.suggested_steps.includes("map_the_selected_repair_to_internal_budget_chain_or_data_quality_work_without_running_it"),
+    true,
+  );
+  assert.equal(payload.work_order.acceptance_criteria.includes("top_feedback_blocker=budget_chain_completed"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("top_feedback_next_action=inspect_budget_chain"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("feedback_repair_ready=true"), true);
   assert.equal(payload.work_order.acceptance_criteria.includes("provider_api_call_allowed=false"), true);
   assert.equal(payload.work_order.prohibited_changes.includes("do not automate sportsbook browser sessions"), true);
   assert.equal(payload.implementation_policy.spend_provider_quota, false);

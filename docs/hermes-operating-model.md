@@ -561,6 +561,10 @@ It normalizes legacy rows that only contain the nested `controller` packet, so
 older `freeze_collection` records still produce `blocked_throttle_count`,
 `top_feedback_blocker`, `top_feedback_next_action`, and
 `feedback_repair_ready` before a new controller ledger row is written.
+`hermes:implementation-handoff` must preserve those top feedback fields in the
+work order acceptance criteria and validation commands, so a repeated
+live-controller freeze becomes a concrete internal repair task instead of a
+generic "collect more evidence" loop.
 
 `hermes:live-repair-plan` is the next-step selector for those feedback
 contracts. It reads the current live-controller packet and the ledger report,

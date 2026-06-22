@@ -10023,8 +10023,9 @@ function implementationStepsFor(item) {
       ...genericSteps.slice(2),
     ],
     harden_live_controller_feedback_loop: [
-      "derive_next_safe_collection_work_from_live_controller_ledger_patterns",
-      "prove_freeze_throttle_provider_candidate_counts_remain_non_executing",
+      "review_top_feedback_blocker_and_next_safe_repair_from_live_controller_ledger",
+      "map_the_selected_repair_to_internal_budget_chain_or_data_quality_work_without_running_it",
+      "prove_freeze_throttle_provider_candidate_and_paper_counts_remain_zero",
       ...genericSteps.slice(2),
     ],
     harden_live_repair_feedback_loop: [
@@ -10453,6 +10454,8 @@ function buildBacklogItems({
       ],
       validationCommands: [
         "npm --silent run hermes:live-controller-ledger-report",
+        "npm --silent run hermes:live-repair-plan",
+        "npm --silent run hermes:live-repair-ledger-report",
         "npm --silent run hermes:live-controller",
         "npm run api:check:operational-truth -- --pretty",
       ],
@@ -10461,6 +10464,9 @@ function buildBacklogItems({
         "provider_command_executed_count=0",
         "paper_order_created_count=0 unless backend paper route is explicitly run",
         `blocked_throttle_count=${controllerThrottleCounts.blocked ?? 0}`,
+        `top_feedback_blocker=${liveControllerReport.top_feedback_blocker ?? "none"}`,
+        `top_feedback_next_action=${liveControllerReport.top_feedback_next_action ?? "none"}`,
+        `feedback_repair_ready=${liveControllerReport.feedback_repair_ready === true}`,
       ],
       blocks: ["live_collection_cadence", "paper_ready", "learning_ready"],
     }));

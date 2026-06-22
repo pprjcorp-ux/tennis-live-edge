@@ -129,6 +129,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it is independent of FastAPI and should prove the `channel_ready` ceiling
   with local runtime, Telegram allowlist, private Access allowlist, and admin
   token checks before any cron/Telegram activation.
+- Hermes channel recovery planning should consume `npm run hermes:channel-recovery-plan`;
+  it is read-only and should summarize failed channel gates, required local
+  env names without values, verification commands, and human-only steps before
+  any cron/Telegram activation.
 - Hermes backend readiness should consume `npm run hermes:backend-readiness`;
   it should verify internal FastAPI endpoints, dashboard state, live matches,
   provider health, cost profile, and execution hard-block before live-window or
@@ -277,6 +281,7 @@ npm run hermes:quota-plan
 npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:channel-readiness
+npm run hermes:channel-recovery-plan
 npm run hermes:backend-readiness
 npm run hermes:mission-control
 npm run hermes:mission-ledger

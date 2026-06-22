@@ -33,6 +33,7 @@ npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:runtime-check
 npm run hermes:channel-readiness
+npm run hermes:channel-recovery-plan
 npm run hermes:backend-readiness
 npm run hermes:mission-control
 npm run hermes:mission-ledger
@@ -96,6 +97,12 @@ running state, bounded doctor status, Telegram allowlist, private Access
 allowlist, and local admin token presence. Failed checks become ordered manual
 actions; the command never starts the gateway, edits `.env`, creates cron jobs,
 calls providers, or creates orders.
+
+`hermes:channel-recovery-plan` converts failed channel-readiness gates into a
+local-only recovery packet. It prints required environment variable names,
+configured counts, `secret_value_printed=false`, verification commands and
+human-only steps without printing secret values, editing `.env`, starting
+services or creating cron jobs.
 
 `hermes:backend-readiness` verifies the local FastAPI side of Hermes without
 starting services: preflight, dashboard live-state, live matches, provider

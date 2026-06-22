@@ -19,6 +19,7 @@ npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:runtime-check
 npm run hermes:channel-readiness
+npm run hermes:channel-recovery-plan
 npm run hermes:backend-readiness
 npm run hermes:mission-control
 npm run hermes:mission-ledger
@@ -94,6 +95,11 @@ prerequisites: Hermes CLI, gateway running state, bounded doctor pass, Telegram
 allowlist, private Access allowlist, and local admin token presence. It emits
 ordered manual actions and acceptance evidence while keeping
 `executes_now=false`.
+
+Use `hermes:channel-recovery-plan` when channel readiness is blocked. It
+summarizes failed gates, local env names, configured counts, verification
+commands, `secret_value_printed=false`, and human-only steps without printing
+secret values or mutating the runtime.
 
 Use `hermes:backend-readiness` to prove the FastAPI side before relying on
 live-window, match-pulse, source-route or paper-autopilot packets. It checks

@@ -126,6 +126,12 @@ async function channelReadiness() {
   printJson(buildChannelReadiness(runtime));
 }
 
+async function channelRecoveryPlan() {
+  const runtime = await runtimeCheckData();
+  const channel = buildChannelReadiness(runtime);
+  printJson(buildChannelRecoveryPlan({ runtime, channel }));
+}
+
 async function backendReadiness() {
   printJson(await backendReadinessData());
 }
@@ -655,6 +661,101 @@ function backendReadinessAction({
     mutates_runtime_if_run: Boolean(mutatesRuntimeIfRun),
     requires_operator_confirmation: Boolean(requiresOperatorConfirmation),
   };
+}
+
+function buildChannelRecoveryPlan({ runtime, channel }) {
+  const failedChecks = (channel.checks ?? []).filter((check) => check.status !== "pass");
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "channel_recovery_plan",
+    status: failedChecks.length ? "blocked" : "ready",
+    readiness_ceiling: channel.readiness_ceiling,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    runtime: {
+      status: runtime.status,
+      gateway_service_status: runtime.runtime_findings?.gateway_service_status ?? "unknown",
+      doctor_status: runtime.runtime_findings?.doctor_status ?? "unknown",
+      blockers: runtime.runtime_findings?.blockers ?? [],
+    },
+    failed_check_ids: failedChecks.map((check) => check.id),
+    failed_checks: failedChecks.map((check) => ({
+      id: check.id,
+      summary: check.summary,
+      evidence: check.evidence ?? {},
+    })),
+    local_env_requirements: channelRecoveryEnvRequirements(),
+    verification_commands: [
+      "npm run hermes:runtime-check",
+      "npm run hermes:channel-readiness",
+      "npm run hermes:activation-checklist",
+    ],
+    next_safe_action: channel.next_action ?? null,
+    next_human_steps: channelRecoveryHumanSteps(channel.actions ?? []),
+    operator_note: "This plan reports local recovery gates only; it does not edit .env, start services, create cron jobs, or print secret values.",
+    forbidden_actions: channel.forbidden_actions,
+    safety: {
+      real_execution_hard_block: channel.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function channelRecoveryEnvRequirements() {
+  return [
+    channelRecoveryEnvRequirement({
+      id: "telegram_allowlist",
+      names: ["HERMES_TELEGRAM_ALLOWED_USER_IDS", "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS"],
+      purpose: "Allowlist Telegram users before any channel command can be trusted.",
+      configured: envListCount(["HERMES_TELEGRAM_ALLOWED_USER_IDS", "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS"]) > 0,
+      configuredCount: envListCount(["HERMES_TELEGRAM_ALLOWED_USER_IDS", "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS"]),
+      secret: false,
+    }),
+    channelRecoveryEnvRequirement({
+      id: "private_access_allowlist",
+      names: ["PRIVATE_ALLOWED_EMAILS", "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS"],
+      purpose: "Restrict private dashboard/API access to explicit emails.",
+      configured: envListCount(["PRIVATE_ALLOWED_EMAILS", "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS"]) > 0,
+      configuredCount: envListCount(["PRIVATE_ALLOWED_EMAILS", "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS"]),
+      secret: false,
+    }),
+    channelRecoveryEnvRequirement({
+      id: "local_admin_token",
+      names: ["ADMIN_API_TOKEN", "TENNIS_EDGE_ADMIN_API_TOKEN"],
+      purpose: "Authorize protected backend-only operator actions through stdin/local env.",
+      configured: envConfigured(["ADMIN_API_TOKEN", "TENNIS_EDGE_ADMIN_API_TOKEN"]),
+      configuredCount: envConfigured(["ADMIN_API_TOKEN", "TENNIS_EDGE_ADMIN_API_TOKEN"]) ? 1 : 0,
+      secret: true,
+    }),
+  ];
+}
+
+function channelRecoveryEnvRequirement({ id, names, purpose, configured, configuredCount, secret }) {
+  return {
+    id,
+    names,
+    purpose,
+    configured: Boolean(configured),
+    configured_count: configuredCount,
+    secret: Boolean(secret),
+    secret_value_printed: false,
+  };
+}
+
+function channelRecoveryHumanSteps(actions) {
+  return actions
+    .filter((action) => action.requires_operator_confirmation || action.mutates_runtime_if_run)
+    .map((action) => action.command);
 }
 
 function buildMissionControl({
@@ -7225,6 +7326,7 @@ const commands = {
   preflight,
   "runtime-check": runtimeCheck,
   "channel-readiness": channelReadiness,
+  "channel-recovery-plan": channelRecoveryPlan,
   "backend-readiness": backendReadiness,
   "mission-control": missionControl,
   "mission-ledger": missionLedger,

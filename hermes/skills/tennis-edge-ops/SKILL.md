@@ -32,6 +32,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-check
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-readiness
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-recovery-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backend-readiness
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-control
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-ledger
@@ -104,6 +105,9 @@ The `channel-readiness` command proves local channel prerequisites without
 FastAPI: Hermes CLI availability, gateway running state, bounded doctor pass,
 Telegram allowlist, private Access allowlist, and local admin token presence.
 It emits manual actions only and must keep `executes_now=false`.
+The `channel-recovery-plan` command summarizes failed channel gates, local env
+names, configured counts, verification commands, and human-only steps without
+printing secret values or mutating runtime.
 The `backend-readiness` command proves local FastAPI readiness with bounded
 internal GETs against preflight, dashboard live-state, live matches, provider
 health, cost profile and execution status. It must fail closed, preserve the

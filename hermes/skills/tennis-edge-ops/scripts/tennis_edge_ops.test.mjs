@@ -880,6 +880,67 @@ test("channel-readiness proves channel_ready only when runtime and local allowli
   assert.equal(payload.safety.provider_api_call_allowed, false);
 });
 
+test("channel-recovery-plan summarizes local-only recovery gates without exposing secrets", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-channel-recovery-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✓ running\\nMessaging Platforms\\n  Telegram      ✗ not configured'); process.exit(0); }",
+      "else if (process.argv[2] === 'doctor') { setTimeout(() => {}, 10000); }",
+      "else { process.exit(2); }",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+
+  const result = await runCli(["channel-recovery-plan"], {
+    env: {
+      HERMES_BIN: fakeHermes,
+      HERMES_HTTP_TIMEOUT_MS: "100",
+      HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
+      OPENCLAW_TELEGRAM_ALLOWED_USER_IDS: "",
+      PRIVATE_ALLOWED_EMAILS: "",
+      TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS: "",
+      ADMIN_API_TOKEN: "",
+      TENNIS_EDGE_ADMIN_API_TOKEN: "",
+    },
+    timeoutMs: 8_000,
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "channel_recovery_plan");
+  assert.equal(payload.status, "blocked");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.llm_per_tick_allowed, false);
+  assert.equal(payload.runtime.status, "degraded");
+  assert.equal(payload.runtime.gateway_service_status, "running");
+  assert.equal(payload.runtime.doctor_status, "timed_out");
+  assert.equal(payload.failed_check_ids.includes("doctor_passed"), true);
+  assert.equal(payload.failed_check_ids.includes("telegram_allowlist_configured"), true);
+  assert.equal(payload.failed_check_ids.includes("private_access_allowlist_configured"), true);
+  assert.equal(payload.failed_check_ids.includes("local_admin_secret_available"), true);
+  const envById = Object.fromEntries(payload.local_env_requirements.map((item) => [item.id, item]));
+  assert.deepEqual(envById.telegram_allowlist.names, [
+    "HERMES_TELEGRAM_ALLOWED_USER_IDS",
+    "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS",
+  ]);
+  assert.equal(envById.telegram_allowlist.configured, false);
+  assert.equal(envById.local_admin_token.secret_value_printed, false);
+  assert.equal(JSON.stringify(payload).includes("local-admin"), false);
+  assert.equal(payload.verification_commands.includes("npm run hermes:runtime-check"), true);
+  assert.equal(payload.verification_commands.includes("npm run hermes:channel-readiness"), true);
+  assert.equal(payload.verification_commands.includes("npm run hermes:activation-checklist"), true);
+  assert.equal(payload.next_human_steps.some((step) => step.includes("Configure HERMES_TELEGRAM_ALLOWED_USER_IDS")), true);
+  assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
+});
+
 test("backend-readiness proves internal API endpoints without protected actions", async () => {
   const called = [];
   const fixtures = eventRouterFixtures({

@@ -48,6 +48,7 @@ npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:trigger-policy
+npm run hermes:ops-compiler
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -183,6 +184,10 @@ read-only and turns "jailbreak" into route discovery, not bypass.
 learning state into safe wakeup triggers for cron, Telegram, dashboard,
 Cloudflare Agent and OpenClaw gateway. It never executes trigger commands and
 keeps LLM work out of per-tick processing.
+
+`hermes:ops-compiler` is the single orchestration packet for agent channels. It
+compiles trigger policy, source discovery, autonomy brief, operator packet and
+model routing into one non-executing payload.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

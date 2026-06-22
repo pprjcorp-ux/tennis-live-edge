@@ -172,6 +172,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   runtime, events, source discovery, quota, and learning state into debounced
   triggers for cron/webhook/Telegram/dashboard/Cloudflare/OpenClaw without
   executing trigger commands.
+- Hermes external-agent orchestration should consume `npm run hermes:ops-compiler`;
+  it compiles trigger policy, source discovery, autonomy brief, operator packet,
+  and model routing into one non-executing payload.
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
   `next_action` it reports.
@@ -226,6 +229,7 @@ npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:trigger-policy
+npm run hermes:ops-compiler
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist

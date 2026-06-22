@@ -118,6 +118,17 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Ops compiler every 5 minutes for external agent channels:
+
+```bash
+hermes cron add \
+  --name tennis-edge-ops-compiler \
+  --every 5m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:ops-compiler from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report compiled_action, execution_graph, model_router, operator_packet, source_discovery, trigger_policy, and safety. Do not execute compiled_action or graph commands, create orders, run provider smoke, spend provider quota, or submit real orders from this cron." \
+  --timeout-seconds 90
+```
+
 Compact operator packet every 5 minutes for Telegram/OpenClaw:
 
 ```bash

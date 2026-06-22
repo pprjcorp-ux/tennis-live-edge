@@ -1223,6 +1223,112 @@ test("trigger-policy emits event wakeups without executing commands or live call
   }
 });
 
+test("ops-compiler produces a single non-executing orchestration packet", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-ops-compiler-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: stopped'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.error('gateway unreachable'); process.exit(1); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/agent/preflight": {
+      status: "blocked",
+      checks: [
+        { name: "hermes_gateway", status: "fail", summary: "Hermes loopback gateway is not reachable." },
+        { name: "real_execution_hard_block", status: "pass", summary: "blocked" },
+      ],
+      generated_at: "2026-06-21T20:00:00Z",
+    },
+    "/api/v1/provider-health": [
+      { provider: "api_tennis", status: "degraded", cost_tier: "budget" },
+      { provider: "theoddsapi", status: "healthy", cost_tier: "budget" },
+    ],
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 1, persisted_matches: 1 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          steps: [
+            {
+              order: 1,
+              provider: "theoddsapi",
+              capability: "archive_odds",
+              status: "ready_next",
+              configured: true,
+              current: true,
+              smoke_completed: false,
+              required_before_enable: [],
+              next_action: "Run archive smoke manually.",
+              notes: [],
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["ops-compiler", `--api-base=${apiBase}`], {
+      env: { HERMES_BIN: fakeHermes },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "ops_compiler");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.execution_graph[0].id, "trigger_policy");
+    assert.equal(payload.execution_graph.some((node) => node.id === "source_discovery"), true);
+    assert.equal(payload.execution_graph.every((node) => node.executes_now === false), true);
+    assert.equal(payload.compiled_action.command, "npm run hermes:runtime-check");
+    assert.equal(payload.compiled_action.executes_now, false);
+    assert.equal(payload.model_router.routine_model, "gpt-5.4-mini");
+    assert.equal(payload.model_router.critical_model, "gpt-5.5");
+    assert.equal(payload.model_router.selected_model, "gpt-5.5");
+    assert.equal(payload.operator_packet.next_action.command, "npm run hermes:runtime-check");
+    assert.equal(payload.safe_jailbreak_policy.bypass_allowed, false);
+    assert.equal(payload.forbidden_actions.includes("sportsbook_ui_automation"), true);
+  } finally {
+    server.close();
+  }
+});
+
 test("operator-packet emits a compact channel-safe decision summary", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

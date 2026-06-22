@@ -218,6 +218,26 @@ async function triggerPolicy() {
   printJson(buildTriggerPolicy({ loop, sourcePlan }));
 }
 
+async function opsCompiler() {
+  const [loop, report] = await Promise.all([
+    safeLoopData(),
+    intelligenceData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const triggerPlan = buildTriggerPolicy({ loop, sourcePlan });
+  const runtimePriorities = buildRuntimeFixPriorities(buildOperatorLedgerReport(readOperatorLedgerRecords()));
+  const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
+  const operator = buildOperatorPacket(loop);
+  printJson(buildOpsCompiler({
+    loop,
+    sourcePlan,
+    triggerPlan,
+    autonomyPlan,
+    operator,
+  }));
+}
+
 async function operatorPacket() {
   const loop = await safeLoopData();
   printJson(buildOperatorPacket(loop));
@@ -1390,6 +1410,146 @@ function buildTriggerPolicy({ loop, sourcePlan }) {
   };
 }
 
+function buildOpsCompiler({ loop, sourcePlan, triggerPlan, autonomyPlan, operator }) {
+  const compiledAction = compileNextAction({ loop, triggerPlan, autonomyPlan, operator });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "ops_compiler",
+    status: loop.status,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    compiled_action: compiledAction,
+    execution_graph: buildExecutionGraph({ triggerPlan, sourcePlan, autonomyPlan, operator }),
+    model_router: buildOpsModelRouter({ loop, triggerPlan }),
+    operator_packet: {
+      priority: operator.priority,
+      headline: operator.headline,
+      short_message: operator.short_message,
+      next_action: operator.next_action,
+      cost_guard: operator.cost_guard,
+    },
+    source_discovery: {
+      status: sourcePlan.status,
+      discovery_scope: sourcePlan.discovery_scope,
+      next_safe_command: sourcePlan.next_safe_command,
+      provider_routes: sourcePlan.provider_routes,
+    },
+    trigger_policy: {
+      next_wakeup: triggerPlan.next_wakeup,
+      trigger_count: triggerPlan.triggers.length,
+      debounce_policy: triggerPlan.debounce_policy,
+    },
+    autonomy_brief: {
+      recommended_lane: autonomyPlan.recommended_lane,
+      autonomy_matrix: autonomyPlan.autonomy_matrix,
+    },
+    safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
+    forbidden_actions: loop.forbidden_actions ?? sourcePlan.forbidden_actions ?? [],
+    safety: {
+      real_execution_hard_block: loop.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      can_create_paper_orders: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function compileNextAction({ loop, triggerPlan, autonomyPlan, operator }) {
+  const preferred = triggerPlan.next_wakeup?.command
+    ? {
+        id: triggerPlan.next_wakeup.id,
+        command: triggerPlan.next_wakeup.command,
+        reason: triggerPlan.next_wakeup.reason,
+        source: "trigger_policy",
+      }
+    : {
+        id: autonomyPlan.recommended_lane?.id ?? operator.next_action?.id ?? "observe",
+        command: operator.next_action?.command ?? loop.next_best_command?.command ?? "npm --silent run hermes:intelligence",
+        reason: autonomyPlan.recommended_lane?.reason ?? operator.next_action?.reason ?? "Observe current state.",
+        source: "autonomy_brief",
+      };
+  return {
+    id: preferred.id,
+    command: preferred.command,
+    reason: preferred.reason,
+    source: preferred.source,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    requires_admin_token: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
+function buildExecutionGraph({ triggerPlan, sourcePlan, autonomyPlan, operator }) {
+  return [
+    graphNode({
+      id: "trigger_policy",
+      command: "npm --silent run hermes:trigger-policy",
+      reason: "Decide when Hermes should wake across channels.",
+      status: triggerPlan.status,
+    }),
+    graphNode({
+      id: "source_discovery",
+      command: "npm --silent run hermes:source-discovery",
+      reason: "Map safe acquisition paths before collection work.",
+      status: sourcePlan.status,
+    }),
+    graphNode({
+      id: "autonomy_brief",
+      command: "npm --silent run hermes:autonomy-brief",
+      reason: `Current lane is ${autonomyPlan.recommended_lane?.id ?? "unknown"}.`,
+      status: autonomyPlan.status,
+    }),
+    graphNode({
+      id: "operator_packet",
+      command: "npm --silent run hermes:operator-packet",
+      reason: "Send compact channel-safe summary.",
+      status: operator.status,
+    }),
+  ];
+}
+
+function graphNode({ id, command, reason, status }) {
+  return {
+    id,
+    command,
+    reason,
+    status,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
+function buildOpsModelRouter({ loop, triggerPlan }) {
+  const severe = loop.status === "safety_stop"
+    || loop.status === "runtime_degraded"
+    || triggerPlan.triggers.some((trigger) => ["critical", "high"].includes(trigger.severity));
+  return {
+    routine_model: "gpt-5.4-mini",
+    critical_model: "gpt-5.5",
+    selected_model: severe ? "gpt-5.5" : "gpt-5.4-mini",
+    reason: severe
+      ? "Use critical model for high-severity runtime/provider/data-quality review; deterministic gates still decide actions."
+      : "Use routine model for summaries and routing; no LLM per tick.",
+    llm_per_tick_allowed: false,
+  };
+}
+
 function buildWakeTriggers({ loop, sourcePlan }) {
   const triggers = [];
   if (loop.status === "safety_stop") {
@@ -2303,6 +2463,12 @@ function schedulerSchedule(loop) {
       command: "npm --silent run hermes:trigger-policy",
       everyMinutes: 5,
       reason: "Refresh safe wakeup triggers for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway.",
+    }),
+    schedulerItem({
+      id: "ops_compiler",
+      command: "npm --silent run hermes:ops-compiler",
+      everyMinutes: 5,
+      reason: "Compile trigger, source, autonomy, model routing and operator packets into one non-executing orchestration payload.",
     }),
     schedulerItem({
       id: "runtime_check",
@@ -4376,6 +4542,7 @@ const commands = {
   "autonomy-brief": autonomyBrief,
   "source-discovery": sourceDiscovery,
   "trigger-policy": triggerPolicy,
+  "ops-compiler": opsCompiler,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,

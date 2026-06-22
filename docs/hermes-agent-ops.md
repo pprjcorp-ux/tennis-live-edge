@@ -34,6 +34,7 @@ npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:trigger-policy
+npm run hermes:ops-compiler
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -167,6 +168,11 @@ Use `hermes:trigger-policy` when cron, Telegram, dashboard, Cloudflare Agent or
 OpenClaw needs to know when Hermes should wake up. It emits debounced triggers
 and commands but never executes them, keeping LLM calls away from every odds
 tick.
+
+Use `hermes:ops-compiler` when an external agent channel needs one packet
+instead of several commands. It compiles trigger policy, source discovery,
+autonomy brief, operator packet and model routing into a single non-executing
+orchestration payload.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard

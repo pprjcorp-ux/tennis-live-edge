@@ -336,6 +336,14 @@ summary-only action.
 paths: licensed provider APIs, provider websocket, internal FastAPI endpoints,
 persisted replay, public allowed research, or manual operator notes. It is
 read-only and turns "jailbreak" into route discovery, not bypass.
+It also emits `backfill_source_dossier` and `backfill_source_summary`, a
+non-executing source dossier for offline priors. The dossier separates
+`cc_by_nc_sa_operator_review`, `cc0_candidate_verify`,
+`public_terms_operator_review`, and `paid_api_terms` sources, including Match
+Charting shot/point priors (`match_charting_project`), Kaggle CC0 candidates
+(`kaggle_tennis_cc0_candidates`) and licensed archive odds.
+Every row keeps dataset fetch, provider calls and live scraping disabled until
+license/terms evidence is recorded in a local source manifest.
 
 `hermes:source-route-matrix` ranks those allowed paths into budget-first
 operating routes: replay backfill, internal live statistics, closing-line
@@ -444,10 +452,11 @@ execution.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam
-datasets, Tennis-Data CSVs and licensed archive odds. It is read-only and
+datasets, Match Charting point/shot data, Tennis-Data CSVs, Kaggle
+dataset-license candidates and licensed archive odds. It is read-only and
 operator-review only: it does not fetch, scrape, import, spend quota or create
-orders, and it flags license, attribution and commercial-clearance gates before
-any future importer exists.
+orders, and it flags license, attribution, commercial-clearance, source-manifest
+and quota gates before any future importer exists.
 
 `hermes:enterprise-accuracy-plan` is the no-budget-limit accuracy packet. It
 ranks top-tier scoring, shot-by-shot and odds feeds, maps the model layers they

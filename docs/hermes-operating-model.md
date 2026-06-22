@@ -179,6 +179,12 @@ backfill and historical public backfill to allowed acquisition paths. It can
 say "use public allowed research" or "record a manual operator note", but it
 must never scrape restricted pages, open sportsbook UIs, bypass anti-bot/
 geolocation controls, extract sessions, or spend provider quota.
+For offline priors it also exposes `backfill_source_dossier` and
+`backfill_source_summary`, so Hermes can compare CC BY-NC-SA, CC0-candidate,
+public-terms and paid-API historical sources without downloading anything.
+That dossier is where Match Charting shot/point priors, Kaggle CC0 candidates
+and licensed archive odds are routed into operator review rather than live
+collection.
 
 `hermes:source-use-manifest` is the contract between route discovery and real
 collection/import implementation. It emits one row per collection route,
@@ -201,10 +207,11 @@ without executing collection commands or calling providers.
 
 `hermes:historical-backfill-plan` is the preferred packet for offline priors and
 backtest depth. It ranks internal persisted replay, Jeff Sackmann ATP/WTA/Slam
-datasets, Tennis-Data CSVs and licensed archive odds while exposing license,
-attribution, commercial-clearance and source-manifest gates. It does not fetch
-or import data; future import scripts must be separate, operator-approved and
-license-aware.
+datasets, Match Charting shot/point data, Tennis-Data CSVs, Kaggle
+dataset-license candidates and licensed archive odds while exposing license,
+attribution, commercial-clearance, source-manifest and quota gates. It does not
+fetch or import data; future import scripts must be separate, operator-approved
+and license-aware.
 
 `hermes:enterprise-accuracy-plan` is the preferred packet for the no-budget
 enterprise branch. It turns top-tier scoring, point-by-point, shot-by-shot,

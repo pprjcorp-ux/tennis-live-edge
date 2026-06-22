@@ -1759,10 +1759,25 @@ async function sourceDiscovery() {
 }
 
 async function sourceRouteMatrix() {
+  printJson(await sourceRouteMatrixData());
+}
+
+async function sourceRouteMatrixData() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
   const sourcePlan = buildSourceDiscovery({ report, eventPlan });
-  printJson(buildSourceRouteMatrix({ report, eventPlan, sourcePlan }));
+  return buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+}
+
+async function sourceRouteLedger() {
+  const matrix = await sourceRouteMatrixData();
+  const ledger = buildSourceRouteLedger(matrix);
+  writeSourceRouteLedger(ledger.record);
+  printJson(ledger);
+}
+
+async function sourceRouteLedgerReport() {
+  printJson(buildSourceRouteLedgerReport(readSourceRouteLedgerRecords()));
 }
 
 async function historicalBackfillPlan() {
@@ -3994,6 +4009,169 @@ function buildSourceRouteMatrix({ report, eventPlan, sourcePlan }) {
       browser_sportsbook_automation_allowed: false,
       llm_per_tick_allowed: false,
     },
+  };
+}
+
+function buildSourceRouteLedger(matrix) {
+  const path = sourceRouteLedgerPath();
+  const record = {
+    generated_at: new Date().toISOString(),
+    mode: "source_route_ledger_record",
+    outcome: "observed",
+    action_executed: false,
+    route_command_executed: false,
+    provider_command_executed: false,
+    bypass_attempted: false,
+    status: matrix.status,
+    next_route_id: matrix.next_route?.id ?? null,
+    next_route_status: matrix.next_route?.status ?? null,
+    next_route_command: matrix.next_route?.command ?? null,
+    next_route_cost_tier: matrix.next_route?.cost_tier ?? null,
+    ready_route_ids: (matrix.routes ?? [])
+      .filter((route) => ["ready_now", "monitor", "operator_ready"].includes(route.status))
+      .map((route) => route.id),
+    blocked_route_ids: (matrix.routes ?? [])
+      .filter((route) => route.status === "blocked")
+      .map((route) => route.id),
+    operator_required_route_ids: (matrix.routes ?? [])
+      .filter((route) => route.operator_required)
+      .map((route) => route.id),
+    safe_jailbreak_bypass_allowed: matrix.safe_jailbreak_policy?.bypass_allowed === true,
+    matrix,
+    safety: matrix.safety,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "source_route_ledger",
+    status: matrix.status,
+    next_route_id: matrix.next_route?.id ?? null,
+    read_only: false,
+    writes: true,
+    write_scope: "local_source_route_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    ledger: {
+      path,
+      format: "jsonl",
+      retention_note: "Local Hermes source-route trace; do not commit runtime logs.",
+    },
+    record,
+    safety: {
+      real_execution_hard_block: matrix.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function sourceRouteLedgerPath() {
+  return process.env.HERMES_SOURCE_ROUTE_LEDGER_PATH || "hermes/runs/source-route-ledger.jsonl";
+}
+
+function writeSourceRouteLedger(record) {
+  const path = sourceRouteLedgerPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function readSourceRouteLedgerRecords() {
+  const path = sourceRouteLedgerPath();
+  if (!existsSync(path)) {
+    return { path, records: [], invalid_rows: 0 };
+  }
+  const content = readFileSync(path, "utf8");
+  let invalidRows = 0;
+  const records = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalidRows += 1;
+        return [];
+      }
+    });
+  return { path, records, invalid_rows: invalidRows };
+}
+
+function buildSourceRouteLedgerReport({ path, records, invalid_rows: invalidRows }) {
+  const nextRouteCounts = rankedCounts(records.map((record) => record.next_route_id).filter(Boolean));
+  const nextCommandCounts = rankedCounts(records.map((record) => record.next_route_command).filter(Boolean));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "source_route_ledger_report",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger: {
+      path,
+      format: "jsonl",
+      invalid_rows: invalidRows,
+    },
+    total_records: records.length,
+    action_executed_count: records.filter((record) => record.action_executed === true).length,
+    route_command_executed_count: records.filter((record) => record.route_command_executed === true).length,
+    provider_command_executed_count: records.filter((record) => record.provider_command_executed === true).length,
+    bypass_attempted_count: records.filter((record) => record.bypass_attempted === true || record.safe_jailbreak_bypass_allowed === true).length,
+    status_counts: countValues(records.map((record) => record.status).filter(Boolean)),
+    next_route_counts: nextRouteCounts,
+    next_route_command_counts: nextCommandCounts,
+    next_route_cost_tier_counts: countValues(records.map((record) => record.next_route_cost_tier).filter(Boolean)),
+    blocked_route_counts: countValues(records.flatMap((record) => record.blocked_route_ids ?? [])),
+    operator_required_route_counts: countValues(records.flatMap((record) => record.operator_required_route_ids ?? [])),
+    top_next_route: nextRouteCounts[0]?.command ?? null,
+    top_next_command: nextCommandCounts[0]?.command ?? null,
+    latest_record: records[records.length - 1] ?? null,
+    next_recommendation: sourceRouteLedgerRecommendation({ records, nextRouteCounts, nextCommandCounts }),
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function sourceRouteLedgerRecommendation({ records, nextRouteCounts, nextCommandCounts }) {
+  if (!records.length) {
+    return {
+      id: "collect_source_route_evidence",
+      command: "npm --silent run hermes:source-route-ledger",
+      reason: "No source-route evidence exists yet; collect a local JSONL row before changing collection code.",
+      executes_now: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+    };
+  }
+  const topRoute = nextRouteCounts[0]?.command ?? null;
+  const topCommand = nextCommandCounts[0]?.command ?? "npm --silent run hermes:source-route-matrix";
+  return {
+    id: topRoute ? `review_repeated_${topRoute}` : "review_source_routes",
+    command: topCommand,
+    reason: topRoute
+      ? `Source-route ledger repeatedly recommends ${topRoute}; inspect allowed route evidence before adding provider spend or importers.`
+      : "Review source-route evidence before changing collection code.",
+    route: topRoute,
+    executes_now: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
   };
 }
 
@@ -12700,6 +12878,8 @@ const commands = {
   "autonomy-brief": autonomyBrief,
   "source-discovery": sourceDiscovery,
   "source-route-matrix": sourceRouteMatrix,
+  "source-route-ledger": sourceRouteLedger,
+  "source-route-ledger-report": sourceRouteLedgerReport,
   "historical-backfill-plan": historicalBackfillPlan,
   "enterprise-accuracy-plan": enterpriseAccuracyPlan,
   "enterprise-readiness": enterpriseReadiness,

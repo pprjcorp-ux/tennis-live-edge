@@ -45,6 +45,8 @@ npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:source-route-matrix
+npm run hermes:source-route-ledger
+npm run hermes:source-route-ledger-report
 npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
@@ -290,6 +292,12 @@ path should feed live stats next. It ranks replay, internal API, licensed
 provider and manual-note routes by priority, trigger, cost tier, success
 evidence and blocked conditions. Provider routes remain operator-only and
 `provider_api_call_allowed=false`.
+
+Use `hermes:source-route-ledger` when repeated route decisions should become
+durable local evidence. It appends the current matrix to JSONL with
+`route_command_executed=false`, `provider_command_executed=false`, and
+`bypass_attempted=false`. Use `hermes:source-route-ledger-report` to summarize
+repeated allowed routes before adding importers or spending provider quota.
 
 Use `hermes:historical-backfill-plan` when Hermes needs more offline evidence
 for priors, calibration or backtests. It ranks internal replay, public

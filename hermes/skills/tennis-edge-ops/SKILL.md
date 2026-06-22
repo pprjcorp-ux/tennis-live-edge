@@ -62,6 +62,8 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-brief
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-discovery
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-matrix
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-ledger
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs historical-backfill-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
@@ -218,6 +220,10 @@ The `source-route-matrix` command ranks those allowed paths into prioritized
 replay/internal/provider/manual routes with triggers, cost tiers, success
 evidence and blocked conditions. Provider routes must remain operator-only with
 `provider_api_call_allowed=false`.
+The `source-route-ledger` command records source-route matrix decisions as
+local JSONL evidence without executing route/provider commands or attempting
+bypass. The `source-route-ledger-report` command summarizes repeated route
+recommendations and accidental execution/bypass claims.
 The `trigger-policy` command maps current state to debounced wakeup triggers
 for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
 read-only and must not execute trigger commands. Partial runtime should emit a

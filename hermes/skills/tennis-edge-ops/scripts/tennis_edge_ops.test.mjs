@@ -2276,6 +2276,127 @@ test("source-route-matrix ranks allowed routes without provider spend or bypass"
   }
 });
 
+test("source-route-ledger appends allowed route decisions without executing routes", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-source-route-ledger-"));
+  const ledgerPath = join(tempDir, "source-route-ledger.jsonl");
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["source-route-ledger", `--api-base=${apiBase}`], {
+      env: { HERMES_SOURCE_ROUTE_LEDGER_PATH: ledgerPath },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "source_route_ledger");
+    assert.equal(payload.writes, true);
+    assert.equal(payload.write_scope, "local_source_route_jsonl_only");
+    assert.equal(payload.executed_commands.length, 0);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.ledger.path, ledgerPath);
+    assert.equal(payload.record.mode, "source_route_ledger_record");
+    assert.equal(payload.record.action_executed, false);
+    assert.equal(payload.record.route_command_executed, false);
+    assert.equal(payload.record.provider_command_executed, false);
+    assert.equal(payload.record.bypass_attempted, false);
+    assert.equal(payload.record.safe_jailbreak_bypass_allowed, false);
+    assert.equal(payload.record.next_route_id, "replay_backfill");
+    assert.equal(payload.record.ready_route_ids.includes("replay_backfill"), true);
+    const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const audit = JSON.parse(lines[0]);
+    assert.equal(audit.mode, "source_route_ledger_record");
+    assert.equal(audit.action_executed, false);
+    assert.equal(audit.provider_command_executed, false);
+    assert.equal(audit.bypass_attempted, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("source-route-ledger-report summarizes repeated safe route recommendations", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-source-route-ledger-report-"));
+  const ledgerPath = join(tempDir, "source-route-ledger.jsonl");
+  const rows = [
+    {
+      mode: "source_route_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      route_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "ready",
+      next_route_id: "replay_backfill",
+      next_route_status: "ready_now",
+      next_route_command: "npm run api:check:operational-truth -- --pretty",
+      next_route_cost_tier: "free_local",
+      blocked_route_ids: ["odds_live_websocket"],
+      operator_required_route_ids: ["historical_public_backfill"],
+      safe_jailbreak_bypass_allowed: false,
+    },
+    {
+      mode: "source_route_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      route_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "ready",
+      next_route_id: "replay_backfill",
+      next_route_status: "ready_now",
+      next_route_command: "npm run api:check:operational-truth -- --pretty",
+      next_route_cost_tier: "free_local",
+      blocked_route_ids: ["odds_live_websocket"],
+      operator_required_route_ids: ["odds_archive_budget_smoke"],
+      safe_jailbreak_bypass_allowed: false,
+    },
+  ];
+  writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\nnot-json\n`);
+
+  const result = await runCli(["source-route-ledger-report"], {
+    env: { HERMES_SOURCE_ROUTE_LEDGER_PATH: ledgerPath },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "source_route_ledger_report");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.llm_per_tick_allowed, false);
+  assert.equal(payload.ledger.invalid_rows, 1);
+  assert.equal(payload.total_records, 2);
+  assert.equal(payload.action_executed_count, 0);
+  assert.equal(payload.route_command_executed_count, 0);
+  assert.equal(payload.provider_command_executed_count, 0);
+  assert.equal(payload.bypass_attempted_count, 0);
+  assert.equal(payload.top_next_route, "replay_backfill");
+  assert.equal(payload.top_next_command, "npm run api:check:operational-truth -- --pretty");
+  assert.equal(payload.blocked_route_counts.odds_live_websocket, 2);
+  assert.equal(payload.operator_required_route_counts.odds_archive_budget_smoke, 1);
+  assert.equal(payload.next_recommendation.id, "review_repeated_replay_backfill");
+  assert.equal(payload.next_recommendation.provider_api_call_allowed, false);
+});
+
 test("historical-backfill-plan ranks allowed historical sources without fetching them", async () => {
   const called = [];
   const fixtures = eventRouterFixtures();

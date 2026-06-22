@@ -242,6 +242,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it turns allowed paths into prioritized replay/internal/provider/manual routes
   with event triggers, cost tiers, success evidence, and explicit
   `provider_api_call_allowed=false`.
+- Hermes source-route evidence should consume `npm run hermes:source-route-ledger`
+  and `npm run hermes:source-route-ledger-report`; this records repeated
+  allowed-route recommendations as local JSONL before any importer, provider
+  spend, or collection-code change.
 - Hermes historical backfill planning should consume
   `npm run hermes:historical-backfill-plan`; it ranks internal replay, public
   historical datasets, and licensed archive odds for offline priors/backtests,
@@ -385,6 +389,8 @@ npm run hermes:mission-ledger-report
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:source-route-matrix
+npm run hermes:source-route-ledger
+npm run hermes:source-route-ledger-report
 npm run hermes:historical-backfill-plan
 npm run hermes:enterprise-accuracy-plan
 npm run hermes:trigger-policy

@@ -97,6 +97,8 @@ npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:source-route-matrix
+npm run hermes:source-route-ledger
+npm run hermes:source-route-ledger-report
 npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
@@ -316,6 +318,12 @@ proxy, public historical backfill, archive odds smoke, score state, live
 websocket odds, public context notes and manual operator notes. It includes
 event triggers, cost tiers, success evidence and blocked conditions while keeping
 `provider_api_call_allowed=false`.
+
+`hermes:source-route-ledger` appends the current source-route matrix to a local
+JSONL ledger without executing any route command. Use
+`hermes:source-route-ledger-report` to summarize repeated allowed-route
+recommendations, blocked routes, operator-required routes, and any accidental
+execution/bypass claims.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam

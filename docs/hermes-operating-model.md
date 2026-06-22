@@ -452,6 +452,13 @@ statistics from persisted match state; cost utilization; and a sampling policy
 such as `cold_safe_mode`, `budget_chain_polling`, `paper_signal_watch`, or
 `learning_collection`. It keeps `llm_per_tick_allowed=false` so Hermes can be
 fast and cheap while Python/Postgres keep doing the tick math.
+It also emits `feature_contract.id=live_stats_feature_contract`, an internal
+API-only contract that maps match freshness, live signals, provider health,
+cursor/data-quality state, cost profile, and Model Lab readiness into
+`LiveFeatureSnapshotSeed`, `CollectionCadenceSeed`, `SignalGateContextSeed`,
+and `LearningReviewSeed`. This is the safe "jailbreak" route for live
+statistics: no live scoreboard scraping, no provider quota spend without an
+operator, no browser automation, and no LLM per tick.
 
 `hermes:live-window` is the preferred go/no-go packet for an active live
 window. It reuses the deterministic event and live-stats gates, returns

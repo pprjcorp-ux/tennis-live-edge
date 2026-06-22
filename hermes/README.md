@@ -236,7 +236,12 @@ each step as `ready`, `waiting`, or `blocked`, and always keeps
 collection health, processing health, signal readiness, freshness buckets,
 learning progress, cost efficiency, and the safe sampling policy from internal
 FastAPI state. It is designed for frequent cron/Telegram use without LLM
-analysis on every tick.
+analysis on every tick. Its `feature_contract` is
+`live_stats_feature_contract`: it turns internal freshness, signal, provider,
+data-quality, cost, and Model Lab state into `LiveFeatureSnapshotSeed`,
+`CollectionCadenceSeed`, `SignalGateContextSeed`, and `LearningReviewSeed`
+outputs while keeping `internal_api_only=true`, `provider_api_call_allowed=false`,
+`browser_scraping_allowed=false`, and `llm_per_tick_allowed=false`.
 
 `hermes:live-window` is the go/no-go packet for a live operating window. It
 combines event gates, provider mode, freshness, budget-chain state, signal

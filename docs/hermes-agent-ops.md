@@ -233,7 +233,12 @@ denials on every step.
 Use `hermes:live-stats` for high-frequency live operations summaries. It emits
 deterministic collection, processing, signal, freshness, cost, learning, and
 sampling-policy metrics from internal APIs only. This is the preferred packet
-for fast monitoring because it avoids per-tick LLM analysis.
+for fast monitoring because it avoids per-tick LLM analysis. The packet also
+contains `feature_contract.id=live_stats_feature_contract`, which converts
+internal live state into `LiveFeatureSnapshotSeed`, `CollectionCadenceSeed`,
+`SignalGateContextSeed`, and `LearningReviewSeed` outputs while keeping
+`internal_api_only=true`, `provider_api_call_allowed=false`,
+`browser_scraping_allowed=false`, and `llm_per_tick_allowed=false`.
 
 Use `hermes:live-window` when Hermes, Telegram, or the dashboard needs one
 go/no-go answer for the current live window. It combines event severity,

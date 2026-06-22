@@ -7391,6 +7391,16 @@ test("live-stats emits deterministic collection, processing, and sampling metric
     assert.equal(payload.freshness.stale_odds_matches, 1);
     assert.equal(payload.sampling_policy.name, "paper_signal_watch");
     assert.equal(payload.sampling_policy.llm_per_tick_allowed, false);
+    assert.equal(payload.feature_contract.id, "live_stats_feature_contract");
+    assert.equal(payload.feature_contract.status, "degraded");
+    assert.equal(payload.feature_contract.gates.internal_api_only, true);
+    assert.equal(payload.feature_contract.gates.provider_api_call_allowed, false);
+    assert.equal(payload.feature_contract.gates.browser_scraping_allowed, false);
+    assert.equal(payload.feature_contract.gates.llm_per_tick_allowed, false);
+    assert.equal(payload.feature_contract.gates.real_execution_hard_block, true);
+    assert.equal(payload.feature_contract.outputs.includes("LiveFeatureSnapshotSeed"), true);
+    assert.equal(payload.feature_contract.forbidden_actions.includes("live_scoreboard_scraping"), true);
+    assert.equal(payload.feature_contract.forbidden_actions.includes("provider_quota_spend_without_operator"), true);
     assert.equal(payload.safety.can_submit_real_orders, false);
     assert.equal(payload.next_safe_commands.some((command) => command.id === "paper_autopilot"), true);
   } finally {

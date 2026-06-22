@@ -13217,6 +13217,13 @@ function buildLiveStats(report, eventPlan, playbookPlan) {
       roi: learning.roi,
       clv: learning.clv,
     },
+    feature_contract: buildLiveStatsFeatureContract({
+      report,
+      eventPlan,
+      playbookPlan,
+      health,
+      freshness,
+    }),
     cost_efficiency: {
       active_plan: cost.active_plan,
       estimated_monthly_spend_usd: cost.estimated_monthly_spend_usd,
@@ -13247,6 +13254,90 @@ function buildLiveStats(report, eventPlan, playbookPlan) {
       sportsbook_bypass_allowed: false,
       browser_sportsbook_automation_allowed: false,
     },
+  };
+}
+
+function buildLiveStatsFeatureContract({ report, eventPlan, playbookPlan, health, freshness }) {
+  const data = report.data_snapshot ?? {};
+  const signals = report.signal_snapshot ?? {};
+  const learning = report.learning_snapshot ?? {};
+  const safety = report.safety ?? {};
+  const gates = {
+    internal_api_only: true,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    browser_scraping_allowed: false,
+    sportsbook_bypass_allowed: false,
+    llm_per_tick_allowed: false,
+    real_execution_hard_block: safety.real_execution_hard_block === true
+      && safety.can_submit_real_orders !== true,
+    score_freshness_observed: Number(freshness.matches_sampled ?? 0) > 0
+      && Number(freshness.stale_score_matches ?? 0) === 0,
+    odds_freshness_observed: Number(freshness.matches_sampled ?? 0) > 0
+      && Number(freshness.stale_odds_matches ?? 0) === 0,
+    signal_gate_context_observed: Number(signals.total_signals ?? 0) > 0,
+    model_lab_contract_visible: Boolean(learning.model_lab_status),
+    no_high_severity_blockers: !["critical", "high"].includes(eventPlan.severity),
+  };
+  const status = (
+    gates.real_execution_hard_block
+      && gates.no_high_severity_blockers
+      && gates.score_freshness_observed
+      && gates.odds_freshness_observed
+      ? "ready"
+      : gates.real_execution_hard_block && gates.no_high_severity_blockers
+        ? "degraded"
+        : "blocked"
+  );
+  return {
+    id: "live_stats_feature_contract",
+    status,
+    purpose: "convert_internal_live_state_into_feature_collection_and_learning_seeds_without_bypass",
+    active_phase: playbookPlan.active_phase,
+    provider_mode: data.provider_mode,
+    inputs: [
+      "OperationalStateSnapshot",
+      "MatchFreshness",
+      "LiveSignals",
+      "ProviderHealth",
+      "ProviderCursors",
+      "DataQualitySnapshot",
+      "CostProfile",
+      "ModelLabReadinessSnapshot",
+    ],
+    outputs: [
+      "LiveFeatureSnapshotSeed",
+      "CollectionCadenceSeed",
+      "SignalGateContextSeed",
+      "LearningReviewSeed",
+    ],
+    metrics: {
+      matches_sampled: freshness.matches_sampled ?? 0,
+      stale_score_matches: freshness.stale_score_matches ?? 0,
+      stale_odds_matches: freshness.stale_odds_matches ?? 0,
+      entry_signals: signals.entry_signals ?? 0,
+      blocked_signals: signals.blocked_signals ?? 0,
+      collection_health: health.collection,
+      processing_health: health.processing,
+      signal_readiness: health.signal_readiness,
+      learning_readiness: health.learning_readiness,
+    },
+    gates,
+    next_use: status === "ready"
+      ? "feed_collection_plan_match_pulse_and_learning_review_from_internal_state"
+      : status === "degraded"
+        ? "repair_freshness_or_signal_visibility_before_feature_ingestion"
+        : "freeze_feature_ingestion_until_safety_and_data_blockers_clear",
+    forbidden_actions: [
+      "live_scoreboard_scraping",
+      "sportsbook_ui_automation",
+      "anti_bot_bypass",
+      "geolocation_bypass",
+      "credential_or_session_extraction",
+      "provider_quota_spend_without_operator",
+      "llm_per_tick_decisioning",
+      "real_money_execution",
+    ],
   };
 }
 

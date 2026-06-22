@@ -35,6 +35,7 @@ npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
+npm run hermes:capability-audit
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -173,6 +174,12 @@ Use `hermes:ops-compiler` when an external agent channel needs one packet
 instead of several commands. It compiles trigger policy, source discovery,
 autonomy brief, operator packet and model routing into a single non-executing
 orchestration payload.
+
+Use `hermes:capability-audit` when deciding whether Hermes is actually ready
+for more autonomy. It scores runtime, source discovery, live collection, live
+statistics, protected paper autopilot, learning review, orchestration,
+budget-chain and enterprise-gate readiness from backend evidence. It never runs
+the next safe command it reports.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard

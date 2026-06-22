@@ -105,6 +105,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5-15 minutes during collection work: `npm run hermes:source-discovery`.
 - Every 5 minutes for cron/webhook wakeup policy: `npm run hermes:trigger-policy`.
 - Every 5 minutes for an all-in-one agent-channel payload: `npm run hermes:ops-compiler`.
+- Every 15 minutes or before autonomy escalation: `npm run hermes:capability-audit`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
 - Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
@@ -167,6 +168,14 @@ gets the same event-driven policy without asking an LLM to watch every tick.
 channels. It compiles trigger policy, source discovery, autonomy brief,
 operator packet and model routing into a single JSON object that a channel can
 summarize without re-running every command or inferring safety boundaries.
+
+`hermes:capability-audit` is the objective audit packet. It scores Hermes
+against the current operating goal across runtime/channels, safe source
+discovery, live collection, live statistics, protected paper autopilot,
+learning review, external-agent orchestration, budget-chain state and
+enterprise-gate state. It may report a next safe command, but it does not run
+that command and keeps provider spend, paper orders and real execution behind
+backend/operator gates.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

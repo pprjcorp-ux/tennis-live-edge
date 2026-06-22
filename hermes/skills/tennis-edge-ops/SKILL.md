@@ -48,6 +48,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-brief
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-discovery
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs capability-audit
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report
@@ -144,6 +145,8 @@ read-only and must not execute trigger commands.
 The `ops-compiler` command compiles trigger policy, source discovery, autonomy
 brief, operator packet, and model routing into one channel payload. It is
 read-only and must not execute compiled actions.
+The `capability-audit` command scores Hermes autonomy against current backend
+evidence. It is read-only and must not execute the next safe command it reports.
 The `operator-packet` command compresses safe-loop into a short channel-safe
 decision for Telegram/OpenClaw. It is read-only and never executes the next
 safe action it reports.

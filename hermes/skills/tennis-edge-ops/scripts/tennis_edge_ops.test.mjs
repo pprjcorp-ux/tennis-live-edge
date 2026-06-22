@@ -1329,6 +1329,74 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
   }
 });
 
+test("capability-audit scores Hermes autonomy without executing actions", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-capability-audit-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: running'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('doctor: ok'); process.exit(0); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["capability-audit", `--api-base=${apiBase}`], {
+      env: { HERMES_BIN: fakeHermes },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "capability_audit");
+    assert.equal(payload.objective, "maximize_safe_hermes_autonomy");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.overall_score > 0, true);
+    assert.equal(payload.capabilities.length >= 8, true);
+    assert.equal(payload.capabilities.every((capability) => capability.executes_now === false), true);
+    assert.equal(payload.capabilities.every((capability) => capability.evidence.length > 0), true);
+    const byId = Object.fromEntries(payload.capabilities.map((capability) => [capability.id, capability]));
+    assert.equal(byId.runtime_and_channels.status, "ready");
+    assert.equal(byId.safe_source_discovery.status, "ready");
+    assert.equal(byId.external_agent_orchestration.status, "ready");
+    assert.equal(byId.paper_autopilot.status, "operator_ready");
+    assert.equal(byId.learning_review.status, "collecting");
+    assert.equal(byId.enterprise_gate.status, "locked");
+    assert.equal(payload.autonomy_ceiling.id, "paper_autopilot");
+    assert.equal(payload.next_safe_command.command, "npm run hermes:autopilot");
+    assert.equal(payload.next_safe_command.executes_now, false);
+    assert.equal(payload.next_safe_command.can_submit_real_orders, false);
+    assert.equal(payload.safe_jailbreak_policy.bypass_allowed, false);
+    assert.equal(payload.forbidden_actions.includes("credential_or_session_extraction"), true);
+    assert.equal(payload.blocked_routes.includes("real_money_execution"), true);
+  } finally {
+    server.close();
+  }
+});
+
 test("operator-packet emits a compact channel-safe decision summary", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

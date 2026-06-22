@@ -49,6 +49,7 @@ npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
+npm run hermes:capability-audit
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -188,6 +189,11 @@ keeps LLM work out of per-tick processing.
 `hermes:ops-compiler` is the single orchestration packet for agent channels. It
 compiles trigger policy, source discovery, autonomy brief, operator packet and
 model routing into one non-executing payload.
+
+`hermes:capability-audit` scores Hermes against the actual operating objective:
+safe source discovery, live collection, live statistics, paper autopilot,
+learning review, external-agent orchestration, budget chain and enterprise
+gate. It is read-only and does not execute the next safe command it reports.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

@@ -175,6 +175,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes external-agent orchestration should consume `npm run hermes:ops-compiler`;
   it compiles trigger policy, source discovery, autonomy brief, operator packet,
   and model routing into one non-executing payload.
+- Hermes objective/capability review should consume `npm run hermes:capability-audit`;
+  it scores runtime, collection, statistics, paper autopilot, learning,
+  orchestration, budget-chain, and enterprise-gate readiness without executing
+  the reported next command.
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
   `next_action` it reports.
@@ -230,6 +234,7 @@ npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
+npm run hermes:capability-audit
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist

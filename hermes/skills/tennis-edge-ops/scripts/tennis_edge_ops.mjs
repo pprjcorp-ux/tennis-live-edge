@@ -238,6 +238,34 @@ async function opsCompiler() {
   }));
 }
 
+async function capabilityAudit() {
+  const [loop, report] = await Promise.all([
+    safeLoopData(),
+    intelligenceData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const triggerPlan = buildTriggerPolicy({ loop, sourcePlan });
+  const runtimePriorities = buildRuntimeFixPriorities(buildOperatorLedgerReport(readOperatorLedgerRecords()));
+  const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
+  const operator = buildOperatorPacket(loop);
+  const opsPacket = buildOpsCompiler({
+    loop,
+    sourcePlan,
+    triggerPlan,
+    autonomyPlan,
+    operator,
+  });
+  printJson(buildCapabilityAudit({
+    loop,
+    report,
+    eventPlan,
+    sourcePlan,
+    autonomyPlan,
+    opsPacket,
+  }));
+}
+
 async function operatorPacket() {
   const loop = await safeLoopData();
   printJson(buildOperatorPacket(loop));
@@ -1550,6 +1578,316 @@ function buildOpsModelRouter({ loop, triggerPlan }) {
   };
 }
 
+function buildCapabilityAudit({ loop, report, eventPlan, sourcePlan, autonomyPlan, opsPacket }) {
+  const capabilities = buildCapabilityRows({ loop, report, eventPlan, sourcePlan, autonomyPlan, opsPacket });
+  const nextSafeCommand = capabilityNextCommand({ loop, capabilities });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "capability_audit",
+    objective: "maximize_safe_hermes_autonomy",
+    status: capabilityAuditStatus({ loop, capabilities }),
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    overall_score: Math.round(
+      capabilities.reduce((total, capability) => total + capability.score, 0) / Math.max(1, capabilities.length)
+    ),
+    autonomy_ceiling: capabilityAutonomyCeiling({ loop, capabilities }),
+    next_safe_command: nextSafeCommand,
+    capabilities,
+    safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
+    allowed_routes: sourcePlan.allowed_collection_paths ?? [],
+    forbidden_actions: loop.forbidden_actions ?? sourcePlan.forbidden_actions ?? [],
+    blocked_routes: [
+      "real_money_execution",
+      "sportsbook_ui_automation",
+      "anti_bot_bypass",
+      "geolocation_bypass",
+      "credential_or_session_extraction",
+      "paywall_or_tos_circumvention",
+      "llm_per_tick_decisioning",
+      "provider_quota_spend_without_operator",
+    ],
+    research_findings: [
+      {
+        id: "local_runtime_with_narrow_skills",
+        conclusion: "OpenClaw/Hermes should run local scheduled skills, but every skill command must stay narrow and auditable.",
+      },
+      {
+        id: "event_driven_not_tick_driven",
+        conclusion: "Hermes should wake on summarized backend events instead of running LLM reasoning on every score or odds tick.",
+      },
+      {
+        id: "backend_owned_risk",
+        conclusion: "Provider calls, paper orders, model promotion and future execution remain deterministic backend decisions.",
+      },
+    ],
+    safety: {
+      real_execution_hard_block: loop.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      can_create_paper_orders: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function buildCapabilityRows({ loop, report, eventPlan, sourcePlan, autonomyPlan, opsPacket }) {
+  const matrix = autonomyPlan.autonomy_matrix ?? {};
+  const liveStats = loop.live_stats ?? {};
+  const budget = loop.budget_chain ?? {};
+  const learning = loop.learning_review ?? {};
+  return [
+    capabilityRow({
+      id: "runtime_and_channels",
+      label: "Hermes local runtime and channel health",
+      status: loop.runtime?.status === "ready" ? "ready" : "degraded",
+      score: loop.runtime?.status === "ready" ? 100 : 35,
+      command: "npm run hermes:runtime-check",
+      reason: "Runtime diagnostics determine whether cron, Telegram and gateway packets can be trusted.",
+      evidence: [
+        `runtime.status=${loop.runtime?.status ?? "unknown"}`,
+        `safe_loop.status=${loop.status}`,
+      ],
+    }),
+    capabilityRow({
+      id: "safe_source_discovery",
+      label: "Allowed-path source discovery",
+      status: sourcePlan.safe_jailbreak_policy?.bypass_allowed === false ? "ready" : "blocked",
+      score: sourcePlan.safe_jailbreak_policy?.bypass_allowed === false ? 100 : 0,
+      command: "npm --silent run hermes:source-discovery",
+      reason: "Jailbreak requests are constrained to licensed APIs, internal endpoints, replay and operator notes.",
+      evidence: [
+        `bypass_allowed=${sourcePlan.safe_jailbreak_policy?.bypass_allowed}`,
+        `discovery_scope=${(sourcePlan.discovery_scope ?? []).join(",")}`,
+      ],
+    }),
+    capabilityRow({
+      id: "live_data_collection",
+      label: "Live data collection control",
+      status: liveCollectionCapabilityStatus({ loop, report, eventPlan }),
+      score: liveCollectionCapabilityScore({ loop, report, eventPlan }),
+      command: "npm --silent run hermes:collection-plan",
+      reason: "Collection cadence is planned from match pulse, quota and cursor state, but provider calls stay operator-gated.",
+      evidence: [
+        `collection_status=${liveStats.collection_status ?? "unknown"}`,
+        `sampling_policy=${liveStats.sampling_policy?.name ?? "unknown"}`,
+        `provider_mode=${report.data_snapshot?.provider_mode ?? "unknown"}`,
+      ],
+    }),
+    capabilityRow({
+      id: "live_statistics",
+      label: "Deterministic live statistics",
+      status: liveStats.health_scores?.overall >= 60 ? "ready" : "monitor",
+      score: clampScore(liveStats.health_scores?.overall ?? 0),
+      command: "npm --silent run hermes:live-stats",
+      reason: "Hermes summarizes backend-derived scores and freshness; Python/Postgres keep point and odds math.",
+      evidence: [
+        `overall=${liveStats.health_scores?.overall ?? "unknown"}`,
+        `llm_per_tick_allowed=${loop.safety?.llm_per_tick_allowed}`,
+      ],
+    }),
+    capabilityRow({
+      id: "paper_autopilot",
+      label: "Protected paper autopilot",
+      status: eventPlan.can_run_paper_autopilot ? "operator_ready" : "blocked",
+      score: eventPlan.can_run_paper_autopilot ? 80 : 20,
+      command: "npm run hermes:autopilot",
+      reason: eventPlan.can_run_paper_autopilot
+        ? "Only the protected backend endpoint may create paper orders after admin-token gates."
+        : "Paper orders stay blocked until event router and backend gates allow them.",
+      requiresAdminToken: true,
+      writes: false,
+      evidence: [
+        `event_can_run_paper_autopilot=${eventPlan.can_run_paper_autopilot}`,
+        `entry_signals=${report.signal_snapshot?.entry_signals ?? 0}`,
+      ],
+    }),
+    capabilityRow({
+      id: "learning_review",
+      label: "Learning and model review",
+      status: learning.review_status ?? "unknown",
+      score: learning.review_status === "ready" ? 90 : learning.review_status === "collecting" ? 55 : 20,
+      command: "npm --silent run hermes:learning-review",
+      reason: "Strong-model review is periodic and interpretive; model promotion remains offline and deterministic.",
+      evidence: [
+        `review_status=${learning.review_status ?? "unknown"}`,
+        `model=${learning.model_route?.model ?? "unknown"}`,
+      ],
+    }),
+    capabilityRow({
+      id: "external_agent_orchestration",
+      label: "External agent orchestration packet",
+      status: opsPacket.execution_graph?.length >= 4 ? "ready" : "partial",
+      score: opsPacket.execution_graph?.length >= 4 ? 95 : 45,
+      command: "npm --silent run hermes:ops-compiler",
+      reason: "External channels can consume one packet instead of inferring safety from multiple commands.",
+      evidence: [
+        `graph_nodes=${opsPacket.execution_graph?.length ?? 0}`,
+        `selected_model=${opsPacket.model_router?.selected_model ?? "unknown"}`,
+      ],
+    }),
+    capabilityRow({
+      id: "budget_chain",
+      label: "Budget-first provider chain",
+      status: budget.completed ? "complete" : "pending",
+      score: budget.completed ? 85 : 45,
+      command: "npm --silent run hermes:budget-chain",
+      reason: "Budget APIs must prove replay, smoke and cursor health before enterprise feeds become eligible.",
+      evidence: [
+        `budget_chain_completed=${budget.completed}`,
+        `current_step=${budget.current_step_label ?? "none"}`,
+      ],
+    }),
+    capabilityRow({
+      id: "enterprise_gate",
+      label: "Enterprise eligibility gate",
+      status: budget.enterprise_eligible ? "eligible" : "locked",
+      score: budget.enterprise_eligible ? 70 : 100,
+      command: "npm run api:check:operational-truth -- --pretty",
+      reason: "Enterprise being locked is healthy until the full budget chain has durable evidence.",
+      evidence: [
+        `enterprise_eligible=${budget.enterprise_eligible}`,
+        `matrix_status=${matrix.enterprise?.status ?? "unknown"}`,
+      ],
+    }),
+  ];
+}
+
+function capabilityRow({
+  id,
+  label,
+  status,
+  score,
+  command,
+  reason,
+  evidence,
+  requiresAdminToken = false,
+  writes = false,
+}) {
+  return {
+    id,
+    label,
+    status,
+    score: clampScore(score),
+    command,
+    reason,
+    evidence,
+    executes_now: false,
+    writes: Boolean(writes),
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    requires_admin_token: Boolean(requiresAdminToken),
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
+function liveCollectionCapabilityStatus({ loop, report, eventPlan }) {
+  if (eventPlan.events.some((event) => event.type === "cursor_resync_required")) {
+    return "blocked";
+  }
+  if (loop.quota_plan?.throttle_level === "blocked") {
+    return "frozen";
+  }
+  if (loop.live_stats?.collection_status === "healthy" && report.data_snapshot?.persisted_matches > 0) {
+    return "ready";
+  }
+  if (report.data_snapshot?.persisted_matches > 0) {
+    return "monitor";
+  }
+  return "blocked";
+}
+
+function liveCollectionCapabilityScore({ loop, report, eventPlan }) {
+  if (eventPlan.events.some((event) => event.type === "cursor_resync_required")) {
+    return 15;
+  }
+  if (loop.quota_plan?.throttle_level === "blocked") {
+    return 30;
+  }
+  const base = loop.live_stats?.collection_status === "healthy" ? 75 : 45;
+  const persistenceBonus = report.data_snapshot?.persisted_matches > 0 ? 15 : 0;
+  return base + persistenceBonus;
+}
+
+function capabilityAuditStatus({ loop, capabilities }) {
+  if (loop.status === "safety_stop") return "safety_stop";
+  if (capabilities.some((capability) => capability.status === "blocked")) return "blocked";
+  if (capabilities.some((capability) => ["degraded", "pending", "collecting", "monitor"].includes(capability.status))) {
+    return "partial";
+  }
+  return "ready";
+}
+
+function capabilityAutonomyCeiling({ loop, capabilities }) {
+  const byId = Object.fromEntries(capabilities.map((capability) => [capability.id, capability]));
+  if (loop.status === "safety_stop") {
+    return ceiling("observe_only", "safety", "Real-execution or forbidden-route safety must be inspected first.");
+  }
+  if (byId.runtime_and_channels?.status !== "ready") {
+    return ceiling("runtime_diagnostics", "local_runtime", "Hermes runtime must be healthy before more autonomy.");
+  }
+  if (byId.safe_source_discovery?.status !== "ready") {
+    return ceiling("source_discovery_review", "collection", "Allowed-path source boundary is not proven.");
+  }
+  if (byId.paper_autopilot?.status === "operator_ready") {
+    return ceiling("paper_autopilot", "paper_trading", "Protected paper autopilot is the current maximum autonomy; real execution remains blocked.");
+  }
+  if (byId.learning_review?.status === "ready") {
+    return ceiling("learning_review", "model_review", "Weekly learning review may run, but promotion remains deterministic.");
+  }
+  return ceiling("observe_and_collect", "monitor", "Continue collecting budget-chain and learning evidence.");
+}
+
+function ceiling(id, lane, reason) {
+  return {
+    id,
+    lane,
+    reason,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    executes_now: false,
+  };
+}
+
+function capabilityNextCommand({ loop, capabilities }) {
+  const byId = Object.fromEntries(capabilities.map((capability) => [capability.id, capability]));
+  const command = loop.next_best_command ?? { command: "npm --silent run hermes:intelligence", reason: "Observe current state." };
+  if (byId.paper_autopilot?.status === "operator_ready") {
+    return {
+      id: "paper_autopilot",
+      command: "npm run hermes:autopilot",
+      reason: "Backend gates report a paper-only candidate; admin token is still required and this audit does not execute it.",
+      executes_now: false,
+      writes: false,
+      live_api_calls: false,
+      provider_api_call_allowed: false,
+      requires_admin_token: true,
+      can_create_paper_orders: false,
+      can_submit_real_orders: false,
+    };
+  }
+  return {
+    id: command.id ?? "observe",
+    command: command.command,
+    reason: command.reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    requires_admin_token: Boolean(command.requires_admin_token),
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
 function buildWakeTriggers({ loop, sourcePlan }) {
   const triggers = [];
   if (loop.status === "safety_stop") {
@@ -2469,6 +2807,12 @@ function schedulerSchedule(loop) {
       command: "npm --silent run hermes:ops-compiler",
       everyMinutes: 5,
       reason: "Compile trigger, source, autonomy, model routing and operator packets into one non-executing orchestration payload.",
+    }),
+    schedulerItem({
+      id: "capability_audit",
+      command: "npm --silent run hermes:capability-audit",
+      everyMinutes: 15,
+      reason: "Score Hermes autonomy limits and next safe command against current backend evidence without executing actions.",
     }),
     schedulerItem({
       id: "runtime_check",
@@ -4543,6 +4887,7 @@ const commands = {
   "source-discovery": sourceDiscovery,
   "trigger-policy": triggerPolicy,
   "ops-compiler": opsCompiler,
+  "capability-audit": capabilityAudit,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,

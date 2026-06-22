@@ -678,6 +678,8 @@ def main() -> int:
             "activation_allowed",
             "manual_activation_commands",
             "paper_autopilot_candidate",
+            "boundedIntelligenceTimeoutMs",
+            "HERMES_INTELLIGENCE_TIMEOUT_MS",
             "can_submit_real_orders: false",
             "sportsbook_bypass_allowed: false",
             "anti_bot_bypass",
@@ -698,6 +700,7 @@ def main() -> int:
             hermes_docs += path.read_text()
     for required in [
         "hermes:intelligence",
+        "HERMES_INTELLIGENCE_TIMEOUT_MS",
         "hermes:events",
         "hermes:unblock-plan",
         "hermes:runtime-check",

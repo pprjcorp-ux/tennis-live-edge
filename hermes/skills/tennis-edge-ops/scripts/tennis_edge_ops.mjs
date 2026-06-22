@@ -66,6 +66,16 @@ function boundedBackendTriageTimeoutMs(value = process.env.HERMES_BACKEND_TRIAGE
   return Math.min(Math.max(Math.trunc(parsed), 100), 10_000);
 }
 
+function boundedIntelligenceTimeoutMs(
+  value = process.env.HERMES_INTELLIGENCE_TIMEOUT_MS ?? process.env.HERMES_HTTP_TIMEOUT_MS,
+) {
+  const parsed = Number(value ?? 12_000);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 12_000;
+  }
+  return Math.min(Math.max(Math.trunc(parsed), 100), 30_000);
+}
+
 function runtimeDoctorTimeoutMs(value = process.env.HERMES_RUNTIME_DOCTOR_TIMEOUT_MS) {
   const parsed = Number(value ?? 15_000);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -2636,23 +2646,27 @@ function backendUnavailableDashboardState({ error }) {
 }
 
 async function intelligenceData() {
-  const responses = await Promise.all([
-    safeRequest("/api/v1/agent/briefing", backendUnavailableBriefing, "briefing"),
-    safeRequest("/api/v1/agent/preflight", backendUnavailablePreflight, "preflight"),
-    safeRequest("/api/v1/agent/anomalies", backendUnavailableAnomalies, "anomalies"),
-    safeRequest("/api/v1/provider-health", backendUnavailableProviderHealth, "provider_health"),
-    safeRequest("/api/v1/provider-cursors", [], "provider_cursors"),
-    safeRequest("/api/v1/data-quality", backendUnavailableDataQuality, "data_quality"),
-    safeRequest("/api/v1/cost-profile", backendUnavailableCostProfile, "cost_profile"),
-    safeRequest("/api/v1/cost-report/daily", backendUnavailableCostReport, "cost_report"),
-    safeRequest("/api/v1/paper/performance", backendUnavailablePaperPerformance, "paper_performance"),
-    safeRequest("/api/v1/execution/status", backendUnavailableExecutionStatus, "execution_status"),
-    safeRequest("/api/v1/bankroll", backendUnavailableBankroll, "bankroll"),
-    safeRequest("/api/v1/signals/live", [], "live_signals"),
-    safeRequest("/api/v1/ingestion/runs", backendUnavailableIngestionRuns, "ingestion_runs"),
-    safeRequest("/api/v1/dashboard/live-state", backendUnavailableDashboardState, "dashboard_state"),
-    safeRequest("/api/v1/replay/backfill-evidence", backendUnavailableReplayBackfillEvidence, "replay_backfill_evidence"),
-  ]);
+  const readModelOptions = { timeoutMs: boundedIntelligenceTimeoutMs() };
+  const responses = [];
+  for (const item of [
+    ["/api/v1/agent/briefing", backendUnavailableBriefing, "briefing"],
+    ["/api/v1/agent/preflight", backendUnavailablePreflight, "preflight"],
+    ["/api/v1/agent/anomalies", backendUnavailableAnomalies, "anomalies"],
+    ["/api/v1/provider-health", backendUnavailableProviderHealth, "provider_health"],
+    ["/api/v1/provider-cursors", [], "provider_cursors"],
+    ["/api/v1/data-quality", backendUnavailableDataQuality, "data_quality"],
+    ["/api/v1/cost-profile", backendUnavailableCostProfile, "cost_profile"],
+    ["/api/v1/cost-report/daily", backendUnavailableCostReport, "cost_report"],
+    ["/api/v1/paper/performance", backendUnavailablePaperPerformance, "paper_performance"],
+    ["/api/v1/execution/status", backendUnavailableExecutionStatus, "execution_status"],
+    ["/api/v1/bankroll", backendUnavailableBankroll, "bankroll"],
+    ["/api/v1/signals/live", [], "live_signals"],
+    ["/api/v1/ingestion/runs", backendUnavailableIngestionRuns, "ingestion_runs"],
+    ["/api/v1/dashboard/live-state", backendUnavailableDashboardState, "dashboard_state"],
+    ["/api/v1/replay/backfill-evidence", backendUnavailableReplayBackfillEvidence, "replay_backfill_evidence"],
+  ]) {
+    responses.push(await safeRequest(item[0], item[1], item[2], readModelOptions));
+  }
   const [
     briefing,
     preflightData,

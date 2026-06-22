@@ -45,6 +45,20 @@ async function runCli(args, { stdin = "", env = {}, timeoutMs = 15_000 } = {}) {
   return { exit, stdout, stderr };
 }
 
+function isolatedLedgerEnv(tempDir, overrides = {}) {
+  return {
+    HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
+    HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
+    HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
+    HERMES_LIVE_CONTROLLER_LEDGER_PATH: join(tempDir, "live-controller-ledger.jsonl"),
+    HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: join(tempDir, "grand-slam-mission-ledger.jsonl"),
+    HERMES_SOURCE_ROUTE_LEDGER_PATH: join(tempDir, "source-route-ledger.jsonl"),
+    HERMES_SOURCE_USE_LEDGER_PATH: join(tempDir, "source-use-ledger.jsonl"),
+    HERMES_SOURCE_INTAKE_LEDGER_PATH: join(tempDir, "source-intake-ledger.jsonl"),
+    ...overrides,
+  };
+}
+
 function eventRouterFixtures(overrides = {}) {
   return {
     "/api/v1/agent/briefing": {
@@ -635,6 +649,49 @@ test("intelligence produces a safe operator packet from internal APIs only", asy
       "manual_operator_note",
     ]);
     assert.equal(payload.forbidden_collection_paths.includes("anti_bot_bypass"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("intelligence uses bounded sequential read-model timeout to avoid false backend outage", async () => {
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      const send = () => {
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify(payload));
+      };
+      if (request.url === "/api/v1/agent/briefing") {
+        setTimeout(send, 150);
+        return;
+      }
+      send();
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["intelligence", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_HTTP_TIMEOUT_MS: "50",
+        HERMES_INTELLIGENCE_TIMEOUT_MS: "500",
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.degraded_items.api_request_errors.length, 0);
+    assert.equal(payload.data_snapshot.provider_mode, "replay");
+    assert.equal(payload.blockers.some((blocker) => String(blocker).startsWith("backend_api:")), false);
+    assert.equal(payload.provider_api_call_allowed ?? false, false);
+    assert.equal(payload.safety.can_submit_real_orders, false);
   } finally {
     server.close();
   }
@@ -4001,11 +4058,9 @@ test("experiment-lab prioritizes live-controller backlog evidence", async () => 
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
         ADMIN_API_TOKEN: "test-admin-token-1234567890",
-        HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
-        HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
-        HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
-        HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
-        HERMES_SOURCE_ROUTE_LEDGER_PATH: join(tempDir, "source-route-ledger.jsonl"),
+        ...isolatedLedgerEnv(tempDir, {
+          HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+        }),
       },
     });
 
@@ -4367,7 +4422,9 @@ test("experiment-ledger appends experiment recommendations without executing act
     const result = await runCli(["experiment-ledger", `--api-base=${apiBase}`], {
       env: {
         HERMES_BIN: fakeHermes,
-        HERMES_EXPERIMENT_LEDGER_PATH: ledgerPath,
+        ...isolatedLedgerEnv(tempDir, {
+          HERMES_EXPERIMENT_LEDGER_PATH: ledgerPath,
+        }),
       },
     });
 
@@ -4572,8 +4629,10 @@ test("backlog-plan turns repeated ledgers into non-executing implementation prio
 
   const result = await runCli(["backlog-plan"], {
     env: {
-      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
-      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+      ...isolatedLedgerEnv(tempDir, {
+        HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+        HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+      }),
     },
   });
 
@@ -4650,8 +4709,10 @@ test("backlog-plan skips stale runtime blockers after latest operator packet cle
 
   const result = await runCli(["backlog-plan"], {
     env: {
-      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
-      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+      ...isolatedLedgerEnv(tempDir, {
+        HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+        HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+      }),
     },
   });
 
@@ -4711,9 +4772,11 @@ test("backlog-plan uses mission-ledger blockers as implementation evidence", asy
 
   const result = await runCli(["backlog-plan"], {
     env: {
-      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
-      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
-      HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+      ...isolatedLedgerEnv(tempDir, {
+        HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+        HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+        HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+      }),
     },
   });
 
@@ -4783,10 +4846,12 @@ test("backlog-plan uses live-controller ledger as implementation evidence", asyn
 
   const result = await runCli(["backlog-plan"], {
     env: {
-      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
-      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
-      HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
-      HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+      ...isolatedLedgerEnv(tempDir, {
+        HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+        HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+        HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+        HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+      }),
     },
   });
 

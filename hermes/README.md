@@ -211,10 +211,13 @@ bankroll, live signals, replay lab and onboarding state. It recommends one safe
 mode: investigate, budget-chain buildout, paper-autopilot candidate, collect
 learning data, replay-lab hardening, or steady monitoring.
 Internal FastAPI reads are bounded by `HERMES_HTTP_TIMEOUT_MS` (default 5000ms,
-clamped between 100ms and 30000ms). If the backend is unavailable or slow,
-composed commands such as `hermes:intelligence`, `hermes:safe-loop`, and
-`hermes:experiment-ledger` return degraded JSON with `backend_api` blockers
-instead of hanging or executing fallback actions.
+clamped between 100ms and 30000ms). `hermes:intelligence` uses sequential
+read-model probes with `HERMES_INTELLIGENCE_TIMEOUT_MS` (default 12000ms) so one
+expensive local endpoint does not make the whole backend look unavailable. If
+the backend is unavailable or slow, composed commands such as
+`hermes:intelligence`, `hermes:safe-loop`, and `hermes:experiment-ledger` return
+degraded JSON with `backend_api` blockers instead of hanging or executing
+fallback actions.
 Enterprise-only cursors such as Sportradar/Betradar/TXODDS are reported as
 `deferred_enterprise_cursors` while the budget chain is incomplete, so they do
 not block lean ATP/Grand Slam operation before enterprise is eligible.

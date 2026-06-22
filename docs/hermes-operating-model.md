@@ -155,7 +155,9 @@ Postgres; Hermes wakes only on summarized state or event thresholds.
 job needs the broadest safe context. It runs local runtime diagnostics and
 internal FastAPI reads, then combines intelligence, event routing, unblock
 lanes, playbook phases, live stats, quota-plan throttle state, budget-chain
-state, and learning review into one JSON decision. It is read-only and keeps
+state, and learning review into one JSON decision. The intelligence read model
+uses sequential `HERMES_INTELLIGENCE_TIMEOUT_MS` probes to avoid false backend
+outages when one local endpoint is slow. It is read-only and keeps
 `provider_api_call_allowed=false`, `llm_per_tick_allowed=false`, and
 `can_submit_real_orders=false`.
 

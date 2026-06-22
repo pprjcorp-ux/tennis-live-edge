@@ -370,6 +370,13 @@ async function experimentLedgerReport() {
   printJson(buildExperimentLedgerReport(readExperimentLedgerRecords()));
 }
 
+async function backlogPlan() {
+  const experimentReport = buildExperimentLedgerReport(readExperimentLedgerRecords());
+  const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
+  const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
+  printJson(buildBacklogPlan({ experimentReport, operatorReport, runtimePriorities }));
+}
+
 async function operatorPacket() {
   const loop = await safeLoopData();
   printJson(buildOperatorPacket(loop));
@@ -2373,6 +2380,240 @@ function buildExperimentLedgerReport({ path, records, invalid_rows: invalidRows 
   };
 }
 
+function buildBacklogPlan({ experimentReport, operatorReport, runtimePriorities }) {
+  const items = buildBacklogItems({ experimentReport, operatorReport, runtimePriorities })
+    .sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "backlog_plan",
+    status: items.length ? "ready" : "collecting",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    next_item: items[0] ?? null,
+    items,
+    evidence: {
+      experiment_ledger: {
+        path: experimentReport.ledger?.path,
+        total_records: experimentReport.total_records,
+        top_experiment: experimentReport.top_experiment,
+        active_ceiling_counts: experimentReport.active_ceiling_counts,
+        ready_experiment_counts: experimentReport.ready_experiment_counts,
+        experiment_command_executed_count: experimentReport.experiment_command_executed_count,
+      },
+      operator_ledger: {
+        path: operatorReport.ledger?.path,
+        total_records: operatorReport.total_records,
+        top_blocker: operatorReport.top_blocker,
+        priority_counts: operatorReport.priority_counts,
+        action_executed_count: operatorReport.action_executed_count,
+      },
+      runtime_priorities: {
+        next_priority: runtimePriorities.next_priority,
+        total_priorities: runtimePriorities.priorities.length,
+      },
+    },
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+  };
+}
+
+function buildBacklogItems({ experimentReport, operatorReport, runtimePriorities }) {
+  const items = [];
+  const topExperiment = experimentReport.top_experiment;
+  const ready = experimentReport.ready_experiment_counts ?? {};
+  const topBlocker = operatorReport.top_blocker;
+  const runtimePriority = runtimePriorities.next_priority;
+
+  if (topExperiment === "runtime_channel_recovery"
+    || topBlocker === "npm run hermes:runtime-check"
+    || runtimePriority?.id === "stabilize_hermes_runtime") {
+    items.push(backlogItem({
+      id: "stabilize_hermes_runtime_channels",
+      title: "Stabilize Hermes runtime and channel readiness before more autonomy",
+      priority: 10,
+      source: ["experiment_ledger", "operator_ledger", "runtime_priorities"],
+      frequency: Math.max(
+        countFor(experimentReport.next_experiment_counts, "runtime_channel_recovery"),
+        countFor(operatorReport.next_action_counts, "npm run hermes:runtime-check"),
+        runtimePriority?.frequency ?? 0,
+      ),
+      rationale: "Runtime/channel blockers are the recurring ceiling; model, collection and paper work should wait for this proof.",
+      targetFiles: [
+        "hermes/README.md",
+        "docs/hermes-agent-ops.md",
+        "hermes/skills/tennis-edge-ops/SKILL.md",
+      ],
+      validationCommands: [
+        "npm run hermes:runtime-check",
+        "npm --silent run hermes:autonomy-gates",
+        "npm --silent run hermes:experiment-ledger-report",
+      ],
+      acceptanceEvidence: [
+        "gateway_service_status=running",
+        "doctor_status=passed",
+        "active_ceiling is at least channel_ready",
+      ],
+      blocks: ["cron_ready", "paper_ready", "learning_ready"],
+    }));
+  }
+
+  if ((ready.source_discovery_backfill ?? 0) > 0 || topExperiment === "source_discovery_backfill") {
+    items.push(backlogItem({
+      id: "expand_allowed_source_backfill",
+      title: "Expand allowed source/backfill routes without scraping or provider spend",
+      priority: 20,
+      source: ["experiment_ledger"],
+      frequency: Math.max(ready.source_discovery_backfill ?? 0, countFor(experimentReport.next_experiment_counts, "source_discovery_backfill")),
+      rationale: "Allowed route discovery keeps the budget chain moving while preserving the safe interpretation of jailbreak.",
+      targetFiles: [
+        "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+        "docs/hermes-operating-model.md",
+      ],
+      validationCommands: [
+        "npm --silent run hermes:source-discovery",
+        "npm --silent run hermes:experiment-lab",
+        "python3 scripts/check_private_runtime.py",
+      ],
+      acceptanceEvidence: [
+        "safe_jailbreak_policy.bypass_allowed=false",
+        "allowed_collection_paths include internal/replay/licensed routes",
+      ],
+      blocks: ["live_collection_cadence"],
+    }));
+  }
+
+  if ((ready.paper_autopilot_rehearsal ?? 0) > 0 || topExperiment === "paper_autopilot_rehearsal") {
+    items.push(backlogItem({
+      id: "harden_paper_autopilot_learning_loop",
+      title: "Harden paper autopilot evidence before model or real-execution review",
+      priority: 30,
+      source: ["experiment_ledger"],
+      frequency: Math.max(ready.paper_autopilot_rehearsal ?? 0, countFor(experimentReport.next_experiment_counts, "paper_autopilot_rehearsal")),
+      rationale: "Paper rehearsal is the highest-value learning loop once backend gates allow it.",
+      targetFiles: [
+        "services/api/src/tennis_edge/services/agent_ops.py",
+        "services/api/tests/test_agent_ops_persistence.py",
+        "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+      ],
+      validationCommands: [
+        "npm run hermes:autopilot",
+        "npm --silent run hermes:learning-review",
+        "npm run api:test",
+      ],
+      acceptanceEvidence: [
+        "paper_orders_created tracked by backend",
+        "training_examples_ready increases from settled paper orders",
+        "REAL_EXECUTION_HARD_BLOCK remains true",
+      ],
+      blocks: ["learning_ready", "real_execution_readiness_report"],
+    }));
+  }
+
+  if (topExperiment === "enterprise_eligibility_review") {
+    items.push(backlogItem({
+      id: "complete_budget_chain_before_enterprise",
+      title: "Complete budget-chain evidence before enterprise feed work",
+      priority: 40,
+      source: ["experiment_ledger"],
+      frequency: countFor(experimentReport.next_experiment_counts, "enterprise_eligibility_review"),
+      rationale: "Enterprise spend remains locked until replay, smokes and healthy cursor proof are complete.",
+      targetFiles: [
+        "scripts/check_operational_truth_runtime.py",
+        "services/api/src/tennis_edge/services/operational_state.py",
+      ],
+      validationCommands: [
+        "npm run api:check:operational-truth -- --pretty",
+        "npm --silent run hermes:budget-chain",
+      ],
+      acceptanceEvidence: [
+        "budget_chain_completed=true",
+        "enterprise_eligible=true only after healthy Odds-API.io cursor",
+      ],
+      blocks: ["enterprise_review"],
+    }));
+  }
+
+  if (!items.length) {
+    items.push(backlogItem({
+      id: "collect_more_hermes_operating_evidence",
+      title: "Collect more Hermes operating evidence before changing code",
+      priority: 90,
+      source: ["experiment_ledger", "operator_ledger"],
+      frequency: 0,
+      rationale: "No repeated pattern is strong enough yet; continue ledger collection instead of guessing.",
+      targetFiles: ["hermes/runs/*.jsonl"],
+      validationCommands: [
+        "npm --silent run hermes:experiment-ledger",
+        "npm --silent run hermes:operator-ledger",
+        "npm --silent run hermes:backlog-plan",
+      ],
+      acceptanceEvidence: [
+        "experiment_ledger.total_records increases",
+        "operator_ledger.total_records increases",
+      ],
+      blocks: [],
+    }));
+  }
+
+  return dedupeBacklogItems(items);
+}
+
+function backlogItem({
+  id,
+  title,
+  priority,
+  source,
+  frequency,
+  rationale,
+  targetFiles,
+  validationCommands,
+  acceptanceEvidence,
+  blocks,
+}) {
+  return {
+    id,
+    title,
+    priority,
+    source,
+    frequency,
+    rationale,
+    target_files: targetFiles,
+    validation_commands: validationCommands,
+    acceptance_evidence: acceptanceEvidence,
+    blocks,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function dedupeBacklogItems(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function countFor(rows = [], command) {
+  return rows.find((row) => row.command === command)?.count ?? 0;
+}
+
 function buildCapabilityRows({ loop, report, eventPlan, sourcePlan, autonomyPlan, opsPacket }) {
   const matrix = autonomyPlan.autonomy_matrix ?? {};
   const liveStats = loop.live_stats ?? {};
@@ -3560,6 +3801,12 @@ function schedulerSchedule(loop) {
       command: "npm --silent run hermes:experiment-lab",
       everyMinutes: 15,
       reason: "Rank safe Hermes experiments for collection, processing, paper learning and enterprise readiness without executing them.",
+    }),
+    schedulerItem({
+      id: "backlog_plan",
+      command: "npm --silent run hermes:backlog-plan",
+      everyMinutes: 60,
+      reason: "Convert local operator and experiment ledger evidence into non-executing implementation priorities.",
     }),
     schedulerItem({
       id: "runtime_check",
@@ -5663,6 +5910,7 @@ const commands = {
   "experiment-lab": experimentLab,
   "experiment-ledger": experimentLedger,
   "experiment-ledger-report": experimentLedgerReport,
+  "backlog-plan": backlogPlan,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,

@@ -1710,6 +1710,81 @@ test("experiment-ledger-report summarizes repeated experiment recommendations", 
   assert.equal(payload.ready_experiment_counts.runtime_channel_recovery, 2);
 });
 
+test("backlog-plan turns repeated ledgers into non-executing implementation priorities", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-plan-"));
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const experimentRows = [
+    {
+      mode: "experiment_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      experiment_command_executed: false,
+      active_ceiling_id: "observe",
+      next_experiment_id: "runtime_channel_recovery",
+      next_experiment_command: "npm run hermes:runtime-fix-plan",
+      ready_experiment_ids: ["runtime_channel_recovery", "source_discovery_backfill"],
+      lab: { status: "ready" },
+    },
+    {
+      mode: "experiment_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      experiment_command_executed: false,
+      active_ceiling_id: "observe",
+      next_experiment_id: "runtime_channel_recovery",
+      next_experiment_command: "npm run hermes:runtime-fix-plan",
+      ready_experiment_ids: ["runtime_channel_recovery"],
+      lab: { status: "ready" },
+    },
+  ];
+  const operatorRows = [
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    },
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    },
+  ];
+  writeFileSync(experimentLedgerPath, `${experimentRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  writeFileSync(operatorLedgerPath, `${operatorRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["backlog-plan"], {
+    env: {
+      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "backlog_plan");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.llm_per_tick_allowed, false);
+  assert.equal(payload.items.length >= 2, true);
+  assert.equal(payload.items[0].id, "stabilize_hermes_runtime_channels");
+  assert.equal(payload.items[0].source.includes("experiment_ledger"), true);
+  assert.equal(payload.items[0].validation_commands.includes("npm run hermes:runtime-check"), true);
+  assert.equal(payload.items[0].executes_now, false);
+  assert.equal(payload.items.every((item) => item.executes_now === false), true);
+  assert.equal(payload.next_item.id, "stabilize_hermes_runtime_channels");
+  assert.equal(payload.evidence.experiment_ledger.total_records, 2);
+  assert.equal(payload.evidence.operator_ledger.total_records, 2);
+  assert.equal(payload.safety.can_submit_real_orders, false);
+});
+
 test("operator-packet emits a compact channel-safe decision summary", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

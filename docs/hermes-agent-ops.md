@@ -40,6 +40,7 @@ npm run hermes:autonomy-gates
 npm run hermes:experiment-lab
 npm run hermes:experiment-ledger
 npm run hermes:experiment-ledger-report
+npm run hermes:backlog-plan
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -206,6 +207,11 @@ ready experiment ids, next experiment id, and
 Use `hermes:experiment-ledger-report` to review repeated research/test
 recommendations. It reports top experiments, repeated active ceilings, ready
 experiment counts, and any rows claiming an experiment command was executed.
+
+Use `hermes:backlog-plan` to turn ledger evidence into implementation
+priorities. It reads only local operator and experiment ledgers, then emits
+non-executing backlog items with target files, validation commands, acceptance
+evidence, and the gates each item blocks.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard

@@ -199,6 +199,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   `npm run hermes:experiment-ledger-report`; it is read-only and should
   summarize repeated experiment recommendations, active ceilings, and ready
   experiment counts without executing commands.
+- Hermes backlog planning should consume `npm run hermes:backlog-plan`; it
+  reads only local operator/experiment ledgers and converts repeated evidence
+  into non-executing implementation priorities with target files, validation
+  commands, and acceptance evidence.
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
   `next_action` it reports.
@@ -259,6 +263,7 @@ npm run hermes:autonomy-gates
 npm run hermes:experiment-lab
 npm run hermes:experiment-ledger
 npm run hermes:experiment-ledger-report
+npm run hermes:backlog-plan
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist

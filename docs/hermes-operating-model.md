@@ -110,6 +110,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 15 minutes to rank safe operational experiments: `npm run hermes:experiment-lab`.
 - Every 15 minutes to audit experiment recommendations locally: `npm run hermes:experiment-ledger`.
 - Hourly/daily to review experiment recommendation quality: `npm run hermes:experiment-ledger-report`.
+- Hourly/daily to convert ledger evidence into implementation priorities: `npm run hermes:backlog-plan`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
 - Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
@@ -205,6 +206,11 @@ without giving Hermes permission to run them.
 experiment ledger. It identifies repeated experiment recommendations and active
 ceilings, so the repo can prioritize changes from observed operating evidence
 instead of intuition.
+
+`hermes:backlog-plan` is the evidence-to-backlog compiler. It reads only local
+operator and experiment ledger reports, then emits implementation priorities
+with target files, validation commands, acceptance evidence and blocked gates.
+It does not edit code or run the listed validation commands.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

@@ -184,6 +184,17 @@ hermes cron add \
   --timeout-seconds 60
 ```
 
+Backlog plan hourly to turn local evidence into implementation priorities:
+
+```bash
+hermes cron add \
+  --name tennis-edge-backlog-plan \
+  --every 1h \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:backlog-plan from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report next_item, items, target_files, validation_commands, acceptance_evidence, and safety. Do not execute validation commands, edit files, create orders, spend provider quota, or submit real orders from this cron." \
+  --timeout-seconds 60
+```
+
 Compact operator packet every 5 minutes for Telegram/OpenClaw:
 
 ```bash

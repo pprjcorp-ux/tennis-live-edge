@@ -53,6 +53,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-gates
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-lab
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-ledger-report
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backlog-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report
@@ -162,6 +163,9 @@ orders.
 The `experiment-ledger` command appends that lab decision to local JSONL with
 `experiment_command_executed=false`. The `experiment-ledger-report` command
 summarizes repeated experiment recommendations without writing or executing.
+The `backlog-plan` command reads local ledgers and emits non-executing
+implementation priorities with target files, validation commands, and
+acceptance evidence.
 Runtime commands should carry `runtime_findings` and non-executed diagnostic
 actions, with `mutates_runtime_if_run=true` for manual gateway/service changes.
 The `operator-packet` command compresses safe-loop into a short channel-safe

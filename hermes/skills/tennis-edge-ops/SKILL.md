@@ -32,6 +32,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs playbook
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
@@ -70,6 +71,9 @@ The `events` command converts the intelligence packet into deterministic
 dispatch events for cron/webhook/Telegram. It reports an allowed command,
 admin-token requirement, and paper-order permission for each event; it never
 permits real order submission.
+The `playbook` command converts the current state into a phase-based operating
+plan with ready/waiting/blocked steps. It is a planner only; it does not execute
+commands or create orders.
 The `autopilot` command also runs preflight internally and aborts before calling
 protected backend actions when the preflight status is `blocked`.
 

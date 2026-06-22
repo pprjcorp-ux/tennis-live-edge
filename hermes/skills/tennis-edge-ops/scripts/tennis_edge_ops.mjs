@@ -84,6 +84,12 @@ async function events() {
   printJson(buildEventPlan(report));
 }
 
+async function playbook() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  printJson(buildPlaybook(report, eventPlan));
+}
+
 async function intelligenceData() {
   const [
     briefing,
@@ -364,6 +370,13 @@ function buildIntelligenceReport({
       monthly_budget_usd: costProfile.monthly_budget_usd,
       daily_live_api_calls: costReport.live_api_calls,
       cost_per_signal_usd: costReport.cost_per_signal_usd,
+    },
+    budget_chain_snapshot: {
+      budget_chain_completed: Boolean(apiOnboarding.budget_chain_completed),
+      enterprise_eligible: Boolean(apiOnboarding.enterprise_eligible),
+      current_step: apiOnboarding.current_step,
+      next_action: apiOnboarding.next_action,
+      warnings: (apiOnboarding.warnings ?? []).slice(0, 5),
     },
     bankroll_snapshot: {
       balance: bankroll.balance,
@@ -768,6 +781,191 @@ function summarizeEventPlan(report, events) {
   return `Hermes event router: source_mode=${report.mode}, severity=${highest}, events=${eventTypes}`;
 }
 
+function buildPlaybook(report, eventPlan) {
+  const eventsByType = new Map(eventPlan.events.map((item) => [item.type, item]));
+  const highBlockers = eventPlan.events.filter((item) => ["critical", "high"].includes(item.severity));
+  const budget = report.budget_chain_snapshot ?? {};
+  const learning = report.learning_snapshot ?? {};
+  const paperReady = eventPlan.can_run_paper_autopilot;
+  const activePhase = chooseActivePhase({ eventPlan, budget, learning, paperReady, highBlockers });
+  const steps = [
+    playbookStep({
+      id: "observe_state",
+      phase: "observe",
+      status: "ready",
+      command: "npm --silent run hermes:intelligence",
+      reason: "Always safe: reads internal APIs and emits the redacted operator packet.",
+      requiresAdminToken: false,
+      writes: false,
+      liveApiCalls: false,
+    }),
+    playbookStep({
+      id: "route_events",
+      phase: "observe",
+      status: "ready",
+      command: "npm --silent run hermes:events",
+      reason: "Always safe: converts the operator packet into deterministic event triggers.",
+      requiresAdminToken: false,
+      writes: false,
+      liveApiCalls: false,
+    }),
+    playbookStep({
+      id: "preflight_gate",
+      phase: "stabilize_data",
+      status: eventsByType.has("preflight_blocked") ? "ready" : "waiting",
+      command: "npm run hermes:preflight",
+      reason: eventsByType.get("preflight_blocked")?.reason ?? "Run periodically or before any protected action.",
+      requiresAdminToken: false,
+      writes: false,
+      liveApiCalls: false,
+    }),
+    playbookStep({
+      id: "replay_contracts",
+      phase: "stabilize_data",
+      status: eventsByType.has("cursor_resync_required") || eventsByType.has("data_quality_degraded") ? "ready" : "waiting",
+      command: "npm run api:check:operational-truth -- --pretty",
+      reason: "Use fake-provider replay/contracts before spending live quota or clearing cursor gaps.",
+      requiresAdminToken: false,
+      writes: true,
+      liveApiCalls: false,
+    }),
+    playbookStep({
+      id: "provider_health_review",
+      phase: "stabilize_data",
+      status: eventsByType.has("provider_health_degraded") ? "ready" : "waiting",
+      command: "npm run hermes:preflight",
+      reason: eventsByType.get("provider_health_degraded")?.reason ?? "Provider health is not currently the highest priority.",
+      requiresAdminToken: false,
+      writes: false,
+      liveApiCalls: false,
+    }),
+    playbookStep({
+      id: "budget_chain_next_step",
+      phase: "budget_chain",
+      status: budget.budget_chain_completed ? "waiting" : "ready",
+      command: "npm run api:check:operational-truth -- --pretty",
+      reason: budget.current_step
+        ? `Enterprise stays locked; next budget step is ${budget.current_step}.`
+        : "Enterprise stays locked until the budget chain is complete.",
+      requiresAdminToken: false,
+      writes: true,
+      liveApiCalls: false,
+    }),
+    playbookStep({
+      id: "daily_ops_rehearsal",
+      phase: "collect_learning",
+      status: learning.can_run_live_backtest && learning.readiness_status === "ready_for_review" ? "waiting" : "ready",
+      command: "npm run hermes:ops:daily",
+      reason: "Collect settled paper/rehearsal evidence and keep Model Lab dataset-first.",
+      requiresAdminToken: true,
+      writes: true,
+      liveApiCalls: false,
+    }),
+    playbookStep({
+      id: "paper_autopilot",
+      phase: "paper_autopilot",
+      status: paperReady ? "ready" : "blocked",
+      command: "npm run hermes:autopilot",
+      reason: paperReady
+        ? "Backend has Entrada candidates and the event router found no high-severity blockers."
+        : "Blocked until event router reports can_run_paper_autopilot=true.",
+      requiresAdminToken: true,
+      writes: true,
+      liveApiCalls: false,
+      canCreatePaperOrders: paperReady,
+    }),
+    playbookStep({
+      id: "weekly_learning_review",
+      phase: "learning_review",
+      status: learning.can_run_live_backtest && learning.readiness_status === "ready_for_review" ? "ready" : "waiting",
+      command: "npm run hermes:intelligence",
+      reason: "Use the strong model route only for weekly ROI/CLV/calibration/readiness interpretation.",
+      requiresAdminToken: false,
+      writes: false,
+      liveApiCalls: false,
+    }),
+  ];
+  return {
+    generated_at: new Date().toISOString(),
+    active_phase: activePhase,
+    severity: eventPlan.severity,
+    summary: `Hermes playbook: active_phase=${activePhase}, source_mode=${eventPlan.source_mode}, paper_autopilot=${paperReady}`,
+    enterprise_eligible: Boolean(budget.enterprise_eligible),
+    budget_chain_completed: Boolean(budget.budget_chain_completed),
+    current_budget_step: budget.current_step,
+    can_run_paper_autopilot: paperReady,
+    can_submit_real_orders: false,
+    phases: compactPhases(steps),
+    steps,
+    hard_boundaries: [
+      "no_sportsbook_ui_automation",
+      "no_anti_bot_or_geolocation_bypass",
+      "no_credential_or_session_extraction",
+      "no_direct_betfair_or_sportsbook_calls",
+      "no_llm_real_money_execution",
+    ],
+    event_summary: eventPlan.events.map((item) => ({
+      type: item.type,
+      severity: item.severity,
+      can_create_orders: item.can_create_orders,
+      allowed_command: item.allowed_command,
+    })),
+  };
+}
+
+function chooseActivePhase({ eventPlan, budget, learning, paperReady, highBlockers }) {
+  if (eventPlan.events.some((item) => item.type === "real_execution_safety_violation")) {
+    return "safety_stop";
+  }
+  if (highBlockers.length) {
+    return "stabilize_data";
+  }
+  if (!budget.budget_chain_completed) {
+    return "budget_chain";
+  }
+  if (paperReady) {
+    return "paper_autopilot";
+  }
+  if (!learning.can_run_live_backtest || learning.readiness_status !== "ready_for_review") {
+    return "collect_learning";
+  }
+  return "learning_review";
+}
+
+function playbookStep({
+  id,
+  phase,
+  status,
+  command,
+  reason,
+  requiresAdminToken,
+  writes,
+  liveApiCalls,
+  canCreatePaperOrders = false,
+}) {
+  return {
+    id,
+    phase,
+    status,
+    command,
+    reason,
+    requires_admin_token: requiresAdminToken,
+    writes,
+    live_api_calls: liveApiCalls,
+    can_create_paper_orders: canCreatePaperOrders,
+    can_submit_real_orders: false,
+  };
+}
+
+function compactPhases(steps) {
+  return [...new Set(steps.map((step) => step.phase))].map((phase) => ({
+    phase,
+    ready_steps: steps.filter((step) => step.phase === phase && step.status === "ready").length,
+    blocked_steps: steps.filter((step) => step.phase === phase && step.status === "blocked").length,
+    waiting_steps: steps.filter((step) => step.phase === phase && step.status === "waiting").length,
+  }));
+}
+
 const commands = {
   briefing,
   anomalies,
@@ -775,6 +973,7 @@ const commands = {
   preflight,
   intelligence,
   events,
+  playbook,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

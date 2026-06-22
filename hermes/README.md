@@ -33,6 +33,7 @@ npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:intelligence
 npm run hermes:events
+npm run hermes:playbook
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
@@ -62,6 +63,12 @@ cron/webhook routing. It can recommend commands such as `hermes:preflight`,
 Paper order creation is only marked possible for `paper_autopilot_candidate`
 when no high-severity data, cursor, provider, preflight, budget-chain, or real
 execution safety blocker exists.
+
+`hermes:playbook` converts the same state into phase-based operating steps:
+observe, stabilize data, complete the budget chain, collect learning evidence,
+paper autopilot, and weekly learning review. It does not run commands. It marks
+each step as `ready`, `waiting`, or `blocked`, and always keeps
+`can_submit_real_orders=false`.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

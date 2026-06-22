@@ -19,6 +19,7 @@ npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:intelligence
 npm run hermes:events
+npm run hermes:playbook
 ADMIN_API_TOKEN=... npm run hermes:ops:daily
 ADMIN_API_TOKEN=... npm run hermes:autopilot
 ```
@@ -63,6 +64,12 @@ is required, whether paper orders can be created, and
 `can_submit_real_orders=false`. It blocks paper autopilot when preflight,
 provider health, cursor resync, data quality, budget-chain, or real-execution
 safety blockers exist.
+
+Use `hermes:playbook` when the operator or a Hermes channel needs a phase plan.
+It does not execute commands. It groups the current state into observe,
+stabilize-data, budget-chain, collect-learning, paper-autopilot, and
+learning-review steps, with write/live-call flags and hard real-execution
+denials on every step.
 
 ## Audit Trail
 

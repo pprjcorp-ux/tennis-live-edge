@@ -102,7 +102,11 @@ function eventRouterFixtures(overrides = {}) {
           production_training_examples: 0,
           can_run_live_backtest: false,
         },
-        api_onboarding: { budget_chain_completed: true },
+        api_onboarding: {
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+        },
       },
     },
     ...overrides,
@@ -515,6 +519,133 @@ test("events blocks paper autopilot when provider cursor requires resync", async
     assert.equal(payload.events.some((event) => event.type === "cursor_resync_required"), true);
     assert.equal(payload.events.some((event) => event.can_create_orders), false);
     assert.equal(payload.recommended_commands.includes("npm run api:check:operational-truth -- --pretty"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("playbook prioritizes data stabilization when cursor resync is required", async () => {
+  const fixtures = eventRouterFixtures({
+    "/api/v1/provider-cursors": [
+      {
+        provider: "odds_api_io",
+        stream: "tennis:h2h",
+        status: "gap",
+        last_seq: 10,
+        expected_next_seq: 11,
+        gap_count: 1,
+        resync_required: true,
+        note: "missing seq 11",
+      },
+    ],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["playbook", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.active_phase, "stabilize_data");
+    assert.equal(payload.can_run_paper_autopilot, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    const replayStep = payload.steps.find((step) => step.id === "replay_contracts");
+    assert.equal(replayStep.status, "ready");
+    assert.equal(replayStep.live_api_calls, false);
+    const paperStep = payload.steps.find((step) => step.id === "paper_autopilot");
+    assert.equal(paperStep.status, "blocked");
+    assert.equal(paperStep.can_create_paper_orders, false);
+    assert.equal(payload.hard_boundaries.includes("no_direct_betfair_or_sportsbook_calls"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("playbook exposes paper autopilot as the only order-creating step when clean", async () => {
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["playbook", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.active_phase, "paper_autopilot");
+    assert.equal(payload.can_run_paper_autopilot, true);
+    assert.equal(payload.enterprise_eligible, false);
+    const orderCreatingSteps = payload.steps.filter((step) => step.can_create_paper_orders);
+    assert.equal(orderCreatingSteps.length, 1);
+    assert.equal(orderCreatingSteps[0].id, "paper_autopilot");
+    assert.equal(orderCreatingSteps[0].command, "npm run hermes:autopilot");
+    assert.equal(orderCreatingSteps[0].requires_admin_token, true);
+    assert.equal(orderCreatingSteps[0].can_submit_real_orders, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("playbook keeps enterprise locked when budget chain is incomplete", async () => {
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["playbook", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.active_phase, "budget_chain");
+    assert.equal(payload.budget_chain_completed, false);
+    assert.equal(payload.enterprise_eligible, false);
+    assert.equal(payload.current_budget_step, "1. theoddsapi:archive_odds");
+    const budgetStep = payload.steps.find((step) => step.id === "budget_chain_next_step");
+    assert.equal(budgetStep.status, "ready");
+    assert.match(budgetStep.reason, /theoddsapi:archive_odds/);
   } finally {
     server.close();
   }

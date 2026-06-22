@@ -550,8 +550,11 @@ def main() -> int:
         for required in [
             "async function intelligence()",
             "async function events()",
+            "async function playbook()",
             "buildIntelligenceReport",
             "buildEventPlan",
+            "buildPlaybook",
+            "hard_boundaries",
             "paper_autopilot_candidate",
             "can_submit_real_orders: false",
             "sportsbook_bypass_allowed: false",
@@ -574,7 +577,9 @@ def main() -> int:
     for required in [
         "hermes:intelligence",
         "hermes:events",
+        "hermes:playbook",
         "can_run_paper_autopilot",
+        "can_submit_real_orders=false",
         "licensed provider APIs",
         "internal FastAPI endpoints",
         "sportsbook UI automation",

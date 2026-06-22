@@ -117,6 +117,8 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it may only create paper orders when that router reports
   `can_run_paper_autopilot=true` and the backend still approves the protected
   `hermes:autopilot` call.
+- Hermes operator handoff should consume `npm run hermes:playbook`; it is a
+  planner only and must not execute listed commands or bypass backend gates.
 - Real execution requires a separate compliance/account/API activation task.
 
 ## Verification
@@ -133,6 +135,7 @@ npm --prefix apps/web run build
 python3 scripts/check_private_runtime.py
 npm run api:check:operational-truth -- --pretty
 npm run hermes:events
+npm run hermes:playbook
 ```
 
 `api:check:operational-truth` is the required integrated smoke before API

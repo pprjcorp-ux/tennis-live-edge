@@ -16,7 +16,7 @@ Licensed feeds / replay / operator notes
   -> protected backend action only when gates pass
 ```
 
-Hermes can add leverage in six places:
+Hermes can add leverage in seven places:
 
 1. Intelligence packets: combine provider health, cursor status, cost, data
    quality, paper performance, bankroll, signals, replay lab and onboarding
@@ -24,13 +24,15 @@ Hermes can add leverage in six places:
 2. Event routing: cron/webhook/gateway can wake Hermes only on useful events
    such as feed gaps, stale odds, critical anomalies, quota risk, new entry
    signals, or post-day settlement windows.
-3. Model routing: cheap model for routine triage; strong model only for severe
+3. Playbooks: deterministic phase plans turn events into safe next commands
+   without giving Hermes broad shell discretion.
+4. Model routing: cheap model for routine triage; strong model only for severe
    anomaly, weekly learning review, and real-execution-readiness reports.
-4. Memory: preserve operating lessons, provider quirks, recurring blockers and
+5. Memory: preserve operating lessons, provider quirks, recurring blockers and
    review outcomes, while keeping provider secrets outside prompts.
-5. Skill reuse: the `tennis-edge-ops` skill gives Hermes a narrow, repeatable
+6. Skill reuse: the `tennis-edge-ops` skill gives Hermes a narrow, repeatable
    command surface instead of broad shell improvisation.
-6. Human reachability: Telegram/dashboard can surface concise actions without
+7. Human reachability: Telegram/dashboard can surface concise actions without
    exposing the backend or provider credentials publicly.
 
 ## Safe Collection Boundary
@@ -63,8 +65,8 @@ data through browser tricks.
 
 ### Level 0: Observe
 
-Run `npm run hermes:intelligence`, `npm run hermes:events` and
-`npm run hermes:preflight`. No writes.
+Run `npm run hermes:intelligence`, `npm run hermes:events`,
+`npm run hermes:playbook` and `npm run hermes:preflight`. No writes.
 
 ### Level 1: Rehearse
 
@@ -93,6 +95,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 
 - Every 5 minutes during active windows: `npm run hermes:intelligence`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
+- Every 5 minutes during active windows: `npm run hermes:playbook`.
 - Every 15 minutes: `npm run hermes:preflight`.
 - Every 15 minutes: `npm run hermes:anomalies`.
 - Daily morning: `npm run hermes:ops:daily`.
@@ -108,6 +111,13 @@ turns the internal intelligence packet into compact events such as
 `paper_autopilot_candidate`, and `real_execution_safety_violation`. Each event
 includes one allowed command, whether an admin token is required, and whether
 paper orders may be created. It never marks real order submission as allowed.
+
+`hermes:playbook` is the preferred human/operator handoff. It groups the event
+state into phases: `observe`, `stabilize_data`, `budget_chain`,
+`collect_learning`, `paper_autopilot`, and `learning_review`. Each step includes
+a command, write/live-call flags, admin-token requirement, and a hard
+`can_submit_real_orders=false` value. Hermes can use it as a low-cost dispatch
+map without asking an LLM to infer safety gates from raw status.
 
 ## Evidence Required Before More Autonomy
 

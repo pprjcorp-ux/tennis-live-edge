@@ -31,6 +31,7 @@ npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
+npm run hermes:autonomy-brief
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -148,6 +149,12 @@ intelligence, event routing, unblock lanes, playbook phases, live stats,
 quota-plan throttle state, budget-chain state, and learning review into one
 read-only decision. It does not create paper orders, execute provider smoke,
 spend quota, or submit real orders.
+
+Use `hermes:autonomy-brief` when deciding how far Hermes can safely go next.
+It turns safe-loop state, live-window gates, quota throttles and ledger
+priorities into an autonomy matrix and action queue. It is the recommended
+packet for "jailbreak" requests because it explicitly lists allowed collection
+paths and forbidden bypasses while keeping every action non-executing.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard

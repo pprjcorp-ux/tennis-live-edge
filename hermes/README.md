@@ -45,6 +45,7 @@ npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
+npm run hermes:autonomy-brief
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -164,6 +165,12 @@ and any accidental executed-action rows.
 `hermes:runtime-fix-priorities` converts the ledger report into ordered local
 improvement priorities. It is read-only and never runs the repeated commands it
 surfaces.
+
+`hermes:autonomy-brief` consolidates the safe loop, event routing, live-window
+state, quota throttle and local ledger priorities into one operating packet. It
+is the preferred "maximum autonomy without more authority" view: read-only,
+event-driven, no LLM per tick, no provider calls, no paper orders, and no real
+execution.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

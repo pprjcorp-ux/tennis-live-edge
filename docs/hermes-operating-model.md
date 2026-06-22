@@ -101,6 +101,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 
 - Every 5 minutes during active windows: `npm run hermes:intelligence`.
 - Every 5 minutes when Hermes needs one autonomous packet: `npm run hermes:safe-loop`.
+- Every 5 minutes when Hermes needs the highest-level autonomy decision: `npm run hermes:autonomy-brief`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
 - Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
@@ -134,6 +135,16 @@ lanes, playbook phases, live stats, quota-plan throttle state, budget-chain
 state, and learning review into one JSON decision. It is read-only and keeps
 `provider_api_call_allowed=false`, `llm_per_tick_allowed=false`, and
 `can_submit_real_orders=false`.
+
+`hermes:autonomy-brief` is the preferred packet for deciding how much autonomy
+Hermes can safely use right now. It combines the safe-loop, live-window gates,
+quota throttles and operator-ledger priorities into an autonomy matrix across
+collection, processing, live statistics, paper autopilot, learning and
+enterprise eligibility. It encodes the safe interpretation of "jailbreak":
+licensed APIs, websockets, internal endpoints, persisted replay, manual notes
+and public research are allowed; sportsbook UI automation, anti-bot bypass,
+geolocation bypass, credential/session extraction and real-money execution are
+not.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,
@@ -263,3 +274,15 @@ not be used in scheduled Hermes jobs.
 - Hermes webhook guide: external events can trigger agent runs, but this project
   should route those events into internal FastAPI checks rather than direct
   provider or betting actions.
+- OpenClaw skills and cron docs: skills should narrow tool use, and scheduled
+  jobs should wake Hermes with explicit command/report instructions rather than
+  broad shell freedom.
+- Cloudflare Agents scheduled tasks: scheduled agents can run durable tasks, so
+  any future Cloudflare mirror should call internal read-only packets first and
+  keep stateful writes behind backend gates.
+- OpenAI Agents SDK guardrails: tool guardrails justify keeping provider calls,
+  paper orders, model promotion and real execution as deterministic backend
+  decisions, not direct LLM actions.
+- NATS JetStream/event-store docs: persisted streams and replay support the
+  budget-first rule that collection and model changes should be validated from
+  stored ticks before live spend or enterprise escalation.

@@ -44,6 +44,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-brief
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report
@@ -128,6 +129,9 @@ The `safe-loop` command is the preferred autonomous packet. It aggregates
 runtime, intelligence, events, unblock-plan, playbook, live-stats, quota-plan,
 budget-chain, and learning review into one read-only decision and never creates
 orders or spends provider quota.
+The `autonomy-brief` command converts safe-loop, live-window, quota, research
+principles, and ledger priorities into one autonomy matrix and action queue. It
+is read-only and must not execute the queued actions.
 The `operator-packet` command compresses safe-loop into a short channel-safe
 decision for Telegram/OpenClaw. It is read-only and never executes the next
 safe action it reports.

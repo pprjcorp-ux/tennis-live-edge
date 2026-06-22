@@ -84,6 +84,18 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Autonomy brief every 5 minutes when Hermes needs the highest-level safe
+autonomy decision:
+
+```bash
+hermes cron add \
+  --name tennis-edge-autonomy-brief \
+  --every 5m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:autonomy-brief from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report recommended_lane, autonomy_matrix, action_queue, safe_jailbreak_paths, forbidden_actions, and safety. Do not execute action_queue commands, create orders, run provider smoke, spend provider quota, or submit real orders from this cron." \
+  --timeout-seconds 90
+```
+
 Compact operator packet every 5 minutes for Telegram/OpenClaw:
 
 ```bash

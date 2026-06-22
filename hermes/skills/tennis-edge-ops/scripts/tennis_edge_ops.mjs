@@ -196,6 +196,12 @@ async function safeLoop() {
   printJson(await safeLoopData());
 }
 
+async function autonomyBrief() {
+  const loop = await safeLoopData();
+  const runtimePriorities = buildRuntimeFixPriorities(buildOperatorLedgerReport(readOperatorLedgerRecords()));
+  printJson(buildAutonomyBrief({ loop, runtimePriorities }));
+}
+
 async function operatorPacket() {
   const loop = await safeLoopData();
   printJson(buildOperatorPacket(loop));
@@ -1173,6 +1179,200 @@ function buildSafeLoop({
   };
 }
 
+function buildAutonomyBrief({ loop, runtimePriorities }) {
+  const recommendedLane = chooseAutonomyLane(loop, runtimePriorities);
+  const actionQueue = buildAutonomyActionQueue(loop, runtimePriorities);
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "autonomy_brief",
+    status: loop.status,
+    summary: `Hermes autonomy brief: lane=${recommendedLane.id}, status=${loop.status}, phase=${loop.active_phase}`,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    autonomy_role: "local_safe_orchestrator",
+    decision_source: "deterministic_backend_state_and_local_operator_ledger",
+    recommended_lane: recommendedLane,
+    autonomy_matrix: buildAutonomyMatrix(loop),
+    action_queue: actionQueue,
+    safe_jailbreak_paths: loop.allowed_collection_paths ?? [],
+    forbidden_actions: loop.forbidden_actions ?? [],
+    research_principles: [
+      {
+        id: "event_driven_wakeups",
+        source: "OpenClaw cron and Cloudflare scheduled-agent patterns",
+        application: "Wake Hermes on summarized events, not every odds tick.",
+      },
+      {
+        id: "tool_guardrails",
+        source: "OpenAI Agents SDK guardrail pattern",
+        application: "Keep writes, provider calls, paper orders and real execution behind deterministic backend gates.",
+      },
+      {
+        id: "event_sourced_replay",
+        source: "JetStream/Postgres replay architecture",
+        application: "Use persisted ticks and replay/contracts before live paid feed spend.",
+      },
+    ],
+    safety: {
+      real_execution_hard_block: loop.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      can_create_paper_orders: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function chooseAutonomyLane(loop, runtimePriorities) {
+  if (loop.status === "safety_stop") {
+    return autonomyLane("safety_stop", 0, "safety", "Stop all automation and inspect real-execution safety.");
+  }
+  if (loop.runtime?.status !== "ready") {
+    return autonomyLane("stabilize_runtime", 10, "local_runtime", "Fix Hermes local runtime diagnostics before protected automation.");
+  }
+  const topRuntimePriority = runtimePriorities.next_priority;
+  if (topRuntimePriority) {
+    return autonomyLane(
+      topRuntimePriority.id,
+      topRuntimePriority.priority,
+      topRuntimePriority.lane,
+      topRuntimePriority.reason
+    );
+  }
+  if (loop.quota_plan?.throttle_level === "blocked") {
+    return autonomyLane("freeze_provider_collection", 20, "cost_guard", "Keep provider traffic frozen while quota/cost gates are blocked.");
+  }
+  if (!loop.budget_chain?.completed) {
+    return autonomyLane("complete_budget_chain", 30, "provider_onboarding", "Complete the budget provider chain before enterprise or live paper readiness.");
+  }
+  if (loop.event_summary?.can_run_paper_autopilot) {
+    return autonomyLane("paper_autopilot_review", 40, "paper_trading", "Backend gates allow paper autopilot review; real execution remains blocked.");
+  }
+  return autonomyLane("observe_and_collect", 50, "observe", "Keep collecting deterministic status and learning evidence.");
+}
+
+function autonomyLane(id, priority, lane, reason) {
+  return {
+    id,
+    priority,
+    lane,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
+function buildAutonomyMatrix(loop) {
+  const providerFrozen = loop.provider_api_call_allowed === false || loop.quota_plan?.throttle_level === "blocked";
+  const liveStats = loop.live_stats ?? {};
+  return {
+    collect: {
+      status: providerFrozen ? "frozen" : "candidate",
+      source: providerFrozen ? "persisted_replay_and_internal_status" : "licensed_provider_api",
+      provider_api_call_allowed: false,
+      reason: providerFrozen
+        ? "Provider calls stay frozen until budget, freshness and cursor gates clear."
+        : "Provider calls still require an explicit operator command.",
+    },
+    process: {
+      status: loop.source_mode === "live" && !providerFrozen ? "live_candidate" : "replay_only",
+      source: "FastAPI_canonical_state",
+      writes: false,
+      reason: "Hermes reads canonical backend state; Python/Postgres own tick processing.",
+    },
+    live_statistics: {
+      status: liveStats.collection_status ?? "unknown",
+      sampling_policy: liveStats.sampling_policy?.name ?? "unknown",
+      health_scores: liveStats.health_scores ?? {},
+      llm_per_tick_allowed: false,
+      reason: "Live math stays deterministic; Hermes summarizes state thresholds.",
+    },
+    paper_autopilot: {
+      status: loop.event_summary?.can_run_paper_autopilot ? "candidate" : "blocked",
+      can_create_paper_orders: false,
+      reason: loop.event_summary?.can_run_paper_autopilot
+        ? "Only backend autopilot may create paper orders after admin-token gates."
+        : "Blocked until event router and backend gates allow paper autopilot.",
+    },
+    learning: {
+      status: loop.learning_review?.review_status ?? "unknown",
+      model_route: loop.learning_review?.model_route ?? null,
+      reason: "Strong model review is periodic; promotion remains deterministic and offline.",
+    },
+    enterprise: {
+      status: loop.budget_chain?.enterprise_eligible ? "eligible" : "locked",
+      reason: "Enterprise feeds stay locked until the budget chain is complete and proven.",
+    },
+  };
+}
+
+function buildAutonomyActionQueue(loop, runtimePriorities) {
+  const actions = [];
+  if (loop.next_best_command) {
+    actions.push(autonomyAction({
+      id: loop.next_best_command.id,
+      command: loop.next_best_command.command,
+      reason: loop.next_best_command.reason,
+      priority: 10,
+      source: "safe_loop",
+      requiresAdminToken: loop.next_best_command.requires_admin_token,
+      writes: loop.next_best_command.writes,
+    }));
+  }
+  for (const priority of runtimePriorities.priorities.slice(0, 3)) {
+    actions.push(autonomyAction({
+      id: priority.id,
+      command: priority.diagnostic_command,
+      reason: priority.reason,
+      priority: priority.priority,
+      source: "operator_ledger",
+      requiresAdminToken: priority.requires_admin_token,
+      writes: priority.writes,
+    }));
+  }
+  for (const command of (loop.safe_commands ?? []).slice(0, 5)) {
+    if (actions.some((item) => item.command === command.command)) continue;
+    actions.push(autonomyAction({
+      id: command.id,
+      command: command.command,
+      reason: command.reason,
+      priority: 80,
+      source: "safe_commands",
+      requiresAdminToken: command.requires_admin_token,
+      writes: command.writes,
+    }));
+  }
+  return actions.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+}
+
+function autonomyAction({ id, command, reason, priority, source, requiresAdminToken = false, writes = false }) {
+  return {
+    id,
+    command,
+    reason,
+    priority,
+    source,
+    executes_now: false,
+    writes: Boolean(writes),
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    requires_admin_token: Boolean(requiresAdminToken),
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
 function safeLoopStatus({ runtime, eventPlan }) {
   if (eventPlan.events.some((item) => item.type === "real_execution_safety_violation")) {
     return "safety_stop";
@@ -1683,6 +1883,12 @@ function schedulerSchedule(loop) {
       command: "npm --silent run hermes:safe-loop",
       everyMinutes: safeLoopInterval,
       reason: "Refresh the full autonomous packet without executing suggested actions.",
+    }),
+    schedulerItem({
+      id: "autonomy_brief",
+      command: "npm --silent run hermes:autonomy-brief",
+      everyMinutes: safeLoopInterval,
+      reason: "Refresh the highest-level autonomy matrix and action queue without executing actions.",
     }),
     schedulerItem({
       id: "runtime_check",
@@ -3753,6 +3959,7 @@ const commands = {
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,
   "safe-loop": safeLoop,
+  "autonomy-brief": autonomyBrief,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,

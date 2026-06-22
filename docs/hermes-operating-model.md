@@ -280,6 +280,12 @@ When `doctor-triage` also times out with
 instead of recommending the same bounded recheck again. Any `hermes update`
 route is emitted only as a manual operator review with
 `mutates_runtime_if_run=true`.
+Doctor timeout packets preserve sanitized partial progress in
+`runtime_findings.doctor_progress`: sections seen, last section, whether API
+Connectivity was reached, and the connectivity-check count. If API Connectivity
+was reached before timeout, the likely cause becomes
+`persistent_doctor_api_connectivity_timeout`, which pushes operators toward
+connectivity/update review instead of repeating blind probes.
 
 `hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
 turns the internal intelligence packet into compact events such as

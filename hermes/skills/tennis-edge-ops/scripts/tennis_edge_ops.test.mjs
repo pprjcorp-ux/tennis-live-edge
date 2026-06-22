@@ -852,7 +852,7 @@ test("doctor-triage escalates persistent gateway-running timeouts without loopin
       "#!/usr/bin/env node",
       "if (process.argv[2] === '--version') { console.log('Hermes Agent v0.17.0\\nUpdate available: 216 commits behind'); process.exit(0); }",
       "else if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✓ running\\nAuth\\n  OpenAI        ✓ configured'); process.exit(0); }",
-      "else if (process.argv[2] === 'doctor') { setTimeout(() => {}, 10000); }",
+      "else if (process.argv[2] === 'doctor') { console.log('◆ API Connectivity\\n  Running 26 connectivity checks in parallel...'); setTimeout(() => {}, 10000); }",
       "else { process.exit(2); }",
       "",
     ].join("\n"),
@@ -879,8 +879,11 @@ test("doctor-triage escalates persistent gateway-running timeouts without loopin
   assert.equal(payload.doctor_timeout_ms, 5000);
   assert.equal(payload.runtime_findings.gateway_service_status, "running");
   assert.equal(payload.runtime_findings.doctor_status, "timed_out");
-  assert.equal(payload.likely_cause, "persistent_doctor_timeout_with_gateway_running");
-  assert.equal(payload.next_safe_actions[0].id, "persistent_doctor_timeout_review");
+  assert.equal(payload.runtime_findings.doctor_progress.reached_api_connectivity, true);
+  assert.equal(payload.runtime_findings.doctor_progress.connectivity_checks_count, 26);
+  assert.equal(payload.runtime_findings.doctor_progress.last_section, "API Connectivity");
+  assert.equal(payload.likely_cause, "persistent_doctor_api_connectivity_timeout");
+  assert.equal(payload.next_safe_actions[0].id, "api_connectivity_timeout_review");
   assert.equal(payload.next_safe_actions.some((action) => action.id === "bounded_doctor_recheck"), false);
   assert.equal(payload.next_safe_actions.some((action) => (
     action.id === "manual_hermes_update_review"

@@ -239,6 +239,11 @@ If `doctor-triage` still times out with `HERMES_DOCTOR_TRIAGE_TIMEOUT_MS=5000`
 and the gateway is running, classify it as persistent timeout and stop
 recommending the same bounded recheck. Report `hermes update` only as a manual
 operator review with `mutates_runtime_if_run=true`.
+Doctor timeouts should preserve sanitized partial progress in
+`runtime_findings.doctor_progress`, including seen sections and API
+connectivity check count. If the doctor reaches API Connectivity before timing
+out, classify it as `persistent_doctor_api_connectivity_timeout` so operators
+investigate connectivity/update paths instead of rerunning blind probes.
 The `operator-packet` command compresses safe-loop into a short channel-safe
 decision for Telegram/OpenClaw. It is read-only and never executes the next
 safe action it reports.

@@ -982,6 +982,9 @@ function doctorTriageLikelyCause({ versionCommand, statusCommand, doctorCommand,
   }
   if (doctorCommand?.timed_out) {
     if (Number(doctorTimeoutMs) >= 5_000 && runtimeFindings.gateway_service_status === "running") {
+      if (runtimeFindings.doctor_progress?.reached_api_connectivity) {
+        return "persistent_doctor_api_connectivity_timeout";
+      }
       return "persistent_doctor_timeout_with_gateway_running";
     }
     return runtimeFindings.gateway_service_status === "running"
@@ -1054,6 +1057,25 @@ function doctorTriageActions({ likelyCause, runtimeFindings, doctorTimeoutMs }) 
         priority: 10,
         command: "npm run hermes:runtime-check",
         reason: `Doctor still timed out after ${doctorTimeoutMs}ms while gateway is running; stop repeating doctor probes and review runtime status/update path manually.`,
+      }),
+      doctorTriageAction({
+        id: "manual_hermes_update_review",
+        priority: 20,
+        command: "hermes update",
+        reason: "Hermes version output may report an available update; update only from an operator shell after reviewing release risk.",
+        mutatesRuntimeIfRun: true,
+        requiresOperatorConfirmation: true,
+      }),
+      ...base,
+    ];
+  }
+  if (likelyCause === "persistent_doctor_api_connectivity_timeout") {
+    return [
+      doctorTriageAction({
+        id: "api_connectivity_timeout_review",
+        priority: 10,
+        command: "npm run hermes:runtime-check",
+        reason: `Doctor reached API Connectivity and still timed out after ${doctorTimeoutMs}ms; review network/provider connectivity manually instead of repeating doctor probes.`,
       }),
       doctorTriageAction({
         id: "manual_hermes_update_review",
@@ -2271,6 +2293,7 @@ function buildRuntimeFindings(commands) {
   const statusCommand = commands.find((item) => item.name === "hermes status");
   const doctorCommand = commands.find((item) => item.name === "hermes doctor");
   const gatewayStatus = parseGatewayStatus(statusCommand?.stdout ?? "");
+  const doctorProgress = parseDoctorProgress(doctorCommand?.stdout ?? "");
   const doctorStatus = doctorCommand?.timed_out
     ? "timed_out"
     : doctorCommand?.error_code
@@ -2293,6 +2316,22 @@ function buildRuntimeFindings(commands) {
     blockers,
     auth_notes: runtimeAuthNotes(statusCommand?.stdout ?? ""),
     messaging_notes: runtimeMessagingNotes(statusCommand?.stdout ?? ""),
+    doctor_progress: doctorCommand ? doctorProgress : null,
+  };
+}
+
+function parseDoctorProgress(output) {
+  const text = String(output ?? "");
+  const sections = [...text.matchAll(/^◆\s+(.+?)\s*$/gm)]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+  const connectivityMatch = text.match(/Running\s+(\d+)\s+connectivity checks/i);
+  return {
+    sections_seen: sections,
+    last_section: sections.at(-1) ?? null,
+    reached_api_connectivity: sections.includes("API Connectivity"),
+    connectivity_checks_count: connectivityMatch ? Number(connectivityMatch[1]) : null,
+    stdout_available: text.trim().length > 0,
   };
 }
 

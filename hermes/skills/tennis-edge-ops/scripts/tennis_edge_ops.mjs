@@ -1473,6 +1473,10 @@ async function grandSlamMission() {
   printJson(await grandSlamMissionData());
 }
 
+async function grandSlamScorelineForecast() {
+  printJson(await grandSlamScorelineForecastData());
+}
+
 async function grandSlamMissionLedger() {
   const mission = await grandSlamMissionData();
   const ledger = buildGrandSlamMissionLedger(mission);
@@ -1508,6 +1512,39 @@ async function grandSlamReadinessData() {
   });
 }
 
+async function grandSlamScorelineForecastData() {
+  const [backend, report, matches] = await Promise.all([
+    backendReadinessData(),
+    intelligenceData(),
+    liveMatchesData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  const liveWindowPlan = buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan);
+  const pulse = buildMatchPulse({ report, eventPlan, liveWindowPlan, matches });
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+  const grandSlam = buildGrandSlamReadiness({
+    backend,
+    report,
+    eventPlan,
+    liveWindowPlan,
+    pulse,
+    sourceRoutes,
+    matches,
+  });
+  return buildGrandSlamScorelineForecast({
+    backend,
+    report,
+    liveWindowPlan,
+    pulse,
+    sourceRoutes,
+    matches,
+    grandSlam,
+  });
+}
+
 async function grandSlamMissionData() {
   const [backend, report, matches] = await Promise.all([
     backendReadinessData(),
@@ -1531,6 +1568,15 @@ async function grandSlamMissionData() {
     pulse,
     sourceRoutes,
     matches,
+  });
+  const scorelineForecast = buildGrandSlamScorelineForecast({
+    backend,
+    report,
+    liveWindowPlan,
+    pulse,
+    sourceRoutes,
+    matches,
+    grandSlam,
   });
   const historicalBackfill = buildHistoricalBackfillPlan({
     report,
@@ -1561,6 +1607,7 @@ async function grandSlamMissionData() {
     sourceRoutes,
     historicalBackfill,
     grandSlam,
+    scorelineForecast,
     learning,
     liveControllerPlan,
   });
@@ -1694,10 +1741,11 @@ async function triggerPolicy() {
 }
 
 async function opsCompiler() {
-  const [loop, report, grandSlam] = await Promise.all([
+  const [loop, report, grandSlam, scorelineForecast] = await Promise.all([
     safeLoopData(),
     intelligenceData(),
     grandSlamReadinessData(),
+    grandSlamScorelineForecastData(),
   ]);
   const { effectiveness } = autonomyEffectivenessData();
   const eventPlan = buildEventPlan(report);
@@ -1732,6 +1780,7 @@ async function opsCompiler() {
     operator,
     effectiveness,
     enterpriseAccuracy,
+    scorelineForecast,
   }));
 }
 
@@ -3924,6 +3973,7 @@ function buildOpsCompiler({
   operator,
   effectiveness = null,
   enterpriseAccuracy = null,
+  scorelineForecast = null,
 }) {
   const compiledAction = compileNextAction({ loop, triggerPlan, autonomyPlan, operator });
   return {
@@ -3946,6 +3996,7 @@ function buildOpsCompiler({
       operator,
       effectiveness,
       enterpriseAccuracy,
+      scorelineForecast,
     }),
     model_router: buildOpsModelRouter({ loop, triggerPlan }),
     operator_packet: {
@@ -3983,6 +4034,7 @@ function buildOpsCompiler({
     },
     autonomy_effectiveness: autonomyEffectivenessSummary(effectiveness),
     enterprise_accuracy: enterpriseAccuracySummary(enterpriseAccuracy),
+    grand_slam_scoreline_forecast: scorelineForecast ? grandSlamScorelineForecastSummary(scorelineForecast) : null,
     safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
     forbidden_actions: loop.forbidden_actions ?? sourcePlan.forbidden_actions ?? [],
     safety: {
@@ -4034,6 +4086,7 @@ function buildExecutionGraph({
   operator,
   effectiveness = null,
   enterpriseAccuracy = null,
+  scorelineForecast = null,
 }) {
   const nodes = [
     graphNode({
@@ -4083,6 +4136,14 @@ function buildExecutionGraph({
       command: "npm --silent run hermes:enterprise-accuracy-plan",
       reason: `Enterprise accuracy plan is ${enterpriseAccuracy.status}; providers=${enterpriseAccuracy.no_budget_provider_stack?.length ?? 0}.`,
       status: enterpriseAccuracy.status,
+    }));
+  }
+  if (scorelineForecast) {
+    nodes.push(graphNode({
+      id: "grand_slam_scoreline_forecast",
+      command: "npm --silent run hermes:grand-slam-scoreline-forecast",
+      reason: `Grand Slam scoreline forecast is ${scorelineForecast.status}; forecasts=${scorelineForecast.forecasts?.length ?? 0}.`,
+      status: scorelineForecast.status,
     }));
   }
   return nodes;
@@ -4835,7 +4896,7 @@ function enterpriseAccuracyProviderStack({ enterpriseEligible, report, sourceRou
       status,
       access: ["BETFAIR_APP_KEY", "BETFAIR_CERT_PATH", "BETFAIR_KEY_PATH", "market data stream access"],
       evidence: ["execution remains hard-blocked; market data only in this phase"],
-      sourceUrl: "https://support.developer.betfair.com/hc/en-us/articles/115003887871-How-do-I-get-access-to-the-Stream-API",
+      sourceUrl: null,
     }),
     enterpriseAccuracyProvider({
       id: "opticodds_or_theoddsapi_consensus",
@@ -5073,6 +5134,426 @@ function enterpriseAccuracySummary(plan) {
   };
 }
 
+function buildGrandSlamScorelineForecast({
+  backend,
+  report,
+  liveWindowPlan,
+  pulse,
+  sourceRoutes,
+  matches,
+  grandSlam,
+}) {
+  const pulseByMatchId = new Map((pulse.watchlist ?? []).map((row) => [row.match_id, row]));
+  const slamRows = matches
+    .map((analysis) => grandSlamMatchRow(analysis))
+    .filter((row) => row.is_grand_slam)
+    .map((row) => ({
+      ...row,
+      pulse: pulseByMatchId.get(row.match_id) ?? null,
+    }));
+  const forecasts = slamRows.map((row) => grandSlamScorelineForecastRow(row));
+  const blockers = [...new Set(forecasts.flatMap((row) => row.blocked_reasons ?? []))];
+  const status = grandSlamScorelineForecastStatus({
+    backend,
+    report,
+    grandSlam,
+    forecasts,
+  });
+  const providerStack = enterpriseAccuracyProviderStack({
+    enterpriseEligible: Boolean(report.budget_chain_snapshot?.enterprise_eligible),
+    report,
+    sourceRoutes,
+  });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "grand_slam_scoreline_forecast",
+    objective: "project Grand Slam match winners and plausible set scorelines from existing backend probabilities only",
+    status,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    provider_mode: report.data_snapshot?.provider_mode ?? "unknown",
+    grand_slam_readiness: {
+      status: grandSlam.status,
+      prediction_ready: Boolean(grandSlam.prediction_ready),
+      paper_ready: Boolean(grandSlam.paper_ready),
+      active_grand_slams: grandSlam.active_grand_slams ?? [],
+      visible_matches: grandSlam.matches?.grand_slam_visible ?? 0,
+      prediction_rows: grandSlam.matches?.prediction_rows ?? 0,
+    },
+    scoreline_contract: grandSlamScorelineContract(),
+    summary: {
+      total_grand_slam_rows: slamRows.length,
+      forecast_ready_rows: forecasts.filter((row) => row.status === "forecast_ready").length,
+      blocked_rows: forecasts.filter((row) => row.status === "blocked").length,
+      top_forecast: forecasts.find((row) => row.status === "forecast_ready") ?? forecasts[0] ?? null,
+    },
+    forecasts,
+    blockers,
+    feature_gaps: grandSlamScorelineFeatureGaps(),
+    enterprise_unlocks: providerStack.slice(0, 5).map((provider) => ({
+      provider_id: provider.id,
+      provider: provider.provider,
+      unlocks: provider.unlocks,
+      status: provider.status,
+      provider_api_call_allowed: false,
+    })),
+    next_action: grandSlamScorelineNextAction({ status, grandSlam, liveWindowPlan }),
+    safe_jailbreak_policy: {
+      meaning: "Only internal FastAPI/Postgres rows, replay data, licensed providers and operator-reviewed historical sources may improve forecasts.",
+      allowed_paths: [
+        "internal_fastapi_packets",
+        "persisted_postgres_replay",
+        "licensed_provider_api_after_operator_approval",
+        "license_reviewed_historical_backfill",
+      ],
+      bypass_allowed: false,
+      live_scraping_allowed: false,
+      sportsbook_browser_automation_allowed: false,
+      provider_quota_spend_without_operator: false,
+      llm_per_tick_allowed: false,
+    },
+    forbidden_actions: [
+      ...(report.forbidden_collection_paths ?? []),
+      "live_scoreboard_scraping",
+      "sportsbook_ui_automation",
+      "provider_quota_spend_without_operator",
+      "paper_order_creation_from_scoreline_packet",
+      "real_money_execution",
+    ],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block === true
+        && backend.safety?.real_execution_hard_block === true,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function grandSlamScorelineForecastRow(row) {
+  const projection = scorelineProjection(row);
+  const blockedReasons = grandSlamScorelineBlockedReasons(row, projection);
+  const warnings = grandSlamScorelineWarnings(row);
+  return {
+    match_id: row.match_id,
+    tournament: row.tournament,
+    grand_slam_id: row.grand_slam_id,
+    grand_slam_label: row.grand_slam_label,
+    tour: row.tour,
+    surface: row.surface,
+    round: row.round,
+    status: blockedReasons.length ? "blocked" : "forecast_ready",
+    match_status: row.status,
+    format: projection.format,
+    best_of_sets: projection.best_of_sets,
+    players: {
+      p1: row.player1,
+      p2: row.player2,
+    },
+    projected_winner_id: projection.projected_winner_id,
+    projected_winner_name: projection.projected_winner_name,
+    winner_probability: projection.winner_probability,
+    projected_scoreline: projection.projected_scoreline,
+    scoreline_distribution: projection.scoreline_distribution,
+    confidence: grandSlamScorelineConfidence({ row, projection, blockedReasons, warnings }),
+    data_quality: {
+      score_valid: Boolean(row.status),
+      probability_valid: projection.probability_valid,
+      format_known: projection.best_of_sets !== null,
+      fresh_score: grandSlamFreshScore(row),
+      fresh_odds: grandSlamFreshOdds(row),
+      score_age_ms: Number.isFinite(Number(row.freshness?.score_age_ms)) ? Number(row.freshness.score_age_ms) : null,
+      odds_age_ms: Number.isFinite(Number(row.freshness?.odds_age_ms)) ? Number(row.freshness.odds_age_ms) : null,
+      signal_status: row.pulse?.signal?.status ?? null,
+      attention: row.pulse?.attention ?? null,
+    },
+    blocked_reasons: blockedReasons,
+    warnings,
+    model_version: row.prediction?.model_version ?? null,
+    notes: projection.notes,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function scorelineProjection(row) {
+  const p1 = Number(row.prediction?.p1_win_prob);
+  const p2 = Number(row.prediction?.p2_win_prob);
+  const probabilityValid = Number.isFinite(p1) && Number.isFinite(p2);
+  const format = grandSlamMatchFormat(row);
+  if (!probabilityValid || !format.best_of_sets) {
+    return {
+      probability_valid: probabilityValid,
+      format: format.id,
+      best_of_sets: format.best_of_sets,
+      projected_winner_id: null,
+      projected_winner_name: null,
+      winner_probability: null,
+      projected_scoreline: null,
+      scoreline_distribution: [],
+      notes: ["missing_probability_or_format"],
+    };
+  }
+  const p1Favored = p1 >= p2;
+  const winnerProbability = Number(Math.max(p1, p2).toFixed(4));
+  const winner = p1Favored ? row.player1 : row.player2;
+  const distribution = grandSlamSetScoreDistribution({ winnerProbability, bestOfSets: format.best_of_sets });
+  return {
+    probability_valid: true,
+    format: format.id,
+    best_of_sets: format.best_of_sets,
+    projected_winner_id: winner.id ?? null,
+    projected_winner_name: winner.name ?? (p1Favored ? "Player 1" : "Player 2"),
+    winner_probability: winnerProbability,
+    projected_scoreline: distribution[0]?.scoreline ?? null,
+    scoreline_distribution: distribution,
+    notes: [
+      "deterministic_set_score_heuristic",
+      "uses_existing_backend_match_probability",
+      "not_exact_game_score_prediction",
+    ],
+  };
+}
+
+function grandSlamMatchFormat(row) {
+  const explicitBestOf = Number(row.best_of_sets ?? row.match_format?.best_of_sets);
+  if ([3, 5].includes(explicitBestOf)) {
+    return { id: explicitBestOf === 5 ? "bo5" : "bo3", best_of_sets: explicitBestOf };
+  }
+  const tour = String(row.tour ?? "").toUpperCase();
+  if (tour === "ATP") return { id: "bo5", best_of_sets: 5 };
+  if (tour === "WTA") return { id: "bo3", best_of_sets: 3 };
+  return { id: "unknown", best_of_sets: null };
+}
+
+function grandSlamSetScoreDistribution({ winnerProbability, bestOfSets }) {
+  const bands = bestOfSets === 5
+    ? grandSlamBo5Distribution(winnerProbability)
+    : grandSlamBo3Distribution(winnerProbability);
+  return bands.map((item) => ({
+    scoreline: item.scoreline,
+    relative_probability: item.relative_probability,
+    basis: "conditional_on_projected_winner",
+  }));
+}
+
+function grandSlamBo5Distribution(probability) {
+  if (probability >= 0.72) {
+    return [
+      { scoreline: "3-0", relative_probability: 0.48 },
+      { scoreline: "3-1", relative_probability: 0.34 },
+      { scoreline: "3-2", relative_probability: 0.18 },
+    ];
+  }
+  if (probability >= 0.6) {
+    return [
+      { scoreline: "3-1", relative_probability: 0.42 },
+      { scoreline: "3-0", relative_probability: 0.3 },
+      { scoreline: "3-2", relative_probability: 0.28 },
+    ];
+  }
+  return [
+    { scoreline: "3-2", relative_probability: 0.46 },
+    { scoreline: "3-1", relative_probability: 0.34 },
+    { scoreline: "3-0", relative_probability: 0.2 },
+  ];
+}
+
+function grandSlamBo3Distribution(probability) {
+  if (probability >= 0.7) {
+    return [
+      { scoreline: "2-0", relative_probability: 0.58 },
+      { scoreline: "2-1", relative_probability: 0.42 },
+    ];
+  }
+  if (probability >= 0.58) {
+    return [
+      { scoreline: "2-1", relative_probability: 0.52 },
+      { scoreline: "2-0", relative_probability: 0.48 },
+    ];
+  }
+  return [
+    { scoreline: "2-1", relative_probability: 0.65 },
+    { scoreline: "2-0", relative_probability: 0.35 },
+  ];
+}
+
+function grandSlamScorelineBlockedReasons(row, projection) {
+  const reasons = [];
+  if (!row.match_id) reasons.push("missing_match_id");
+  if (!projection.probability_valid) reasons.push("missing_match_probability");
+  if (!projection.best_of_sets) reasons.push("unknown_grand_slam_match_format");
+  if (!row.player1?.id || !row.player2?.id) reasons.push("canonical_player_mapping_incomplete");
+  if (!row.status) reasons.push("missing_score_state");
+  return reasons;
+}
+
+function grandSlamScorelineWarnings(row) {
+  const warnings = [];
+  if (!grandSlamFreshScore(row)) warnings.push("score_state_not_fresh");
+  if (!grandSlamFreshOdds(row)) warnings.push("odds_not_fresh_or_absent");
+  if (!row.pulse?.signal) warnings.push("no_signal_row_attached");
+  return warnings;
+}
+
+function grandSlamFreshScore(row) {
+  const age = Number(row.freshness?.score_age_ms);
+  if (!Number.isFinite(age)) return row.status === "scheduled";
+  return age <= 30_000;
+}
+
+function grandSlamFreshOdds(row) {
+  const age = Number(row.freshness?.odds_age_ms);
+  if (!Number.isFinite(age)) return false;
+  return age <= 15_000;
+}
+
+function grandSlamScorelineConfidence({ row, projection, blockedReasons, warnings }) {
+  if (blockedReasons.length) return "Baixa";
+  const modelConfidence = row.prediction?.confidence;
+  if (modelConfidence) return modelConfidence;
+  if (projection.winner_probability >= 0.68 && warnings.length <= 1) return "Alta";
+  if (projection.winner_probability >= 0.58) return "Media";
+  return "Baixa";
+}
+
+function grandSlamScorelineForecastStatus({ backend, report, grandSlam, forecasts }) {
+  if (backend.status !== "ready" || report.safety?.real_execution_hard_block !== true) return "blocked";
+  if (grandSlam.status === "blocked") return "blocked";
+  if (grandSlam.status === "off_calendar") return "off_calendar";
+  if (!forecasts.length) return "collecting";
+  if (forecasts.some((row) => row.status === "forecast_ready")) {
+    return grandSlam.paper_ready ? "paper_ready" : "forecast_ready";
+  }
+  return "collecting";
+}
+
+function grandSlamScorelineContract() {
+  return {
+    deterministic: true,
+    prediction_unit: "set_scoreline_not_exact_game_score",
+    model_source: "existing_fastapi_prediction_rows",
+    bo5_scope: "ATP Grand Slam singles",
+    bo3_scope: "WTA Grand Slam singles",
+    bo5_outcomes: ["3-0", "3-1", "3-2"],
+    bo3_outcomes: ["2-0", "2-1"],
+    acceptance_gates: [
+      "canonical_match_id",
+      "canonical_player_mapping",
+      "match_win_probability_present",
+      "grand_slam_format_known",
+      "score_state_present",
+      "real_execution_hard_block",
+    ],
+    explicit_limits: [
+      "does_not_predict_exact_game_scores",
+      "does_not_call_live_provider_apis",
+      "does_not_create_paper_orders",
+      "does_not_submit_real_orders",
+      "does_not_use_llm_per_tick",
+    ],
+  };
+}
+
+function grandSlamScorelineFeatureGaps() {
+  return [
+    {
+      id: "point_by_point_state",
+      impact: "highest_live_accuracy",
+      unlock: "Markov point/game/set engine with current server, point score and tiebreak state.",
+    },
+    {
+      id: "serve_return_priors",
+      impact: "prematch_and_live_scoreline",
+      unlock: "Surface-adjusted hold/break probability by player and opponent.",
+    },
+    {
+      id: "odds_microstructure",
+      impact: "market_confidence",
+      unlock: "Line velocity, suspension timing, exchange depth and closing-line proxy.",
+    },
+    {
+      id: "retirement_injury_hazard",
+      impact: "risk_control",
+      unlock: "Delay, medical timeout, retirement history and public injury-note integration.",
+    },
+    {
+      id: "shot_by_shot_quality",
+      impact: "enterprise_precision",
+      unlock: "Serve quality, return depth, rally length, winners/errors and fatigue pressure.",
+    },
+  ];
+}
+
+function grandSlamScorelineNextAction({ status, grandSlam, liveWindowPlan }) {
+  if (status === "blocked") {
+    return grandSlamAction({
+      id: "restore_operational_truth",
+      command: "npm run api:check:operational-truth -- --pretty",
+      reason: "Restore backend/safety gates before producing scoreline forecasts.",
+    });
+  }
+  if (status === "off_calendar") {
+    return grandSlamAction({
+      id: "prepare_historical_priors",
+      command: "npm --silent run hermes:historical-backfill-plan",
+      reason: "No Grand Slam is active; improve future scoreline priors with licensed/offline historical data.",
+    });
+  }
+  if (status === "collecting") {
+    return grandSlamAction({
+      id: "collect_grand_slam_prediction_rows",
+      command: grandSlam.next_action?.command ?? "npm --silent run hermes:grand-slam-readiness",
+      reason: "Wait for Grand Slam match rows with backend probabilities before scoreline forecasting.",
+    });
+  }
+  if (status === "paper_ready") {
+    return grandSlamAction({
+      id: "observe_paper_ready_forecasts",
+      command: liveWindowPlan.next_action?.command ?? "npm --silent run hermes:grand-slam-scoreline-forecast",
+      reason: "Scoreline forecasts exist and paper gates are ready; only protected backend routes may create paper orders.",
+    });
+  }
+  return grandSlamAction({
+    id: "review_scoreline_forecasts",
+    command: "npm --silent run hermes:grand-slam-scoreline-forecast",
+    reason: "Review projected winners and set-score distributions from internal prediction rows.",
+  });
+}
+
+function grandSlamScorelineForecastSummary(forecast) {
+  return {
+    status: forecast.status,
+    total_grand_slam_rows: forecast.summary?.total_grand_slam_rows ?? 0,
+    forecast_ready_rows: forecast.summary?.forecast_ready_rows ?? 0,
+    blocked_rows: forecast.summary?.blocked_rows ?? 0,
+    top_forecast: forecast.summary?.top_forecast ? {
+      match_id: forecast.summary.top_forecast.match_id,
+      projected_winner_name: forecast.summary.top_forecast.projected_winner_name,
+      projected_scoreline: forecast.summary.top_forecast.projected_scoreline,
+      winner_probability: forecast.summary.top_forecast.winner_probability,
+      confidence: forecast.summary.top_forecast.confidence,
+    } : null,
+    next_action: forecast.next_action,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
 function buildGrandSlamMission({
   backend,
   report,
@@ -5085,6 +5566,7 @@ function buildGrandSlamMission({
   sourceRoutes,
   historicalBackfill,
   grandSlam,
+  scorelineForecast,
   learning,
   liveControllerPlan,
 }) {
@@ -5101,6 +5583,7 @@ function buildGrandSlamMission({
     sourceRoutes,
     historicalBackfill,
     grandSlam,
+    scorelineForecast,
     learning,
     liveControllerPlan,
   });
@@ -5123,6 +5606,7 @@ function buildGrandSlamMission({
       `backend=${backend.status}`,
       `live_window=${liveWindowPlan.status}`,
       `controller=${liveControllerPlan.status}`,
+      `scoreline=${scorelineForecast.status}`,
       `historical_backfill=${historicalBackfill.status}`,
     ].join(" | "),
     next_action: nextAction,
@@ -5135,6 +5619,7 @@ function buildGrandSlamMission({
       matches: grandSlam.matches,
       next_action: grandSlam.next_action,
     },
+    grand_slam_scoreline_forecast: grandSlamScorelineForecastSummary(scorelineForecast),
     live_control: {
       status: liveControllerPlan.status,
       decision: liveControllerPlan.operator_decision,
@@ -5260,6 +5745,7 @@ function grandSlamMissionPhases({
   sourceRoutes,
   historicalBackfill,
   grandSlam,
+  scorelineForecast,
   learning,
   liveControllerPlan,
 }) {
@@ -5327,6 +5813,24 @@ function grandSlamMissionPhases({
         `paper_candidates=${grandSlam.matches?.paper_candidates ?? 0}`,
         `health_scores=${JSON.stringify(liveStatsPlan.health_scores ?? {})}`,
       ],
+      active: ["prediction_watch", "paper_learning"].includes(phase.id),
+    }),
+    grandSlamMissionPhaseRow({
+      id: "scoreline_forecast",
+      status: ["forecast_ready", "paper_ready"].includes(scorelineForecast.status)
+        ? "pass"
+        : scorelineForecast.status === "blocked"
+          ? "blocked"
+          : "monitor",
+      command: "npm --silent run hermes:grand-slam-scoreline-forecast",
+      reason: "Hermes should expose deterministic set-scoreline projections only after backend probability rows exist.",
+      evidence: [
+        `scoreline_status=${scorelineForecast.status}`,
+        `forecast_ready_rows=${scorelineForecast.summary?.forecast_ready_rows ?? 0}`,
+        `blocked_rows=${scorelineForecast.summary?.blocked_rows ?? 0}`,
+        `top_scoreline=${scorelineForecast.summary?.top_forecast?.projected_scoreline ?? "none"}`,
+      ],
+      blockers: scorelineForecast.blockers ?? [],
       active: ["prediction_watch", "paper_learning"].includes(phase.id),
     }),
     grandSlamMissionPhaseRow({
@@ -8544,6 +9048,12 @@ function schedulerSchedule(loop, grandSlam = null) {
       reason: "Compile the full Grand Slam prediction mission across readiness, backfill, collection, quota, live-control and learning without executing actions.",
     }),
     schedulerItem({
+      id: "grand_slam_scoreline_forecast",
+      command: "npm --silent run hermes:grand-slam-scoreline-forecast",
+      everyMinutes: grandSlamCadence.every_minutes,
+      reason: "Project Grand Slam winners and set scorelines from existing backend probabilities without provider calls or orders.",
+    }),
+    schedulerItem({
       id: "enterprise_accuracy_plan",
       command: "npm --silent run hermes:enterprise-accuracy-plan",
       everyMinutes: 12 * 60,
@@ -8828,6 +9338,8 @@ function cronMessageFor(item, rehearsal) {
             ? "Report status, active_grand_slams, matches, prediction_ready, paper_ready, next_action, and safety only."
           : item.id === "grand_slam_mission"
               ? "Report active_phase, grand_slam_readiness, live_control, historical_backfill, learning_review, next_action, and safety only."
+              : item.id === "grand_slam_scoreline_forecast"
+                ? "Report status, forecast_ready_rows, top_forecast projected_winner/projected_scoreline, blockers, next_action, and safety only."
               : item.id === "enterprise_accuracy_plan"
                 ? "Report status, budget_gate, top_provider, provider_count, scoreline gates, next_action, and safety only."
               : item.id === "autonomy_effectiveness"
@@ -10205,8 +10717,12 @@ function grandSlamMatchRow(analysis) {
     label: `${match.player1?.name ?? "Player 1"} vs ${match.player2?.name ?? "Player 2"}`,
     tournament,
     tour: match.tour ?? null,
+    surface: match.surface ?? null,
     round: match.round ?? null,
     status: match.state?.status ?? null,
+    player1: match.player1 ?? {},
+    player2: match.player2 ?? {},
+    best_of_sets: match.best_of_sets ?? match.format?.best_of_sets ?? null,
     grand_slam_id: matcher?.id ?? null,
     grand_slam_label: matcher?.label ?? null,
     is_grand_slam: Boolean(matcher),
@@ -11344,6 +11860,7 @@ const commands = {
   "live-window": liveWindow,
   "match-pulse": matchPulse,
   "grand-slam-readiness": grandSlamReadiness,
+  "grand-slam-scoreline-forecast": grandSlamScorelineForecast,
   "grand-slam-mission": grandSlamMission,
   "grand-slam-mission-ledger": grandSlamMissionLedger,
   "grand-slam-mission-ledger-report": grandSlamMissionLedgerReport,

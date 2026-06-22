@@ -4213,6 +4213,11 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(grandSlamMissionItem.every_minutes, 30);
     assert.equal(grandSlamMissionItem.provider_api_call_allowed, false);
     assert.equal(grandSlamMissionItem.can_create_paper_orders, false);
+    const scorelineItem = payload.schedule.find((item) => item.id === "grand_slam_scoreline_forecast");
+    assert.equal(scorelineItem.command, "npm --silent run hermes:grand-slam-scoreline-forecast");
+    assert.equal(scorelineItem.every_minutes, 30);
+    assert.equal(scorelineItem.provider_api_call_allowed, false);
+    assert.equal(scorelineItem.can_create_paper_orders, false);
     assert.equal(payload.grand_slam_readiness.status, "blocked");
     assert.equal(payload.grand_slam_readiness.cadence.every_minutes, 30);
     assert.equal(payload.audit_log.path, runLog);
@@ -4508,6 +4513,12 @@ test("cron-proposal writes reviewable Hermes cron commands without creating jobs
     assert.equal(grandSlamMissionJob.message.includes("Report active_phase"), true);
     assert.equal(grandSlamMissionJob.can_create_paper_orders, false);
     assert.equal(grandSlamMissionJob.provider_api_call_allowed, false);
+    const scorelineJob = payload.jobs.find((job) => job.name === "tennis-edge-grand-slam-scoreline-forecast");
+    assert.equal(scorelineJob.every, "30m");
+    assert.equal(scorelineJob.source_command, "npm --silent run hermes:grand-slam-scoreline-forecast");
+    assert.equal(scorelineJob.message.includes("top_forecast projected_winner/projected_scoreline"), true);
+    assert.equal(scorelineJob.can_create_paper_orders, false);
+    assert.equal(scorelineJob.provider_api_call_allowed, false);
     assert.equal(payload.jobs.every((job) => job.command_preview.startsWith("hermes cron add")), true);
     assert.equal(payload.jobs.every((job) => job.command_preview.includes("--message")), true);
     assert.equal(payload.jobs.every((job) => !job.command_preview.includes("--execute-provider-call")), true);
@@ -5492,6 +5503,167 @@ test("grand-slam-readiness reports off-calendar state without provider calls", a
   }
 });
 
+test("grand-slam-scoreline-forecast projects ATP BO5 and WTA BO3 from internal probabilities only", async () => {
+  const matches = [
+    {
+      match: {
+        id: "wimbledon_atp_forecast",
+        tournament: "Wimbledon",
+        round: "R32",
+        tour: "ATP",
+        competition_level: "GRAND_SLAM",
+        surface: "grass",
+        player1: { id: "atp_p1", name: "ATP Player One" },
+        player2: { id: "atp_p2", name: "ATP Player Two" },
+        state: {
+          status: "scheduled",
+          p1_sets: 0,
+          p2_sets: 0,
+          p1_games: 0,
+          p2_games: 0,
+          point_score: "0-0",
+        },
+      },
+      prediction: {
+        p1_win_prob: 0.64,
+        p2_win_prob: 0.36,
+        confidence: "Alta",
+        model_version: "baseline_v0",
+      },
+      signals: [],
+      freshness: {
+        source: "persisted_replay",
+        persisted: true,
+        score_age_ms: 6000,
+        odds_age_ms: 4000,
+        provider_lineage: ["replay"],
+      },
+    },
+    {
+      match: {
+        id: "wimbledon_wta_forecast",
+        tournament: "Wimbledon",
+        round: "R32",
+        tour: "WTA",
+        competition_level: "GRAND_SLAM",
+        surface: "grass",
+        player1: { id: "wta_p1", name: "WTA Player One" },
+        player2: { id: "wta_p2", name: "WTA Player Two" },
+        state: {
+          status: "scheduled",
+          p1_sets: 0,
+          p2_sets: 0,
+          p1_games: 0,
+          p2_games: 0,
+          point_score: "0-0",
+        },
+      },
+      prediction: {
+        p1_win_prob: 0.45,
+        p2_win_prob: 0.55,
+        confidence: "Media",
+        model_version: "baseline_v0",
+      },
+      signals: [],
+      freshness: {
+        source: "persisted_replay",
+        persisted: true,
+        score_age_ms: 7000,
+        odds_age_ms: 5000,
+        provider_lineage: ["replay"],
+      },
+    },
+  ];
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": matches,
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 12,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          steps: [],
+        },
+        source_summary: {
+          total_matches: 2,
+          persisted_matches: 2,
+          match_freshness: [
+            { match_id: "wimbledon_atp_forecast", source: "replay", persisted: true, score_age_ms: 6000, odds_age_ms: 4000 },
+            { match_id: "wimbledon_wta_forecast", source: "replay", persisted: true, score_age_ms: 7000, odds_age_ms: 5000 },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli([
+      "grand-slam-scoreline-forecast",
+      `--api-base=${apiBase}`,
+      "--date=2026-07-01",
+    ]);
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "grand_slam_scoreline_forecast");
+    assert.equal(payload.status, "forecast_ready");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.scoreline_contract.prediction_unit, "set_scoreline_not_exact_game_score");
+    assert.deepEqual(payload.scoreline_contract.bo5_outcomes, ["3-0", "3-1", "3-2"]);
+    assert.deepEqual(payload.scoreline_contract.bo3_outcomes, ["2-0", "2-1"]);
+    assert.equal(payload.summary.forecast_ready_rows, 2);
+    const byId = Object.fromEntries(payload.forecasts.map((row) => [row.match_id, row]));
+    assert.equal(byId.wimbledon_atp_forecast.format, "bo5");
+    assert.equal(byId.wimbledon_atp_forecast.best_of_sets, 5);
+    assert.equal(byId.wimbledon_atp_forecast.projected_winner_id, "atp_p1");
+    assert.equal(byId.wimbledon_atp_forecast.projected_scoreline, "3-1");
+    assert.deepEqual(byId.wimbledon_atp_forecast.scoreline_distribution.map((item) => item.scoreline), ["3-1", "3-0", "3-2"]);
+    assert.equal(byId.wimbledon_atp_forecast.data_quality.fresh_score, true);
+    assert.equal(byId.wimbledon_atp_forecast.data_quality.fresh_odds, true);
+    assert.equal(byId.wimbledon_wta_forecast.format, "bo3");
+    assert.equal(byId.wimbledon_wta_forecast.best_of_sets, 3);
+    assert.equal(byId.wimbledon_wta_forecast.projected_winner_id, "wta_p2");
+    assert.equal(byId.wimbledon_wta_forecast.projected_scoreline, "2-1");
+    assert.deepEqual(byId.wimbledon_wta_forecast.scoreline_distribution.map((item) => item.scoreline), ["2-1", "2-0"]);
+    assert.equal(payload.enterprise_unlocks.some((item) => item.provider_id === "sportradar_tennis_tier1"), true);
+    assert.equal(payload.enterprise_unlocks.every((item) => item.provider_api_call_allowed === false), true);
+    assert.equal(payload.next_action.command, "npm --silent run hermes:grand-slam-scoreline-forecast");
+    assert.equal(payload.safe_jailbreak_policy.live_scraping_allowed, false);
+    assert.equal(payload.safety.can_submit_real_orders, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("grand-slam-readiness and mission expose paper-ready Slam predictions without executing actions", async () => {
   const match = {
     match: {
@@ -5638,6 +5810,11 @@ test("grand-slam-readiness and mission expose paper-ready Slam predictions witho
     assert.equal(mission.llm_per_tick_allowed, false);
     assert.equal(mission.grand_slam_readiness.paper_ready, true);
     assert.equal(mission.grand_slam_readiness.matches.prediction_rows, 1);
+    assert.equal(mission.grand_slam_scoreline_forecast.status, "paper_ready");
+    assert.equal(mission.grand_slam_scoreline_forecast.forecast_ready_rows, 1);
+    assert.equal(mission.grand_slam_scoreline_forecast.top_forecast.projected_scoreline, "2-1");
+    assert.equal(mission.grand_slam_scoreline_forecast.provider_api_call_allowed, false);
+    assert.equal(mission.mission_summary.includes("scoreline=paper_ready"), true);
     assert.equal(mission.next_action.command, "npm run hermes:autopilot");
     assert.equal(mission.next_action.executes_now, false);
     const phases = Object.fromEntries(mission.phases.map((phase) => [phase.id, phase]));
@@ -5645,6 +5822,9 @@ test("grand-slam-readiness and mission expose paper-ready Slam predictions witho
     assert.equal(phases.historical_priors.status, "pass");
     assert.equal(phases.grand_slam_visibility.status, "pass");
     assert.equal(phases.prediction_quality.status, "pass");
+    assert.equal(phases.scoreline_forecast.status, "pass");
+    assert.equal(phases.scoreline_forecast.command, "npm --silent run hermes:grand-slam-scoreline-forecast");
+    assert.equal(phases.scoreline_forecast.provider_api_call_allowed, false);
     assert.equal(phases.paper_learning.status, "pass");
     assert.equal(phases.paper_learning.can_create_paper_orders, true);
     assert.equal(mission.historical_backfill.review_summary.total_sources >= 6, true);

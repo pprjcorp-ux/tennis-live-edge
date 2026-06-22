@@ -247,6 +247,13 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   operator contracts and budget-chain gates are complete. Ops compiler,
   experiment lab, scheduler rehearsal, and cron proposal should include this
   packet as review evidence only, never as provider activation.
+- Hermes Grand Slam scoreline forecasting should consume
+  `npm run hermes:grand-slam-scoreline-forecast`; it projects winners and
+  plausible set scorelines (`3-0/3-1/3-2` for ATP Grand Slam BO5,
+  `2-0/2-1` for WTA Grand Slam BO3) from existing FastAPI prediction rows
+  only. It must not predict exact game scores, call providers, spend quota,
+  create paper orders, submit real orders, scrape scoreboards, or run LLM
+  reasoning per tick.
 - Hermes wakeup policy should consume `npm run hermes:trigger-policy`; it maps
   runtime, events, source discovery, Grand Slam readiness, quota, and learning
   state into debounced triggers for cron/webhook/Telegram/dashboard/Cloudflare/

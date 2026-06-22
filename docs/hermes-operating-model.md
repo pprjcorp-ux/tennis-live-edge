@@ -191,13 +191,22 @@ exchange and odds-feed research into an operator-reviewed provider stack,
 access checklist, model architecture and Grand Slam scoreline forecast contract.
 It remains read-only and keeps `provider_api_call_allowed=false`.
 
+`hermes:grand-slam-scoreline-forecast` is the preferred packet for the concrete
+Grand Slam match-day output: projected winner plus plausible set scoreline.
+It consumes internal FastAPI prediction rows only, maps ATP Grand Slam singles
+to BO5 scorelines (`3-0/3-1/3-2`) and WTA Grand Slam singles to BO3 scorelines
+(`2-0/2-1`), and reports data-quality gaps before claiming readiness. It does
+not predict exact game scores and cannot call providers, scrape, create paper
+orders, or submit real orders.
+
 `hermes:grand-slam-mission` is the product-level mission packet. It answers:
 "Can Hermes supervise Grand Slam predictions today, and what is the next safe
-step?" It compiles operational truth, Grand Slam readiness, historical backfill,
-collection cadence, quota throttle, live-controller decisions and learning
-review into phases. It may point to protected paper autopilot when all backend
-gates are paper-ready, but the mission packet itself is read-only and cannot
-create orders, call providers, scrape, or run LLM-per-tick reasoning.
+step?" It compiles operational truth, Grand Slam readiness, scoreline forecast,
+historical backfill, collection cadence, quota throttle, live-controller
+decisions and learning review into phases. It may point to protected paper
+autopilot when all backend gates are paper-ready, but the mission packet itself
+is read-only and cannot create orders, call providers, scrape, or run
+LLM-per-tick reasoning.
 
 `hermes:grand-slam-mission-ledger` is the local trace for that product mission.
 It appends compact JSONL rows with active phase, Grand Slam status, visible

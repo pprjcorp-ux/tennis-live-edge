@@ -289,13 +289,21 @@ read-only: no provider calls, no scraping, no quota spend, no paper orders and
 no real execution. The ops compiler, experiment lab, scheduler rehearsal and
 cron proposal include it as recurring review evidence only.
 
+`hermes:grand-slam-scoreline-forecast` is the match-day scoreline packet. It
+uses only internal `/api/v1/live/matches` prediction rows to project the likely
+winner and set scoreline distribution for Grand Slam singles. ATP Slam rows are
+treated as BO5 with `3-0/3-1/3-2` outcomes; WTA Slam rows are treated as BO3
+with `2-0/2-1` outcomes. It is deliberately conservative: no exact game-score
+claim, no live provider calls, no scraping, no quota spend, no paper order
+creation and no real execution.
+
 `hermes:grand-slam-mission` is the one-packet command for the core product
 goal: predicting and monitoring Grand Slam matches of the day. It compiles
-backend readiness, Grand Slam visibility, historical backfill, match pulse,
-collection cadence, quota throttle, live-controller decision and learning
-review into explicit mission phases. It reports when paper learning would be
-available, but it does not create paper orders, spend provider quota, scrape, or
-submit real orders.
+backend readiness, Grand Slam visibility, scoreline forecasting, historical
+backfill, match pulse, collection cadence, quota throttle, live-controller
+decision and learning review into explicit mission phases. It reports when
+paper learning would be available, but it does not create paper orders, spend
+provider quota, scrape, or submit real orders.
 
 `hermes:grand-slam-mission-ledger` appends that mission packet as compact local
 JSONL evidence at `hermes/runs/grand-slam-mission-ledger.jsonl` by default. It

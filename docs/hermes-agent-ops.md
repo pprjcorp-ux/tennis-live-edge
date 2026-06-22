@@ -219,6 +219,9 @@ the next safest remediation step. It derives ordered actions from failed
 activation gates without writing manifests, running repair/restart/install
 commands, creating jobs, spending provider quota, creating paper orders, or
 enabling real execution.
+It also surfaces `runtime_findings` from `hermes:runtime-check` as non-executed
+diagnostic actions, so a stopped gateway or bounded doctor timeout becomes an
+explicit manual review step instead of a vague runtime failure.
 
 ## Audit Trail
 

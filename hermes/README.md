@@ -194,6 +194,9 @@ model routing into one non-executing payload.
 safe source discovery, live collection, live statistics, paper autopilot,
 learning review, external-agent orchestration, budget chain and enterprise
 gate. It is read-only and does not execute the next safe command it reports.
+Runtime diagnostics expose `runtime_findings` and manual diagnostic actions,
+including stopped gateway state and doctor timeout/failure state, without
+starting services from the repo command.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

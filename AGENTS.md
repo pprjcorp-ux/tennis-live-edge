@@ -123,7 +123,8 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   any manual action.
 - Hermes local runtime diagnostics should consume `npm run hermes:runtime-check`;
   it is read-only and must not install, restart, repair, create LaunchAgents, or
-  alter credentials.
+  alter credentials. It should expose `runtime_findings` and diagnostic actions
+  such as a stopped gateway as non-executed manual review steps.
 - Hermes must defer enterprise-only cursor blockers while
   `enterprise_eligible=false`; Sportradar/Betradar/TXODDS placeholders should
   not block budget-chain work before enterprise activation.

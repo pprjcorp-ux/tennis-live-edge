@@ -782,6 +782,15 @@ test("runtime-check captures Hermes local diagnostics without failing protected 
   assert.equal(payload.commands[1].name, "hermes doctor");
   assert.equal(payload.commands[1].exit_code, 1);
   assert.match(payload.commands[1].stderr, /gateway unreachable/);
+  assert.equal(payload.runtime_findings.gateway_service_status, "stopped");
+  assert.equal(payload.runtime_findings.doctor_status, "failed");
+  assert.equal(payload.runtime_findings.blockers.includes("gateway_service_stopped"), true);
+  assert.equal(payload.runtime_findings.blockers.includes("doctor_failed"), true);
+  assert.equal(payload.diagnostic_actions[0].id, "start_gateway_manual_review");
+  assert.equal(payload.diagnostic_actions[0].executes_now, false);
+  assert.equal(payload.diagnostic_actions[0].writes, false);
+  assert.equal(payload.diagnostic_actions[0].command, "hermes gateway start");
+  assert.equal(payload.diagnostic_actions.some((action) => action.command.includes("launchctl kickstart")), false);
 });
 
 test("safe-loop aggregates runtime and budget signals without protected actions", async () => {
@@ -2012,6 +2021,14 @@ test("runtime-fix-plan turns failed activation checks into non-mutating actions"
     assert.equal(payload.can_submit_real_orders, false);
     assert.equal(payload.can_create_paper_orders, false);
     assert.equal(payload.next_action.id, "fix_hermes_runtime_ready");
+    assert.equal(payload.runtime.findings.gateway_service_status, "stopped");
+    assert.equal(payload.runtime.findings.blockers.includes("gateway_service_stopped"), true);
+    assert.equal(payload.actions.some((action) => (
+      action.id === "runtime_start_gateway_manual_review"
+        && action.command === "hermes gateway start"
+        && action.executes_now === false
+        && action.mutates_runtime_if_run === true
+    )), true);
     assert.equal(payload.actions.some((action) => action.id === "fix_telegram_allowlist_configured" && action.requires_human), true);
     assert.equal(payload.actions.some((action) => action.id === "fix_private_access_allowlist_configured" && action.requires_human), true);
     assert.equal(payload.actions.some((action) => action.id === "fix_local_admin_secret_available" && action.requires_human), true);

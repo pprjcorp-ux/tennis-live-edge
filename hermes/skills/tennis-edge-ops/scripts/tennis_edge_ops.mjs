@@ -89,6 +89,7 @@ async function runtimeCheckData() {
   ];
   const hasMissingCommand = commands.some((item) => item.error_code === "command_not_found");
   const hasFailure = commands.some((item) => item.exit_code !== 0 || item.timed_out || item.error_code);
+  const runtimeFindings = buildRuntimeFindings(commands);
   return {
     generated_at: new Date().toISOString(),
     mode: "local_runtime_check",
@@ -99,7 +100,9 @@ async function runtimeCheckData() {
     provider_api_call_allowed: false,
     can_submit_real_orders: false,
     commands,
-    next_actions: runtimeCheckActions({ hasMissingCommand, hasFailure }),
+    runtime_findings: runtimeFindings,
+    diagnostic_actions: runtimeDiagnosticActions({ hasMissingCommand, hasFailure, runtimeFindings }),
+    next_actions: runtimeCheckActions({ hasMissingCommand, hasFailure, runtimeFindings }),
   };
 }
 
@@ -634,11 +637,160 @@ function sanitizeCommandOutput(output) {
     .slice(0, 4_000);
 }
 
-function runtimeCheckActions({ hasMissingCommand, hasFailure }) {
+function buildRuntimeFindings(commands) {
+  const statusCommand = commands.find((item) => item.name === "hermes status");
+  const doctorCommand = commands.find((item) => item.name === "hermes doctor");
+  const gatewayStatus = parseGatewayStatus(statusCommand?.stdout ?? "");
+  const doctorStatus = doctorCommand?.timed_out
+    ? "timed_out"
+    : doctorCommand?.error_code
+      ? doctorCommand.error_code
+      : doctorCommand?.exit_code === 0
+        ? "passed"
+        : doctorCommand
+          ? "failed"
+          : "not_run";
+  const blockers = [];
+  if (statusCommand?.error_code === "command_not_found") blockers.push("hermes_command_not_found");
+  if (gatewayStatus === "stopped") blockers.push("gateway_service_stopped");
+  if (gatewayStatus === "unknown" && statusCommand?.exit_code !== 0) blockers.push("gateway_status_unknown");
+  if (doctorStatus === "timed_out") blockers.push("doctor_timed_out");
+  if (doctorStatus === "failed") blockers.push("doctor_failed");
+  if (doctorCommand?.error_code) blockers.push(`doctor_${doctorCommand.error_code}`);
+  return {
+    gateway_service_status: gatewayStatus,
+    doctor_status: doctorStatus,
+    blockers,
+    auth_notes: runtimeAuthNotes(statusCommand?.stdout ?? ""),
+    messaging_notes: runtimeMessagingNotes(statusCommand?.stdout ?? ""),
+  };
+}
+
+function parseGatewayStatus(output) {
+  const gatewaySectionMatch = String(output ?? "").match(/Gateway Service[\s\S]*?Status:\s*(?:[✓✗]\s*)?([a-z_ -]+)/i);
+  if (gatewaySectionMatch) {
+    return normalizeRuntimeStatus(gatewaySectionMatch[1]);
+  }
+  const simpleMatch = String(output ?? "").match(/gateway(?: service)?:\s*([a-z_ -]+)/i);
+  if (simpleMatch) {
+    return normalizeRuntimeStatus(simpleMatch[1]);
+  }
+  return "unknown";
+}
+
+function normalizeRuntimeStatus(value) {
+  const normalized = String(value ?? "").trim().toLowerCase().replace(/[^a-z_ -].*$/, "").trim();
+  if (normalized.includes("running") || normalized.includes("started") || normalized.includes("active")) return "running";
+  if (normalized.includes("stopped") || normalized.includes("not running") || normalized.includes("inactive")) return "stopped";
+  if (normalized.includes("disabled")) return "disabled";
+  return normalized || "unknown";
+}
+
+function runtimeAuthNotes(output) {
+  const notes = [];
+  if (/OpenAI\s+✓/i.test(output)) notes.push("openai_api_key_present");
+  if (/OpenAI Codex\s+✗/i.test(output)) notes.push("openai_codex_auth_missing");
+  if (/Nous Portal\s+✓ logged in/i.test(output)) notes.push("nous_portal_logged_in");
+  return notes;
+}
+
+function runtimeMessagingNotes(output) {
+  const notes = [];
+  if (/Telegram\s+✗ not configured/i.test(output)) notes.push("telegram_not_configured");
+  if (/Discord\s+✗ not configured/i.test(output)) notes.push("discord_not_configured");
+  return notes;
+}
+
+function runtimeDiagnosticActions({ hasMissingCommand, hasFailure, runtimeFindings }) {
+  if (hasMissingCommand) {
+    return [
+      runtimeDiagnosticAction({
+        id: "install_or_expose_hermes",
+        command: "command -v hermes",
+        reason: "Hermes CLI is missing from PATH; expose the existing install before enabling automation.",
+      }),
+    ];
+  }
+  const actions = [];
+  if (runtimeFindings.gateway_service_status === "stopped") {
+    actions.push(runtimeDiagnosticAction({
+      id: "start_gateway_manual_review",
+      command: "hermes gateway start",
+      reason: "Hermes reports the gateway service stopped; start it only from an operator shell after reviewing status output.",
+      mutatesRuntimeIfRun: true,
+      requiresOperatorConfirmation: true,
+    }));
+  }
+  if (runtimeFindings.doctor_status === "timed_out") {
+    actions.push(runtimeDiagnosticAction({
+      id: "bounded_doctor_review",
+      command: "npm run hermes:runtime-check",
+      reason: "Hermes doctor timed out inside bounded diagnostics; keep using the bounded repo wrapper instead of unbounded doctor calls.",
+    }));
+  }
+  if (runtimeFindings.doctor_status === "failed") {
+    actions.push(runtimeDiagnosticAction({
+      id: "inspect_doctor_failure",
+      command: "hermes doctor",
+      reason: "Hermes doctor exited with a failure; inspect output locally before protected automation.",
+    }));
+  }
+  if (!actions.length && hasFailure) {
+    actions.push(runtimeDiagnosticAction({
+      id: "inspect_runtime_failure",
+      command: "npm run hermes:runtime-check",
+      reason: "Runtime check is degraded; inspect sanitized command output before enabling channel automation.",
+    }));
+  }
+  if (!actions.length) {
+    actions.push(runtimeDiagnosticAction({
+      id: "rerun_preflight",
+      command: "npm run hermes:preflight",
+      reason: "Runtime diagnostics are clean; rerun backend preflight before protected automation.",
+    }));
+  }
+  return actions;
+}
+
+function runtimeDiagnosticAction({
+  id,
+  command,
+  reason,
+  mutatesRuntimeIfRun = false,
+  requiresOperatorConfirmation = false,
+}) {
+  return {
+    id,
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    mutates_runtime_if_run: Boolean(mutatesRuntimeIfRun),
+    requires_operator_confirmation: Boolean(requiresOperatorConfirmation),
+  };
+}
+
+function runtimeCheckActions({ hasMissingCommand, hasFailure, runtimeFindings }) {
   if (hasMissingCommand) {
     return [
       "Install or expose the Hermes CLI before enabling runtime automation.",
       "Keep using internal FastAPI packets while Hermes gateway is unavailable.",
+    ];
+  }
+  if (runtimeFindings?.gateway_service_status === "stopped") {
+    return [
+      "Hermes gateway is stopped; review `hermes status` and start the gateway only from a local operator shell.",
+      "Keep cron/Telegram routes in observe mode until the loopback gateway is reachable.",
+    ];
+  }
+  if (runtimeFindings?.doctor_status === "timed_out") {
+    return [
+      "Hermes doctor timed out in bounded diagnostics; use npm run hermes:runtime-check instead of unbounded doctor calls.",
+      "Keep protected automation disabled until the gateway and channel checks are clean.",
     ];
   }
   if (hasFailure) {
@@ -1192,6 +1344,8 @@ function buildSafeLoop({
         error_code: item.error_code,
       })),
       next_actions: runtime.next_actions,
+      runtime_findings: runtime.runtime_findings,
+      diagnostic_actions: runtime.diagnostic_actions,
     },
     event_summary: {
       severity: eventPlan.severity,
@@ -3133,7 +3287,7 @@ function envListCount(names) {
 }
 
 function buildRuntimeFixPlan({ loop, rehearsal, proposal, activation }) {
-  const actions = runtimeFixActions(activation);
+  const actions = runtimeFixActions(activation, loop.runtime);
   return {
     generated_at: new Date().toISOString(),
     mode: "runtime_fix_plan",
@@ -3159,18 +3313,22 @@ function buildRuntimeFixPlan({ loop, rehearsal, proposal, activation }) {
       status: loop.runtime?.status,
       active_phase: loop.active_phase,
       next_tick: rehearsal.next_tick,
+      findings: loop.runtime?.runtime_findings ?? {},
+      diagnostic_actions: loop.runtime?.diagnostic_actions ?? [],
     },
     forbidden_actions: activation.forbidden_actions,
     safety: activation.safety,
   };
 }
 
-function runtimeFixActions(activation) {
+function runtimeFixActions(activation, runtime = {}) {
   const actions = (activation.checks ?? [])
     .filter((check) => check.status === "fail")
     .map(runtimeFixActionFor)
-    .filter(Boolean)
-    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+    .filter(Boolean);
+
+  actions.push(...runtimeDiagnosticFixActions(runtime));
+  actions.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
 
   if (!actions.length && activation.activation_allowed) {
     actions.push(fixAction({
@@ -3188,6 +3346,24 @@ function runtimeFixActions(activation) {
   }
 
   return actions;
+}
+
+function runtimeDiagnosticFixActions(runtime = {}) {
+  return (runtime.diagnostic_actions ?? []).map((action, index) => fixAction({
+    id: `runtime_${action.id}`,
+    priority: 11 + index,
+    lane: "local_runtime",
+    command: action.command,
+    reason: action.reason,
+    requiresHuman: Boolean(action.requires_operator_confirmation || action.mutates_runtime_if_run),
+    mutatesRuntimeIfRun: Boolean(action.mutates_runtime_if_run),
+    notes: [
+      "Derived from npm run hermes:runtime-check.",
+      action.mutates_runtime_if_run
+        ? "This command can alter Hermes runtime if the operator runs it manually; runtime-fix-plan does not execute it."
+        : "This diagnostic remains safe to run from the repo wrapper.",
+    ],
+  }));
 }
 
 function runtimeFixActionFor(check) {
@@ -3298,6 +3474,7 @@ function fixAction({
   command,
   reason,
   requiresHuman,
+  mutatesRuntimeIfRun = false,
   notes = [],
 }) {
   return {
@@ -3313,6 +3490,7 @@ function fixAction({
     can_submit_real_orders: false,
     can_create_paper_orders: false,
     executes_now: false,
+    mutates_runtime_if_run: Boolean(mutatesRuntimeIfRun),
     notes,
   };
 }

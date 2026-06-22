@@ -215,6 +215,10 @@ prints manual activation commands only when every gate passes.
 activation. It reuses the same gates in memory, does not write the proposal
 manifest, does not execute repair/restart/install commands, and returns only
 ordered manual/local diagnostic actions.
+Runtime findings from `hermes:runtime-check` flow into this packet, including
+gateway service status, doctor timeout/failure state, auth notes, messaging
+notes, and manual commands marked with `mutates_runtime_if_run` when they would
+alter Hermes if an operator ran them.
 
 `hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
 turns the internal intelligence packet into compact events such as

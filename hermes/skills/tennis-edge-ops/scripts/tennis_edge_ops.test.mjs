@@ -3714,7 +3714,7 @@ test("runtime-fix-plan turns failed activation checks into non-mutating actions"
   }
 });
 
-test("runtime-fix-plan prioritizes bounded doctor triage when doctor times out", async () => {
+test("runtime-fix-plan escalates full-probe doctor timeouts without looping", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-runtime-doctor-timeout-"));
   const proposalPath = join(tempDir, "cron-proposal.json");
   const fakeHermes = join(tempDir, "hermes-fake.mjs");
@@ -3764,16 +3764,87 @@ test("runtime-fix-plan prioritizes bounded doctor triage when doctor times out",
     assert.equal(payload.provider_api_call_allowed, false);
     assert.equal(payload.can_submit_real_orders, false);
     assert.equal(payload.can_create_paper_orders, false);
-    assert.equal(payload.next_action.id, "runtime_bounded_doctor_review");
-    assert.equal(payload.next_action.command, "npm run hermes:doctor-triage");
+    assert.equal(payload.next_action.id, "runtime_persistent_doctor_timeout_review");
+    assert.equal(payload.next_action.command, "npm run hermes:runtime-check");
     assert.equal(payload.next_action.mutates_runtime_if_run, false);
     assert.equal(payload.runtime.findings.gateway_service_status, "running");
     assert.equal(payload.runtime.findings.doctor_status, "timed_out");
+    assert.equal(payload.runtime.findings.doctor_timeout_ms, 5000);
     assert.equal(payload.runtime.findings.blockers.includes("doctor_timed_out"), true);
+    assert.equal(payload.actions.some((action) => (
+      action.id === "runtime_manual_hermes_update_review"
+        && action.command === "hermes update"
+        && action.mutates_runtime_if_run === true
+        && action.requires_human === true
+    )), true);
     assert.equal(payload.actions.some((action) => (
       action.id === "fix_hermes_runtime_ready"
         && action.superseded_by_diagnostic_action === true
         && action.priority === 19
+    )), true);
+    assert.equal(payload.actions.every((action) => action.executes_now === false), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("runtime-fix-plan preserves doctor progress when API connectivity times out", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-runtime-api-connectivity-timeout-"));
+  const proposalPath = join(tempDir, "cron-proposal.json");
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status: running'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('◆ API Connectivity\\n  Running 26 connectivity checks in parallel...'); setTimeout(() => {}, 10000); }",
+      "if (process.argv[2] === 'cron') { console.error('cron must not be called'); process.exit(9); }",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["runtime-fix-plan", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_CRON_PROPOSAL_PATH: proposalPath,
+        HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
+        PRIVATE_ALLOWED_EMAILS: "",
+        ADMIN_API_TOKEN: "",
+      },
+      timeoutMs: 20_000,
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(existsSync(proposalPath), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "runtime_fix_plan");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.next_action.id, "runtime_api_connectivity_timeout_review");
+    assert.equal(payload.next_action.command, "npm run hermes:runtime-check");
+    assert.equal(payload.runtime.findings.doctor_progress.reached_api_connectivity, true);
+    assert.equal(payload.runtime.findings.doctor_progress.connectivity_checks_count, 26);
+    assert.equal(payload.actions.some((action) => (
+      action.id === "runtime_manual_hermes_update_review"
+        && action.executes_now === false
+        && action.mutates_runtime_if_run === true
     )), true);
     assert.equal(payload.actions.every((action) => action.executes_now === false), true);
   } finally {

@@ -2250,6 +2250,7 @@ function runLocalCommand(name, commandName, args = [], timeoutMs = 5_000) {
       resolve({
         name,
         command: [commandName, ...args].join(" "),
+        timeout_ms: timeoutMs,
         started_at: startedAt.toISOString(),
         completed_at: new Date().toISOString(),
         exit_code: null,
@@ -2268,6 +2269,7 @@ function runLocalCommand(name, commandName, args = [], timeoutMs = 5_000) {
       resolve({
         name,
         command: [commandName, ...args].join(" "),
+        timeout_ms: timeoutMs,
         started_at: startedAt.toISOString(),
         completed_at: new Date().toISOString(),
         exit_code: exitCode,
@@ -2317,6 +2319,7 @@ function buildRuntimeFindings(commands) {
     auth_notes: runtimeAuthNotes(statusCommand?.stdout ?? ""),
     messaging_notes: runtimeMessagingNotes(statusCommand?.stdout ?? ""),
     doctor_progress: doctorCommand ? doctorProgress : null,
+    doctor_timeout_ms: doctorCommand?.timeout_ms ?? null,
   };
 }
 
@@ -2391,11 +2394,30 @@ function runtimeDiagnosticActions({ hasMissingCommand, hasFailure, runtimeFindin
     }));
   }
   if (runtimeFindings.doctor_status === "timed_out") {
-    actions.push(runtimeDiagnosticAction({
-      id: "bounded_doctor_review",
-      command: runtimeReviewCommand(runtimeFindings),
-      reason: runtimeReviewReason(runtimeFindings),
-    }));
+    if (Number(runtimeFindings.doctor_timeout_ms) >= 5_000 && runtimeFindings.gateway_service_status === "running") {
+      actions.push(runtimeDiagnosticAction({
+        id: runtimeFindings.doctor_progress?.reached_api_connectivity
+          ? "api_connectivity_timeout_review"
+          : "persistent_doctor_timeout_review",
+        command: "npm run hermes:runtime-check",
+        reason: runtimeFindings.doctor_progress?.reached_api_connectivity
+          ? "Hermes doctor reached API Connectivity before timing out; review network/provider connectivity manually instead of repeating doctor probes."
+          : "Hermes doctor timed out after the full bounded runtime probe; stop repeating doctor probes and review runtime/update path manually.",
+      }));
+      actions.push(runtimeDiagnosticAction({
+        id: "manual_hermes_update_review",
+        command: "hermes update",
+        reason: "Hermes version output may report an available update; update only from an operator shell after reviewing release risk.",
+        mutatesRuntimeIfRun: true,
+        requiresOperatorConfirmation: true,
+      }));
+    } else {
+      actions.push(runtimeDiagnosticAction({
+        id: "bounded_doctor_review",
+        command: runtimeReviewCommand(runtimeFindings),
+        reason: runtimeReviewReason(runtimeFindings),
+      }));
+    }
   }
   if (runtimeFindings.doctor_status === "failed") {
     actions.push(runtimeDiagnosticAction({

@@ -286,6 +286,10 @@ Connectivity was reached, and the connectivity-check count. If API Connectivity
 was reached before timeout, the likely cause becomes
 `persistent_doctor_api_connectivity_timeout`, which pushes operators toward
 connectivity/update review instead of repeating blind probes.
+The same progress drives `runtime-fix-plan`: after a full 5000ms runtime probe,
+it emits `runtime_api_connectivity_timeout_review` or
+`runtime_persistent_doctor_timeout_review` rather than routing back to the
+shorter generic doctor triage.
 
 `hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
 turns the internal intelligence packet into compact events such as

@@ -244,6 +244,10 @@ Doctor timeouts should preserve sanitized partial progress in
 connectivity check count. If the doctor reaches API Connectivity before timing
 out, classify it as `persistent_doctor_api_connectivity_timeout` so operators
 investigate connectivity/update paths instead of rerunning blind probes.
+The same progress must flow into `runtime-fix-plan`; after a full 5000ms
+runtime probe, it should emit `runtime_api_connectivity_timeout_review` or
+`runtime_persistent_doctor_timeout_review` instead of routing back to the
+shorter generic doctor triage.
 The `operator-packet` command compresses safe-loop into a short channel-safe
 decision for Telegram/OpenClaw. It is read-only and never executes the next
 safe action it reports.

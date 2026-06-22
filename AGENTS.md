@@ -148,6 +148,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes scheduler rehearsal should consume `npm run hermes:scheduler-rehearsal`;
   it may write only local JSONL audit rows under `hermes/runs/`, must not create
   real cron jobs, and must never execute the commands it schedules.
+- Hermes cron proposal should consume `npm run hermes:cron-proposal`; it may
+  write only a local review manifest under `hermes/runs/`, must not call
+  `hermes cron add`, and must exclude provider-smoke, autopilot, admin-token,
+  quota-consuming, or order-creating jobs.
 - Real execution requires a separate compliance/account/API activation task.
 
 ## Verification
@@ -169,6 +173,7 @@ npm run hermes:live-stats
 npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal
+npm run hermes:cron-proposal
 ```
 
 `api:check:operational-truth` is the required integrated smoke before API

@@ -42,6 +42,7 @@ npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal
+npm run hermes:cron-proposal
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
@@ -122,6 +123,11 @@ smoke execution, or submits real orders.
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not
 create real cron jobs, execute commands, create paper orders, spend provider
 quota, or submit real orders.
+
+`hermes:cron-proposal` writes a reviewable local manifest at
+`hermes/runs/cron-proposal.json` with exact `hermes cron add` command previews.
+It does not call `hermes cron add` and excludes provider-smoke, autopilot,
+admin-token, quota-consuming, and order-creating jobs.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

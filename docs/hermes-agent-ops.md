@@ -28,6 +28,7 @@ npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal
+npm run hermes:cron-proposal
 ADMIN_API_TOKEN=... npm run hermes:ops:daily
 ADMIN_API_TOKEN=... npm run hermes:autopilot
 ```
@@ -121,6 +122,12 @@ Use `hermes:scheduler-rehearsal` before creating or changing real Hermes cron
 jobs. It converts the current safe-loop packet into proposed intervals and
 appends a local JSONL row under `hermes/runs/`. It does not create, update, or
 delete cron jobs and does not execute the commands in the schedule.
+
+Use `hermes:cron-proposal` to generate a reviewable cron manifest. It writes
+`hermes/runs/cron-proposal.json` with exact `hermes cron add` command previews
+for safe read-only jobs only. It does not call `hermes cron add` and excludes
+autopilot, provider-smoke, admin-token, quota-consuming, and order-creating
+jobs.
 
 ## Audit Trail
 

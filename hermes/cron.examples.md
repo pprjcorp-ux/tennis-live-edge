@@ -94,6 +94,16 @@ This writes only a local JSONL audit row under `hermes/runs/`. It does not call
 `hermes cron add`, execute recommended commands, create orders, run provider
 smoke, or spend provider quota.
 
+Reviewable cron proposal manifest:
+
+```bash
+npm --silent run hermes:cron-proposal
+```
+
+This writes `hermes/runs/cron-proposal.json` with exact command previews for
+safe read-only jobs. It does not create jobs and excludes autopilot,
+provider-smoke, admin-token, quota-consuming, and order-creating routes.
+
 Event router every 5 minutes during active windows:
 
 ```bash

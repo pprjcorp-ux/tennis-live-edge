@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 const command = process.argv[2] ?? "briefing";
@@ -177,6 +177,15 @@ async function schedulerRehearsal() {
   const rehearsal = buildSchedulerRehearsal(loop);
   writeSchedulerAudit(rehearsal);
   printJson(rehearsal);
+}
+
+async function cronProposal() {
+  const loop = await safeLoopData();
+  const rehearsal = buildSchedulerRehearsal(loop);
+  writeSchedulerAudit(rehearsal);
+  const proposal = buildCronProposal(rehearsal);
+  writeCronProposal(proposal);
+  printJson(proposal);
 }
 
 async function providerSmoke() {
@@ -1319,6 +1328,109 @@ function writeSchedulerAudit(rehearsal) {
   appendFileSync(path, `${JSON.stringify(rehearsal)}\n`, "utf8");
 }
 
+function buildCronProposal(rehearsal) {
+  const jobs = rehearsal.schedule
+    .filter((item) => cronProposalAllows(item))
+    .map((item) => cronJobProposal(item, rehearsal));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "cron_proposal",
+    source_mode: rehearsal.source_mode,
+    active_phase: rehearsal.active_phase,
+    status: rehearsal.status,
+    created_jobs: false,
+    executed_commands: [],
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    proposal_path: cronProposalPath(),
+    jobs,
+    operator_steps: [
+      "Review this proposal before creating any Hermes cron jobs.",
+      "Confirm Telegram pairing, allowlist, local secrets, and loopback-only gateway first.",
+      "Create jobs manually only from a local operator shell; do not add --execute-provider-call to any scheduled command.",
+    ],
+    forbidden_actions: rehearsal.forbidden_actions,
+    safety: rehearsal.safety,
+  };
+}
+
+function cronProposalAllows(item) {
+  return !item.can_create_paper_orders
+    && !item.can_submit_real_orders
+    && !item.provider_api_call_allowed
+    && !item.live_api_calls
+    && !item.requires_admin_token
+    && !item.command.includes("--execute-provider-call")
+    && !item.command.includes("hermes:autopilot")
+    && !item.command.includes("hermes:provider-smoke");
+}
+
+function cronJobProposal(item, rehearsal) {
+  const name = `tennis-edge-${item.id.replaceAll("_", "-")}`;
+  const message = cronMessageFor(item, rehearsal);
+  return {
+    id: item.id,
+    name,
+    every: `${item.every_minutes}m`,
+    model: "gpt-5.4-mini",
+    command_preview: [
+      "hermes cron add",
+      `--name ${shellQuote(name)}`,
+      `--every ${shellQuote(`${item.every_minutes}m`)}`,
+      "--model gpt-5.4-mini",
+      `--message ${shellQuote(message)}`,
+      "--timeout-seconds 90",
+    ].join(" \\\n  "),
+    message,
+    source_command: item.command,
+    creates_job: false,
+    execute_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
+function cronMessageFor(item, rehearsal) {
+  const base = `Use the tennis-edge-ops skill. Run ${item.command} from /Users/ppfahd/Workspace/projects/tennis-live-edge.`;
+  const report = item.id === "safe_loop"
+    ? "Report status, runtime, active_phase, next_tick, safe_commands, budget_chain, learning_review, and safety."
+    : item.id === "runtime_check"
+      ? "Report runtime status, failed command names, timeout state, and next_actions."
+      : item.id === "event_router"
+        ? "Report severity, events, recommended_commands, can_run_paper_autopilot, and safety."
+        : item.id === "live_stats"
+          ? "Report health_scores, freshness, sampling_policy, budget_chain, and safety only."
+          : item.id === "budget_chain"
+            ? "Report current_step, blockers, smoke_command, and provider_api_call_allowed."
+            : "Report review_status, gates, blockers, next_actions, and real_execution_recommendation.";
+  return [
+    base,
+    report,
+    `Current rehearsal phase is ${rehearsal.active_phase}.`,
+    "Do not execute recommended commands, create orders, run provider smoke, spend provider quota, or submit real orders from this cron.",
+  ].join(" ");
+}
+
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function cronProposalPath() {
+  return process.env.HERMES_CRON_PROPOSAL_PATH || "hermes/runs/cron-proposal.json";
+}
+
+function writeCronProposal(proposal) {
+  const path = cronProposalPath();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(proposal, null, 2)}\n`, "utf8");
+}
+
 function localRuntimeLanes(report) {
   const failed = report.degraded_items?.preflight_failed ?? [];
   if (!failed.some((check) => check.name === "hermes_gateway")) return [];
@@ -2178,6 +2290,7 @@ const commands = {
   "provider-smoke": providerSmoke,
   "safe-loop": safeLoop,
   "scheduler-rehearsal": schedulerRehearsal,
+  "cron-proposal": cronProposal,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

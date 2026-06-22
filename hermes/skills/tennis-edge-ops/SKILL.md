@@ -41,6 +41,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs scheduler-rehearsal
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs cron-proposal
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
@@ -108,6 +109,9 @@ spends provider quota.
 The `scheduler-rehearsal` command turns safe-loop output into a proposed local
 schedule and writes only a local JSONL audit row. It must not create cron jobs
 or execute scheduled commands.
+The `cron-proposal` command writes a local review manifest with `hermes cron add`
+command previews. It must not call `hermes cron add` and must exclude autopilot,
+provider-smoke, admin-token, quota-consuming, or order-creating jobs.
 The `autopilot` command also runs preflight internally and aborts before calling
 protected backend actions when the preflight status is `blocked`.
 

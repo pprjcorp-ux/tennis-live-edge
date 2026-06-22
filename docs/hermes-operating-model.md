@@ -102,6 +102,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes during active windows: `npm run hermes:intelligence`.
 - Every 5 minutes when Hermes needs one autonomous packet: `npm run hermes:safe-loop`.
 - Before any real cron change: `npm run hermes:scheduler-rehearsal`.
+- To generate a reviewable cron manifest: `npm run hermes:cron-proposal`.
 - Every 1-5 minutes during active windows: `npm run hermes:live-stats`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
@@ -129,6 +130,11 @@ real Hermes cron configuration. It computes proposed intervals, chooses the
 next safe tick, and appends a local JSONL audit row under `hermes/runs/`. It
 does not create cron jobs, execute scheduled commands, create paper orders, or
 spend provider quota.
+
+`hermes:cron-proposal` turns the rehearsal into a local review manifest with
+exact `hermes cron add` command previews. It is still non-mutating: it does not
+call `hermes cron add`, and it excludes autopilot, provider-smoke, admin-token,
+quota-consuming, and order-creating jobs.
 
 `hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
 turns the internal intelligence packet into compact events such as

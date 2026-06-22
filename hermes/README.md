@@ -45,6 +45,7 @@ npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
+npm run hermes:operator-packet
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist
@@ -144,6 +145,10 @@ local runtime check, intelligence, event routing, unblock plan, playbook,
 live-stats, quota-plan, budget-chain, and weekly-learning packets into one
 read-only JSON decision. It never creates paper orders, spends provider quota,
 calls provider smoke execution, or submits real orders.
+
+`hermes:operator-packet` compresses the latest safe-loop decision for
+Telegram/OpenClaw channels. It reports priority, headline, short message, next
+safe action, cost guard and safety flags in a compact read-only JSON packet.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

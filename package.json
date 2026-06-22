@@ -36,6 +36,7 @@
     "hermes:budget-chain": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain",
     "hermes:provider-smoke": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke",
     "hermes:safe-loop": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop",
+    "hermes:operator-packet": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet",
     "hermes:scheduler-rehearsal": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs scheduler-rehearsal",
     "hermes:cron-proposal": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs cron-proposal",
     "hermes:activation-checklist": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs activation-checklist",

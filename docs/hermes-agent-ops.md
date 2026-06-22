@@ -31,6 +31,7 @@ npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
+npm run hermes:operator-packet
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist
@@ -144,6 +145,10 @@ intelligence, event routing, unblock lanes, playbook phases, live stats,
 quota-plan throttle state, budget-chain state, and learning review into one
 read-only decision. It does not create paper orders, execute provider smoke,
 spend quota, or submit real orders.
+
+Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
+safe-loop into priority, headline, short message, next safe action, cost guard
+and safety flags while staying read-only.
 
 Use `hermes:scheduler-rehearsal` before creating or changing real Hermes cron
 jobs. It converts the current safe-loop packet into proposed intervals and

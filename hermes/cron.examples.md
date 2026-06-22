@@ -84,6 +84,17 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Compact operator packet every 5 minutes for Telegram/OpenClaw:
+
+```bash
+hermes cron add \
+  --name tennis-edge-operator-packet \
+  --every 5m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:operator-packet from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report priority, headline, short_message, next_action, cost_guard, and safety. Do not execute next_action, create orders, run provider smoke, or spend provider quota from this cron." \
+  --timeout-seconds 90
+```
+
 Scheduler rehearsal before creating or changing real cron jobs:
 
 ```bash

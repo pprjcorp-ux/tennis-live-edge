@@ -891,6 +891,74 @@ test("safe-loop aggregates runtime and budget signals without protected actions"
   }
 });
 
+test("operator-packet emits a compact channel-safe decision summary", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: stopped'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.error('gateway unreachable'); process.exit(1); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/agent/preflight": {
+      status: "blocked",
+      checks: [
+        { name: "hermes_gateway", status: "fail", summary: "Hermes loopback gateway is not reachable." },
+        { name: "real_execution_hard_block", status: "pass", summary: "blocked" },
+      ],
+      generated_at: "2026-06-21T20:00:00Z",
+    },
+    "/api/v1/signals/live": [],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["operator-packet", `--api-base=${apiBase}`], {
+      env: { HERMES_BIN: fakeHermes },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "operator_packet");
+    assert.equal(payload.channel, "telegram_openclaw");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.priority, "high");
+    assert.equal(payload.status, "runtime_degraded");
+    assert.match(payload.headline, /runtime_degraded/);
+    assert.equal(payload.next_action.command, "npm run hermes:runtime-check");
+    assert.equal(payload.cost_guard.throttle_level, "blocked");
+    assert.equal(payload.cost_guard.provider_command_count, 0);
+    assert.equal(payload.short_message.length <= 700, true);
+    assert.match(payload.short_message, /Next: npm run hermes:runtime-check/);
+    assert.equal(payload.forbidden_actions.includes("sportsbook_ui_automation"), true);
+  } finally {
+    server.close();
+  }
+});
+
 test("scheduler-rehearsal records a safe loop plan without executing commands", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-scheduler-"));
   const runLog = join(tempDir, "scheduler-runs.jsonl");

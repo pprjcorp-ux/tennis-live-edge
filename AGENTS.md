@@ -162,6 +162,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   quota-plan, budget-chain, and learning review packets, but must remain
   read-only and must never create paper orders, spend provider quota, or submit
   real orders itself.
+- Hermes channel summaries should consume `npm run hermes:operator-packet`;
+  it compresses safe-loop for Telegram/OpenClaw and must never execute the
+  `next_action` it reports.
 - Hermes scheduler rehearsal should consume `npm run hermes:scheduler-rehearsal`;
   it may write only local JSONL audit rows under `hermes/runs/`, must not create
   real cron jobs, and must never execute the commands it schedules.

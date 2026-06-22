@@ -196,6 +196,11 @@ async function safeLoop() {
   printJson(await safeLoopData());
 }
 
+async function operatorPacket() {
+  const loop = await safeLoopData();
+  printJson(buildOperatorPacket(loop));
+}
+
 async function safeLoopData() {
   const [runtime, report, matches] = await Promise.all([
     runtimeCheckData(),
@@ -1244,6 +1249,89 @@ function chooseSafeLoopCommand({ runtime, unblock, eventPlan, safeCommands }) {
     return safeCommands.find((item) => item.id === "paper_autopilot_candidate") ?? safeCommands[0] ?? null;
   }
   return safeCommands.find((item) => item.id === "live_stats") ?? safeCommands[0] ?? null;
+}
+
+function buildOperatorPacket(loop) {
+  const nextAction = loop.next_best_command ?? null;
+  const priority = operatorPriority(loop);
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "operator_packet",
+    channel: "telegram_openclaw",
+    status: loop.status,
+    priority,
+    headline: operatorHeadline(loop, priority),
+    short_message: operatorShortMessage(loop, nextAction, priority),
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    next_action: nextAction,
+    cost_guard: {
+      throttle_level: loop.quota_plan?.throttle_level,
+      budget_utilization: loop.quota_plan?.budget_utilization,
+      provider_command_count: loop.quota_plan?.provider_command_count ?? 0,
+      provider_api_call_allowed: false,
+    },
+    runtime: {
+      status: loop.runtime?.status,
+      next_actions: loop.runtime?.next_actions ?? [],
+    },
+    data_health: {
+      event_severity: loop.event_summary?.severity,
+      collection_status: loop.live_stats?.collection_status,
+      processing_status: loop.live_stats?.processing_status,
+      overall_score: loop.live_stats?.health_scores?.overall,
+    },
+    budget_chain: {
+      completed: Boolean(loop.budget_chain?.completed),
+      enterprise_eligible: false,
+      current_step_label: loop.budget_chain?.current_step_label ?? null,
+    },
+    safety: {
+      real_execution_hard_block: loop.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+    forbidden_actions: loop.forbidden_actions ?? [],
+  };
+}
+
+function operatorPriority(loop) {
+  if (loop.status === "safety_stop") return "critical";
+  if (loop.status === "runtime_degraded") return "high";
+  if (["critical", "high"].includes(loop.event_summary?.severity)) return "high";
+  if (loop.status === "paper_candidate") return "medium";
+  if (loop.quota_plan?.throttle_level && loop.quota_plan.throttle_level !== "normal") return "medium";
+  return "low";
+}
+
+function operatorHeadline(loop, priority) {
+  return `${priority.toUpperCase()} | ${loop.status} | ${loop.active_phase}`;
+}
+
+function operatorShortMessage(loop, nextAction, priority) {
+  const budget = formatPercent(loop.quota_plan?.budget_utilization);
+  const command = nextAction?.command ?? "none";
+  const reason = nextAction?.reason ?? "No safe command selected.";
+  return [
+    `Hermes ${priority}: ${loop.status} in ${loop.active_phase}.`,
+    `Runtime=${loop.runtime?.status}; data=${loop.live_stats?.collection_status}/${loop.live_stats?.processing_status}; quota=${loop.quota_plan?.throttle_level ?? "unknown"} (${budget}).`,
+    `Next: ${command}.`,
+    `Why: ${reason}`,
+    "No provider calls, paper orders, or real execution from this packet.",
+  ].join(" ");
+}
+
+function formatPercent(value) {
+  if (!Number.isFinite(value)) return "unknown";
+  return `${Math.round(value * 100)}%`;
 }
 
 function loopCommand({
@@ -3407,6 +3495,7 @@ const commands = {
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,
   "safe-loop": safeLoop,
+  "operator-packet": operatorPacket,
   "scheduler-rehearsal": schedulerRehearsal,
   "cron-proposal": cronProposal,
   "activation-checklist": activationChecklist,

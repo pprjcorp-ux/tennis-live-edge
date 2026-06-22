@@ -2663,12 +2663,18 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
     assert.equal(payload.execution_graph.some((node) => node.id === "source_discovery"), true);
     assert.equal(payload.execution_graph.some((node) => node.id === "grand_slam_readiness"), true);
     assert.equal(payload.execution_graph.some((node) => node.id === "autonomy_effectiveness"), true);
+    assert.equal(payload.execution_graph.some((node) => node.id === "enterprise_accuracy_plan"), true);
     assert.equal(payload.grand_slam_readiness.prediction_ready, false);
     assert.equal(payload.execution_graph.every((node) => node.executes_now === false), true);
     assert.equal(payload.autonomy_effectiveness.status, "needs_implementation");
     assert.equal(Number.isFinite(payload.autonomy_effectiveness.score), true);
     assert.equal(payload.autonomy_effectiveness.next_action.command, "npm --silent run hermes:implementation-handoff");
     assert.equal(payload.autonomy_effectiveness.protected_action_claims.total, 0);
+    assert.equal(payload.enterprise_accuracy.status, "locked_on_budget_chain");
+    assert.equal(payload.enterprise_accuracy.top_provider.id, "sportradar_tennis_tier1");
+    assert.equal(payload.enterprise_accuracy.provider_count, 6);
+    assert.equal(payload.enterprise_accuracy.next_action.command, "npm run api:check:operational-truth -- --pretty");
+    assert.equal(payload.enterprise_accuracy.safe_jailbreak_policy.bypass_allowed, false);
     assert.equal(payload.compiled_action.command, "npm run hermes:runtime-check");
     assert.equal(payload.compiled_action.executes_now, false);
     assert.equal(payload.model_router.routine_model, "gpt-5.4-mini");
@@ -3015,6 +3021,10 @@ test("experiment-lab ranks safe Hermes experiments without executing actions", a
     assert.equal(byId.live_collection_cadence.status, "ready");
     assert.equal(byId.source_discovery_backfill.command, "npm --silent run hermes:historical-backfill-plan");
     assert.equal(byId.source_discovery_backfill.success_metrics.includes("historical_sources_ranked"), true);
+    assert.equal(byId.enterprise_accuracy_stack_review.status, "locked");
+    assert.equal(byId.enterprise_accuracy_stack_review.command, "npm --silent run hermes:enterprise-accuracy-plan");
+    assert.equal(byId.enterprise_accuracy_stack_review.success_metrics.includes("scoreline_contract_visible"), true);
+    assert.equal(byId.enterprise_accuracy_stack_review.provider_api_call_allowed, false);
     assert.equal(payload.next_experiment.id, "paper_autopilot_rehearsal");
     assert.equal(payload.safety.real_execution_hard_block, true);
   } finally {
@@ -4187,6 +4197,12 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(effectivenessItem.provider_api_call_allowed, false);
     assert.equal(effectivenessItem.can_create_paper_orders, false);
     assert.equal(effectivenessItem.can_submit_real_orders, false);
+    const enterpriseAccuracyItem = payload.schedule.find((item) => item.id === "enterprise_accuracy_plan");
+    assert.equal(enterpriseAccuracyItem.command, "npm --silent run hermes:enterprise-accuracy-plan");
+    assert.equal(enterpriseAccuracyItem.every_minutes, 720);
+    assert.equal(enterpriseAccuracyItem.provider_api_call_allowed, false);
+    assert.equal(enterpriseAccuracyItem.can_create_paper_orders, false);
+    assert.equal(enterpriseAccuracyItem.can_submit_real_orders, false);
     const grandSlamItem = payload.schedule.find((item) => item.id === "grand_slam_readiness");
     assert.equal(grandSlamItem.command, "npm --silent run hermes:grand-slam-readiness");
     assert.equal(grandSlamItem.every_minutes, 30);
@@ -4474,6 +4490,12 @@ test("cron-proposal writes reviewable Hermes cron commands without creating jobs
     assert.equal(effectivenessJob.message.includes("Report status, score, next_action"), true);
     assert.equal(effectivenessJob.can_create_paper_orders, false);
     assert.equal(effectivenessJob.provider_api_call_allowed, false);
+    const enterpriseAccuracyJob = payload.jobs.find((job) => job.name === "tennis-edge-enterprise-accuracy-plan");
+    assert.equal(enterpriseAccuracyJob.every, "720m");
+    assert.equal(enterpriseAccuracyJob.source_command, "npm --silent run hermes:enterprise-accuracy-plan");
+    assert.equal(enterpriseAccuracyJob.message.includes("Report status, budget_gate, top_provider"), true);
+    assert.equal(enterpriseAccuracyJob.can_create_paper_orders, false);
+    assert.equal(enterpriseAccuracyJob.provider_api_call_allowed, false);
     const grandSlamJob = payload.jobs.find((job) => job.name === "tennis-edge-grand-slam-readiness");
     assert.equal(grandSlamJob.every, "30m");
     assert.equal(grandSlamJob.source_command, "npm --silent run hermes:grand-slam-readiness");

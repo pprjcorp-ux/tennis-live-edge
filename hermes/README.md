@@ -286,7 +286,8 @@ any future importer exists.
 ranks top-tier scoring, shot-by-shot and odds feeds, maps the model layers they
 unlock, and defines the Grand Slam scoreline forecast contract. It stays
 read-only: no provider calls, no scraping, no quota spend, no paper orders and
-no real execution.
+no real execution. The ops compiler, experiment lab, scheduler rehearsal and
+cron proposal include it as recurring review evidence only.
 
 `hermes:grand-slam-mission` is the one-packet command for the core product
 goal: predicting and monitoring Grand Slam matches of the day. It compiles

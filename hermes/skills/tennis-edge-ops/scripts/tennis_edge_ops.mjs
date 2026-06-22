@@ -1702,6 +1702,23 @@ async function opsCompiler() {
   const { effectiveness } = autonomyEffectivenessData();
   const eventPlan = buildEventPlan(report);
   const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+  const historicalBackfill = buildHistoricalBackfillPlan({
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    grandSlam,
+  });
+  const enterpriseAccuracy = buildEnterpriseAccuracyPlan({
+    loop,
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    historicalBackfill,
+    grandSlam,
+  });
   const triggerPlan = buildTriggerPolicy({ loop, sourcePlan, grandSlam });
   const runtimePriorities = buildRuntimeFixPriorities(buildOperatorLedgerReport(readOperatorLedgerRecords()));
   const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
@@ -1714,6 +1731,7 @@ async function opsCompiler() {
     autonomyPlan,
     operator,
     effectiveness,
+    enterpriseAccuracy,
   }));
 }
 
@@ -3897,7 +3915,16 @@ function buildTriggerPolicy({ loop, sourcePlan, grandSlam = null }) {
   };
 }
 
-function buildOpsCompiler({ loop, sourcePlan, triggerPlan, grandSlam, autonomyPlan, operator, effectiveness = null }) {
+function buildOpsCompiler({
+  loop,
+  sourcePlan,
+  triggerPlan,
+  grandSlam,
+  autonomyPlan,
+  operator,
+  effectiveness = null,
+  enterpriseAccuracy = null,
+}) {
   const compiledAction = compileNextAction({ loop, triggerPlan, autonomyPlan, operator });
   return {
     generated_at: new Date().toISOString(),
@@ -3911,7 +3938,15 @@ function buildOpsCompiler({ loop, sourcePlan, triggerPlan, grandSlam, autonomyPl
     can_create_paper_orders: false,
     llm_per_tick_allowed: false,
     compiled_action: compiledAction,
-    execution_graph: buildExecutionGraph({ triggerPlan, sourcePlan, grandSlam, autonomyPlan, operator, effectiveness }),
+    execution_graph: buildExecutionGraph({
+      triggerPlan,
+      sourcePlan,
+      grandSlam,
+      autonomyPlan,
+      operator,
+      effectiveness,
+      enterpriseAccuracy,
+    }),
     model_router: buildOpsModelRouter({ loop, triggerPlan }),
     operator_packet: {
       priority: operator.priority,
@@ -3947,6 +3982,7 @@ function buildOpsCompiler({ loop, sourcePlan, triggerPlan, grandSlam, autonomyPl
       autonomy_matrix: autonomyPlan.autonomy_matrix,
     },
     autonomy_effectiveness: autonomyEffectivenessSummary(effectiveness),
+    enterprise_accuracy: enterpriseAccuracySummary(enterpriseAccuracy),
     safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
     forbidden_actions: loop.forbidden_actions ?? sourcePlan.forbidden_actions ?? [],
     safety: {
@@ -3990,7 +4026,15 @@ function compileNextAction({ loop, triggerPlan, autonomyPlan, operator }) {
   };
 }
 
-function buildExecutionGraph({ triggerPlan, sourcePlan, grandSlam, autonomyPlan, operator, effectiveness = null }) {
+function buildExecutionGraph({
+  triggerPlan,
+  sourcePlan,
+  grandSlam,
+  autonomyPlan,
+  operator,
+  effectiveness = null,
+  enterpriseAccuracy = null,
+}) {
   const nodes = [
     graphNode({
       id: "trigger_policy",
@@ -4031,6 +4075,14 @@ function buildExecutionGraph({ triggerPlan, sourcePlan, grandSlam, autonomyPlan,
       command: "npm --silent run hermes:autonomy-effectiveness",
       reason: `Autonomy effectiveness is ${effectiveness.status}; score=${effectiveness.score}.`,
       status: effectiveness.status,
+    }));
+  }
+  if (enterpriseAccuracy) {
+    nodes.push(graphNode({
+      id: "enterprise_accuracy_plan",
+      command: "npm --silent run hermes:enterprise-accuracy-plan",
+      reason: `Enterprise accuracy plan is ${enterpriseAccuracy.status}; providers=${enterpriseAccuracy.no_budget_provider_stack?.length ?? 0}.`,
+      status: enterpriseAccuracy.status,
     }));
   }
   return nodes;
@@ -5002,6 +5054,25 @@ function enterpriseAccuracyResearchBasis() {
   ];
 }
 
+function enterpriseAccuracySummary(plan) {
+  if (!plan) return null;
+  return {
+    status: plan.status,
+    objective: plan.objective,
+    budget_gate: plan.budget_gate,
+    top_provider: plan.no_budget_provider_stack?.[0] ? {
+      id: plan.no_budget_provider_stack[0].id,
+      provider: plan.no_budget_provider_stack[0].provider,
+      status: plan.no_budget_provider_stack[0].status,
+      role: plan.no_budget_provider_stack[0].role,
+    } : null,
+    provider_count: plan.no_budget_provider_stack?.length ?? 0,
+    scoreline_gate_count: plan.scoreline_forecast_contract?.acceptance_gates?.length ?? 0,
+    next_action: plan.next_action,
+    safe_jailbreak_policy: plan.safe_jailbreak_policy,
+  };
+}
+
 function buildGrandSlamMission({
   backend,
   report,
@@ -5527,6 +5598,21 @@ function buildExperimentRows({ loop, report, eventPlan, sourcePlan, capabilityAu
       evidence: [
         `review_status=${loop.learning_review?.review_status ?? "unknown"}`,
         `capability_status=${capabilityAuditPlan.status}`,
+      ],
+    }),
+    experimentRow({
+      id: "enterprise_accuracy_stack_review",
+      title: "Review no-budget provider stack for Grand Slam scoreline accuracy",
+      status: enterpriseEligible ? "ready" : "locked",
+      priorityScore: enterpriseEligible ? 86 : 30,
+      command: "npm --silent run hermes:enterprise-accuracy-plan",
+      hypothesis: "Top-tier official score, point-by-point, shot-by-shot and market feeds should be contracted only after budget evidence proves readiness.",
+      prerequisites: ["enterprise_eligible", "operator_contract_review", "safe_jailbreak_policy"],
+      successMetrics: ["provider_stack_ranked", "scoreline_contract_visible", "access_requirements_visible", "provider_api_call_allowed_false"],
+      evidence: [
+        `enterprise_eligible=${loop.budget_chain?.enterprise_eligible}`,
+        `budget_chain_completed=${loop.budget_chain?.completed}`,
+        `source_next_route=${sourcePlan.next_safe_command?.command ?? "unknown"}`,
       ],
     }),
     experimentRow({
@@ -8458,6 +8544,12 @@ function schedulerSchedule(loop, grandSlam = null) {
       reason: "Compile the full Grand Slam prediction mission across readiness, backfill, collection, quota, live-control and learning without executing actions.",
     }),
     schedulerItem({
+      id: "enterprise_accuracy_plan",
+      command: "npm --silent run hermes:enterprise-accuracy-plan",
+      everyMinutes: 12 * 60,
+      reason: "Review the no-budget provider stack and Grand Slam scoreline forecast contract without provider calls or contract activation.",
+    }),
+    schedulerItem({
       id: "ops_compiler",
       command: "npm --silent run hermes:ops-compiler",
       everyMinutes: 5,
@@ -8736,6 +8828,8 @@ function cronMessageFor(item, rehearsal) {
             ? "Report status, active_grand_slams, matches, prediction_ready, paper_ready, next_action, and safety only."
           : item.id === "grand_slam_mission"
               ? "Report active_phase, grand_slam_readiness, live_control, historical_backfill, learning_review, next_action, and safety only."
+              : item.id === "enterprise_accuracy_plan"
+                ? "Report status, budget_gate, top_provider, provider_count, scoreline gates, next_action, and safety only."
               : item.id === "autonomy_effectiveness"
                 ? "Report status, score, next_action, repeat_pressure, protected_action_claims, and safety only."
           : item.id === "budget_chain"

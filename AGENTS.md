@@ -244,7 +244,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   `npm run hermes:enterprise-accuracy-plan`; it ranks top-tier data/odds feeds
   for Grand Slam scoreline prediction, lists access requirements and model
   layers, and must stay read-only with `provider_api_call_allowed=false` until
-  operator contracts and budget-chain gates are complete.
+  operator contracts and budget-chain gates are complete. Ops compiler,
+  experiment lab, scheduler rehearsal, and cron proposal should include this
+  packet as review evidence only, never as provider activation.
 - Hermes wakeup policy should consume `npm run hermes:trigger-policy`; it maps
   runtime, events, source discovery, Grand Slam readiness, quota, and learning
   state into debounced triggers for cron/webhook/Telegram/dashboard/Cloudflare/

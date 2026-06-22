@@ -9,23 +9,131 @@ decide whether the system behaves as budget or enterprise.
 - `services/api`: FastAPI API, provider adapters, feature/model/signal engines,
   replay/backtest services, execution safety gates, and Agent Ops endpoints.
 - `apps/web`: local dashboard for live board, data health, model lab, paper
-  trading, risk/bankroll, entity resolution, and OpenClaw Autopilot.
+  trading, risk/bankroll, entity resolution, and Hermes Autopilot.
 - `infra/schema.sql`: event-sourced Postgres/Timescale schema for raw payloads,
   score/odds ticks, predictions, signals, paper orders, model versions, and
-  audit events.
-- `openclaw/`: local-only OpenClaw skill, policy example, and cron examples.
+  execution controls/audit events.
+- `hermes/`: local-only Hermes skill, policy example, and cron examples.
 
 ## Runtime Flow
 
-1. Provider adapters load fixtures, score state, odds, and market metadata.
-2. Normalization maps provider players/matches/markets into canonical IDs.
-3. Feature engines compute pre-match, live, market, data-quality, and risk
+1. `LiveIngestionPipeline` builds the operational snapshot for the target date.
+   `OperationalSession` is the operator-facing read boundary: when a provider
+   snapshot was persisted, it reloads canonical `latest_analyses` from
+   Postgres/Timescale before serving the dashboard, match detail, or live
+   signals. Raw score/live or archive provider exceptions become
+   `provider_warnings`, so failed feeds degrade ingestion runs and fall back to
+   persisted state instead of silently looking empty. Persisted fallback
+   snapshots are still re-gated before display.
+2. Provider adapters load fixtures, score state, odds, and market metadata.
+3. Raw provider/canonical payload lineage is persisted before decision snapshots.
+4. Normalization maps provider players/matches/markets into canonical IDs.
+5. Feature engines compute pre-match, live, market, data-quality, and risk
    features.
-4. Models produce calibrated probabilities and explanations.
-5. Signal gates compare model probability with no-vig market probability.
-6. Risk gates allow, monitor, block, or abstain.
-7. Paper execution records order decisions, fills, settlement, CLV, ROI, and
-   calibration buckets.
+6. Models produce calibrated probabilities and explanations.
+7. Signal gates compare model probability with no-vig market probability.
+8. Risk gates allow, monitor, block, or abstain.
+9. Postgres/Timescale serves persisted canonical matches, freshness metadata,
+   predictions, and signals when upstream providers are down.
+   Entity-resolution conflicts are read from the persisted review queue in live
+   mode; sample conflicts are demo-only.
+   Data-quality rows are likewise persisted-only in live mode; sample quality
+   snapshots are demo-only.
+10. Paper execution records order decisions, deterministic fills, closing-line
+    snapshots, settlement, CLV, ROI, segmented performance, and calibration
+   buckets. The dashboard exposes auto-settlement so persisted final scores and
+   pre-result closing odds can close paper orders and refresh performance without
+   manual win/loss marking. Paper performance counts only settled orders with
+   positive `matched_stake`, matching Model Lab's training dataset, so unmatched
+   or zero-exposure orders cannot inflate ROI, CLV, drawdown, or segment stats.
+   Normal completions can infer the winner from sets; retirement/walkover
+   completions require an explicit provider winner before settlement.
+   Auto-settlement returns structured per-order `decisions` for settled,
+   skipped, settlement-failed, and training-example-missing candidates, so the
+   paper loop remains machine-auditable without parsing reason strings.
+11. Settled paper orders become `training_examples` keyed by model version and
+    decision timestamp. Budget live backtests use `live_budget_v1`, matching the
+    persisted `feature_snapshots.feature_set` written by the ingestion pipeline,
+    so Model Lab does not mix rows from different feature definitions. Rows with
+    zero or invalid stake are excluded from the training dataset so ROI and
+    drawdown are always measured against real matched exposure.
+12. Model Lab backtests read persisted training examples first, compute
+    walk-forward ROI, CLV, Brier, log loss, calibration error, and drawdown,
+    then save model registry and calibration reports. Synthetic backtests remain
+    and synthetic calibration reports remain only as `sample`/dev fallbacks; live
+    mode returns explicit blocked/not-found states until persisted
+    `training_examples` and calibration reports exist.
+13. Live readiness reads the persisted settled `training_examples` count and
+    surfaces Model Lab readiness as a warning/pass check, rather than discovering
+    missing datasets only when a backtest is requested.
+14. Model Lab readiness is a derived read-model inside
+    `OperationalStateSnapshot`; it exposes `training_examples` as the dataset
+    source, the active model/feature set, settled example count, and whether a
+    live backtest can run without synthetic fallback.
+15. `OperationalStateSnapshot.source_summary` includes aggregate source counts
+    plus per-match `match_freshness` evidence, so dashboard/Hermes can verify
+    whether each match came from live providers, persisted fallback, replay, or
+    runtime-only sample state before trusting a signal.
+16. API onboarding is a derived read-model inside `OperationalStateSnapshot`.
+    It keeps provider setup ordered as TheOddsAPI REST/archive, API-Tennis
+    score/livescore, Odds-API.io websocket, then deferred enterprise feeds, with
+    each step blocked until the persisted core and prerequisites are healthy.
+17. Provider mode is exposed as a matrix inside `OperationalStateSnapshot`, not
+    just as a single label. The matrix lists `sample`, `replay`,
+    `live_without_keys`, and `live_with_keys`, with active status, entry gate,
+    evidence, blockers, and next action so the dashboard cannot confuse replay
+    rehearsal with live eligibility. `replay` is an offline provider mode:
+    budget adapters use fake fixtures/snapshots and must not spend quota or open
+    live websockets even when keys are present.
+18. Replay Lab readiness is a derived read-model inside
+    `OperationalStateSnapshot`. It exposes `budget_replay_fixtures` as the fake
+    API layer for ScoreProviderAdapter, OddsProviderAdapter, and
+    ArchiveOddsProviderAdapter, including healthy/gap/resync scenarios, so live
+    provider keys are added only after the same contracts pass without cost.
+    A budget adapter contract matrix runs without live keys and requires each
+    adapter to output the canonical internal types: `RawProviderPayload`,
+    `CanonicalMatch`, `ScoreTick`, `OddsTick`, `ProviderCursor`, and
+    `ProviderLatency`. Each replay scenario also records per-provider
+    `provider_contracts` evidence with expected vs. observed artifacts, so a
+    single provider can be onboarded or debugged without hiding behind aggregate
+    scenario pass/fail.
+    `POST /api/v1/replay/contracts/run` is the aggregate rehearsal endpoint: it
+    runs the healthy, gap, and `resync_required` budget scenarios from fixture
+    seeds, records a `replay_contract_run`, and returns adapter, input, and
+    output contract evidence before any paid provider key is introduced.
+    In live mode, replay does not silently fall back to sample payloads; an
+    admin replay request must set `use_fixture_seed=true` to seed fake provider
+    payloads for rehearsal without consuming live provider quota. Replay runs
+    that receive unsupported or unparseable provider payloads are marked
+    degraded in both the API response and ingestion journal rather than
+    completing silently with zero useful ticks. Replay contract scenarios also
+    expose persistence evidence (`raw_payloads_saved`, `score_ticks_saved`,
+    `odds_ticks_saved`, `provider_cursors_replayed`, `cursors_saved`, and
+    `provider_latency_saved`) separately from adapter output contracts, so
+    fixture tests can prove both canonical formats and Postgres materialization
+    without live API calls. `provider_cursors_replayed` proves the cursor
+    contract was exercised; `cursors_saved` only counts writes to the active
+    operational cursor table, which fixture runs may intentionally skip to
+    preserve a live cursor. The dashboard
+    Replay Lab reads the persisted `replay_contract_run` summary back through
+    `ReplayLabSnapshot.last_contract_persistence`, so operators can inspect
+    per-scenario materialization proof after restart instead of trusting a
+    transient contract response.
+18. Live model registry reads persisted `model_versions`; without persisted
+    metrics it exposes only a clearly unvalidated runtime default instead of
+    demo ROI/CLV.
+19. Live execution status derives kill-switch state from persisted
+    `execution_controls`; if that state cannot be read or written it fails
+    closed instead of trusting process memory.
+20. Provider quota exhaustion is treated as an operational provider-health
+    failure, not as a model concern. When persisted billable payload counts
+    reach `quota_limit`, the affected provider is marked unhealthy with a
+    `quota exhausted` status; live readiness keeps the dashboard available but
+    blocks actionable `Entrada` signals until quota is restored or the runtime
+    is switched to monitor/replay.
+21. Hermes Agent Ops calls internal APIs only; autopilot runs and any created
+    paper orders are persisted so restart recovery includes the operational
+    audit trail.
 
 ## Local Verification
 

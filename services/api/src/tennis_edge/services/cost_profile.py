@@ -9,6 +9,7 @@ from tennis_edge.domain import (
     DailyCostReport,
     Match,
     MatchAnalysis,
+    PaperPerformance,
     Provider,
     ProviderCostUsage,
     ProviderHealth,
@@ -16,6 +17,7 @@ from tennis_edge.domain import (
     SignalStatus,
     Tour,
 )
+from tennis_edge.runtime_modes import uses_offline_provider_fixtures
 
 
 GRAND_SLAMS = {
@@ -163,58 +165,93 @@ def should_escalate_polling(analysis: MatchAnalysis) -> bool:
 def provider_health_for(settings: Settings) -> list[ProviderHealth]:
     now = datetime.now(timezone.utc).replace(microsecond=0)
     sample = settings.data_mode == "sample"
+    replay = settings.data_mode == "replay"
+    offline_provider_mode = uses_offline_provider_fixtures(settings.data_mode)
     enterprise_status = (
         "enterprise adapter contract-gated"
         if settings.runtime_profile == "enterprise_roi_clv"
         else "disabled by lean_atp profile"
     )
+    api_tennis_status = (
+        "score primary sample feed"
+        if sample
+        else "score primary replay fixture feed"
+        if replay
+        else "score primary configured"
+        if settings.api_tennis_key
+        else "score primary key missing"
+    )
+    odds_api_status = (
+        "odds websocket sample feed"
+        if sample
+        else "odds websocket replay fixture feed"
+        if replay
+        else "odds websocket primary configured"
+        if settings.odds_api_io_key
+        else "odds websocket key missing"
+    )
+    the_odds_api_status = (
+        "historical archive sample"
+        if sample
+        else "historical archive replay snapshot"
+        if replay
+        else "historical archive configured"
+        if settings.the_odds_api_key
+        else "historical archive key missing"
+    )
     return [
         ProviderHealth(
             provider=Provider.API_TENNIS,
             configured=bool(settings.api_tennis_key),
-            healthy=bool(settings.api_tennis_key) or sample,
-            latency_ms=900 if sample else None,
-            last_message_at=now if sample else None,
-            status="score primary sample feed" if sample else "score primary configured",
+            healthy=bool(settings.api_tennis_key) or offline_provider_mode,
+            latency_ms=900 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
+            status=api_tennis_status,
             cost_tier="$80/mo",
             coverage_scope="ATP main + men's/women's Grand Slam score/livescore",
-            quota_used=0 if sample else None,
+            quota_used=0 if offline_provider_mode else None,
             quota_limit=200000,
             last_billable_call_at=None,
         ),
         ProviderHealth(
             provider=Provider.ODDS_API_IO,
             configured=bool(settings.odds_api_io_key),
-            healthy=bool(settings.odds_api_io_key) or sample,
-            latency_ms=740 if sample else None,
-            last_message_at=now if sample else None,
-            status="odds websocket sample feed" if sample else "odds websocket primary",
+            healthy=bool(settings.odds_api_io_key) or offline_provider_mode,
+            latency_ms=740 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
+            status=odds_api_status,
             cost_tier="£198/mo Starter+WS",
             coverage_scope="Live/watchlist ML odds",
-            quota_used=0 if sample else None,
+            quota_used=0 if offline_provider_mode else None,
             quota_limit=5000,
             last_billable_call_at=None,
         ),
         ProviderHealth(
             provider=Provider.THE_ODDS_API,
             configured=bool(settings.the_odds_api_key),
-            healthy=bool(settings.the_odds_api_key) or sample,
-            latency_ms=1100 if sample else None,
-            last_message_at=now if sample else None,
-            status="historical archive sample" if sample else "historical archive configured",
+            healthy=bool(settings.the_odds_api_key) or offline_provider_mode,
+            latency_ms=1100 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
+            status=the_odds_api_status,
             cost_tier="$99/mo Business",
             coverage_scope="Historical odds, archive and comparison",
-            quota_used=0 if sample else None,
+            quota_used=0 if offline_provider_mode else None,
             quota_limit=200000,
             last_billable_call_at=None,
         ),
         ProviderHealth(
             provider=Provider.SPORTRADAR,
             configured=bool(settings.sportradar_api_key),
-            healthy=bool(settings.sportradar_api_key) or sample,
-            latency_ms=520 if sample else None,
-            last_message_at=now if sample else None,
-            status="score/live-state sample adapter" if sample else enterprise_status,
+            healthy=bool(settings.sportradar_api_key) or offline_provider_mode,
+            latency_ms=520 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
+            status=(
+                "score/live-state sample adapter"
+                if sample
+                else "score/live-state replay contract-gated"
+                if replay
+                else enterprise_status
+            ),
             cost_tier="enterprise quote estimate $2.5k/mo",
             coverage_scope="ATP/WTA/Challenger/ITF score, timeline, delay/retirement",
             quota_used=0,
@@ -223,10 +260,16 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
         ProviderHealth(
             provider=Provider.BETRADAR_UOF,
             configured=bool(settings.betradar_uof_token),
-            healthy=bool(settings.betradar_uof_token) or sample,
-            latency_ms=600 if sample else None,
-            last_message_at=now if sample else None,
-            status="market-state sample adapter" if sample else enterprise_status,
+            healthy=bool(settings.betradar_uof_token) or offline_provider_mode,
+            latency_ms=600 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
+            status=(
+                "market-state sample adapter"
+                if sample
+                else "market-state replay contract-gated"
+                if replay
+                else enterprise_status
+            ),
             cost_tier="enterprise quote estimate $1.2k/mo",
             coverage_scope="Market state, betstop, suspension and settlement status",
             quota_used=0,
@@ -235,10 +278,16 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
         ProviderHealth(
             provider=Provider.TXODDS,
             configured=bool(settings.txodds_user and settings.txodds_password),
-            healthy=bool(settings.txodds_user and settings.txodds_password) or sample,
-            latency_ms=480 if sample else None,
-            last_message_at=now if sample else None,
-            status="in-running odds sample adapter" if sample else enterprise_status,
+            healthy=bool(settings.txodds_user and settings.txodds_password) or offline_provider_mode,
+            latency_ms=480 if offline_provider_mode else None,
+            last_message_at=now if offline_provider_mode else None,
+            status=(
+                "in-running odds sample adapter"
+                if sample
+                else "in-running odds replay contract-gated"
+                if replay
+                else enterprise_status
+            ),
             cost_tier="enterprise quote estimate $1k/mo",
             coverage_scope="Low-latency independent in-running tennis odds",
             quota_used=0,
@@ -247,7 +296,14 @@ def provider_health_for(settings: Settings) -> list[ProviderHealth]:
     ]
 
 
-def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> DailyCostReport:
+def daily_cost_report(
+    settings: Settings,
+    analyses: list[MatchAnalysis],
+    paper_performance: PaperPerformance | None = None,
+    provider_usage_counts: dict[Provider, int] | None = None,
+    provider_websocket_minutes: dict[Provider, int] | None = None,
+    websocket_uptime_pct: float | None = None,
+) -> DailyCostReport:
     skipped = sum(1 for analysis in analyses if not coverage_decision(analysis.match, settings).eligible)
     signals = [signal for analysis in analyses for signal in analysis.signals]
     entry_signals = [signal for signal in signals if signal.status == SignalStatus.ENTRY]
@@ -255,6 +311,15 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
     daily = round(monthly / 30, 2) if monthly else 0
     live_matches = sum(1 for analysis in analyses if analysis.match.state.status == "live")
     watchlist = sum(1 for analysis in analyses if should_escalate_polling(analysis))
+    positive_clv_signals = paper_performance.positive_clv_signals if paper_performance else 0
+    provider_usage_counts = provider_usage_counts or {}
+    provider_websocket_minutes = provider_websocket_minutes or {}
+
+    def billable_calls(provider: Provider, fallback: int) -> int:
+        return provider_usage_counts.get(provider, fallback)
+
+    def websocket_minutes(provider: Provider, fallback: int) -> int:
+        return provider_websocket_minutes.get(provider, fallback)
 
     price_map = (
         ENTERPRISE_PROVIDER_MONTHLY_USD
@@ -264,23 +329,23 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
     usages = [
         ProviderCostUsage(
             provider=Provider.API_TENNIS,
-            api_calls=max(1, len(analyses)),
-            quota_used=max(1, len(analyses)),
+            api_calls=billable_calls(Provider.API_TENNIS, max(1, len(analyses))),
+            quota_used=billable_calls(Provider.API_TENNIS, max(1, len(analyses))),
             quota_limit=200000,
             estimated_daily_cost_usd=round(price_map[Provider.API_TENNIS] / 30, 2),
         ),
         ProviderCostUsage(
             provider=Provider.ODDS_API_IO,
-            api_calls=max(1, live_matches + watchlist),
-            websocket_minutes=live_matches * 120,
-            quota_used=max(1, live_matches + watchlist),
+            api_calls=billable_calls(Provider.ODDS_API_IO, max(1, live_matches + watchlist)),
+            websocket_minutes=websocket_minutes(Provider.ODDS_API_IO, live_matches * 120),
+            quota_used=billable_calls(Provider.ODDS_API_IO, max(1, live_matches + watchlist)),
             quota_limit=5000,
             estimated_daily_cost_usd=round(price_map[Provider.ODDS_API_IO] / 30, 2),
         ),
         ProviderCostUsage(
             provider=Provider.THE_ODDS_API,
-            api_calls=1,
-            quota_used=1,
+            api_calls=billable_calls(Provider.THE_ODDS_API, 1),
+            quota_used=billable_calls(Provider.THE_ODDS_API, 1),
             quota_limit=200000,
             estimated_daily_cost_usd=round(price_map[Provider.THE_ODDS_API] / 30, 2),
         ),
@@ -290,23 +355,23 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
             [
                 ProviderCostUsage(
                     provider=Provider.SPORTRADAR,
-                    api_calls=max(1, len(analyses)),
-                    quota_used=max(1, len(analyses)),
+                    api_calls=billable_calls(Provider.SPORTRADAR, max(1, len(analyses))),
+                    quota_used=billable_calls(Provider.SPORTRADAR, max(1, len(analyses))),
                     quota_limit=None,
                     estimated_daily_cost_usd=round(price_map[Provider.SPORTRADAR] / 30, 2),
                 ),
                 ProviderCostUsage(
                     provider=Provider.BETRADAR_UOF,
-                    api_calls=max(1, live_matches),
-                    quota_used=max(1, live_matches),
+                    api_calls=billable_calls(Provider.BETRADAR_UOF, max(1, live_matches)),
+                    quota_used=billable_calls(Provider.BETRADAR_UOF, max(1, live_matches)),
                     quota_limit=None,
                     estimated_daily_cost_usd=round(price_map[Provider.BETRADAR_UOF] / 30, 2),
                 ),
                 ProviderCostUsage(
                     provider=Provider.TXODDS,
-                    api_calls=max(1, live_matches + watchlist),
-                    websocket_minutes=live_matches * 120,
-                    quota_used=max(1, live_matches + watchlist),
+                    api_calls=billable_calls(Provider.TXODDS, max(1, live_matches + watchlist)),
+                    websocket_minutes=websocket_minutes(Provider.TXODDS, live_matches * 120),
+                    quota_used=billable_calls(Provider.TXODDS, max(1, live_matches + watchlist)),
                     quota_limit=None,
                     estimated_daily_cost_usd=round(price_map[Provider.TXODDS] / 30, 2),
                 ),
@@ -318,12 +383,22 @@ def daily_cost_report(settings: Settings, analyses: list[MatchAnalysis]) -> Dail
         estimated_monthly_spend_usd=monthly,
         estimated_daily_spend_usd=daily,
         api_calls_by_provider=usages,
-        websocket_uptime_pct=0.992 if settings.odds_primary.endswith("_ws") else 0,
+        websocket_uptime_pct=websocket_uptime_pct
+        if websocket_uptime_pct is not None
+        else 0.992
+        if settings.odds_primary.endswith("_ws")
+        else 0,
         matches_analyzed=len(analyses),
         matches_skipped_by_coverage=skipped,
         signals_generated=len(entry_signals),
         cost_per_signal_usd=round(daily / len(entry_signals), 2) if entry_signals else None,
-        cost_per_positive_clv_signal_usd=None,
+        cost_per_positive_clv_signal_usd=round(daily / positive_clv_signals, 2)
+        if positive_clv_signals
+        else None,
         watchlist_escalations=watchlist,
-        note="Positive-CLV cost stays null until closing-line results are imported.",
+        note=(
+            f"Cost per positive-CLV signal uses {positive_clv_signals} settled paper signals."
+            if positive_clv_signals
+            else "Positive-CLV cost stays null until closing-line results are imported."
+        ),
     )

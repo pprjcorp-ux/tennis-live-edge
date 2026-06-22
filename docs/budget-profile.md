@@ -15,12 +15,41 @@ plus men's/women's Grand Slam singles analytics at roughly `$500/mo`.
 - `EXECUTION_ENABLED=false`
 - `REAL_EXECUTION_HARD_BLOCK=true`
 
+Live budget mode is paper-first and persistence-first. `Entrada` signals remain
+blocked unless Postgres/Timescale is configured through `DATABASE_URL`, schema is
+applied, provider cursors are trusted, and the score/odds feeds are fresh.
+
 ## Vendor Shape
 
 - API-Tennis Business for fixtures, livescore, H2H, and rankings.
 - Odds-API.io Starter + WebSocket for live odds on active/watchlist matches.
 - TheOddsAPI Business for archive/comparison.
 - Cloudflare Tunnel + Access on free tier plus domain cost.
+
+## API Activation Order
+
+The budget vendor stack is not activated all at once. The dashboard exposes the
+current API onboarding state from persisted operational truth:
+
+1. Run `POST /api/v1/replay/contracts/run` with fixture seeds and keep all
+   healthy/gap/`resync_required` scenarios passing without paid provider quota.
+2. Configure TheOddsAPI first for REST archive/comparison, then run protected
+   `POST /api/v1/ingestion/the-odds-api/archive-sync` before touching score or
+   websocket providers.
+3. Configure API-Tennis second for fixtures/livescore, then run protected
+   `POST /api/v1/ingestion/api-tennis/score-sync` as a score-only smoke before
+   enabling combined live-budget cycles.
+4. Configure Odds-API.io websocket third, after replay tests prove sequence,
+   resync, stale odds, and moneyline completeness gates. Start with protected
+   `POST /api/v1/ingestion/odds-api-io/stream-smoke` using a low message limit
+   and timeout.
+5. Keep enterprise feeds disabled until paper trading proves that the budget
+   feeds are the bottleneck.
+
+If a budget provider reaches its persisted `quota_limit`, provider health moves
+to `quota exhausted`, live readiness blocks `Entrada`, and the system should
+continue in monitor/replay mode rather than forcing signals or breaking the
+dashboard.
 
 Sportradar, Betradar UOF, and TXODDS stay documented but disabled until the
 model proves value and the budget moves to enterprise.

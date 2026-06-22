@@ -3,9 +3,14 @@ from datetime import date, datetime, timezone
 
 import pytest
 from tennis_edge.config import Settings
-from tennis_edge.domain import CompetitionLevel, Match, MatchState, SignalStatus, Surface, Tour
+from tennis_edge.domain import CompetitionLevel, Match, MatchState, Provider, SignalStatus, Surface, Tour
 from tennis_edge.sample_data import PLAYERS
-from tennis_edge.services.cost_profile import cost_profile, coverage_decision
+from tennis_edge.services.cost_profile import (
+    cost_profile,
+    coverage_decision,
+    daily_cost_report,
+    provider_health_for,
+)
 from tennis_edge.services.repository import AnalysisRepository
 
 
@@ -46,6 +51,33 @@ def test_lean_atp_profile_stays_under_budget_and_defers_enterprise_feeds() -> No
     assert "grand_slam_men" in profile.coverage_scope
     assert "grand_slam_women" in profile.coverage_scope
     assert "txodds" in profile.disabled_providers
+
+
+def test_live_provider_health_reports_missing_budget_keys() -> None:
+    health = provider_health_for(Settings(data_mode="live"))
+
+    by_provider = {item.provider: item for item in health}
+
+    assert by_provider["api_tennis"].healthy is False
+    assert by_provider["api_tennis"].configured is False
+    assert by_provider["api_tennis"].status == "score primary key missing"
+    assert by_provider["odds_api_io"].healthy is False
+    assert by_provider["odds_api_io"].status == "odds websocket key missing"
+
+
+def test_replay_provider_health_reports_fake_feeds_without_configured_keys() -> None:
+    health = provider_health_for(Settings(data_mode="replay"))
+
+    by_provider = {item.provider: item for item in health}
+
+    assert by_provider[Provider.API_TENNIS].configured is False
+    assert by_provider[Provider.API_TENNIS].healthy is True
+    assert by_provider[Provider.API_TENNIS].quota_used == 0
+    assert by_provider[Provider.API_TENNIS].status == "score primary replay fixture feed"
+    assert by_provider[Provider.ODDS_API_IO].healthy is True
+    assert by_provider[Provider.ODDS_API_IO].status == "odds websocket replay fixture feed"
+    assert by_provider[Provider.THE_ODDS_API].healthy is True
+    assert by_provider[Provider.THE_ODDS_API].status == "historical archive replay snapshot"
 
 
 @pytest.mark.parametrize(
@@ -103,3 +135,34 @@ def test_daily_cost_report_counts_skipped_matches_and_signal_cost() -> None:
         "odds_api_io",
         "theoddsapi",
     }
+
+
+def test_daily_cost_report_prefers_persisted_provider_usage_counts() -> None:
+    report = daily_cost_report(
+        Settings(data_mode="live", runtime_profile="lean_atp"),
+        analyses=[],
+        provider_usage_counts={
+            Provider.API_TENNIS: 12,
+            Provider.ODDS_API_IO: 8,
+            Provider.THE_ODDS_API: 3,
+        },
+    )
+    usage = {item.provider: item for item in report.api_calls_by_provider}
+
+    assert usage["api_tennis"].api_calls == 12
+    assert usage["api_tennis"].quota_used == 12
+    assert usage["odds_api_io"].api_calls == 8
+    assert usage["theoddsapi"].api_calls == 3
+
+
+def test_daily_cost_report_prefers_persisted_websocket_usage() -> None:
+    report = daily_cost_report(
+        Settings(data_mode="live", runtime_profile="lean_atp"),
+        analyses=[],
+        provider_websocket_minutes={Provider.ODDS_API_IO: 17},
+        websocket_uptime_pct=0.5,
+    )
+    usage = {item.provider: item for item in report.api_calls_by_provider}
+
+    assert report.websocket_uptime_pct == 0.5
+    assert usage[Provider.ODDS_API_IO].websocket_minutes == 17

@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [budget, enterprise]
+  pull_request:
+    branches: [budget, enterprise]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/web/package-lock.json
+
+      - name: Install API
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e "services/api[dev]"
+
+      - name: Install web
+        run: |
+          npm ci
+          npm --prefix apps/web ci
+
+      - name: API tests
+        run: npm run api:test
+
+      - name: Web build
+        run: npm --prefix apps/web run build
+
+      - name: Private runtime guard
+        run: python scripts/check_private_runtime.py

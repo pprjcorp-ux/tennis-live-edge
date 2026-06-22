@@ -165,6 +165,48 @@ h2 {
   margin-bottom: 12px;
 }
 
+.operationalStrip {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1.05fr 1fr 1.15fr;
+  gap: 1px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.opsCell {
+  min-width: 0;
+  min-height: 92px;
+  display: grid;
+  align-content: space-between;
+  gap: 10px;
+  padding: 14px;
+  background: var(--panel);
+}
+
+.opsCell div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.opsCell span,
+.opsCell p {
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.opsCell p {
+  margin: 0;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .enterpriseTabs {
   display: flex;
   flex-wrap: wrap;
@@ -293,6 +335,16 @@ h2 {
   color: var(--app-muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.matchMeta .freshPill {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.matchMeta .stalePill {
+  background: #fff7ed;
+  color: #9a3412;
 }
 
 .scoreLine {
@@ -514,9 +566,14 @@ h2 {
 
 .qualityRows,
 .cursorRows,
+.operationalTruthRows,
+.apiOnboardingRows,
+.providerModeRows,
+.replayContractRows,
 .modelRows,
 .calibrationRows,
-.conflictRows {
+.conflictRows,
+.ingestionRows {
   display: grid;
   gap: 8px;
   padding: 14px;
@@ -524,9 +581,14 @@ h2 {
 
 .qualityRow,
 .cursorRow,
+.operationalTruthRow,
+.apiOnboardingRow,
+.providerModeRow,
+.replayContractRow,
 .modelRow,
 .calibrationRow,
-.conflictRow {
+.conflictRow,
+.ingestionRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) repeat(4, auto);
   gap: 10px;
@@ -537,7 +599,90 @@ h2 {
   border-radius: 8px;
 }
 
-.cursorRow,
+.operationalTruthRows {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.operationalTruthRow {
+  align-content: start;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-height: 118px;
+}
+
+.operationalTruthRow > span {
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.operationalTruthRow p {
+  margin: 0;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.cursorRow {
+  grid-template-columns: minmax(0, 1.25fr) auto auto auto auto auto minmax(0, 0.9fr);
+}
+
+.apiOnboardingSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 14px 0;
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+.apiOnboardingSummary span:not(.status) {
+  padding: 6px 8px;
+  background: #f4f7fb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.apiOnboardingRow {
+  grid-template-columns: minmax(0, 0.85fr) auto auto minmax(0, 1.4fr) minmax(0, 1fr);
+}
+
+.apiOnboardingRow.current {
+  border-color: var(--blue);
+  background: #f8fbff;
+}
+
+.providerModeRow {
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr);
+}
+
+.providerModeRow.active {
+  border-color: var(--green);
+  background: #f8fff9;
+}
+
+.replaySummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 14px 0;
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+.replaySummary span:not(.status) {
+  padding: 6px 8px;
+  background: #f4f7fb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.replayContractRow {
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 0.9fr) minmax(0, 1fr);
+}
+
 .calibrationRow {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
@@ -546,22 +691,40 @@ h2 {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
 
+.ingestionRow {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
 .qualityRow strong,
 .qualityRow span,
 .cursorRow strong,
 .cursorRow span,
+.operationalTruthRow strong,
+.operationalTruthRow span,
+.apiOnboardingRow strong,
+.apiOnboardingRow span,
+.providerModeRow strong,
+.providerModeRow span,
+.replayContractRow strong,
+.replayContractRow span,
 .modelRow strong,
 .modelRow span,
 .calibrationRow span,
 .conflictRow strong,
-.conflictRow span {
+.conflictRow span,
+.ingestionRow strong,
+.ingestionRow span {
   overflow-wrap: anywhere;
 }
 
 .qualityRow div span,
 .cursorRow div span,
+.apiOnboardingRow div span,
+.providerModeRow div span,
+.replayContractRow div span,
 .modelRow div span,
-.conflictRow div span {
+.conflictRow div span,
+.ingestionRow div span {
   display: block;
   margin-top: 2px;
   color: var(--app-muted);
@@ -570,9 +733,12 @@ h2 {
 
 .qualityRow > span,
 .cursorRow > span,
+.providerModeRow > span,
 .modelRow > span,
+.replayContractRow > span,
 .calibrationRow > span,
-.conflictRow > span {
+.conflictRow > span,
+.ingestionRow > span {
   color: var(--app-muted);
   font-size: 12px;
   font-weight: 800;
@@ -597,6 +763,58 @@ h2 {
   color: var(--app-muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.paperAutoSettle,
+.autoSettlementResult {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 0 14px 12px;
+}
+
+.paperAutoSettle button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ink);
+  color: white;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.paperAutoSettle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.paperAutoSettle span,
+.autoSettlementResult span {
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f4f7fb;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.modelLabDataset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 14px 0;
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+.modelLabDataset span:not(.status) {
+  padding: 6px 8px;
+  background: #f4f7fa;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 .agentStats {
@@ -679,6 +897,35 @@ h2 {
   flex-wrap: wrap;
   gap: 8px;
   padding: 0 14px 14px;
+}
+
+.preflightRows {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.preflightRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 54px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.preflightRow strong,
+.preflightRow span {
+  overflow-wrap: anywhere;
+}
+
+.preflightRow div span {
+  display: block;
+  margin-top: 2px;
+  color: var(--app-muted);
+  font-size: 12px;
 }
 
 .agentAllowed span {
@@ -825,6 +1072,28 @@ h2 {
   padding: 16px;
 }
 
+.segmentTable {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.segmentRow {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr 0.9fr 0.9fr 0.9fr;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+  font-size: 12px;
+}
+
+.segmentRow span {
+  color: var(--app-muted);
+}
+
 .detailGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -866,7 +1135,8 @@ h2 {
   padding: 16px 16px 0;
 }
 
-.labActions input {
+.labActions input,
+.labActions select {
   min-width: min(100%, 220px);
   min-height: 38px;
   padding: 0 11px;
@@ -933,10 +1203,15 @@ h2 {
 
 @media (max-width: 980px) {
   .metricsGrid,
+  .operationalStrip,
   .contentGrid,
   .lowerGrid,
   .enterpriseGrid {
     grid-template-columns: 1fr;
+  }
+
+  .operationalTruthRows {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -973,11 +1248,13 @@ h2 {
 
   .qualityRow,
   .cursorRow,
+  .operationalTruthRows,
   .modelRow,
   .calibrationRow,
   .conflictRow,
   .anomalyRow,
   .runRow,
+  .ingestionRow,
   .orderRow {
     grid-template-columns: 1fr;
   }

@@ -165,50 +165,71 @@ class Settings(BaseSettings):
             "MODEL_PROMOTION_REQUIRE_CLV", "TENNIS_EDGE_MODEL_PROMOTION_REQUIRE_CLV"
         ),
     )
-    openclaw_autopilot_enabled: bool = Field(
+    hermes_autopilot_enabled: bool = Field(
         default=True,
         validation_alias=AliasChoices(
-            "OPENCLAW_AUTOPILOT_ENABLED", "TENNIS_EDGE_OPENCLAW_AUTOPILOT_ENABLED"
+            "HERMES_AUTOPILOT_ENABLED",
+            "TENNIS_EDGE_HERMES_AUTOPILOT_ENABLED",
+            "OPENCLAW_AUTOPILOT_ENABLED",
+            "TENNIS_EDGE_OPENCLAW_AUTOPILOT_ENABLED",
         ),
     )
-    openclaw_channel: str = Field(
+    hermes_channel: str = Field(
         default="dashboard,telegram",
-        validation_alias=AliasChoices("OPENCLAW_CHANNEL", "TENNIS_EDGE_OPENCLAW_CHANNEL"),
+        validation_alias=AliasChoices(
+            "HERMES_CHANNEL",
+            "TENNIS_EDGE_HERMES_CHANNEL",
+            "OPENCLAW_CHANNEL",
+            "TENNIS_EDGE_OPENCLAW_CHANNEL",
+        ),
     )
-    openclaw_triage_model: str = Field(
+    hermes_triage_model: str = Field(
         default="gpt-5.4-mini",
         validation_alias=AliasChoices(
-            "OPENCLAW_TRIAGE_MODEL", "TENNIS_EDGE_OPENCLAW_TRIAGE_MODEL"
+            "HERMES_TRIAGE_MODEL",
+            "TENNIS_EDGE_HERMES_TRIAGE_MODEL",
+            "OPENCLAW_TRIAGE_MODEL",
+            "TENNIS_EDGE_OPENCLAW_TRIAGE_MODEL",
         ),
     )
-    openclaw_critical_model: str = Field(
+    hermes_critical_model: str = Field(
         default="gpt-5.5",
         validation_alias=AliasChoices(
-            "OPENCLAW_CRITICAL_MODEL", "TENNIS_EDGE_OPENCLAW_CRITICAL_MODEL"
+            "HERMES_CRITICAL_MODEL",
+            "TENNIS_EDGE_HERMES_CRITICAL_MODEL",
+            "OPENCLAW_CRITICAL_MODEL",
+            "TENNIS_EDGE_OPENCLAW_CRITICAL_MODEL",
         ),
     )
-    openclaw_router_policy: str = Field(
+    hermes_router_policy: str = Field(
         default="cost_optimized",
         validation_alias=AliasChoices(
-            "OPENCLAW_ROUTER_POLICY", "TENNIS_EDGE_OPENCLAW_ROUTER_POLICY"
+            "HERMES_ROUTER_POLICY",
+            "TENNIS_EDGE_HERMES_ROUTER_POLICY",
+            "OPENCLAW_ROUTER_POLICY",
+            "TENNIS_EDGE_OPENCLAW_ROUTER_POLICY",
         ),
     )
-    openclaw_daily_model_budget_usd: float = Field(
+    hermes_daily_model_budget_usd: float = Field(
         default=15,
         validation_alias=AliasChoices(
+            "HERMES_DAILY_MODEL_BUDGET_USD",
+            "TENNIS_EDGE_HERMES_DAILY_MODEL_BUDGET_USD",
             "OPENCLAW_DAILY_MODEL_BUDGET_USD",
             "TENNIS_EDGE_OPENCLAW_DAILY_MODEL_BUDGET_USD",
         ),
     )
-    openclaw_telegram_allowed_user_ids: str = Field(
+    hermes_telegram_allowed_user_ids: str = Field(
         default="",
         validation_alias=AliasChoices(
+            "HERMES_TELEGRAM_ALLOWED_USER_IDS",
+            "TENNIS_EDGE_HERMES_TELEGRAM_ALLOWED_USER_IDS",
             "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS",
             "TENNIS_EDGE_OPENCLAW_TELEGRAM_ALLOWED_USER_IDS",
         ),
     )
     runtime_profile: str = Field(
-        default="enterprise_roi_clv",
+        default="lean_atp",
         validation_alias=AliasChoices("TENNIS_EDGE_RUNTIME_PROFILE", "RUNTIME_PROFILE"),
     )
     coverage: str = Field(
@@ -234,12 +255,35 @@ class Settings(BaseSettings):
         ),
     )
     monthly_budget_usd: float = Field(
-        default=6000,
+        default=500,
         validation_alias=AliasChoices("TENNIS_EDGE_MONTHLY_BUDGET_USD", "MONTHLY_BUDGET_USD"),
     )
     data_mode: str = Field(
         default="sample",
         validation_alias=AliasChoices("TENNIS_EDGE_DATA_MODE", "DATA_MODE"),
+    )
+    database_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("DATABASE_URL", "TENNIS_EDGE_DATABASE_URL"),
+    )
+    persistence_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "TENNIS_EDGE_PERSISTENCE_ENABLED", "PERSISTENCE_ENABLED"
+        ),
+    )
+    max_odds_staleness_ms: int = Field(
+        default=2500,
+        validation_alias=AliasChoices(
+            "TENNIS_EDGE_MAX_ODDS_STALENESS_MS", "MAX_ODDS_STALENESS_MS"
+        ),
+    )
+    max_auto_settlement_closing_age_ms: int = Field(
+        default=600_000,
+        validation_alias=AliasChoices(
+            "TENNIS_EDGE_MAX_AUTO_SETTLEMENT_CLOSING_AGE_MS",
+            "MAX_AUTO_SETTLEMENT_CLOSING_AGE_MS",
+        ),
     )
     cors_origin: str = Field(
         default="http://localhost:3000",
@@ -261,8 +305,8 @@ class Settings(BaseSettings):
         return {item.strip() for item in self.coverage.split(",") if item.strip()}
 
     @property
-    def openclaw_channels(self) -> list[str]:
-        return [channel.strip() for channel in self.openclaw_channel.split(",") if channel.strip()]
+    def hermes_channels(self) -> list[str]:
+        return [channel.strip() for channel in self.hermes_channel.split(",") if channel.strip()]
 
 
 @lru_cache

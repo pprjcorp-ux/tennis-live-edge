@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -133,6 +133,9 @@ class OddsQuote(BaseModel):
     ingested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+OddsTick = OddsQuote
+
+
 class Match(BaseModel):
     id: str
     provider_ids: dict[str, str] = Field(default_factory=dict)
@@ -205,6 +208,11 @@ class RawProviderPayload(BaseModel):
     ingested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     payload: dict[str, Any]
     checksum: str
+
+
+class ProviderMatchPayload(BaseModel):
+    match: "Match"
+    raw_payload: RawProviderPayload
 
 
 class CanonicalMatch(BaseModel):
@@ -292,6 +300,8 @@ class ReplayRunRequest(BaseModel):
     match_id: str = "match_atp_002"
     speed: float = Field(default=1.0, gt=0, le=100)
     include_market_suspensions: bool = True
+    odds_scenario: Literal["healthy", "gap", "resync_required"] = "healthy"
+    use_fixture_seed: bool = False
 
 
 class ReplayRunResult(BaseModel):
@@ -302,6 +312,66 @@ class ReplayRunResult(BaseModel):
     odds_ticks: int
     signals_generated: int
     final_status: str
+    provider_cursors: list["ProviderCursor"] = Field(default_factory=list)
+    raw_payloads_saved: int = 0
+    score_ticks_saved: int = 0
+    odds_ticks_saved: int = 0
+    cursors_saved: int = 0
+    provider_latency_saved: int = 0
+    resync_required: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+
+ReplayContractScenario = Literal["healthy", "gap", "resync_required"]
+
+
+class ReplayContractRunRequest(BaseModel):
+    match_id: str = "match_atp_002"
+    scenarios: list[ReplayContractScenario] = Field(
+        default_factory=lambda: ["healthy", "gap", "resync_required"]
+    )
+
+
+class ReplayProviderContractEvidence(BaseModel):
+    provider: Provider
+    adapter_contract: str
+    expected_input_contracts: list[str] = Field(default_factory=list)
+    expected_output_contracts: list[str] = Field(default_factory=list)
+    observed_input_contracts: list[str] = Field(default_factory=list)
+    observed_output_contracts: list[str] = Field(default_factory=list)
+    passed: bool
+    notes: list[str] = Field(default_factory=list)
+
+
+class ReplayContractScenarioResult(BaseModel):
+    scenario: ReplayContractScenario
+    run_id: str
+    final_status: str
+    events_replayed: int
+    score_ticks: int
+    odds_ticks: int
+    providers_seen: list[Provider]
+    adapter_contracts: list[str] = Field(default_factory=list)
+    input_contracts: list[str] = Field(default_factory=list)
+    output_contracts: list[str]
+    provider_contracts: list[ReplayProviderContractEvidence] = Field(default_factory=list)
+    provider_cursors: list["ProviderCursor"] = Field(default_factory=list)
+    raw_payloads_saved: int = 0
+    score_ticks_saved: int = 0
+    odds_ticks_saved: int = 0
+    provider_cursors_replayed: int = 0
+    cursors_saved: int = 0
+    provider_latency_saved: int = 0
+    resync_required: bool = False
+    passed: bool
+    notes: list[str] = Field(default_factory=list)
+
+
+class ReplayContractRunResult(BaseModel):
+    match_id: str
+    scenarios: list[ReplayContractScenarioResult]
+    passed: bool
+    notes: list[str] = Field(default_factory=list)
 
 
 class BacktestMetrics(BaseModel):
@@ -323,7 +393,7 @@ class BacktestRunRequest(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     model_version: str = "prematch_ensemble_v1"
-    feature_set: str = "enterprise_v1"
+    feature_set: str = "live_budget_v1"
     walk_forward: bool = True
 
 
@@ -495,7 +565,8 @@ class TrainingExample(BaseModel):
     match_id: str
     player_id: str
     model_version: str
-    feature_snapshot_id: str
+    feature_snapshot_id: int | None = None
+    feature_set: str = "live_budget_v1"
     decision_ts: datetime
     model_probability: float = Field(ge=0, le=1)
     market_probability: float = Field(ge=0, le=1)
@@ -503,7 +574,9 @@ class TrainingExample(BaseModel):
     result_win: bool | None = None
     pnl: float | None = None
     clv: float | None = None
+    stake_amount: float = Field(default=1, gt=0)
     calibration_bucket: str
+    settled_at: datetime | None = None
 
 
 class ModelRegistryEntry(BaseModel):
@@ -556,13 +629,13 @@ class PaperSettlement(BaseModel):
     order_id: str
     status: OrderStatus
     result_win: bool
-    requested_odds: float
-    average_price: float
-    matched_stake: float
+    requested_odds: float = Field(gt=1)
+    average_price: float = Field(gt=1)
+    matched_stake: float = Field(ge=0)
     gross_pnl: float
     commission: float
     net_pnl: float
-    closing_odds: float
+    closing_odds: float = Field(gt=1)
     clv: float
     settled_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -573,9 +646,97 @@ class PaperSettleRequest(BaseModel):
     closing_odds: float = Field(gt=1)
 
 
+class AutoPaperSettleRequest(BaseModel):
+    match_id: str | None = None
+    max_orders: int = Field(default=100, ge=1, le=500)
+
+
+class AutoPaperSettleDecision(BaseModel):
+    order_id: str
+    match_id: str | None = None
+    player_id: str | None = None
+    status: Literal[
+        "settled",
+        "skipped",
+        "training_example_missing",
+        "settlement_failed",
+    ]
+    reason: str
+    result_win: bool | None = None
+    closing_odds: float | None = Field(default=None, gt=1)
+    training_example_ready: bool = False
+
+
+class AutoPaperSettleResult(BaseModel):
+    evaluated_orders: int
+    settled_orders: int
+    skipped_orders: int
+    training_examples_ready: int = 0
+    decisions: list[AutoPaperSettleDecision] = Field(default_factory=list)
+    settlements: list[PaperSettlement] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
+class PaperRehearsalResult(BaseModel):
+    enabled: bool = False
+    match_id: str | None = None
+    signal_id: str | None = None
+    order_id: str | None = None
+    settled_orders: int = 0
+    training_examples_ready: int = 0
+    settlement_decisions: list[AutoPaperSettleDecision] = Field(default_factory=list)
+    live_api_calls: int = 0
+    notes: list[str] = Field(default_factory=list)
+
+
+class DailyOperationalRunRequest(BaseModel):
+    match_id: str = "match_atp_002"
+    settle_match_id: str | None = None
+    max_orders: int = Field(default=100, ge=1, le=500)
+    scenarios: list[ReplayContractScenario] | None = None
+    model_version: str = "prematch_ensemble_v1"
+    feature_set: str = "live_budget_v1"
+    run_paper_rehearsal: bool = False
+
+
+class DailyOperationalBacktestStatus(BaseModel):
+    status: Literal["completed", "skipped"]
+    model_version: str
+    feature_set: str
+    reason: str | None = None
+    run_id: str | None = None
+    signals: int | None = None
+    roi: float | None = None
+    clv: float | None = None
+    brier_score: float | None = None
+    log_loss: float | None = None
+    calibration_error: float | None = None
+    max_drawdown: float | None = None
+
+
+class DailyOperationalExecutionSnapshot(BaseModel):
+    can_submit_real_orders: bool
+    real_execution_hard_block: bool
+    stage: ExecutionStage
+
+
+class DailyOperationalRunResult(BaseModel):
+    status: Literal["completed", "collecting", "degraded"]
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "system"
+    live_api_calls: int = 0
+    match_id: str
+    replay_contracts: ReplayContractRunResult
+    paper_rehearsal: PaperRehearsalResult | None = None
+    paper_auto_settlement: AutoPaperSettleResult
+    model_lab_backtest: DailyOperationalBacktestStatus
+    execution: DailyOperationalExecutionSnapshot
+
+
 class PaperPerformance(BaseModel):
     orders: int
     settled_orders: int
+    positive_clv_signals: int = 0
     wins: int
     losses: int
     open_orders: int
@@ -586,6 +747,16 @@ class PaperPerformance(BaseModel):
     calibration_error: float | None
     readiness_status: Literal["collecting", "review_ready"]
     readiness_reasons: list[str]
+    segments: list["PaperPerformanceSegment"] = Field(default_factory=list)
+
+
+class PaperPerformanceSegment(BaseModel):
+    segment_type: Literal["model", "odds_bucket", "surface", "tour", "provider"]
+    segment: str
+    settled_orders: int
+    roi: float | None
+    clv: float | None
+    realized_pnl: float
 
 
 class AgentActionStatus(StrEnum):
@@ -623,7 +794,7 @@ class AgentAction(BaseModel):
 class AgentRun(BaseModel):
     id: str
     run_type: AgentRunType
-    source: Literal["dashboard", "telegram", "cron", "openclaw", "system"] = "system"
+    source: Literal["dashboard", "telegram", "cron", "hermes", "openclaw", "system"] = "system"
     model_routes: list[AgentModelRoute] = Field(default_factory=list)
     actions: list[AgentAction] = Field(default_factory=list)
     summary: str
@@ -660,8 +831,139 @@ class AgentBriefing(BaseModel):
     latest_run: AgentRun | None = None
 
 
+class AgentPreflightCheck(BaseModel):
+    name: str
+    status: Literal["pass", "warn", "fail"]
+    summary: str
+    detail: str | None = None
+
+
+class AgentPreflight(BaseModel):
+    status: Literal["ready", "degraded", "blocked"]
+    checks: list[AgentPreflightCheck]
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class IngestionRunRequest(BaseModel):
+    target_date: date | None = None
+
+
+class IngestionRunResult(BaseModel):
+    target_date: date
+    source: Literal["provider_live", "persisted_fallback", "sample", "empty"]
+    persisted: bool
+    matches: int
+    raw_payloads_saved: int
+    signals_generated: int
+    entry_signals: int
+    provider_warnings: list[str] = Field(default_factory=list)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ScoreSyncResult(BaseModel):
+    provider: Provider = Provider.API_TENNIS
+    configured: bool
+    target_date: date
+    source: Literal["provider_live", "persisted_fallback", "sample", "empty", "skipped"]
+    persisted: bool = False
+    matches: int = 0
+    fixture_payloads: int = 0
+    score_payloads: int = 0
+    raw_payloads_saved: int = 0
+    signals_generated: int = 0
+    entry_signals: int = 0
+    provider_warnings: list[str] = Field(default_factory=list)
+    live_api_calls: int = 0
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ArchiveOddsSyncResult(BaseModel):
+    provider: Provider = Provider.THE_ODDS_API
+    configured: bool
+    source: Literal["archive_odds", "skipped"]
+    events: int = 0
+    quotes: int = 0
+    raw_payloads_saved: int = 0
+    provider_latency_saved: int = 0
+    provider_warnings: list[str] = Field(default_factory=list)
+    live_api_calls: int = 0
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class IngestionRunRecord(BaseModel):
+    id: str
+    run_type: Literal[
+        "score_snapshot",
+        "archive_odds_sync",
+        "odds_message",
+        "odds_stream",
+        "live_budget_cycle",
+        "replay_run",
+        "replay_contract_run",
+        "daily_operational_run",
+    ]
+    source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "system"
+    status: Literal["completed", "collecting", "degraded", "skipped", "failed"]
+    summary: dict[str, Any] = Field(default_factory=dict)
+    started_at: datetime
+    completed_at: datetime
+
+
+class OddsMessageIngestionRequest(BaseModel):
+    payload: dict[str, Any]
+    stream: str = "tennis:moneyline"
+
+
+class OddsMessageIngestionResult(BaseModel):
+    provider: Provider = Provider.ODDS_API_IO
+    stream: str
+    cursor: ProviderCursor
+    quotes: int
+    raw_payloads_saved: int
+    normalized_odds_saved: int = 0
+    persisted: bool
+    resync_required: bool
+    source_event_id: str
+    source_ts: datetime
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class OddsStreamIngestionRequest(BaseModel):
+    stream: str = "tennis:moneyline"
+    max_messages: int = Field(default=25, ge=1, le=500)
+    timeout_seconds: float = Field(default=30, gt=0, le=300)
+    force: bool = False
+
+
+class OddsStreamIngestionResult(BaseModel):
+    provider: Provider = Provider.ODDS_API_IO
+    stream: str
+    connected: bool
+    resync_required: bool
+    start_last_seq: int | None = None
+    messages: int
+    quotes: int
+    raw_payloads_saved: int
+    normalized_odds_saved: int
+    timed_out: bool
+    reason: str | None = None
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ProviderCursorResyncRequest(BaseModel):
+    provider: Provider = Provider.ODDS_API_IO
+    stream: str = "tennis:moneyline"
+    last_seq: int = Field(ge=0)
+
+
+class ProviderCursorResyncResult(BaseModel):
+    cursor: ProviderCursor
+    persisted: bool
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class AgentAutopilotRequest(BaseModel):
-    source: Literal["dashboard", "telegram", "cron", "openclaw", "system"] = "dashboard"
+    source: Literal["dashboard", "telegram", "cron", "hermes", "openclaw", "system"] = "dashboard"
     create_paper_orders: bool = True
     request_real_execution: bool = False
     max_paper_orders: int = Field(default=3, ge=1, le=10)
@@ -674,6 +976,7 @@ class AgentAutopilotResult(BaseModel):
     paper_orders_skipped: int
     real_execution_blocked: bool
     anomalies: list[AgentAnomaly]
+    created_orders: list[ExecutionOrder] = Field(default_factory=list)
 
 
 class ProviderHealth(BaseModel):
@@ -728,11 +1031,168 @@ class DailyCostReport(BaseModel):
     note: str
 
 
+ProviderRuntimeMode = Literal["sample", "replay", "live_without_keys", "live_with_keys"]
+ProviderModeStatus = Literal["active", "ready", "blocked", "deferred"]
+ProviderModeEntryGate = Literal["allow", "monitor", "block"]
+ApiOnboardingStatus = Literal["configured", "ready_next", "blocked", "deferred"]
+ApiOnboardingCapability = Literal[
+    "archive_odds",
+    "score_livescore",
+    "live_odds_websocket",
+    "enterprise_feeds",
+]
+
+
+class ProviderModeStep(BaseModel):
+    mode: ProviderRuntimeMode
+    active: bool
+    status: ProviderModeStatus
+    entry_gate: ProviderModeEntryGate
+    summary: str
+    evidence: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    next_action: str
+
+
+class ApiOnboardingStep(BaseModel):
+    order: int
+    provider: Provider
+    capability: ApiOnboardingCapability
+    status: ApiOnboardingStatus
+    configured: bool
+    current: bool = False
+    last_smoke_status: str | None = None
+    last_smoke_at: datetime | None = None
+    smoke_completed: bool = False
+    required_before_enable: list[str] = Field(default_factory=list)
+    next_action: str
+    notes: list[str] = Field(default_factory=list)
+
+
+class ApiOnboardingSnapshot(BaseModel):
+    core_ready: bool
+    current_step: str
+    budget_chain_completed: bool = False
+    enterprise_eligible: bool = False
+    steps: list[ApiOnboardingStep]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ModelLabReadinessSnapshot(BaseModel):
+    status: Literal["ready", "collecting", "blocked"]
+    source: Literal["training_examples"]
+    model_version: str
+    feature_set: str
+    training_examples: int
+    total_training_examples: int = 0
+    production_training_examples: int = 0
+    rehearsal_training_examples: int = 0
+    can_run_live_backtest: bool
+    reasons: list[str] = Field(default_factory=list)
+
+
+class ReplayContractProvider(BaseModel):
+    provider: Provider
+    adapter_contract: str
+    fake_api: str
+    input_contracts: list[str]
+    output_contracts: list[str]
+    scenarios: list[str]
+    status: Literal["covered", "pending"]
+    notes: list[str] = Field(default_factory=list)
+
+
+class ReplayContractScenarioEvidence(BaseModel):
+    scenario: ReplayContractScenario
+    final_status: str
+    passed: bool
+    provider_contracts: list[ReplayProviderContractEvidence] = Field(default_factory=list)
+    raw_payloads_saved: int = 0
+    score_ticks_saved: int = 0
+    odds_ticks_saved: int = 0
+    provider_cursors_replayed: int = 0
+    cursors_saved: int = 0
+    provider_latency_saved: int = 0
+    resync_required: bool = False
+
+
+class ReplayLabSnapshot(BaseModel):
+    status: Literal["ready", "collecting", "blocked"]
+    source: Literal["budget_replay_fixtures"]
+    providers: list[ReplayContractProvider]
+    scenarios: list[str]
+    last_contract_run_id: str | None = None
+    last_contract_status: str | None = None
+    last_contract_passed: bool = False
+    last_contract_scenarios: list[str] = Field(default_factory=list)
+    last_contract_persistence: list[ReplayContractScenarioEvidence] = Field(
+        default_factory=list
+    )
+    last_replay_run_id: str | None = None
+    last_replay_status: str | None = None
+    last_replay_events: int = 0
+    last_replay_score_ticks: int = 0
+    last_replay_odds_ticks: int = 0
+    last_replay_resync_required: bool = False
+    can_validate_without_live_keys: bool
+    notes: list[str] = Field(default_factory=list)
+
+
+class OperationalMatchFreshness(BaseModel):
+    match_id: str
+    source: Literal["provider_live", "persisted_fallback", "sample", "empty"] = "sample"
+    persisted: bool = False
+    score_age_ms: int | None = None
+    odds_age_ms: int | None = None
+    provider_lineage: list[Provider] = Field(default_factory=list)
+    note: str = ""
+
+
+class OperationalSourceSummary(BaseModel):
+    total_matches: int = 0
+    persisted_matches: int = 0
+    volatile_matches: int = 0
+    source_counts: dict[str, int] = Field(default_factory=dict)
+    provider_lineage: list[Provider] = Field(default_factory=list)
+    match_freshness: list[OperationalMatchFreshness] = Field(default_factory=list)
+    note: str = "No matches loaded yet."
+
+
+class OperationalStateSnapshot(BaseModel):
+    provider_mode: ProviderRuntimeMode
+    provider_mode_reason: str
+    provider_mode_matrix: list[ProviderModeStep]
+    source_summary: OperationalSourceSummary = Field(default_factory=OperationalSourceSummary)
+    provider_health: list[ProviderHealth]
+    cost_profile: CostProfile
+    daily_cost_report: DailyCostReport
+    data_quality: list[DataQualitySnapshot]
+    provider_cursors: list[ProviderCursor]
+    ingestion_runs: list[IngestionRunRecord]
+    execution_status: ExecutionStatus
+    api_onboarding: ApiOnboardingSnapshot
+    model_lab: ModelLabReadinessSnapshot
+    replay_lab: ReplayLabSnapshot
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class MatchFreshness(BaseModel):
+    source: Literal["provider_live", "persisted_fallback", "sample", "empty"] = "sample"
+    persisted: bool = False
+    score_source_ts: datetime | None = None
+    odds_source_ts: datetime | None = None
+    score_age_ms: int | None = None
+    odds_age_ms: int | None = None
+    provider_lineage: list[Provider] = Field(default_factory=list)
+    note: str = ""
+
+
 class MatchAnalysis(BaseModel):
     match: Match
     features: FeatureVector
     prediction: Prediction
     signals: list[Signal]
+    freshness: MatchFreshness | None = None
 
 
 class DailyMetrics(BaseModel):
@@ -747,3 +1207,30 @@ class DailyMetrics(BaseModel):
     clv: float | None = None
     brier_score: float | None = None
     note: str
+
+
+class LiveReadinessCheck(BaseModel):
+    name: str
+    status: Literal["pass", "warn", "fail"]
+    summary: str
+    detail: str | None = None
+
+
+class LiveReadinessSnapshot(BaseModel):
+    status: Literal["ready", "degraded", "blocked"]
+    can_analyze_live: bool
+    can_generate_entries: bool
+    can_submit_real_orders: bool
+    blockers: list[str]
+    warnings: list[str]
+    checks: list[LiveReadinessCheck]
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class LiveDashboardSnapshot(BaseModel):
+    matches: list[MatchAnalysis]
+    metrics: DailyMetrics
+    signals: list[Signal]
+    operational_state: OperationalStateSnapshot
+    readiness: LiveReadinessSnapshot
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

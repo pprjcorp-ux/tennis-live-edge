@@ -88,3 +88,27 @@ def evaluate_promotion(metrics: BacktestMetrics) -> BacktestMetrics:
     metrics.promoted = not failures
     metrics.rejection_reason = "; ".join(failures) if failures else None
     return metrics
+
+
+def enforce_champion_non_regression(
+    metrics: BacktestMetrics, champion: BacktestMetrics
+) -> BacktestMetrics:
+    failures: list[str] = []
+    if metrics.roi < champion.roi:
+        failures.append("ROI below champion")
+    if metrics.clv < champion.clv:
+        failures.append("CLV below champion")
+    if metrics.brier_score > champion.brier_score:
+        failures.append("Brier score worse than champion")
+    if metrics.log_loss > champion.log_loss:
+        failures.append("Log loss worse than champion")
+    if metrics.calibration_error > champion.calibration_error:
+        failures.append("Calibration error worse than champion")
+    if metrics.max_drawdown > champion.max_drawdown:
+        failures.append("Drawdown worse than champion")
+
+    if failures:
+        metrics.promoted = False
+        existing = [metrics.rejection_reason] if metrics.rejection_reason else []
+        metrics.rejection_reason = "; ".join([*existing, *failures])
+    return metrics

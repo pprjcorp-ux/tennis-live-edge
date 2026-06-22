@@ -11,6 +11,7 @@ from tennis_edge.domain import (
 
 
 VALID_TENNIS_POINTS = {"0", "15", "30", "40", "A", "AD"}
+MAX_LIVE_SCORE_STALENESS_MS = 15000
 
 
 def max_stake_for(match: Match, features: FeatureVector) -> float:
@@ -56,6 +57,12 @@ def risk_decision(
         reasons.append("Market currently suspended by provider.")
     if features.odds_latency_ms is not None and features.odds_latency_ms > 2500:
         reasons.append("Odds feed is stale for live decisioning.")
+    if (
+        match.state.status == "live"
+        and match.state.source_latency_ms is not None
+        and match.state.source_latency_ms > MAX_LIVE_SCORE_STALENESS_MS
+    ):
+        reasons.append("Live score feed is stale for decisioning.")
     if match.state.status == "live" and not _score_state_valid(match):
         reasons.append("Live score state is incomplete.")
     if features.provider_count < 2 and edge < threshold + 0.02:

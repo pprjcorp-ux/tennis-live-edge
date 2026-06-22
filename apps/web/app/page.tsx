@@ -20,31 +20,29 @@ import {
   TrendingUp,
   Zap
 } from "lucide-react";
+import { DataHealthPanel } from "@/app/components/data-health-panel";
 import {
+  autoSettlePaperOrders,
   createPaperOrder,
   getAgentAnomalies,
   getAgentBriefing,
+  getAgentPreflightSafe,
   getAgentRuns,
   getCalibrationReport,
-  getCostProfile,
   getBankroll,
   getChampionModel,
-  getDailyMetrics,
-  getDailyCostReport,
-  getDataQuality,
   getEntityConflicts,
   getExecutionStatus,
-  getLiveSignals,
+  getLiveDashboard,
   getModelRegistry,
   getOrders,
   getPaperPerformance,
-  getProviderCursors,
-  getProviderHealth,
-  getTodayMatches,
   promoteFromLearning,
   runAgentAutopilot,
   runBacktest,
+  runDailyOperationalLoop,
   runReplay,
+  runReplayContracts,
   settlePaperOrder,
   setKillSwitch,
   submitOrder
@@ -53,7 +51,10 @@ import type {
   AgentAnomaly,
   AgentAutopilotResult,
   AgentBriefing,
+  AgentPreflight,
   AgentRun,
+  ApiOnboardingSnapshot,
+  AutoPaperSettleResult,
   BacktestMetrics,
   BankrollSnapshot,
   CalibrationReport,
@@ -61,18 +62,29 @@ import type {
   CostProfile,
   DailyMetrics,
   DailyCostReport,
+  DailyOperationalRunResult,
   DataQualitySnapshot,
   ExecutionOrder,
   ExecutionStatus,
+  IngestionRunRecord,
+  LiveReadinessSnapshot,
   MatchAnalysis,
+  ModelLabReadinessSnapshot,
   ModelRegistryEntry,
   ModelPromotionDecision,
+  OperationalStateSnapshot,
   PaperPerformance,
   ProviderCursor,
   ProviderHealth,
+  ProviderModeStep,
+  ReplayContractRunResult,
+  ReplayLabSnapshot,
+  ReplayOddsScenario,
   ReplayRunResult,
   Signal
 } from "@/lib/types";
+
+type FreshnessSource = NonNullable<MatchAnalysis["freshness"]>["source"];
 
 function pct(value: number) {
   return `${(value * 100).toFixed(1)}%`;
@@ -83,11 +95,57 @@ function usd(value: number | null | undefined) {
   return `$${value.toFixed(0)}`;
 }
 
+function ageLabel(valueMs: number | null | undefined) {
+  if (valueMs === null || valueMs === undefined) return "n/a";
+  if (valueMs < 1000) return `${valueMs}ms`;
+  if (valueMs < 60_000) return `${Math.round(valueMs / 1000)}s`;
+  if (valueMs < 3_600_000) return `${Math.round(valueMs / 60_000)}m`;
+  return `${Math.round(valueMs / 3_600_000)}h`;
+}
+
 function statusClass(status: Signal["status"]) {
   if (status === "Entrada") return "status statusEntry";
   if (status === "Monitorar") return "status statusMonitor";
   if (status === "Bloqueado") return "status statusBlocked";
   return "status statusMuted";
+}
+
+function preflightStatusClass(
+  status:
+    | AgentPreflight["status"]
+    | AgentPreflight["checks"][number]["status"]
+    | ModelLabReadinessSnapshot["status"]
+) {
+  if (status === "ready" || status === "pass") return "status statusEntry";
+  if (status === "degraded" || status === "warn" || status === "collecting") return "status statusMonitor";
+  return "status statusBlocked";
+}
+
+function providerModeClass(mode: OperationalStateSnapshot["provider_mode"]) {
+  if (mode === "live_with_keys") return "status statusEntry";
+  if (mode === "replay") return "status statusMonitor";
+  if (mode === "live_without_keys") return "status statusBlocked";
+  return "status statusMuted";
+}
+
+function providerModeLabel(mode: OperationalStateSnapshot["provider_mode"]) {
+  return mode;
+}
+
+function freshnessClass(source: FreshnessSource | undefined) {
+  if (source === "provider_live") return "status statusEntry";
+  if (source === "persisted_fallback") return "status statusMonitor";
+  if (source === "empty") return "status statusBlocked";
+  return "status statusMuted";
+}
+
+function cursorClass(cursor: ProviderCursor | undefined) {
+  if (!cursor) return "status statusBlocked";
+  if (cursor.resync_required || cursor.status === "gap_detected" || cursor.status === "resync_required") {
+    return "status statusBlocked";
+  }
+  if (cursor.status === "resynced") return "status statusMonitor";
+  return "status statusEntry";
 }
 
 function playerProbability(analysis: MatchAnalysis, playerId: string) {
@@ -100,29 +158,97 @@ function bestSignal(analysis: MatchAnalysis) {
   return analysis.signals[0];
 }
 
+function settledError(label: string, result: PromiseSettledResult<unknown>) {
+  if (result.status === "fulfilled") return null;
+  const detail = result.reason instanceof Error ? result.reason.message : String(result.reason);
+  return `${label}: ${detail}`;
+}
+
 export default function Page() {
   const [matches, setMatches] = useState<MatchAnalysis[]>([]);
   const [metrics, setMetrics] = useState<DailyMetrics | null>(null);
   const [costProfile, setCostProfile] = useState<CostProfile | null>(null);
   const [costReport, setCostReport] = useState<DailyCostReport | null>(null);
   const [dataQuality, setDataQuality] = useState<DataQualitySnapshot[]>([]);
+  const [ingestionRuns, setIngestionRuns] = useState<IngestionRunRecord[]>([]);
   const [providerCursors, setProviderCursors] = useState<ProviderCursor[]>([]);
+  const [apiOnboarding, setApiOnboarding] = useState<ApiOnboardingSnapshot>({
+    core_ready: false,
+    current_step: "loading",
+    budget_chain_completed: false,
+    enterprise_eligible: false,
+    steps: [],
+    warnings: ["Awaiting operational state."]
+  });
+  const [modelLab, setModelLab] = useState<ModelLabReadinessSnapshot>({
+    status: "blocked",
+    source: "training_examples",
+    model_version: "prematch_ensemble_v1",
+    feature_set: "live_budget_v1",
+    training_examples: 0,
+    total_training_examples: 0,
+    production_training_examples: 0,
+    rehearsal_training_examples: 0,
+    can_run_live_backtest: false,
+    reasons: ["Awaiting operational state."]
+  });
+  const [providerModeMatrix, setProviderModeMatrix] = useState<ProviderModeStep[]>([]);
+  const [replayLab, setReplayLab] = useState<ReplayLabSnapshot>({
+    status: "collecting",
+    source: "budget_replay_fixtures",
+    providers: [],
+    scenarios: ["healthy", "gap", "resync_required"],
+    last_contract_run_id: null,
+    last_contract_status: null,
+    last_contract_passed: false,
+    last_contract_scenarios: [],
+    last_contract_persistence: [],
+    last_replay_run_id: null,
+    last_replay_status: null,
+    last_replay_events: 0,
+    last_replay_score_ticks: 0,
+    last_replay_odds_ticks: 0,
+    last_replay_resync_required: false,
+    can_validate_without_live_keys: true,
+    notes: ["Awaiting operational state."]
+  });
+  const [providerMode, setProviderMode] =
+    useState<OperationalStateSnapshot["provider_mode"]>("sample");
+  const [providerModeReason, setProviderModeReason] = useState("Awaiting operational state.");
+  const [sourceSummary, setSourceSummary] =
+    useState<OperationalStateSnapshot["source_summary"]>({
+      total_matches: 0,
+      persisted_matches: 0,
+      volatile_matches: 0,
+      source_counts: {},
+      provider_lineage: [],
+      match_freshness: [],
+      note: "Awaiting operational state."
+    });
   const [modelRegistry, setModelRegistry] = useState<ModelRegistryEntry[]>([]);
   const [championModel, setChampionModel] = useState<ModelRegistryEntry | null>(null);
   const [calibration, setCalibration] = useState<CalibrationReport | null>(null);
   const [paperPerformance, setPaperPerformance] = useState<PaperPerformance | null>(null);
+  const [autoSettlement, setAutoSettlement] = useState<AutoPaperSettleResult | null>(null);
+  const [dailyOperationalRun, setDailyOperationalRun] = useState<DailyOperationalRunResult | null>(null);
   const [agentBriefing, setAgentBriefing] = useState<AgentBriefing | null>(null);
+  const [agentPreflight, setAgentPreflight] = useState<AgentPreflight | null>(null);
   const [agentAnomalies, setAgentAnomalies] = useState<AgentAnomaly[]>([]);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [autopilotResult, setAutopilotResult] = useState<AgentAutopilotResult | null>(null);
   const [entityConflicts, setEntityConflicts] = useState<CanonicalEntityConflict[]>([]);
   const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | null>(null);
+  const [readiness, setReadiness] = useState<LiveReadinessSnapshot | null>(null);
   const [bankroll, setBankroll] = useState<BankrollSnapshot | null>(null);
   const [orders, setOrders] = useState<ExecutionOrder[]>([]);
   const [health, setHealth] = useState<ProviderHealth[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [replayOddsScenario, setReplayOddsScenario] = useState<ReplayOddsScenario>("healthy");
   const [replay, setReplay] = useState<ReplayRunResult | null>(null);
+  const [replayContract, setReplayContract] = useState<ReplayContractRunResult | null>(null);
+  const [replayContractBusy, setReplayContractBusy] = useState(false);
+  const [dailyOpsBusy, setDailyOpsBusy] = useState(false);
   const [backtest, setBacktest] = useState<BacktestMetrics | null>(null);
   const [promotion, setPromotion] = useState<ModelPromotionDecision | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,65 +263,88 @@ export default function Page() {
   async function load() {
     setError(null);
     try {
-      const [nextMatches, nextMetrics, nextHealth, nextSignals] = await Promise.all([
-        getTodayMatches(),
-        getDailyMetrics(),
-        getProviderHealth(),
-        getLiveSignals()
-      ]);
-      const [nextCostProfile, nextCostReport] = await Promise.all([
-        getCostProfile(),
-        getDailyCostReport()
-      ]);
-      const [
-        nextDataQuality,
-        nextProviderCursors,
-        nextModelRegistry,
-        nextChampionModel,
-        nextPaperPerformance,
-        nextAgentBriefing,
-        nextAgentAnomalies,
-        nextAgentRuns,
-        nextEntityConflicts
-      ] = await Promise.all([
-        getDataQuality(),
-        getProviderCursors(),
+      const auxiliaryRequests = [
         getModelRegistry(),
         getChampionModel(),
         getPaperPerformance(),
         getAgentBriefing(),
+        getAgentPreflightSafe(),
         getAgentAnomalies(),
         getAgentRuns(),
-        getEntityConflicts()
-      ]);
-      const [nextExecutionStatus, nextBankroll, nextOrders] = await Promise.all([
-        getExecutionStatus(),
+        getEntityConflicts(),
         getBankroll(),
         getOrders()
-      ]);
-      setMatches(nextMatches);
-      setMetrics(nextMetrics);
-      setCostProfile(nextCostProfile);
-      setCostReport(nextCostReport);
-      setDataQuality(nextDataQuality);
-      setProviderCursors(nextProviderCursors);
-      setModelRegistry(nextModelRegistry);
-      setChampionModel(nextChampionModel);
-      setPaperPerformance(nextPaperPerformance);
-      setAgentBriefing(nextAgentBriefing);
-      setAgentAnomalies(nextAgentAnomalies);
-      setAgentRuns(nextAgentRuns);
-      setEntityConflicts(nextEntityConflicts);
-      setExecutionStatus(nextExecutionStatus);
-      setBankroll(nextBankroll);
-      setOrders(nextOrders);
-      setHealth(nextHealth);
-      setSignals(nextSignals);
-      setSelectedMatchId((current) => current ?? nextMatches[0]?.match.id ?? null);
+      ] as const;
+      const auxiliaryResultsPromise = Promise.allSettled(auxiliaryRequests);
+      const nextDashboard = await getLiveDashboard();
+      const nextOperational = nextDashboard.operational_state;
+      setMatches(nextDashboard.matches);
+      setMetrics(nextDashboard.metrics);
+      setCostProfile(nextOperational.cost_profile);
+      setCostReport(nextOperational.daily_cost_report);
+      setDataQuality(nextOperational.data_quality);
+      setIngestionRuns(nextOperational.ingestion_runs);
+      setProviderCursors(nextOperational.provider_cursors);
+      setApiOnboarding(nextOperational.api_onboarding);
+      setModelLab(nextOperational.model_lab);
+      setProviderModeMatrix(nextOperational.provider_mode_matrix);
+      setReplayLab(nextOperational.replay_lab);
+      setProviderMode(nextOperational.provider_mode);
+      setProviderModeReason(nextOperational.provider_mode_reason);
+      setSourceSummary(nextOperational.source_summary);
+      setExecutionStatus(nextOperational.execution_status);
+      setReadiness(nextDashboard.readiness);
+      setHealth(nextOperational.provider_health);
+      setSignals(nextDashboard.signals);
+      setSelectedMatchId((current) => current ?? nextDashboard.matches[0]?.match.id ?? null);
       setUpdatedAt(new Date());
+      setLoading(false);
+
+      void auxiliaryResultsPromise.then(([
+        modelRegistryResult,
+        championModelResult,
+        paperPerformanceResult,
+        agentBriefingResult,
+        agentPreflightResult,
+        agentAnomaliesResult,
+        agentRunsResult,
+        entityConflictsResult,
+        bankrollResult,
+        ordersResult
+      ]) => {
+        if (modelRegistryResult.status === "fulfilled") setModelRegistry(modelRegistryResult.value);
+        if (championModelResult.status === "fulfilled") setChampionModel(championModelResult.value);
+        if (paperPerformanceResult.status === "fulfilled") setPaperPerformance(paperPerformanceResult.value);
+        if (agentBriefingResult.status === "fulfilled") setAgentBriefing(agentBriefingResult.value);
+        if (agentPreflightResult.status === "fulfilled") setAgentPreflight(agentPreflightResult.value);
+        if (agentAnomaliesResult.status === "fulfilled") setAgentAnomalies(agentAnomaliesResult.value);
+        if (agentRunsResult.status === "fulfilled") setAgentRuns(agentRunsResult.value);
+        if (entityConflictsResult.status === "fulfilled") setEntityConflicts(entityConflictsResult.value);
+        if (bankrollResult.status === "fulfilled") setBankroll(bankrollResult.value);
+        if (ordersResult.status === "fulfilled") setOrders(ordersResult.value);
+
+        const auxiliaryErrors = [
+          settledError("model registry", modelRegistryResult),
+          settledError("champion model", championModelResult),
+          settledError("paper performance", paperPerformanceResult),
+          settledError("agent briefing", agentBriefingResult),
+          settledError("agent preflight", agentPreflightResult),
+          settledError("agent anomalies", agentAnomaliesResult),
+          settledError("agent runs", agentRunsResult),
+          settledError("entity conflicts", entityConflictsResult),
+          settledError("bankroll", bankrollResult),
+          settledError("orders", ordersResult)
+        ].filter(Boolean);
+        if (auxiliaryErrors.length) {
+          setError(`Estado operacional carregado; painel auxiliar indisponivel: ${auxiliaryErrors.join(" · ")}`);
+        }
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar API");
-    } finally {
+      setError(
+        err instanceof Error
+          ? `Estado operacional indisponivel: ${err.message}`
+          : "Estado operacional indisponivel"
+      );
       setLoading(false);
     }
   }
@@ -209,10 +358,48 @@ export default function Page() {
     setBusy(true);
     setError(null);
     try {
-      setReplay(await runReplay(selectedMatchId, adminToken.trim()));
+      setReplay(await runReplay(selectedMatchId, adminToken.trim(), replayOddsScenario));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Replay failed");
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function triggerReplayContracts() {
+    const token = requireAdminToken();
+    if (!token) return;
+    setBusy(true);
+    setReplayContractBusy(true);
+    setError(null);
+    try {
+      const result = await runReplayContracts(selectedMatchId ?? "match_atp_002", token);
+      setReplayContract(result);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Replay contract failed");
+    } finally {
+      setReplayContractBusy(false);
+      setBusy(false);
+    }
+  }
+
+  async function triggerDailyOperationalRun() {
+    const token = requireAdminToken();
+    if (!token) return;
+    setBusy(true);
+    setDailyOpsBusy(true);
+    setError(null);
+    try {
+      const result = await runDailyOperationalLoop(token, selectedMatchId ?? "match_atp_002", 100);
+      setDailyOperationalRun(result);
+      setReplayContract(result.replay_contracts);
+      setAutoSettlement(result.paper_auto_settlement);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Daily operational run failed");
+    } finally {
+      setDailyOpsBusy(false);
       setBusy(false);
     }
   }
@@ -272,15 +459,23 @@ export default function Page() {
         create_paper_orders: true,
         request_real_execution: false,
         max_paper_orders: 3,
-        notes: "dashboard manual openclaw autopilot"
+        notes: "dashboard manual hermes autopilot"
       });
       setAutopilotResult(result);
-      const [nextOrders, nextBankroll, nextPaperPerformance, nextBriefing, nextRuns, nextAnomalies] =
-        await Promise.all([
+      const [
+        nextOrders,
+        nextBankroll,
+        nextPaperPerformance,
+        nextBriefing,
+        nextPreflight,
+        nextRuns,
+        nextAnomalies
+      ] = await Promise.all([
           getOrders(),
           getBankroll(),
           getPaperPerformance(),
           getAgentBriefing(),
+          getAgentPreflightSafe(),
           getAgentRuns(),
           getAgentAnomalies()
         ]);
@@ -288,6 +483,7 @@ export default function Page() {
       setBankroll(nextBankroll);
       setPaperPerformance(nextPaperPerformance);
       setAgentBriefing(nextBriefing);
+      setAgentPreflight(nextPreflight);
       setAgentRuns(nextRuns);
       setAgentAnomalies(nextAnomalies);
     } catch (err) {
@@ -355,8 +551,28 @@ export default function Page() {
       setOrders(await getOrders());
       setBankroll(await getBankroll());
       setPaperPerformance(await getPaperPerformance());
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Paper settlement failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function triggerAutoPaperSettlement() {
+    const token = requireAdminToken();
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await autoSettlePaperOrders(token, selectedMatchId ?? undefined, 100);
+      setAutoSettlement(result);
+      setOrders(await getOrders());
+      setBankroll(await getBankroll());
+      setPaperPerformance(await getPaperPerformance());
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Auto paper settlement failed");
     } finally {
       setBusy(false);
     }
@@ -379,6 +595,20 @@ export default function Page() {
   );
 
   const selectedSignal = selected ? bestSignal(selected) : null;
+  const readinessMessages =
+    readiness && readiness.blockers.length > 0
+      ? readiness.blockers
+      : readiness?.warnings.length
+        ? readiness.warnings
+        : ["Paper-first readiness checks passing."];
+  const readinessPanelMessages = [providerModeReason, ...readinessMessages].filter(Boolean);
+  const oddsCursor = providerCursors.find((cursor) => cursor.provider === "odds_api_io");
+  const selectedFreshness = selected?.freshness;
+  const selectedLineage = selectedFreshness?.provider_lineage.join(", ") || "-";
+  const sourceCounts = Object.entries(sourceSummary.source_counts)
+    .map(([source, count]) => `${source} ${count}`)
+    .join(" · ");
+  const sourceLineage = sourceSummary.provider_lineage.join(", ") || "-";
 
   return (
     <main className="shell">
@@ -437,12 +667,78 @@ export default function Page() {
         </div>
       </section>
 
+      <section className="operationalStrip" aria-label="Estado operacional dos dados">
+        <div className="opsCell">
+          <div>
+            <span>Provider mode</span>
+            <strong className={providerModeClass(providerMode)}>{providerModeLabel(providerMode)}</strong>
+          </div>
+          <p>{providerModeReason}</p>
+        </div>
+        <div className="opsCell">
+          <div>
+            <span>Readiness</span>
+            <strong className={preflightStatusClass(readiness?.status ?? "blocked")}>
+              {readiness?.status ?? "blocked"}
+            </strong>
+          </div>
+          <p>
+            analyze {readiness?.can_analyze_live ? "yes" : "no"} · entries{" "}
+            {readiness?.can_generate_entries ? "ready" : "blocked"} · real{" "}
+            {readiness?.can_submit_real_orders ? "enabled" : "hard-blocked"}
+          </p>
+        </div>
+        <div className="opsCell">
+          <div>
+            <span>Source truth</span>
+            <strong
+              className={
+                sourceSummary.total_matches === 0
+                  ? "status statusBlocked"
+                  : sourceSummary.volatile_matches > 0
+                    ? "status statusMonitor"
+                    : "status statusEntry"
+              }
+            >
+              {sourceSummary.persisted_matches}/{sourceSummary.total_matches} persisted
+            </strong>
+          </div>
+          <p>
+            {sourceCounts || "empty"} · lineage {sourceLineage}
+          </p>
+        </div>
+        <div className="opsCell">
+          <div>
+            <span>Odds cursor</span>
+            <strong className={cursorClass(oddsCursor)}>
+              {oddsCursor?.status ?? "missing"}
+            </strong>
+          </div>
+          <p>
+            seq {oddsCursor?.last_seq ?? "none"} · next{" "}
+            {oddsCursor?.expected_next_seq ?? "none"} · gaps {oddsCursor?.gap_count ?? 0}
+          </p>
+        </div>
+        <div className="opsCell">
+          <div>
+            <span>Selected freshness</span>
+            <strong className={freshnessClass(selectedFreshness?.source)}>
+              {selectedFreshness?.source ?? "empty"}
+            </strong>
+          </div>
+          <p>
+            score {ageLabel(selectedFreshness?.score_age_ms)} · odds{" "}
+            {ageLabel(selectedFreshness?.odds_age_ms)} · {selectedLineage}
+          </p>
+        </div>
+      </section>
+
       <section className="enterpriseTabs" aria-label="Enterprise operations">
         {[
           ["data", "Data Health"],
           ["models", "Model Lab"],
           ["paper", "Paper Trading"],
-          ["agent", "OpenClaw Autopilot"],
+          ["agent", "Hermes Autopilot"],
           ["resolution", "Entity Resolution"],
           ["risk", "Risk/Bankroll"]
         ].map(([id, label]) => (
@@ -458,59 +754,52 @@ export default function Page() {
 
       <section className="enterprisePanel">
         {activeDesk === "data" ? (
-          <div className="enterpriseGrid">
-            <div className="panel">
-              <div className="panelHeader">
-                <div>
-                  <p className="eyebrow">Data Health</p>
-                  <h2>Sequencia, completude e latencia</h2>
-                </div>
-                <DatabaseZap size={20} />
-              </div>
-              <div className="qualityRows">
-                {dataQuality.map((snapshot) => (
-                  <div className="qualityRow" key={snapshot.id}>
-                    <div>
-                      <strong>{snapshot.provider}</strong>
-                      <span>{snapshot.feed}</span>
-                    </div>
-                    <span>score {pct(snapshot.score_completeness)}</span>
-                    <span>odds {pct(snapshot.odds_completeness)}</span>
-                    <span>seq {pct(snapshot.sequence_health)}</span>
-                    <span>{snapshot.latency_ms ?? "-"}ms</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="panel">
-              <div className="panelHeader">
-                <div>
-                  <p className="eyebrow">Provider Latency</p>
-                  <h2>Odds websocket cursors</h2>
-                </div>
-                <Timer size={20} />
-              </div>
-              <div className="cursorRows">
-                {providerCursors.map((cursor) => (
-                  <div className="cursorRow" key={`${cursor.provider}-${cursor.stream}`}>
-                    <div>
-                      <strong>{cursor.provider}</strong>
-                      <span>{cursor.stream}</span>
-                    </div>
-                    <span className={cursor.resync_required ? "status statusBlocked" : "status statusEntry"}>
-                      {cursor.status}
-                    </span>
-                    <span>seq {cursor.last_seq ?? "-"}</span>
-                    <span>gaps {cursor.gap_count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <DataHealthPanel
+            apiOnboarding={apiOnboarding}
+            dataQuality={dataQuality}
+            dailyOperationalRun={dailyOperationalRun}
+            dailyOpsBusy={dailyOpsBusy}
+            ingestionRuns={ingestionRuns}
+            onRunDailyOperational={triggerDailyOperationalRun}
+            onRunReplayContracts={triggerReplayContracts}
+            providerModeMatrix={providerModeMatrix}
+            providerModeReason={providerModeReason}
+            providerCursors={providerCursors}
+            readiness={readiness}
+            replayContractBusy={replayContractBusy}
+            replayLab={replayLab}
+            sourceSummary={sourceSummary}
+          />
         ) : null}
 
         {activeDesk === "models" ? (
           <div className="enterpriseGrid">
+            <div className="panel wide">
+              <div className="panelHeader">
+                <div>
+                  <p className="eyebrow">Training Dataset</p>
+                  <h2>{modelLab.source}</h2>
+                </div>
+                <DatabaseZap size={20} />
+              </div>
+              <div className="modelLabDataset">
+                <span className={preflightStatusClass(modelLab.status)}>{modelLab.status}</span>
+                <span>{modelLab.training_examples} settled examples</span>
+                <span>{modelLab.production_training_examples} production</span>
+                <span>{modelLab.rehearsal_training_examples} rehearsal</span>
+                <span>{modelLab.total_training_examples} total</span>
+                <span>{modelLab.model_version}</span>
+                <span>{modelLab.feature_set}</span>
+                <span>{modelLab.can_run_live_backtest ? "live backtest ready" : "live backtest blocked"}</span>
+              </div>
+              <div className="executionWarnings">
+                {modelLab.reasons.length ? (
+                  modelLab.reasons.map((reason) => <span key={reason}>{reason}</span>)
+                ) : (
+                  <span>Model Lab is reading persisted training_examples for this feature set.</span>
+                )}
+              </div>
+            </div>
             <div className="panel">
               <div className="panelHeader">
                 <div>
@@ -587,6 +876,42 @@ export default function Page() {
                   <span key={reason}>{reason}</span>
                 ))}
               </div>
+              <div className="paperAutoSettle">
+                <button onClick={triggerAutoPaperSettlement} disabled={busy}>
+                  Auto-settle paper
+                </button>
+                <span>
+                  Uses persisted final score and pre-result closing odds for{" "}
+                  {selectedMatchId ? selectedMatchId : "all matches"}.
+                </span>
+              </div>
+              {autoSettlement ? (
+                <div className="autoSettlementResult">
+                  <span>evaluated {autoSettlement.evaluated_orders}</span>
+                  <span>settled {autoSettlement.settled_orders}</span>
+                  <span>skipped {autoSettlement.skipped_orders}</span>
+                  <span>{autoSettlement.training_examples_ready} training examples ready</span>
+                  {autoSettlement.decisions.slice(0, 3).map((decision) => (
+                    <span key={`${decision.order_id}-${decision.status}`}>
+                      {decision.order_id}: {decision.status}
+                    </span>
+                  ))}
+                  {autoSettlement.reasons.slice(0, 3).map((reason) => (
+                    <span key={reason}>{reason}</span>
+                  ))}
+                </div>
+              ) : null}
+              <div className="segmentTable">
+                {(paperPerformance?.segments ?? []).slice(0, 12).map((segment) => (
+                  <div className="segmentRow" key={`${segment.segment_type}-${segment.segment}`}>
+                    <span>{segment.segment_type}</span>
+                    <strong>{segment.segment}</strong>
+                    <span>{segment.settled_orders} settled</span>
+                    <span>ROI {segment.roi === null ? "-" : pct(segment.roi)}</span>
+                    <span>CLV {segment.clv === null ? "-" : pct(segment.clv)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="panel">
               <div className="panelHeader">
@@ -630,7 +955,7 @@ export default function Page() {
             <div className="panel">
               <div className="panelHeader">
                 <div>
-                  <p className="eyebrow">OpenClaw Autopilot</p>
+                  <p className="eyebrow">Hermes Autopilot</p>
                   <h2>Dashboard + Telegram paper ops</h2>
                 </div>
                 <Bot size={20} />
@@ -638,6 +963,7 @@ export default function Page() {
               <div className="agentStats">
                 {[
                   ["Status", agentBriefing?.autopilot_enabled ? "enabled" : "disabled"],
+                  ["Preflight", agentPreflight?.status ?? "unknown"],
                   ["Channel", agentBriefing?.channel ?? "dashboard,telegram"],
                   ["Triage", agentBriefing?.triage_model ?? "gpt-5.4-mini"],
                   ["Critical", agentBriefing?.critical_model ?? "gpt-5.5"],
@@ -651,7 +977,7 @@ export default function Page() {
                 ))}
               </div>
               <div className="agentSummary">
-                <p>{agentBriefing?.summary ?? "OpenClaw aguardando briefing da API local."}</p>
+                <p>{agentBriefing?.summary ?? "Hermes aguardando briefing da API local."}</p>
                 <div className="agentActionBar">
                   <button onClick={triggerAgentAutopilot} disabled={busy}>
                     <Play size={15} />
@@ -666,6 +992,17 @@ export default function Page() {
                     Telegram allowlist only
                   </span>
                 </div>
+              </div>
+              <div className="preflightRows">
+                {agentPreflight?.checks.map((check) => (
+                  <div className="preflightRow" key={check.name}>
+                    <div>
+                      <strong>{check.name.replaceAll("_", " ")}</strong>
+                      <span>{check.detail ? `${check.summary} ${check.detail}` : check.summary}</span>
+                    </div>
+                    <span className={preflightStatusClass(check.status)}>{check.status}</span>
+                  </div>
+                )) ?? <p className="empty">Preflight operacional aguardando API local.</p>}
               </div>
               <div className="agentAllowed">
                 {agentBriefing?.allowed_actions.map((action) => (
@@ -826,6 +1163,9 @@ export default function Page() {
                     <span>{analysis.match.surface}</span>
                     <span>DQ {pct(analysis.features.data_quality)}</span>
                     <span>{analysis.features.provider_count} feeds</span>
+                    <span className={analysis.freshness?.source === "provider_live" ? "freshPill" : "stalePill"}>
+                      {analysis.freshness?.source ?? "sample"} · odds {ageLabel(analysis.freshness?.odds_age_ms)}
+                    </span>
                   </div>
                   <div className="scoreLine">
                     <strong>
@@ -874,6 +1214,37 @@ export default function Page() {
         </div>
 
         <aside className="sideStack">
+          <section className="panel">
+            <div className="panelHeader">
+              <div>
+                <p className="eyebrow">Live readiness</p>
+                <h2>{readiness?.status ?? "unknown"}</h2>
+              </div>
+              <ShieldCheck size={20} />
+            </div>
+            <div className="executionGrid">
+              <span>Analyze live</span>
+              <strong>{readiness?.can_analyze_live ? "yes" : "no"}</strong>
+              <span>Paper entries</span>
+              <strong>{readiness?.can_generate_entries ? "ready" : "blocked"}</strong>
+              <span>Real orders</span>
+              <strong>{readiness?.can_submit_real_orders ? "enabled" : "hard-blocked"}</strong>
+              <span>Status</span>
+              <strong className={preflightStatusClass(readiness?.status ?? "blocked")}>
+                {readiness?.status ?? "blocked"}
+              </strong>
+              <span>Provider mode</span>
+              <strong className={providerModeClass(providerMode)}>
+                {providerModeLabel(providerMode)}
+              </strong>
+            </div>
+            <div className="executionWarnings">
+              {readinessPanelMessages.slice(0, 4).map((reason) => (
+                <span key={reason}>{reason}</span>
+              ))}
+            </div>
+          </section>
+
           <section className="panel">
             <div className="panelHeader">
               <div>
@@ -1023,6 +1394,14 @@ export default function Page() {
                 <strong>{pct(selected.features.market_volatility)}</strong>
                 <span>Live pressure</span>
                 <strong>{selected.features.live_score_pressure.toFixed(3)}</strong>
+                <span>State source</span>
+                <strong>{selected.freshness?.source ?? "sample"}</strong>
+                <span>Score age</span>
+                <strong>{ageLabel(selected.freshness?.score_age_ms)}</strong>
+                <span>Odds age</span>
+                <strong>{ageLabel(selected.freshness?.odds_age_ms)}</strong>
+                <span>Lineage</span>
+                <strong>{selected.freshness?.provider_lineage.join(", ") || "-"}</strong>
               </div>
               <div className="explainList">
                 {selected.prediction.explanations.map((item) => (
@@ -1057,8 +1436,20 @@ export default function Page() {
               type="password"
               value={adminToken}
             />
+            <select
+              aria-label="Odds replay scenario"
+              onChange={(event) => setReplayOddsScenario(event.target.value as ReplayOddsScenario)}
+              value={replayOddsScenario}
+            >
+              <option value="healthy">healthy odds</option>
+              <option value="gap">odds gap</option>
+              <option value="resync_required">resync required</option>
+            </select>
             <button onClick={triggerReplay} disabled={busy || !selectedMatchId}>
               Run replay
+            </button>
+            <button onClick={triggerReplayContracts} disabled={busy}>
+              Run contracts
             </button>
             <button onClick={triggerBacktest} disabled={busy}>
               Run backtest
@@ -1075,6 +1466,66 @@ export default function Page() {
                   {replay.events_replayed} events · {replay.score_ticks} score ticks ·{" "}
                   {replay.odds_ticks} odds ticks
                 </span>
+                <span>
+                  persisted {replay.raw_payloads_saved} raw · {replay.score_ticks_saved} score ·{" "}
+                  {replay.odds_ticks_saved} odds · {replay.cursors_saved} cursors
+                </span>
+                <span
+                  className={
+                    replay.resync_required ? "status statusBlocked" : "status statusEntry"
+                  }
+                >
+                  {replay.final_status}
+                </span>
+                {replay.provider_cursors[0] ? (
+                  <span>
+                    {replay.provider_cursors[0].provider}/{replay.provider_cursors[0].stream}:{" "}
+                    {replay.provider_cursors[0].status} seq{" "}
+                    {replay.provider_cursors[0].last_seq ?? "none"} next{" "}
+                    {replay.provider_cursors[0].expected_next_seq ?? "none"} gaps{" "}
+                    {replay.provider_cursors[0].gap_count}
+                  </span>
+                ) : null}
+                {replay.notes.map((note) => (
+                  <span key={note}>{note}</span>
+                ))}
+              </div>
+            ) : null}
+            {replayContract ? (
+              <div className="labCard">
+                <strong>
+                  {replayContract.passed ? "replay contracts passed" : "replay contracts blocked"}
+                </strong>
+                <span>
+                  {replayContract.scenarios.length} scenarios · match {replayContract.match_id}
+                </span>
+                <span>
+                  {replayContract.scenarios
+                    .map((scenario) => `${scenario.scenario}:${scenario.passed ? "pass" : "block"}`)
+                    .join(" · ")}
+                </span>
+                <span>
+                  adapters{" "}
+                  {Array.from(
+                    new Set(replayContract.scenarios.flatMap((scenario) => scenario.adapter_contracts)),
+                  ).join(", ")}
+                </span>
+                <span>
+                  inputs{" "}
+                  {Array.from(
+                    new Set(replayContract.scenarios.flatMap((scenario) => scenario.input_contracts)),
+                  ).join(", ")}{" "}
+                  -&gt; outputs{" "}
+                  {Array.from(
+                    new Set(replayContract.scenarios.flatMap((scenario) => scenario.output_contracts)),
+                  ).join(", ")}
+                </span>
+                <span className={replayContract.passed ? "status statusEntry" : "status statusBlocked"}>
+                  {replayContract.passed ? "ready for API onboarding" : "keep API onboarding blocked"}
+                </span>
+                {replayContract.notes.map((note) => (
+                  <span key={note}>{note}</span>
+                ))}
               </div>
             ) : null}
             {backtest ? (

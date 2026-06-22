@@ -18,26 +18,43 @@ def cursor_key(provider: Provider, stream: str) -> tuple[Provider, str]:
     return (provider, stream)
 
 
-def default_provider_cursors(settings: Settings) -> list[ProviderCursor]:
-    if not CURSORS:
-        seed_provider_cursor(
+def default_provider_cursors(
+    settings: Settings,
+    *,
+    use_process_cache: bool = False,
+) -> list[ProviderCursor]:
+    if use_process_cache and CURSORS:
+        return sorted(CURSORS.values(), key=lambda item: (item.provider, item.stream))
+    odds_cursor_healthy = settings.data_mode == "sample"
+    cursors = [
+        _provider_cursor(
             Provider.ODDS_API_IO,
             "tennis:moneyline",
-            last_seq=1024,
-            status=CursorStatus.HEALTHY,
-            note="Sample cursor. Live mode persists Odds-API.io seq/lastSeq for replay and resync.",
-        )
-        seed_provider_cursor(
+            last_seq=1024 if odds_cursor_healthy else None,
+            status=CursorStatus.HEALTHY
+            if odds_cursor_healthy
+            else CursorStatus.RESYNC_REQUIRED,
+            note=(
+                "Sample cursor. Live mode persists Odds-API.io seq/lastSeq for replay and resync."
+                if odds_cursor_healthy
+                else "Live odds cursor has no trusted seq/lastSeq yet; REST resync or websocket sequence is required."
+            ),
+        ),
+        _provider_cursor(
             Provider.SPORTRADAR,
             "tennis:score",
             last_seq=None,
             status=CursorStatus.HEALTHY if settings.data_mode == "sample" else CursorStatus.RESYNC_REQUIRED,
             note="Enterprise score cursor waits for Sportradar contract payload validation.",
-        )
-    return sorted(CURSORS.values(), key=lambda item: (item.provider, item.stream))
+        ),
+    ]
+    if use_process_cache:
+        for cursor in cursors:
+            CURSORS[cursor_key(cursor.provider, cursor.stream)] = cursor
+    return sorted(cursors, key=lambda item: (item.provider, item.stream))
 
 
-def seed_provider_cursor(
+def _provider_cursor(
     provider: Provider,
     stream: str,
     *,
@@ -45,7 +62,7 @@ def seed_provider_cursor(
     status: CursorStatus,
     note: str,
 ) -> ProviderCursor:
-    cursor = ProviderCursor(
+    return ProviderCursor(
         provider=provider,
         stream=stream,
         last_seq=last_seq,
@@ -56,6 +73,23 @@ def seed_provider_cursor(
         last_message_at=_now() if status != CursorStatus.RESYNC_REQUIRED else None,
         note=note,
     )
+
+
+def seed_provider_cursor(
+    provider: Provider,
+    stream: str,
+    *,
+    last_seq: int | None,
+    status: CursorStatus,
+    note: str,
+) -> ProviderCursor:
+    cursor = _provider_cursor(
+        provider,
+        stream,
+        last_seq=last_seq,
+        status=status,
+        note=note,
+    )
     CURSORS[cursor_key(provider, stream)] = cursor
     return cursor
 
@@ -64,10 +98,12 @@ def ingest_odds_api_sequence(
     payload: dict[str, Any],
     *,
     stream: str = "tennis:moneyline",
+    current_cursor: ProviderCursor | None = None,
+    remember_in_process: bool = True,
 ) -> ProviderCursor:
     """Track Odds-API.io seq/lastSeq semantics without losing gap state."""
     key = cursor_key(Provider.ODDS_API_IO, stream)
-    current = CURSORS.get(key)
+    current = current_cursor or (CURSORS.get(key) if remember_in_process else None)
     seq = payload.get("seq")
     message_type = str(payload.get("type", "updated"))
     now = _now()
@@ -85,11 +121,12 @@ def ingest_odds_api_sequence(
             last_resync_at=current.last_resync_at if current else None,
             note="Provider requested REST resync before signals can trust odds state.",
         )
-        CURSORS[key] = cursor
+        if remember_in_process:
+            CURSORS[key] = cursor
         return cursor
 
     if not isinstance(seq, int):
-        cursor = current or seed_provider_cursor(
+        cursor = current or _provider_cursor(
             Provider.ODDS_API_IO,
             stream,
             last_seq=None,
@@ -105,7 +142,8 @@ def ingest_odds_api_sequence(
                 "note": "Missing seq in websocket payload.",
             }
         )
-        CURSORS[key] = cursor
+        if remember_in_process:
+            CURSORS[key] = cursor
         return cursor
 
     expected = current.expected_next_seq if current else None
@@ -135,11 +173,18 @@ def ingest_odds_api_sequence(
             last_resync_at=current.last_resync_at if current else None,
             note="Sequence accepted.",
         )
-    CURSORS[key] = cursor
+    if remember_in_process:
+        CURSORS[key] = cursor
     return cursor
 
 
-def mark_resynced(provider: Provider, stream: str, seq: int) -> ProviderCursor:
+def mark_resynced(
+    provider: Provider,
+    stream: str,
+    seq: int,
+    *,
+    remember_in_process: bool = True,
+) -> ProviderCursor:
     cursor = ProviderCursor(
         provider=provider,
         stream=stream,
@@ -152,5 +197,6 @@ def mark_resynced(provider: Provider, stream: str, seq: int) -> ProviderCursor:
         last_resync_at=_now(),
         note="REST snapshot applied; websocket can reconnect with lastSeq.",
     )
-    CURSORS[cursor_key(provider, stream)] = cursor
+    if remember_in_process:
+        CURSORS[cursor_key(provider, stream)] = cursor
     return cursor

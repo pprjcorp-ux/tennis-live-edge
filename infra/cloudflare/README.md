@@ -21,6 +21,19 @@ Copy `tunnel-config.example.yml` to `~/.cloudflared/tennis-live-edge.yml`, repla
 - `api.edge.example.com`
 - `credentials-file`
 
+Validate the repository example:
+
+```bash
+npm run cloudflare:check:example
+```
+
+Validate your real local tunnel config after replacing hostnames and setting
+`PRIVATE_ALLOWED_EMAILS`, `ADMIN_API_TOKEN`, and `TENNIS_EDGE_CORS_ORIGIN`:
+
+```bash
+npm run cloudflare:check
+```
+
 Then route DNS:
 
 ```bash

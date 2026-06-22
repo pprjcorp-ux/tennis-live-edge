@@ -36,3 +36,52 @@ def test_signal_engine_can_abstain_or_enter() -> None:
     match.state = MatchState(status="live", is_break_point=True, point_score="40-40")
     volatile_signals = build_signals(match, prediction)
     assert any(signal.threshold == 0.06 for signal in volatile_signals)
+
+
+def test_signal_engine_blocks_stale_odds_even_with_large_edge() -> None:
+    match = next(match for match in sample_matches() if match.id == "match_gs_001")
+    features = build_features(match).model_copy(update={"odds_latency_ms": 3000})
+    prediction = predict_match(match, features).model_copy(
+        update={"p1_win_prob": 0.9, "p2_win_prob": 0.1}
+    )
+
+    signals = build_signals(match, prediction, features)
+
+    assert signals
+    assert all(signal.status != SignalStatus.ENTRY for signal in signals)
+    assert all(signal.stake_fraction == 0 for signal in signals)
+    assert any("Odds feed is stale" in signal.reason for signal in signals)
+
+
+def test_signal_engine_blocks_invalid_live_score_state() -> None:
+    base = next(match for match in sample_matches() if match.id == "match_atp_002")
+    match = base.model_copy(
+        update={
+            "state": base.state.model_copy(
+                update={"status": "live", "point_score": "bad-score"}
+            )
+        }
+    )
+    features = build_features(match)
+    prediction = predict_match(match, features).model_copy(
+        update={"p1_win_prob": 0.9, "p2_win_prob": 0.1}
+    )
+
+    signals = build_signals(match, prediction, features)
+
+    assert signals
+    assert all(signal.status != SignalStatus.ENTRY for signal in signals)
+    assert all(signal.stake_fraction == 0 for signal in signals)
+    assert any("Live score state is incomplete" in signal.reason for signal in signals)
+
+
+def test_signal_engine_emits_no_signal_without_complete_moneyline() -> None:
+    base = next(match for match in sample_matches() if match.id == "match_gs_001")
+    match = base.model_copy(
+        update={
+            "odds": [quote for quote in base.odds if quote.player_id == base.player1.id]
+        }
+    )
+    prediction = predict_match(match, build_features(match))
+
+    assert build_signals(match, prediction, build_features(match)) == []

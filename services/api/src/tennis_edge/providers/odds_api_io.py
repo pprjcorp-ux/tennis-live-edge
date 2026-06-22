@@ -1,9 +1,12 @@
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 import json
+import re
 from typing import Any
 
-from tennis_edge.domain import OddsQuote
+from tennis_edge.domain import OddsQuote, Provider, ProviderCursor, RawProviderPayload
+from tennis_edge.runtime_modes import uses_offline_provider_fixtures
+from tennis_edge.services.normalizer import payload_checksum
 from tennis_edge.services.provider_cursor import ingest_odds_api_sequence
 
 
@@ -16,9 +19,19 @@ class OddsApiIoClient:
 
     async def stream_live_odds(self) -> AsyncIterator[list[OddsQuote]]:
         """Stream Odds-API.io tennis moneyline quotes when credentials are present."""
-        if self.data_mode == "sample" or not self.api_key:
+        async for payload in self.stream_live_messages():
+            yield self.parse_message(payload)
+
+    async def stream_live_messages(
+        self,
+        *,
+        stream: str = "tennis:moneyline",
+        last_seq: int | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Stream raw Odds-API.io messages so operational ingestion can persist lineage."""
+        if uses_offline_provider_fixtures(self.data_mode) or not self.api_key:
             if False:
-                yield []
+                yield {}
             return
 
         try:
@@ -37,20 +50,81 @@ class OddsApiIoClient:
             websocket_context = websockets.connect(self.websocket_url, **connect_kwargs)
 
         async with websocket_context as websocket:
-            await websocket.send(
-                json.dumps(
-                    {
-                        "type": "subscribe",
-                        "sport": "tennis",
-                        "markets": ["ML", "h2h", "moneyline"],
-                    }
-                )
-            )
+            await websocket.send(json.dumps(self.subscription_message(stream, last_seq=last_seq)))
             async for message in websocket:
-                yield self.parse_message(json.loads(message))
+                yield json.loads(message)
 
-    def parse_message(self, payload: dict[str, Any]) -> list[OddsQuote]:
-        ingest_odds_api_sequence(payload)
+    def subscription_message(
+        self,
+        stream: str = "tennis:moneyline",
+        *,
+        last_seq: int | None = None,
+    ) -> dict[str, Any]:
+        message: dict[str, Any] = {
+            "type": "subscribe",
+            "sport": "tennis",
+            "markets": ["ML", "h2h", "moneyline"],
+            "stream": stream,
+        }
+        if last_seq is not None:
+            message["lastSeq"] = last_seq
+        return message
+
+    def parse_message(
+        self,
+        payload: dict[str, Any],
+        current_cursor: ProviderCursor | None = None,
+        stream: str = "tennis:moneyline",
+        remember_in_process: bool = True,
+    ) -> list[OddsQuote]:
+        quotes, _cursor = self.ingest_message(
+            payload,
+            current_cursor=current_cursor,
+            stream=stream,
+            remember_in_process=remember_in_process,
+        )
+        return quotes
+
+    def ingest_message(
+        self,
+        payload: dict[str, Any],
+        current_cursor: ProviderCursor | None = None,
+        stream: str = "tennis:moneyline",
+        remember_in_process: bool = True,
+    ) -> tuple[list[OddsQuote], ProviderCursor]:
+        cursor = ingest_odds_api_sequence(
+            payload,
+            stream=stream,
+            current_cursor=current_cursor,
+            remember_in_process=remember_in_process,
+        )
+        return self._quotes_from_payload(payload), cursor
+
+    def raw_payload_from_message(
+        self,
+        payload: dict[str, Any],
+        stream: str = "tennis:moneyline",
+    ) -> RawProviderPayload:
+        source_ts = self._message_timestamp(payload)
+        source_event_id = self._source_event_id(payload, stream)
+        checksum = payload_checksum(
+            Provider.ODDS_API_IO,
+            "odds",
+            payload,
+            source_event_id,
+            source_ts,
+        )
+        return RawProviderPayload(
+            id=f"raw_odds_api_io_{self._safe_id(source_event_id)}_{checksum[:12]}",
+            provider=Provider.ODDS_API_IO,
+            payload_type="odds",
+            source_event_id=source_event_id,
+            source_ts=source_ts,
+            checksum=checksum,
+            payload={**payload, "stream": stream},
+        )
+
+    def _quotes_from_payload(self, payload: dict[str, Any]) -> list[OddsQuote]:
         rows = payload.get("odds") or payload.get("data") or payload.get("events") or []
         if isinstance(rows, dict):
             rows = [rows]
@@ -91,7 +165,68 @@ class OddsApiIoClient:
                 )
         return quotes
 
+    def _source_event_id(self, payload: dict[str, Any], stream: str) -> str:
+        for candidate in self._candidate_event_ids(payload):
+            if candidate:
+                return str(candidate)
+        return stream
+
+    def _candidate_event_ids(self, payload: dict[str, Any]) -> list[Any]:
+        candidates = [
+            payload.get("event_id"),
+            payload.get("match_id"),
+            payload.get("id"),
+            payload.get("fixture_id"),
+        ]
+        rows = payload.get("odds") or payload.get("data") or payload.get("events") or []
+        if isinstance(rows, dict):
+            rows = [rows]
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            candidates.extend(
+                [
+                    row.get("event_id"),
+                    row.get("match_id"),
+                    row.get("id"),
+                    row.get("fixture_id"),
+                ]
+            )
+        return candidates
+
+    def _message_timestamp(self, payload: dict[str, Any]) -> datetime:
+        candidates: list[Any] = [
+            payload.get("timestamp"),
+            payload.get("source_ts"),
+            payload.get("emitted_at"),
+            payload.get("updated_at"),
+        ]
+        rows = payload.get("odds") or payload.get("data") or payload.get("events") or []
+        if isinstance(rows, dict):
+            rows = [rows]
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            candidates.extend(
+                [
+                    row.get("timestamp"),
+                    row.get("source_ts"),
+                    row.get("last_update"),
+                    row.get("updated_at"),
+                ]
+            )
+        parsed = [value for value in (self._timestamp_or_none(candidate) for candidate in candidates) if value]
+        if parsed:
+            return max(parsed)
+        return datetime.now(timezone.utc).replace(microsecond=0)
+
     def _timestamp(self, value: Any) -> datetime:
+        parsed = self._timestamp_or_none(value)
+        if parsed is not None:
+            return parsed
+        return datetime.now(timezone.utc).replace(microsecond=0)
+
+    def _timestamp_or_none(self, value: Any) -> datetime | None:
         if isinstance(value, datetime):
             return value
         if isinstance(value, (int, float)):
@@ -101,4 +236,28 @@ class OddsApiIoClient:
                 return datetime.fromisoformat(value.replace("Z", "+00:00"))
             except ValueError:
                 pass
-        return datetime.now(timezone.utc).replace(microsecond=0)
+        return None
+
+    def _safe_id(self, value: str) -> str:
+        safe = re.sub(r"[^a-zA-Z0-9_.:-]+", "_", value).strip("_")
+        return safe or "tennis_moneyline"
+
+
+def parse_odds_api_io_moneyline(
+    payload: RawProviderPayload,
+    *,
+    remember_in_process: bool = True,
+) -> list[OddsQuote]:
+    quotes = OddsApiIoClient(api_key=None, data_mode="live").parse_message(
+        payload.payload,
+        remember_in_process=remember_in_process,
+    )
+    return [
+        quote.model_copy(
+            update={
+                "source_ts": payload.source_ts,
+                "ingested_at": payload.ingested_at,
+            }
+        )
+        for quote in quotes
+    ]

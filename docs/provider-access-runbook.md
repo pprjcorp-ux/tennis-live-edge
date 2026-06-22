@@ -139,8 +139,24 @@ Pedro
 
 ## Activation Order
 
-1. Finish low-cost live stack first: API-Tennis and Odds-API.io.
-2. Keep Betfair in delayed/paper validation until model performance is proven.
-3. Defer Sportradar/Betradar/TXODDS until paper trading shows positive CLV/ROI
+1. Finish the API-last core first: Postgres/Timescale persistence, replay fake
+   APIs, signal gates, paper settlement, and Model Lab `training_examples`.
+2. Add TheOddsAPI first because it is REST/archive/comparison and cannot by
+   itself create live entries. After setting `THE_ODDS_API_KEY`, run protected
+   `POST /api/v1/ingestion/the-odds-api/archive-sync` and verify it records an
+   `archive_odds_sync` ingestion run with raw payload and `odds/archive`
+   latency evidence.
+3. Add API-Tennis second for fixtures/livescore and score freshness. After
+   setting `API_TENNIS_KEY`, run protected
+   `POST /api/v1/ingestion/api-tennis/score-sync` and verify it records an
+   `api_tennis_score_sync` summary with fixture/score payload counts.
+4. Add Odds-API.io websocket third, only after replay/resync tests prove
+   `seq`/`lastSeq`, gaps, stale odds and incomplete moneyline gates. Start with
+   protected `POST /api/v1/ingestion/odds-api-io/stream-smoke` using
+   `max_messages=1` and a short timeout; if the persisted cursor says
+   `resync_required`, reconcile by REST/snapshot and then use the cursor resync
+   endpoint.
+5. Keep Betfair in delayed/paper validation until model performance is proven.
+6. Defer Sportradar/Betradar/TXODDS until paper trading shows positive CLV/ROI
    or the current feeds become the bottleneck.
-4. Never disable `REAL_EXECUTION_HARD_BLOCK` in this onboarding task.
+7. Never disable `REAL_EXECUTION_HARD_BLOCK` in this onboarding task.

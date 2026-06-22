@@ -151,6 +151,19 @@ CREATE TABLE IF NOT EXISTS provider_cursors (
   PRIMARY KEY (provider, stream)
 );
 
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+  id TEXT PRIMARY KEY,
+  run_type TEXT NOT NULL,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL,
+  summary JSONB NOT NULL DEFAULT '{}',
+  started_at TIMESTAMPTZ NOT NULL,
+  completed_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ingestion_runs_completed_idx
+  ON ingestion_runs (completed_at DESC);
+
 CREATE TABLE IF NOT EXISTS data_quality_snapshots (
   id TEXT PRIMARY KEY,
   provider TEXT NOT NULL,
@@ -233,6 +246,10 @@ CREATE TABLE IF NOT EXISTS signals (
 CREATE TABLE IF NOT EXISTS paper_orders (
   id BIGSERIAL PRIMARY KEY,
   signal_id BIGINT NOT NULL REFERENCES signals(id),
+  external_order_ref TEXT UNIQUE,
+  external_signal_id TEXT,
+  match_id TEXT REFERENCES matches(id),
+  player_id TEXT REFERENCES players(id),
   venue TEXT NOT NULL DEFAULT 'betfair',
   market_id TEXT,
   selection_id BIGINT,
@@ -249,8 +266,15 @@ CREATE TABLE IF NOT EXISTS paper_orders (
   pnl NUMERIC(14, 2),
   clv NUMERIC(8, 6),
   status TEXT NOT NULL,
+  audit JSONB NOT NULL DEFAULT '[]',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE IF EXISTS paper_orders ADD COLUMN IF NOT EXISTS external_order_ref TEXT UNIQUE;
+ALTER TABLE IF EXISTS paper_orders ADD COLUMN IF NOT EXISTS external_signal_id TEXT;
+ALTER TABLE IF EXISTS paper_orders ADD COLUMN IF NOT EXISTS match_id TEXT REFERENCES matches(id);
+ALTER TABLE IF EXISTS paper_orders ADD COLUMN IF NOT EXISTS player_id TEXT REFERENCES players(id);
+ALTER TABLE IF EXISTS paper_orders ADD COLUMN IF NOT EXISTS audit JSONB NOT NULL DEFAULT '[]';
 
 CREATE TABLE IF NOT EXISTS paper_fills (
   id BIGSERIAL PRIMARY KEY,
@@ -304,6 +328,13 @@ CREATE TABLE IF NOT EXISTS execution_orders (
   payload JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT execution_orders_disabled_guard CHECK (status <> 'enabled_without_compliance')
+);
+
+CREATE TABLE IF NOT EXISTS execution_controls (
+  key TEXT PRIMARY KEY,
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  reason TEXT NOT NULL DEFAULT 'not set',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS bankroll_snapshots (
@@ -363,9 +394,12 @@ CREATE TABLE IF NOT EXISTS training_examples (
   result_win BOOLEAN,
   pnl NUMERIC(14, 2),
   clv NUMERIC(8, 6),
+  stake_amount NUMERIC(14, 2) NOT NULL DEFAULT 1,
   calibration_bucket TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE IF EXISTS training_examples ADD COLUMN IF NOT EXISTS stake_amount NUMERIC(14, 2) NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS calibration_reports (
   run_id TEXT PRIMARY KEY,
@@ -383,6 +417,16 @@ CREATE TABLE IF NOT EXISTS execution_audit_events (
   event_type TEXT NOT NULL,
   message TEXT NOT NULL,
   payload JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  run_type TEXT NOT NULL,
+  source TEXT NOT NULL,
+  model_routes JSONB NOT NULL DEFAULT '[]',
+  actions JSONB NOT NULL DEFAULT '[]',
+  summary TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -9,7 +9,11 @@ from tennis_edge.domain import (
     AgentAutopilotRequest,
     AgentAutopilotResult,
     AgentBriefing,
+    AgentPreflight,
     AgentRun,
+    ArchiveOddsSyncResult,
+    AutoPaperSettleRequest,
+    AutoPaperSettleResult,
     BacktestMetrics,
     BacktestRunRequest,
     BankrollSnapshot,
@@ -18,27 +22,47 @@ from tennis_edge.domain import (
     CanonicalEntityConflict,
     CostProfile,
     DailyCostReport,
+    DailyOperationalRunRequest,
+    DailyOperationalRunResult,
     DailyMetrics,
     DataQualitySnapshot,
     ExecutionOrder,
     ExecutionStatus,
+    IngestionRunRequest,
+    IngestionRunRecord,
+    IngestionRunResult,
     KillSwitchRequest,
     LearningPromotionRequest,
+    LiveDashboardSnapshot,
     MatchAnalysis,
     ModelRegistryEntry,
     ModelPromotionDecision,
+    OddsMessageIngestionRequest,
+    OddsMessageIngestionResult,
+    OddsStreamIngestionRequest,
+    OddsStreamIngestionResult,
     OrderRequest,
+    OperationalStateSnapshot,
     PaperPerformance,
     PaperSettlement,
     PaperSettleRequest,
     ProviderCursor,
+    ProviderCursorResyncRequest,
+    ProviderCursorResyncResult,
     ProviderHealth,
+    ReplayContractRunRequest,
+    ReplayContractRunResult,
     ReplayRunRequest,
     ReplayRunResult,
+    ScoreSyncResult,
     Signal,
 )
+from tennis_edge.ingest_odds_stream import run_odds_stream_ingestion
+from tennis_edge.operational_daily import run_daily_operational_loop
 from tennis_edge.security import require_admin_token
 from tennis_edge.services.repository import AnalysisRepository
+
+_REPOSITORY_CACHE: dict[str, AnalysisRepository] = {}
 
 app = FastAPI(
     title="Tennis Live Edge API",
@@ -48,7 +72,10 @@ app = FastAPI(
 
 
 def repository(settings: Settings = Depends(get_settings)) -> AnalysisRepository:
-    return AnalysisRepository(settings)
+    cache_key = settings.model_dump_json()
+    if cache_key not in _REPOSITORY_CACHE:
+        _REPOSITORY_CACHE[cache_key] = AnalysisRepository(settings)
+    return _REPOSITORY_CACHE[cache_key]
 
 
 settings = get_settings()
@@ -90,6 +117,13 @@ async def v1_live_matches(
     repo: AnalysisRepository = Depends(repository),
 ) -> list[MatchAnalysis]:
     return await repo.analyses_for_date(date.today())
+
+
+@app.get("/api/v1/dashboard/live-state", response_model=LiveDashboardSnapshot)
+async def v1_dashboard_live_state(
+    repo: AnalysisRepository = Depends(repository),
+) -> LiveDashboardSnapshot:
+    return await repo.live_dashboard_snapshot(date.today())
 
 
 @app.get("/api/v1/matches/{match_id}", response_model=MatchAnalysis)
@@ -145,6 +179,82 @@ async def v1_provider_cursors(
     return await repo.provider_cursors()
 
 
+@app.get("/api/v1/operational-state", response_model=OperationalStateSnapshot)
+async def v1_operational_state(
+    repo: AnalysisRepository = Depends(repository),
+) -> OperationalStateSnapshot:
+    return await repo.operational_state_snapshot(date.today())
+
+
+@app.post("/api/v1/ingestion/run", response_model=IngestionRunResult)
+async def v1_run_ingestion(
+    request: IngestionRunRequest | None = Body(default=None),
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> IngestionRunResult:
+    return await repo.run_ingestion(request, source="api")
+
+
+@app.get("/api/v1/ingestion/runs", response_model=list[IngestionRunRecord])
+async def v1_ingestion_runs(
+    repo: AnalysisRepository = Depends(repository),
+) -> list[IngestionRunRecord]:
+    return await repo.ingestion_runs()
+
+
+@app.post("/api/v1/ingestion/api-tennis/score-sync", response_model=ScoreSyncResult)
+async def v1_sync_api_tennis_scores(
+    request: IngestionRunRequest | None = Body(default=None),
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ScoreSyncResult:
+    return await repo.sync_api_tennis_scores(request, source="api")
+
+
+@app.post("/api/v1/ingestion/the-odds-api/archive-sync", response_model=ArchiveOddsSyncResult)
+async def v1_sync_the_odds_api_archive(
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ArchiveOddsSyncResult:
+    return await repo.sync_archive_odds(source="api")
+
+
+@app.post("/api/v1/ingestion/odds-api-io/message", response_model=OddsMessageIngestionResult)
+async def v1_ingest_odds_api_io_message(
+    request: OddsMessageIngestionRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> OddsMessageIngestionResult:
+    return await repo.ingest_odds_api_message(request)
+
+
+@app.post("/api/v1/ingestion/odds-api-io/stream-smoke", response_model=OddsStreamIngestionResult)
+async def v1_ingest_odds_api_io_stream_smoke(
+    request: OddsStreamIngestionRequest | None = Body(default=None),
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> OddsStreamIngestionResult:
+    request = request or OddsStreamIngestionRequest()
+    result = await run_odds_stream_ingestion(
+        repo,
+        stream=request.stream,
+        max_messages=request.max_messages,
+        timeout_seconds=request.timeout_seconds,
+        force=request.force,
+        source="api",
+    )
+    return OddsStreamIngestionResult(**result)
+
+
+@app.post("/api/v1/ingestion/provider-cursors/resync", response_model=ProviderCursorResyncResult)
+async def v1_resync_provider_cursor(
+    request: ProviderCursorResyncRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ProviderCursorResyncResult:
+    return await repo.mark_provider_cursor_resynced(request)
+
+
 @app.get("/api/v1/models/registry", response_model=list[ModelRegistryEntry])
 async def v1_models_registry(
     repo: AnalysisRepository = Depends(repository),
@@ -187,6 +297,13 @@ async def v1_agent_anomalies(
     return await repo.agent_anomalies()
 
 
+@app.get("/api/v1/agent/preflight", response_model=AgentPreflight)
+async def v1_agent_preflight(
+    repo: AnalysisRepository = Depends(repository),
+) -> AgentPreflight:
+    return await repo.agent_preflight()
+
+
 @app.post("/api/v1/agent/autopilot/evaluate", response_model=AgentAutopilotResult)
 async def v1_agent_autopilot_evaluate(
     request: AgentAutopilotRequest,
@@ -203,6 +320,26 @@ async def v1_agent_runs(
     return await repo.agent_runs()
 
 
+@app.post("/api/v1/ops/daily", response_model=DailyOperationalRunResult)
+async def v1_daily_operational_run(
+    request: DailyOperationalRunRequest | None = Body(default=None),
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> DailyOperationalRunResult:
+    requested = request or DailyOperationalRunRequest()
+    return await run_daily_operational_loop(
+        repo,
+        match_id=requested.match_id,
+        settle_match_id=requested.settle_match_id,
+        max_orders=requested.max_orders,
+        scenarios=requested.scenarios,
+        model_version=requested.model_version,
+        feature_set=requested.feature_set,
+        run_paper_rehearsal=requested.run_paper_rehearsal,
+        source="api",
+    )
+
+
 @app.post("/api/v1/paper/settle", response_model=PaperSettlement)
 async def v1_paper_settle(
     request: PaperSettleRequest,
@@ -213,6 +350,15 @@ async def v1_paper_settle(
         return await repo.settle_paper(request)
     except KeyError:
         raise HTTPException(status_code=404, detail="Order not found") from None
+
+
+@app.post("/api/v1/paper/settle-auto", response_model=AutoPaperSettleResult)
+async def v1_paper_settle_auto(
+    request: AutoPaperSettleRequest,
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> AutoPaperSettleResult:
+    return await repo.auto_settle_paper(request)
 
 
 @app.get("/api/v1/execution/status", response_model=ExecutionStatus)
@@ -246,6 +392,8 @@ async def v1_create_paper_order(
         return await repo.create_paper_order(request)
     except KeyError:
         raise HTTPException(status_code=404, detail="Signal not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @app.post("/api/v1/orders/submit", response_model=ExecutionOrder)
@@ -299,13 +447,28 @@ async def v1_run_replay(
     return await repo.run_replay(request)
 
 
+@app.post("/api/v1/replay/contracts/run", response_model=ReplayContractRunResult)
+async def v1_run_replay_contracts(
+    request: ReplayContractRunRequest | None = Body(default=None),
+    _: None = Depends(require_admin_token),
+    repo: AnalysisRepository = Depends(repository),
+) -> ReplayContractRunResult:
+    return await repo.run_replay_contracts(request or ReplayContractRunRequest())
+
+
 @app.post("/api/v1/backtests/run", response_model=BacktestMetrics)
 async def v1_run_backtest(
     request: BacktestRunRequest | None = Body(default=None),
     _: None = Depends(require_admin_token),
     repo: AnalysisRepository = Depends(repository),
 ) -> BacktestMetrics:
-    return await repo.run_backtest(request)
+    try:
+        return await repo.run_backtest(request)
+    except KeyError:
+        raise HTTPException(
+            status_code=409,
+            detail="No persisted training examples available for live backtest.",
+        ) from None
 
 
 @app.get("/api/v1/backtests/{run_id}", response_model=BacktestMetrics)
@@ -324,7 +487,10 @@ async def v1_backtest_calibration(
     run_id: str,
     repo: AnalysisRepository = Depends(repository),
 ) -> CalibrationReport:
-    return await repo.calibration_report(run_id)
+    try:
+        return await repo.calibration_report(run_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Calibration report not found") from None
 
 
 @app.post("/api/v1/admin/model/promote", response_model=BacktestMetrics)

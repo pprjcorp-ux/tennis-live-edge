@@ -3,14 +3,19 @@ import os
 from fastapi.testclient import TestClient
 
 os.environ["ADMIN_API_TOKEN"] = "test-admin-token"
+os.environ["TENNIS_EDGE_DATA_MODE"] = "sample"
+os.environ["TENNIS_EDGE_PERSISTENCE_ENABLED"] = "false"
 
-from tennis_edge.config import get_settings
+from tennis_edge.config import Settings, get_settings
+from tennis_edge.domain import AutoPaperSettleResult
 
 get_settings.cache_clear()
 
-from tennis_edge.main import app
+from tennis_edge.main import app, repository
+from tennis_edge.services.repository import AnalysisRepository
 from tennis_edge.services.agent_ops import AGENT_RUNS
 from tennis_edge.services.execution_engine import ORDERS
+from tennis_edge.services.provider_cursor import CURSORS
 
 
 client = TestClient(app)
@@ -19,24 +24,37 @@ ADMIN_HEADERS = {"x-admin-token": "test-admin-token"}
 
 def test_v1_live_matches_and_provider_health() -> None:
     matches = client.get("/api/v1/live/matches")
+    dashboard = client.get("/api/v1/dashboard/live-state")
     health = client.get("/api/v1/provider-health")
     cost_profile = client.get("/api/v1/cost-profile")
     cost_report = client.get("/api/v1/cost-report/daily")
 
     assert matches.status_code == 200
+    assert dashboard.status_code == 200
     assert health.status_code == 200
     assert cost_profile.status_code == 200
     assert cost_report.status_code == 200
     assert len(matches.json()) >= 1
+    assert len(dashboard.json()["matches"]) == dashboard.json()["metrics"]["matches"]
+    assert "operational_state" in dashboard.json()
+    assert "readiness" in dashboard.json()
+    assert dashboard.json()["operational_state"]["execution_status"]["can_submit_real_orders"] is False
+    assert dashboard.json()["readiness"]["can_submit_real_orders"] is False
+    assert dashboard.json()["readiness"]["status"] in {"ready", "degraded", "blocked"}
+    assert any(
+        check["name"] == "model_learning_dataset"
+        for check in dashboard.json()["readiness"]["checks"]
+    )
     assert {item["provider"] for item in health.json()} >= {"sportradar", "txodds"}
     assert all("cost_tier" in item for item in health.json())
-    assert cost_profile.json()["active_plan"] == "enterprise_roi_clv"
-    assert cost_report.json()["estimated_monthly_spend_usd"] <= 6000
+    assert cost_profile.json()["active_plan"] == "lean_atp"
+    assert cost_report.json()["estimated_monthly_spend_usd"] <= 500
 
 
 def test_v1_enterprise_observability_endpoints() -> None:
     data_quality = client.get("/api/v1/data-quality")
     cursors = client.get("/api/v1/provider-cursors")
+    operational_state = client.get("/api/v1/operational-state")
     registry = client.get("/api/v1/models/registry")
     champion = client.get("/api/v1/models/champion")
     conflicts = client.get("/api/v1/entity-resolution/conflicts")
@@ -44,25 +62,135 @@ def test_v1_enterprise_observability_endpoints() -> None:
 
     assert data_quality.status_code == 200
     assert cursors.status_code == 200
+    assert operational_state.status_code == 200
     assert registry.status_code == 200
     assert champion.status_code == 200
     assert conflicts.status_code == 200
     assert paper.status_code == 200
     assert any(item["provider"] == "odds_api_io" for item in cursors.json())
+    assert operational_state.json()["cost_profile"]["active_plan"] == "lean_atp"
+    assert operational_state.json()["daily_cost_report"]["active_plan"] == "lean_atp"
+    assert operational_state.json()["daily_cost_report"]["estimated_monthly_spend_usd"] <= 500
+    assert operational_state.json()["execution_status"]["can_submit_real_orders"] is False
+    assert "ingestion_runs" in operational_state.json()
     assert champion.json()["model_version"] == "baseline_v0"
 
 
-def test_v1_agent_ops_endpoints_expose_openclaw_router() -> None:
+def test_v1_ingestion_run_requires_token_and_returns_operational_summary() -> None:
+    unauthorized = client.post("/api/v1/ingestion/run", json={})
+    response = client.post("/api/v1/ingestion/run", headers=ADMIN_HEADERS, json={})
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["source"] == "sample"
+    assert response.json()["matches"] >= 1
+    assert response.json()["persisted"] is False
+    assert response.json()["raw_payloads_saved"] == 0
+    assert "signals_generated" in response.json()
+
+
+def test_v1_ingestion_runs_endpoint_is_available() -> None:
+    response = client.get("/api/v1/ingestion/runs")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_v1_odds_api_io_message_ingestion_requires_token_and_tracks_cursor() -> None:
+    CURSORS.clear()
+    payload = {
+        "payload": {
+            "event_id": "event-1",
+            "seq": 1,
+            "timestamp": "2026-06-07T20:00:00Z",
+            "data": {
+                "bookmaker": "SharpBook",
+                "market": "h2h",
+                "selections": [
+                    {"player_id": "p1", "odds": 1.8},
+                    {"player_id": "p2", "odds": 2.1},
+                ],
+            },
+        }
+    }
+
+    unauthorized = client.post("/api/v1/ingestion/odds-api-io/message", json=payload)
+    response = client.post(
+        "/api/v1/ingestion/odds-api-io/message",
+        headers=ADMIN_HEADERS,
+        json=payload,
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["quotes"] == 2
+    assert response.json()["raw_payloads_saved"] == 0
+    assert response.json()["normalized_odds_saved"] == 0
+    assert response.json()["persisted"] is False
+    assert response.json()["cursor"]["last_seq"] == 1
+    assert response.json()["resync_required"] is False
+
+
+def test_v1_odds_api_io_stream_smoke_requires_token_and_skips_without_key() -> None:
+    repo = AnalysisRepository(
+        Settings(data_mode="live", odds_api_io_key=None, persistence_enabled=False)
+    )
+    app.dependency_overrides[repository] = lambda: repo
+    try:
+        unauthorized = client.post("/api/v1/ingestion/odds-api-io/stream-smoke")
+        response = client.post(
+            "/api/v1/ingestion/odds-api-io/stream-smoke",
+            headers=ADMIN_HEADERS,
+            json={"max_messages": 1, "timeout_seconds": 0.01},
+        )
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert unauthorized.status_code in {401, 403}
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "odds_api_io"
+    assert body["connected"] is False
+    assert body["messages"] == 0
+    assert body["quotes"] == 0
+    assert body["reason"] == (
+        "ODDS_API_IO_KEY is missing or data mode is sample; websocket not opened."
+    )
+
+
+def test_v1_provider_cursor_resync_requires_token_and_persists_status() -> None:
+    unauthorized = client.post(
+        "/api/v1/ingestion/provider-cursors/resync",
+        json={"provider": "odds_api_io", "stream": "tennis:moneyline", "last_seq": 12},
+    )
+    response = client.post(
+        "/api/v1/ingestion/provider-cursors/resync",
+        headers=ADMIN_HEADERS,
+        json={"provider": "odds_api_io", "stream": "tennis:moneyline", "last_seq": 12},
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["cursor"]["status"] == "resynced"
+    assert response.json()["cursor"]["last_seq"] == 12
+    assert response.json()["cursor"]["expected_next_seq"] == 13
+    assert response.json()["cursor"]["resync_required"] is False
+
+
+def test_v1_agent_ops_endpoints_expose_hermes_router() -> None:
     briefing = client.get("/api/v1/agent/briefing")
     anomalies = client.get("/api/v1/agent/anomalies")
     runs = client.get("/api/v1/agent/runs")
+    preflight = client.get("/api/v1/agent/preflight")
 
     assert briefing.status_code == 200
     assert anomalies.status_code == 200
     assert runs.status_code == 200
+    assert preflight.status_code == 200
     assert briefing.json()["critical_model"] == "gpt-5.5"
     assert "create_paper_order" in briefing.json()["allowed_actions"]
     assert isinstance(anomalies.json(), list)
+    assert "real_execution_hard_block" in {check["name"] for check in preflight.json()["checks"]}
 
 
 def test_v1_agent_autopilot_requires_token() -> None:
@@ -79,7 +207,7 @@ def test_v1_agent_autopilot_creates_paper_orders_and_blocks_real_request() -> No
         "/api/v1/agent/autopilot/evaluate",
         headers=ADMIN_HEADERS,
         json={
-            "source": "openclaw",
+            "source": "hermes",
             "create_paper_orders": True,
             "request_real_execution": True,
             "max_paper_orders": 2,
@@ -88,7 +216,7 @@ def test_v1_agent_autopilot_creates_paper_orders_and_blocks_real_request() -> No
     second = client.post(
         "/api/v1/agent/autopilot/evaluate",
         headers=ADMIN_HEADERS,
-        json={"source": "openclaw", "create_paper_orders": True, "max_paper_orders": 2},
+        json={"source": "hermes", "create_paper_orders": True, "max_paper_orders": 2},
     )
     orders = client.get("/api/v1/orders")
     runs = client.get("/api/v1/agent/runs")
@@ -101,8 +229,32 @@ def test_v1_agent_autopilot_creates_paper_orders_and_blocks_real_request() -> No
     assert second.json()["paper_orders_skipped"] >= 1
     assert orders.status_code == 200
     assert all(order["status"] == "paper" for order in orders.json())
+    assert ORDERS == {}
+    assert AGENT_RUNS == []
     assert runs.status_code == 200
     assert runs.json()[0]["model_routes"][-1]["model"] == "gpt-5.5"
+
+
+def test_v1_daily_operational_run_requires_token_and_uses_fake_api_contracts() -> None:
+    unauthorized = client.post("/api/v1/ops/daily", json={})
+    response = client.post(
+        "/api/v1/ops/daily",
+        headers=ADMIN_HEADERS,
+        json={"match_id": "match_atp_002", "scenarios": ["healthy"], "max_orders": 3},
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "api"
+    assert body["live_api_calls"] == 0
+    assert body["match_id"] == "match_atp_002"
+    assert body["replay_contracts"]["passed"] is True
+    assert body["replay_contracts"]["scenarios"][0]["scenario"] == "healthy"
+    assert "training_examples_ready" in body["paper_auto_settlement"]
+    assert body["model_lab_backtest"]["status"] in {"completed", "skipped"}
+    assert body["execution"]["can_submit_real_orders"] is False
+    assert body["execution"]["real_execution_hard_block"] is True
 
 
 def test_v1_replay_and_backtest() -> None:
@@ -124,6 +276,204 @@ def test_v1_replay_and_backtest() -> None:
     assert "brier_score" in backtest.json()
     assert calibration.status_code == 200
     assert calibration.json()["buckets"]
+
+
+def test_v1_the_odds_api_archive_sync_requires_token_and_skips_without_key() -> None:
+    repo = AnalysisRepository(
+        Settings(data_mode="live", the_odds_api_key=None, persistence_enabled=False)
+    )
+    app.dependency_overrides[repository] = lambda: repo
+    try:
+        unauthorized = client.post("/api/v1/ingestion/the-odds-api/archive-sync")
+        response = client.post(
+            "/api/v1/ingestion/the-odds-api/archive-sync",
+            headers=ADMIN_HEADERS,
+        )
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert unauthorized.status_code in {401, 403}
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "theoddsapi"
+    assert body["configured"] is False
+    assert body["source"] == "skipped"
+    assert body["events"] == 0
+    assert body["live_api_calls"] == 0
+    assert "THE_ODDS_API_KEY is missing" in body["provider_warnings"][0]
+
+
+def test_v1_api_tennis_score_sync_requires_token_and_skips_without_key() -> None:
+    repo = AnalysisRepository(
+        Settings(data_mode="live", api_tennis_key=None, persistence_enabled=False)
+    )
+    app.dependency_overrides[repository] = lambda: repo
+    try:
+        unauthorized = client.post("/api/v1/ingestion/api-tennis/score-sync")
+        response = client.post(
+            "/api/v1/ingestion/api-tennis/score-sync",
+            headers=ADMIN_HEADERS,
+        )
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert unauthorized.status_code in {401, 403}
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "api_tennis"
+    assert body["configured"] is False
+    assert body["source"] == "skipped"
+    assert body["matches"] == 0
+    assert body["live_api_calls"] == 0
+    assert "API_TENNIS_KEY is missing" in body["provider_warnings"][0]
+
+
+def test_v1_replay_can_simulate_odds_api_gap() -> None:
+    response = client.post(
+        "/api/v1/replay/run",
+        headers=ADMIN_HEADERS,
+        json={"match_id": "match_atp_002", "odds_scenario": "gap"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["final_status"] == "degraded"
+    assert body["resync_required"] is True
+    assert any(
+        cursor["provider"] == "odds_api_io"
+        and cursor["status"] == "gap_detected"
+        and cursor["expected_next_seq"] == 2
+        for cursor in body["provider_cursors"]
+    )
+
+
+def test_v1_replay_can_simulate_provider_resync_request() -> None:
+    response = client.post(
+        "/api/v1/replay/run",
+        headers=ADMIN_HEADERS,
+        json={"match_id": "match_atp_002", "odds_scenario": "resync_required"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["final_status"] == "degraded"
+    assert body["resync_required"] is True
+    assert any(
+        cursor["provider"] == "odds_api_io"
+        and cursor["status"] == "resync_required"
+        and "REST resync" in cursor["note"]
+        for cursor in body["provider_cursors"]
+    )
+
+
+def test_v1_replay_accepts_explicit_fixture_seed() -> None:
+    response = client.post(
+        "/api/v1/replay/run",
+        headers=ADMIN_HEADERS,
+        json={"match_id": "match_atp_002", "use_fixture_seed": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["events_replayed"] >= 1
+    assert body["score_ticks"] >= 1
+    assert body["odds_ticks"] >= 1
+
+
+def test_v1_replay_contracts_run_all_budget_scenarios() -> None:
+    response = client.post(
+        "/api/v1/replay/contracts/run",
+        headers=ADMIN_HEADERS,
+        json={"match_id": "match_atp_002"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["passed"] is True
+    assert [scenario["scenario"] for scenario in body["scenarios"]] == [
+        "healthy",
+        "gap",
+        "resync_required",
+    ]
+    assert all(
+        {"api_tennis", "odds_api_io", "theoddsapi"}.issubset(
+            set(scenario["providers_seen"])
+        )
+        for scenario in body["scenarios"]
+    )
+    assert all(
+        {
+            "ScoreProviderAdapter",
+            "OddsProviderAdapter",
+            "ArchiveOddsProviderAdapter",
+        }.issubset(set(scenario["adapter_contracts"]))
+        for scenario in body["scenarios"]
+    )
+    assert all(
+        {"RawProviderPayload", "CanonicalMatch", "seq", "lastSeq"}.issubset(
+            set(scenario["input_contracts"])
+        )
+        for scenario in body["scenarios"]
+    )
+    assert all(
+        {
+            "RawProviderPayload",
+            "CanonicalMatch",
+            "ScoreTick",
+            "OddsTick",
+            "ProviderCursor",
+            "ProviderLatency",
+        }.issubset(set(scenario["output_contracts"]))
+        for scenario in body["scenarios"]
+    )
+    assert all(len(scenario["provider_contracts"]) == 3 for scenario in body["scenarios"])
+    assert all(
+        all(contract["passed"] for contract in scenario["provider_contracts"])
+        for scenario in body["scenarios"]
+    )
+    assert all(
+        {"api_tennis", "odds_api_io", "theoddsapi"}
+        == {contract["provider"] for contract in scenario["provider_contracts"]}
+        for scenario in body["scenarios"]
+    )
+    assert all(
+        all(
+            {"provider", "adapter_contract", "observed_input_contracts", "observed_output_contracts"}.issubset(
+                set(contract)
+            )
+            for contract in scenario["provider_contracts"]
+        )
+        for scenario in body["scenarios"]
+    )
+    assert all("raw_payloads_saved" in scenario for scenario in body["scenarios"])
+    assert all("score_ticks_saved" in scenario for scenario in body["scenarios"])
+    assert all("odds_ticks_saved" in scenario for scenario in body["scenarios"])
+    assert all("provider_cursors_replayed" in scenario for scenario in body["scenarios"])
+    assert all(scenario["provider_cursors_replayed"] >= 1 for scenario in body["scenarios"])
+    assert all("provider_latency_saved" in scenario for scenario in body["scenarios"])
+    assert body["scenarios"][0]["final_status"] == "completed"
+    assert body["scenarios"][0]["provider_cursors"]
+    assert body["scenarios"][1]["resync_required"] is True
+    assert body["scenarios"][2]["resync_required"] is True
+
+
+def test_v1_live_backtest_without_training_examples_returns_409() -> None:
+    class RepoStub:
+        async def run_backtest(self, request):
+            raise KeyError("No persisted training examples available for live backtest")
+
+    app.dependency_overrides[repository] = lambda: RepoStub()
+    try:
+        response = client.post(
+            "/api/v1/backtests/run",
+            headers=ADMIN_HEADERS,
+            json={"model_version": "prematch_ensemble_v1"},
+        )
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert response.status_code == 409
+    assert "No persisted training examples" in response.json()["detail"]
 
 
 def test_v1_execution_endpoints_are_safe_by_default() -> None:
@@ -213,12 +563,72 @@ def test_paper_settlement_requires_token_and_updates_performance() -> None:
     assert settlement.status_code == 200
     assert settlement.json()["status"] == "settled"
     assert performance.json()["settled_orders"] >= 1
+    assert performance.json()["segments"]
+    assert {segment["segment_type"] for segment in performance.json()["segments"]} >= {
+        "model",
+        "odds_bucket",
+        "provider",
+    }
+
+
+def test_paper_auto_settlement_requires_token_and_calls_repository() -> None:
+    class RepoStub:
+        def __init__(self) -> None:
+            self.requests = []
+
+        async def auto_settle_paper(self, request):
+            self.requests.append(request)
+            return AutoPaperSettleResult(
+                evaluated_orders=1,
+                settled_orders=0,
+                skipped_orders=1,
+                reasons=["ord_live: latest score state is not finished."],
+            )
+
+    repo = RepoStub()
+    app.dependency_overrides[repository] = lambda: repo
+    try:
+        unauthorized = client.post(
+            "/api/v1/paper/settle-auto",
+            json={"match_id": "match_atp_001", "max_orders": 5},
+        )
+        response = client.post(
+            "/api/v1/paper/settle-auto",
+            headers=ADMIN_HEADERS,
+            json={"match_id": "match_atp_001", "max_orders": 5},
+        )
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["evaluated_orders"] == 1
+    assert response.json()["skipped_orders"] == 1
+    assert response.json()["training_examples_ready"] == 0
+    assert response.json()["decisions"] == []
+    assert repo.requests[0].match_id == "match_atp_001"
+    assert repo.requests[0].max_orders == 5
 
 
 def test_unknown_backtest_returns_404() -> None:
     response = client.get("/api/v1/backtests/missing-run")
 
     assert response.status_code == 404
+
+
+def test_unknown_calibration_report_returns_404() -> None:
+    class RepoStub:
+        async def calibration_report(self, run_id):
+            raise KeyError(run_id)
+
+    app.dependency_overrides[repository] = lambda: RepoStub()
+    try:
+        response = client.get("/api/v1/backtests/missing-run/calibration")
+    finally:
+        app.dependency_overrides.pop(repository, None)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Calibration report not found"
 
 
 def test_admin_model_promotion_allows_local_token() -> None:

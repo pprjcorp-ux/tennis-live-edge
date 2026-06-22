@@ -32,7 +32,7 @@ def predict_match(match: Match, features: FeatureVector) -> Prediction:
     market_p1 = None
     try:
         market_p1 = consensus_market_probability(match)[match.player1.id]
-    except (KeyError, ZeroDivisionError):
+    except (KeyError, ValueError, ZeroDivisionError):
         market_p1 = None
 
     if market_p1 is None:

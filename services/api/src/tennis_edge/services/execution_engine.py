@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -24,13 +25,26 @@ from tennis_edge.domain import (
 )
 from tennis_edge.providers.betfair import BetfairClient
 from tennis_edge.services.backtest import evaluate_promotion
+from tennis_edge.services.provider_lineage import (
+    odds_provider_for_match,
+    primary_provider_for_match,
+    provider_lineage_for_match,
+)
 
 
 ORDERS: dict[str, ExecutionOrder] = {}
-PROMOTION_DECISIONS: list[ModelPromotionDecision] = []
 KILL_SWITCH = {"enabled": False, "reason": "not set"}
 
 OPEN_ORDER_STATUSES = {
+    OrderStatus.PAPER,
+    OrderStatus.PENDING,
+    OrderStatus.SUBMITTED,
+    OrderStatus.PARTIALLY_MATCHED,
+    OrderStatus.MATCHED,
+}
+
+CANCELABLE_ORDER_STATUSES = {
+    OrderStatus.PAPER,
     OrderStatus.PENDING,
     OrderStatus.SUBMITTED,
     OrderStatus.PARTIALLY_MATCHED,
@@ -67,10 +81,16 @@ def betfair_configured(settings: Settings) -> bool:
     )
 
 
-def execution_status(settings: Settings) -> ExecutionStatus:
+def execution_status(
+    settings: Settings,
+    kill_switch: Mapping[str, object] | None = None,
+) -> ExecutionStatus:
     stage = _execution_stage(settings)
     venue = _execution_venue(settings)
     configured = betfair_configured(settings)
+    kill_switch = kill_switch or KILL_SWITCH
+    kill_switch_enabled = bool(kill_switch.get("enabled", False))
+    kill_switch_reason = str(kill_switch.get("reason") or "not set")
     reasons: list[str] = []
 
     if not settings.execution_enabled:
@@ -85,8 +105,8 @@ def execution_status(settings: Settings) -> ExecutionStatus:
         reasons.append("Betfair credentials/certificate settings are incomplete.")
     if not settings.betfair_live_key_approved:
         reasons.append("Betfair live app key approval is not confirmed.")
-    if KILL_SWITCH["enabled"]:
-        reasons.append(f"Kill switch enabled: {KILL_SWITCH['reason']}.")
+    if kill_switch_enabled:
+        reasons.append(f"Kill switch enabled: {kill_switch_reason}.")
 
     return ExecutionStatus(
         execution_enabled=settings.execution_enabled,
@@ -95,18 +115,26 @@ def execution_status(settings: Settings) -> ExecutionStatus:
         betfair_configured=configured,
         betfair_live_key_approved=settings.betfair_live_key_approved,
         real_execution_hard_block=settings.real_execution_hard_block,
-        kill_switch_enabled=bool(KILL_SWITCH["enabled"]),
+        kill_switch_enabled=kill_switch_enabled,
         can_submit_real_orders=not reasons,
         reasons=reasons,
     )
 
 
-def bankroll_snapshot(settings: Settings) -> BankrollSnapshot:
+def _order_snapshot(orders: Iterable[ExecutionOrder] | None = None) -> list[ExecutionOrder]:
+    return list(orders) if orders is not None else list(ORDERS.values())
+
+
+def bankroll_snapshot(
+    settings: Settings,
+    orders: Iterable[ExecutionOrder] | None = None,
+) -> BankrollSnapshot:
+    order_snapshot = _order_snapshot(orders)
     bankroll = settings.bankroll_starting_balance
     open_exposure = sum(
-        order.stake_amount for order in ORDERS.values() if order.status in OPEN_ORDER_STATUSES
+        order.stake_amount for order in order_snapshot if order.status in OPEN_ORDER_STATUSES
     )
-    realized = sum(order.pnl or 0 for order in ORDERS.values() if order.pnl is not None)
+    realized = sum(order.pnl or 0 for order in order_snapshot if order.pnl is not None)
     return BankrollSnapshot(
         base_currency=settings.bankroll_base_currency,
         bankroll_amount=round(bankroll + realized, 2),
@@ -115,7 +143,7 @@ def bankroll_snapshot(settings: Settings) -> BankrollSnapshot:
         realized_pnl=round(realized, 2),
         daily_pnl=round(realized, 2),
         weekly_drawdown=0 if realized >= 0 else abs(realized) / bankroll,
-        clv=_average_clv(),
+        clv=_average_clv(order_snapshot),
         execution_stage=_execution_stage(settings),
         max_order_stake_fraction=stage_stake_cap(settings),
         daily_loss_limit_fraction=settings.daily_loss_limit_fraction,
@@ -132,8 +160,8 @@ def stage_stake_cap(settings: Settings) -> float:
     return min(settings.max_order_stake_fraction, 0.015)
 
 
-def _average_clv() -> float | None:
-    values = [order.clv for order in ORDERS.values() if order.clv is not None]
+def _average_clv(orders: Iterable[ExecutionOrder] | None = None) -> float | None:
+    values = [order.clv for order in _order_snapshot(orders) if order.clv is not None]
     if not values:
         return None
     return round(sum(values) / len(values), 4)
@@ -142,7 +170,7 @@ def _average_clv() -> float | None:
 def set_kill_switch_for(settings: Settings, request: KillSwitchRequest) -> ExecutionStatus:
     KILL_SWITCH["enabled"] = request.enabled
     KILL_SWITCH["reason"] = request.reason
-    return execution_status(settings)
+    return execution_status(settings, KILL_SWITCH)
 
 
 def find_signal(analyses: list[MatchAnalysis], signal_id: str) -> tuple[MatchAnalysis, Signal]:
@@ -185,6 +213,7 @@ def order_risk_reasons(
     analysis: MatchAnalysis,
     signal: Signal,
     stake_amount: float,
+    orders: Iterable[ExecutionOrder] | None = None,
 ) -> list[str]:
     reasons: list[str] = []
     if signal.status != SignalStatus.ENTRY:
@@ -194,7 +223,7 @@ def order_risk_reasons(
     if analysis.match.state.status == "live" and not analysis.match.state.point_score:
         reasons.append("Live score state is incomplete.")
 
-    bankroll = bankroll_snapshot(settings)
+    bankroll = bankroll_snapshot(settings, orders)
     if stake_amount > bankroll.bankroll_amount * stage_stake_cap(settings):
         reasons.append("Stake exceeds stage cap.")
     if stake_amount <= 0:
@@ -214,15 +243,21 @@ def create_order(
     request: OrderRequest,
     *,
     real: bool,
+    orders: Iterable[ExecutionOrder] | None = None,
+    kill_switch: Mapping[str, object] | None = None,
+    remember_in_process: bool = True,
 ) -> ExecutionOrder:
     analysis, signal = find_signal(analyses, request.signal_id)
+    if not real and signal.status != SignalStatus.ENTRY:
+        raise ValueError(f"Signal status is {signal.status}; paper orders require Entrada.")
     order_id = f"ord_{uuid4().hex[:12]}"
     requested_odds = request.requested_odds or signal.best_odds
     bankroll_amount = request.bankroll_amount or settings.bankroll_starting_balance
     stake_fraction = min(signal.stake_fraction, stage_stake_cap(settings))
     stake_amount = round(bankroll_amount * stake_fraction, 2)
-    risk_reasons = order_risk_reasons(settings, analysis, signal, stake_amount)
+    risk_reasons = order_risk_reasons(settings, analysis, signal, stake_amount, orders)
     status = OrderStatus.PAPER if not real else OrderStatus.SUBMITTED
+    odds_provider = odds_provider_for_match(analysis.match)
     audit = [
         "Order created from deterministic signal gate.",
         "No browser automation or sportsbook scraping used.",
@@ -241,7 +276,7 @@ def create_order(
             risk_reasons.append(str(exc))
 
     if real:
-        status_snapshot = execution_status(settings)
+        status_snapshot = execution_status(settings, kill_switch)
         risk_reasons.extend(status_snapshot.reasons)
         if risk_reasons:
             status = OrderStatus.EXECUTION_BLOCKED
@@ -295,6 +330,15 @@ def create_order(
         rejection_reason=rejection_reason,
         risk_snapshot={
             "stage": _execution_stage(settings),
+            "model_version": analysis.prediction.model_version,
+            "surface": analysis.match.surface.value,
+            "tour": analysis.match.tour.value,
+            "competition_level": analysis.match.competition_level.value,
+            "score_provider": primary_provider_for_match(analysis.match).value,
+            "odds_provider": odds_provider.value if odds_provider is not None else None,
+            "provider_lineage": [
+                provider.value for provider in provider_lineage_for_match(analysis.match)
+            ],
             "risk_reasons": risk_reasons,
             "bankroll_amount": bankroll_amount,
             "stake_cap": stage_stake_cap(settings),
@@ -312,7 +356,8 @@ def create_order(
         audit=audit,
         updated_at=_now(),
     )
-    ORDERS[order.id] = order
+    if remember_in_process:
+        ORDERS[order.id] = order
     return order
 
 
@@ -320,7 +365,7 @@ def cancel_order(order_id: str) -> CancelOrderResult:
     if order_id not in ORDERS:
         raise KeyError(order_id)
     order = ORDERS[order_id]
-    if order.status not in OPEN_ORDER_STATUSES:
+    if order.status not in CANCELABLE_ORDER_STATUSES:
         return CancelOrderResult(
             order_id=order_id,
             status=order.status,
@@ -359,5 +404,4 @@ def promote_from_learning(request: LearningPromotionRequest) -> ModelPromotionDe
         reasons=reasons,
         metrics=metrics,
     )
-    PROMOTION_DECISIONS.append(decision)
     return decision

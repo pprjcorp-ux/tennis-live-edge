@@ -126,8 +126,8 @@ Postgres; Hermes wakes only on summarized state or event thresholds.
 `hermes:safe-loop` is the preferred autonomous packet when a channel or cron
 job needs the broadest safe context. It runs local runtime diagnostics and
 internal FastAPI reads, then combines intelligence, event routing, unblock
-lanes, playbook phases, live stats, budget-chain state, and learning review
-into one JSON decision. It is read-only and keeps
+lanes, playbook phases, live stats, quota-plan throttle state, budget-chain
+state, and learning review into one JSON decision. It is read-only and keeps
 `provider_api_call_allowed=false`, `llm_per_tick_allowed=false`, and
 `can_submit_real_orders=false`.
 

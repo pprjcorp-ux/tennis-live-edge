@@ -197,15 +197,20 @@ async function safeLoop() {
 }
 
 async function safeLoopData() {
-  const [runtime, report] = await Promise.all([
+  const [runtime, report, matches] = await Promise.all([
     runtimeCheckData(),
     intelligenceData(),
+    liveMatchesData(),
   ]);
   const eventPlan = buildEventPlan(report);
   const budgetPlan = buildBudgetChainPlan(report, eventPlan);
   const unblock = buildUnblockPlan(report, eventPlan, budgetPlan);
   const playbookPlan = buildPlaybook(report, eventPlan);
   const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  const liveWindowPlan = buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan);
+  const pulse = buildMatchPulse({ report, eventPlan, liveWindowPlan, matches });
+  const collection = buildCollectionPlan({ report, eventPlan, liveWindowPlan, pulse });
+  const quotaPlan = buildQuotaPlan({ report, collection });
   const learningPlan = buildLearningReview(report, eventPlan, playbookPlan);
   return buildSafeLoop({
     runtime,
@@ -215,8 +220,17 @@ async function safeLoopData() {
     unblock,
     playbookPlan,
     liveStatsPlan,
+    quotaPlan,
     learningPlan,
   });
+}
+
+async function liveMatchesData() {
+  try {
+    return await request("/api/v1/live/matches");
+  } catch {
+    return [];
+  }
 }
 
 async function schedulerRehearsal() {
@@ -1050,6 +1064,7 @@ function buildSafeLoop({
   unblock,
   playbookPlan,
   liveStatsPlan,
+  quotaPlan,
   learningPlan,
 }) {
   const safeCommands = safeLoopCommands({
@@ -1059,6 +1074,7 @@ function buildSafeLoop({
     unblock,
     playbookPlan,
     liveStatsPlan,
+    quotaPlan,
   });
   const nextBestCommand = chooseSafeLoopCommand({ runtime, unblock, eventPlan, safeCommands });
   return {
@@ -1107,6 +1123,14 @@ function buildSafeLoop({
       current_step: budgetPlan.current_step,
       provider_api_call_allowed: false,
     },
+    quota_plan: {
+      status: quotaPlan.status,
+      throttle_level: quotaPlan.throttle?.level,
+      budget_utilization: quotaPlan.throttle?.budget_utilization,
+      effective_target_count: quotaPlan.effective_targets.length,
+      provider_command_count: quotaPlan.provider_commands.length,
+      provider_api_call_allowed: false,
+    },
     learning_review: {
       review_status: learningPlan.review_status,
       model_route: learningPlan.model_route,
@@ -1143,7 +1167,7 @@ function safeLoopStatus({ runtime, eventPlan }) {
   return "monitor";
 }
 
-function safeLoopCommands({ runtime, eventPlan, budgetPlan, unblock, playbookPlan, liveStatsPlan }) {
+function safeLoopCommands({ runtime, eventPlan, budgetPlan, unblock, playbookPlan, liveStatsPlan, quotaPlan }) {
   const commands = [];
   commands.push(loopCommand({
     id: "observe_intelligence",
@@ -1159,6 +1183,11 @@ function safeLoopCommands({ runtime, eventPlan, budgetPlan, unblock, playbookPla
     id: "live_stats",
     command: "npm --silent run hermes:live-stats",
     reason: `Current sampling policy is ${liveStatsPlan.sampling_policy?.name ?? "unknown"}.`,
+  }));
+  commands.push(loopCommand({
+    id: "quota_plan",
+    command: "npm --silent run hermes:quota-plan",
+    reason: `Current quota throttle is ${quotaPlan.throttle?.level ?? "unknown"}.`,
   }));
   if (runtime.status !== "ready" || unblock.lanes.some((lane) => lane.id === "local_runtime")) {
     commands.push(loopCommand({
@@ -1326,6 +1355,12 @@ function schedulerSchedule(loop) {
       command: "npm --silent run hermes:live-stats",
       everyMinutes: policy.name === "paper_signal_watch" ? 1 : 5,
       reason: `Monitor collection and freshness under ${policy.name ?? "unknown"} policy.`,
+    }),
+    schedulerItem({
+      id: "quota_plan",
+      command: "npm --silent run hermes:quota-plan",
+      everyMinutes: 5,
+      reason: "Apply budget utilization throttles before any operator-triggered provider cadence change.",
     }),
   ];
   if (loop.budget_chain && !loop.budget_chain.completed) {

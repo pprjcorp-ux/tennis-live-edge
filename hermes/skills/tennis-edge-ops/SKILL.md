@@ -121,9 +121,9 @@ provider smoke. By default it returns blocked dry-run JSON; only
 `--execute-provider-call` may run a supported smoke, and that flag must not be
 used from cron or Telegram automation.
 The `safe-loop` command is the preferred autonomous packet. It aggregates
-runtime, intelligence, events, unblock-plan, playbook, live-stats, budget-chain,
-and learning review into one read-only decision and never creates orders or
-spends provider quota.
+runtime, intelligence, events, unblock-plan, playbook, live-stats, quota-plan,
+budget-chain, and learning review into one read-only decision and never creates
+orders or spends provider quota.
 The `scheduler-rehearsal` command turns safe-loop output into a proposed local
 schedule and writes only a local JSONL audit row. It must not create cron jobs
 or execute scheduled commands.

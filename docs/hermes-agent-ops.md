@@ -141,9 +141,9 @@ LLM-triggered automation.
 Use `hermes:safe-loop` as the default autonomous packet when Hermes needs the
 widest safe context in one call. It aggregates runtime diagnostics,
 intelligence, event routing, unblock lanes, playbook phases, live stats,
-budget-chain state, and learning review into one read-only decision. It does
-not create paper orders, execute provider smoke, spend quota, or submit real
-orders.
+quota-plan throttle state, budget-chain state, and learning review into one
+read-only decision. It does not create paper orders, execute provider smoke,
+spend quota, or submit real orders.
 
 Use `hermes:scheduler-rehearsal` before creating or changing real Hermes cron
 jobs. It converts the current safe-loop packet into proposed intervals and

@@ -878,7 +878,12 @@ test("safe-loop aggregates runtime and budget signals without protected actions"
     assert.equal(payload.can_submit_real_orders, false);
     assert.equal(payload.can_create_paper_orders, false);
     assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.quota_plan.status, "blocked");
+    assert.equal(payload.quota_plan.throttle_level, "blocked");
+    assert.equal(payload.quota_plan.provider_api_call_allowed, false);
+    assert.equal(payload.quota_plan.provider_command_count, 0);
     assert.equal(payload.next_best_command.command, "npm run hermes:runtime-check");
+    assert.equal(payload.safe_commands.some((command) => command.command === "npm --silent run hermes:quota-plan"), true);
     assert.equal(payload.safe_commands.some((command) => command.command === "npm run hermes:provider-smoke"), true);
     assert.equal(payload.forbidden_actions.includes("sportsbook_ui_automation"), true);
   } finally {
@@ -944,6 +949,7 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(payload.can_create_paper_orders, false);
     assert.equal(payload.next_tick.command, "npm run hermes:runtime-check");
     assert.equal(payload.schedule.some((item) => item.command === "npm --silent run hermes:safe-loop"), true);
+    assert.equal(payload.schedule.some((item) => item.command === "npm --silent run hermes:quota-plan"), true);
     assert.equal(payload.audit_log.path, runLog);
     const lines = readFileSync(runLog, "utf8").trim().split("\n");
     assert.equal(lines.length, 1);

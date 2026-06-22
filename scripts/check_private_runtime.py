@@ -579,6 +579,7 @@ def main() -> int:
             "match_pulse",
             "collection_plan",
             "quota_plan",
+            "quotaPlan",
             "runLocalCommand",
             "REDACTED_API_KEY",
             "buildPlaybook",

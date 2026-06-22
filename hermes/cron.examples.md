@@ -80,7 +80,7 @@ hermes cron add \
   --name tennis-edge-safe-loop \
   --every 5m \
   --model gpt-5.4-mini \
-  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:safe-loop from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report status, runtime, active_phase, next_best_command, safe_commands, budget_chain, and safety. Do not execute recommended commands, create orders, run provider smoke, or spend provider quota from this cron." \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:safe-loop from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report status, runtime, active_phase, quota_plan, next_best_command, safe_commands, budget_chain, and safety. Do not execute recommended commands, create orders, run provider smoke, or spend provider quota from this cron." \
   --timeout-seconds 90
 ```
 

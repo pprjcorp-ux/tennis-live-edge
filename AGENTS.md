@@ -159,8 +159,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   flag in cron, Telegram, webhook, or autonomous LLM routes.
 - Hermes autonomous loop routing should consume `npm run hermes:safe-loop`;
   it aggregates runtime, intelligence, event routing, playbook, live stats,
-  budget-chain, and learning review packets, but must remain read-only and must
-  never create paper orders, spend provider quota, or submit real orders itself.
+  quota-plan, budget-chain, and learning review packets, but must remain
+  read-only and must never create paper orders, spend provider quota, or submit
+  real orders itself.
 - Hermes scheduler rehearsal should consume `npm run hermes:scheduler-rehearsal`;
   it may write only local JSONL audit rows under `hermes/runs/`, must not create
   real cron jobs, and must never execute the commands it schedules.

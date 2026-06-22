@@ -141,9 +141,9 @@ from a local operator shell when you intentionally want to spend provider quota.
 
 `hermes:safe-loop` is the preferred autonomous status packet. It aggregates the
 local runtime check, intelligence, event routing, unblock plan, playbook,
-live-stats, budget-chain, and weekly-learning packets into one read-only JSON
-decision. It never creates paper orders, spends provider quota, calls provider
-smoke execution, or submits real orders.
+live-stats, quota-plan, budget-chain, and weekly-learning packets into one
+read-only JSON decision. It never creates paper orders, spends provider quota,
+calls provider smoke execution, or submits real orders.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

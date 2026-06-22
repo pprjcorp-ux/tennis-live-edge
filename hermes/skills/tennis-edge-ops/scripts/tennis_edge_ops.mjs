@@ -51,11 +51,11 @@ function boundedHttpTimeoutMs(value) {
 }
 
 function boundedDoctorTriageTimeoutMs(value = process.env.HERMES_DOCTOR_TRIAGE_TIMEOUT_MS) {
-  const parsed = Number(value ?? 1_500);
+  const parsed = Number(value ?? 15_000);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 1_500;
+    return 15_000;
   }
-  return Math.min(Math.max(Math.trunc(parsed), 100), 5_000);
+  return Math.min(Math.max(Math.trunc(parsed), 100), 15_000);
 }
 
 function boundedBackendTriageTimeoutMs(value = process.env.HERMES_BACKEND_TRIAGE_TIMEOUT_MS) {
@@ -64,6 +64,14 @@ function boundedBackendTriageTimeoutMs(value = process.env.HERMES_BACKEND_TRIAGE
     return 2_000;
   }
   return Math.min(Math.max(Math.trunc(parsed), 100), 10_000);
+}
+
+function runtimeDoctorTimeoutMs(value = process.env.HERMES_RUNTIME_DOCTOR_TIMEOUT_MS) {
+  const parsed = Number(value ?? 15_000);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 15_000;
+  }
+  return Math.min(Math.max(Math.trunc(parsed), 1_000), 30_000);
 }
 
 function enterpriseReadinessTimeoutMs(value = process.env.HERMES_ENTERPRISE_READINESS_TIMEOUT_MS) {
@@ -240,7 +248,7 @@ async function runtimeCheckData() {
   const hermesBin = process.env.HERMES_BIN || "hermes";
   const commands = [
     await runLocalCommand("hermes status", hermesBin, ["status"]),
-    await runLocalCommand("hermes doctor", hermesBin, ["doctor"]),
+    await runLocalCommand("hermes doctor", hermesBin, ["doctor"], runtimeDoctorTimeoutMs()),
   ];
   const hasMissingCommand = commands.some((item) => item.error_code === "command_not_found");
   const hasFailure = commands.some((item) => item.exit_code !== 0 || item.timed_out || item.error_code);
@@ -268,7 +276,7 @@ async function doctorTriageData() {
   const hermesBin = process.env.HERMES_BIN || "hermes";
   const doctorTimeoutMs = boundedDoctorTriageTimeoutMs();
   const commands = [
-    await runLocalCommand("hermes version", hermesBin, ["--version"], 1_000),
+    await runLocalCommand("hermes version", hermesBin, ["--version"], 3_000),
     await runLocalCommand("hermes status", hermesBin, ["status"], 2_000),
     await runLocalCommand("hermes doctor short", hermesBin, ["doctor"], doctorTimeoutMs),
   ];
@@ -2008,7 +2016,9 @@ async function autonomyEffectiveness() {
 async function implementationHandoff() {
   const { backlog, effectiveness } = autonomyEffectivenessData();
   const enterpriseReadinessPacket = await enterpriseReadinessPacketData();
-  const routedBacklog = buildBacklogPlanWithEnterpriseReadiness(backlog, enterpriseReadinessPacket);
+  const channel = buildChannelReadiness(await runtimeCheckData());
+  const channelBacklog = buildBacklogPlanWithChannelReadiness(backlog, channel);
+  const routedBacklog = buildBacklogPlanWithEnterpriseReadiness(channelBacklog, enterpriseReadinessPacket);
   printJson(buildImplementationHandoff(routedBacklog, effectiveness));
 }
 
@@ -7006,6 +7016,81 @@ function buildBacklogPlanWithEnterpriseReadiness(backlogPlan, enterpriseReadines
   };
 }
 
+function buildBacklogPlanWithChannelReadiness(backlogPlan, channel) {
+  if (!channel) return backlogPlan;
+  const evidence = {
+    ...backlogPlan.evidence,
+    channel_readiness: channelReadinessSummary(channel),
+  };
+  const shouldRouteChannelSecrets = backlogPlan.next_item?.id === "stabilize_hermes_runtime_channels"
+    && channel.checks?.some((check) => check.id === "doctor_passed" && check.status === "pass")
+    && channel.actions?.some((action) => [
+      "configure_telegram_allowlist",
+      "configure_private_access_allowlist",
+      "configure_local_admin_token",
+    ].includes(action.id));
+  if (!shouldRouteChannelSecrets) {
+    return { ...backlogPlan, evidence, channel_readiness: channelReadinessSummary(channel) };
+  }
+  const items = dedupeBacklogItems([
+    channelOperatorSecretsBacklogItem(channel),
+    ...backlogPlan.items.filter((item) => item.id !== "stabilize_hermes_runtime_channels"),
+  ]).sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
+  return {
+    ...backlogPlan,
+    status: "ready",
+    next_item: items[0] ?? null,
+    items,
+    evidence,
+    channel_readiness: channelReadinessSummary(channel),
+  };
+}
+
+function channelReadinessSummary(channel) {
+  if (!channel) return null;
+  return {
+    status: channel.status,
+    readiness_ceiling: channel.readiness_ceiling,
+    failed_checks: (channel.checks ?? [])
+      .filter((check) => check.status !== "pass")
+      .map((check) => check.id),
+    next_action: channel.next_action,
+    acceptance_evidence: channel.acceptance_evidence ?? [],
+  };
+}
+
+function channelOperatorSecretsBacklogItem(channel) {
+  const failedChecks = (channel.checks ?? [])
+    .filter((check) => check.status !== "pass")
+    .map((check) => check.id);
+  return backlogItem({
+    id: "configure_hermes_operator_channel_secrets",
+    title: "Configure Hermes operator channel secrets before more autonomy",
+    priority: 8,
+    source: ["channel_readiness"],
+    frequency: Math.max(1, failedChecks.length),
+    rationale: "Hermes runtime diagnostics now pass; remaining channel blockers are explicit operator allowlists and local admin token, not code/runtime repair.",
+    targetFiles: [
+      "hermes/README.md",
+      "docs/hermes-agent-ops.md",
+      ".env.example",
+    ],
+    validationCommands: [
+      "npm --silent run hermes:channel-readiness",
+      "npm --silent run hermes:activation-checklist",
+      "npm --silent run hermes:implementation-handoff",
+    ],
+    acceptanceEvidence: [
+      "doctor_status=passed",
+      "telegram_allowlist_configured=true",
+      "private_access_allowlist_configured=true",
+      "local_admin_secret_available=true",
+      "no secret values are printed or committed",
+    ],
+    blocks: ["channel_ready", "cron_ready", "paper_autopilot_admin_route"],
+  });
+}
+
 function enterpriseBackendEvidenceBacklogItem(enterpriseReadiness) {
   const blockers = enterpriseReadiness.activation_blockers ?? [];
   return backlogItem({
@@ -7378,6 +7463,8 @@ function buildImplementationHandoff(backlogPlan, effectiveness = null) {
       next_item_id: nextItem?.id ?? null,
       total_items: backlogPlan.items.length,
       enterprise_readiness_status: backlogPlan.enterprise_readiness?.status ?? null,
+      channel_readiness_status: backlogPlan.channel_readiness?.status ?? null,
+      channel_readiness_ceiling: backlogPlan.channel_readiness?.readiness_ceiling ?? null,
     },
     work_order: workOrder,
     implementation_policy: {
@@ -7399,6 +7486,7 @@ function buildImplementationHandoff(backlogPlan, effectiveness = null) {
       effectiveness_score: effectiveness?.score ?? null,
       backlog_evidence: backlogPlan.evidence,
       enterprise_readiness: backlogPlan.enterprise_readiness ?? null,
+      channel_readiness: backlogPlan.channel_readiness ?? null,
     },
     safety: {
       can_submit_real_orders: false,
@@ -7494,6 +7582,12 @@ function implementationStepsFor(item) {
       "inspect_fastapi_read_models_and_backend_latency_triage_output",
       "restore_read_only_backend_evidence_without_enabling_provider_feeds",
       "prove_enterprise_readiness_no_longer_depends_on_backend_unavailable_fallbacks",
+      ...genericSteps.slice(2),
+    ],
+    configure_hermes_operator_channel_secrets: [
+      "document_required_local_env_without_printing_or_committing_secret_values",
+      "collect_operator_confirmation_for_allowlists_and_admin_token_outside_git",
+      "rerun_channel_readiness_and_activation_checklist_after_secrets_exist",
       ...genericSteps.slice(2),
     ],
     collect_more_hermes_operating_evidence: [
@@ -8421,7 +8515,7 @@ function chooseAutonomyLane(loop, runtimePriorities) {
   if (loop.runtime?.status !== "ready") {
     return autonomyLane("stabilize_runtime", 10, "local_runtime", "Fix Hermes local runtime diagnostics before protected automation.");
   }
-  const topRuntimePriority = runtimePriorities.next_priority;
+  const topRuntimePriority = currentRuntimePriority(loop, runtimePriorities);
   if (topRuntimePriority) {
     return autonomyLane(
       topRuntimePriority.id,
@@ -8440,6 +8534,13 @@ function chooseAutonomyLane(loop, runtimePriorities) {
     return autonomyLane("paper_autopilot_review", 40, "paper_trading", "Backend gates allow paper autopilot review; real execution remains blocked.");
   }
   return autonomyLane("observe_and_collect", 50, "observe", "Keep collecting deterministic status and learning evidence.");
+}
+
+function currentRuntimePriority(loop, runtimePriorities) {
+  const runtimeReady = loop.runtime?.status === "ready";
+  return (runtimePriorities.priorities ?? []).find((priority) => (
+    !runtimeReady || priority.lane !== "local_runtime"
+  )) ?? null;
 }
 
 function autonomyLane(id, priority, lane, reason) {
@@ -8535,7 +8636,10 @@ function buildAutonomyActionQueue(loop, runtimePriorities) {
       writes: loop.read_only_runtime_route.writes,
     }));
   }
-  for (const priority of runtimePriorities.priorities.slice(0, 3)) {
+  const runtimeReady = loop.runtime?.status === "ready";
+  for (const priority of runtimePriorities.priorities
+    .filter((item) => !runtimeReady || item.lane !== "local_runtime")
+    .slice(0, 3)) {
     actions.push(autonomyAction({
       id: priority.id,
       command: priority.diagnostic_command,

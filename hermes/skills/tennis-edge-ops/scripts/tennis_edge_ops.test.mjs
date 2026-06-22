@@ -940,7 +940,10 @@ test("runtime-check exposes usable Hermes capabilities while autonomy remains ga
   );
 
   const result = await runCli(["runtime-check"], {
-    env: { HERMES_BIN: fakeHermes },
+    env: {
+      HERMES_BIN: fakeHermes,
+      HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
+    },
     timeoutMs: 8_000,
   });
 
@@ -1181,6 +1184,7 @@ test("channel-recovery-plan summarizes local-only recovery gates without exposin
   const result = await runCli(["channel-recovery-plan"], {
     env: {
       HERMES_BIN: fakeHermes,
+      HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
       HERMES_HTTP_TIMEOUT_MS: "100",
       HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
       OPENCLAW_TELEGRAM_ALLOWED_USER_IDS: "",
@@ -1826,7 +1830,10 @@ test("safe-loop exposes partial Hermes runtime as read-only operator route", asy
 
   try {
     const result = await runCli(["safe-loop", `--api-base=${apiBase}`], {
-      env: { HERMES_BIN: fakeHermes },
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "5000",
+      },
       timeoutMs: 8_000,
     });
 
@@ -2003,7 +2010,10 @@ test("autonomy-brief routes partial Hermes runtime to read-only summaries", asyn
 
   try {
     const result = await runCli(["autonomy-brief", `--api-base=${apiBase}`], {
-      env: { HERMES_BIN: fakeHermes },
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "5000",
+      },
       timeoutMs: 8_000,
     });
 
@@ -2518,7 +2528,10 @@ test("trigger-policy exposes partial runtime read-only wakeup after diagnostics"
 
   try {
     const result = await runCli(["trigger-policy", `--api-base=${apiBase}`], {
-      env: { HERMES_BIN: fakeHermes },
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
+      },
       timeoutMs: 8_000,
     });
 
@@ -2833,7 +2846,10 @@ test("ops-compiler routes running-gateway doctor timeouts through doctor-triage"
 
   try {
     const result = await runCli(["ops-compiler", `--api-base=${apiBase}`], {
-      env: { HERMES_BIN: fakeHermes },
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
+      },
       timeoutMs: 12_000,
     });
 
@@ -3023,6 +3039,7 @@ test("autonomy-gates does not skip blocked earlier gates when paper is otherwise
     const result = await runCli(["autonomy-gates", `--api-base=${apiBase}`], {
       env: {
         HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
         ADMIN_API_TOKEN: "local-admin",
       },
     });
@@ -3069,6 +3086,7 @@ test("autonomy-gates routes running-gateway doctor timeouts to doctor-triage", a
     const result = await runCli(["autonomy-gates", `--api-base=${apiBase}`], {
       env: {
         HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
         ADMIN_API_TOKEN: "local-admin",
       },
       timeoutMs: 12_000,
@@ -4011,6 +4029,114 @@ test("implementation-handoff prioritizes enterprise backend evidence blocker", a
   assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
 });
 
+test("implementation-handoff routes stale runtime backlog to channel secret setup when doctor passes", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-implementation-channel-secrets-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const grandSlamMissionLedgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log(`gateway: running",
+      "◆ Environment",
+      "  Model:        gpt-5.5",
+      "  Provider:     OpenAI API",
+      "◆ API Keys",
+      "  OpenAI        ✓ [REDACTED_API_KEY]",
+      "◆ Auth Providers",
+      "  Nous Portal   ✓ logged in",
+      "◆ Messaging Platforms",
+      "  Telegram      ✗ not configured",
+      "  Discord       ✓ configured (home: 123)",
+      "◆ Gateway Service",
+      "  Status:       ✓ running`); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('doctor ok'); process.exit(0); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const operatorRows = [
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    },
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    },
+  ];
+  writeFileSync(experimentLedgerPath, "");
+  writeFileSync(operatorLedgerPath, `${operatorRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  writeFileSync(missionLedgerPath, "");
+  writeFileSync(controllerLedgerPath, "");
+  writeFileSync(grandSlamMissionLedgerPath, "");
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  let result;
+  try {
+    result = await runCli(["implementation-handoff", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+        HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+        HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+        HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+        HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamMissionLedgerPath,
+        HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
+        OPENCLAW_TELEGRAM_ALLOWED_USER_IDS: "",
+        PRIVATE_ALLOWED_EMAILS: "",
+        TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS: "",
+        ADMIN_API_TOKEN: "",
+        TENNIS_EDGE_ADMIN_API_TOKEN: "",
+      },
+    });
+  } finally {
+    server.close();
+  }
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "implementation_handoff");
+  assert.equal(payload.source_plan.next_item_id, "configure_hermes_operator_channel_secrets");
+  assert.equal(payload.source_plan.channel_readiness_status, "blocked");
+  assert.equal(payload.source_plan.channel_readiness_ceiling, "observe");
+  assert.equal(payload.work_order.id, "configure_hermes_operator_channel_secrets");
+  assert.equal(payload.work_order.priority, 8);
+  assert.equal(payload.work_order.executes_now, false);
+  assert.equal(payload.work_order.provider_api_call_allowed, false);
+  assert.equal(payload.work_order.can_submit_real_orders, false);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:channel-readiness"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("local_admin_secret_available=true"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("no secret values are printed or committed"), true);
+  assert.equal(payload.evidence.sources.includes("channel_readiness"), true);
+  assert.equal(payload.evidence.channel_readiness.failed_checks.includes("telegram_allowlist_configured"), true);
+  assert.equal(payload.evidence.channel_readiness.failed_checks.includes("private_access_allowlist_configured"), true);
+  assert.equal(payload.evidence.channel_readiness.failed_checks.includes("local_admin_secret_available"), true);
+  assert.equal(payload.evidence.backlog_evidence.channel_readiness.next_action.id, "configure_telegram_allowlist");
+  assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
+});
+
 test("operator-packet emits a compact channel-safe decision summary", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");
@@ -4099,7 +4225,10 @@ test("operator-packet includes partial runtime read-only route without enabling 
 
   try {
     const result = await runCli(["operator-packet", `--api-base=${apiBase}`], {
-      env: { HERMES_BIN: fakeHermes },
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
+      },
       timeoutMs: 8_000,
     });
 
@@ -4362,6 +4491,7 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     const result = await runCli(["scheduler-rehearsal", `--api-base=${apiBase}`, "--date=2026-06-22"], {
       env: {
         HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
         HERMES_SCHEDULER_RUN_LOG: runLog,
       },
     });
@@ -4448,6 +4578,7 @@ test("scheduler-rehearsal schedules partial runtime summaries without replacing 
     const result = await runCli(["scheduler-rehearsal", `--api-base=${apiBase}`], {
       env: {
         HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
         HERMES_SCHEDULER_RUN_LOG: runLog,
       },
       timeoutMs: 8_000,
@@ -4786,6 +4917,7 @@ test("activation-checklist allows only manual cron activation when all gates pas
     const result = await runCli(["activation-checklist", `--api-base=${apiBase}`], {
       env: {
         HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "5000",
         HERMES_CRON_PROPOSAL_PATH: proposalPath,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
@@ -4855,6 +4987,7 @@ test("activation-checklist blocks cron activation when runtime or operator gates
     const result = await runCli(["activation-checklist", `--api-base=${apiBase}`], {
       env: {
         HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
         HERMES_CRON_PROPOSAL_PATH: proposalPath,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
         PRIVATE_ALLOWED_EMAILS: "",
@@ -4919,6 +5052,7 @@ test("runtime-fix-plan turns failed activation checks into non-mutating actions"
     const result = await runCli(["runtime-fix-plan", `--api-base=${apiBase}`], {
       env: {
         HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
         HERMES_CRON_PROPOSAL_PATH: proposalPath,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
         PRIVATE_ALLOWED_EMAILS: "",
@@ -4996,6 +5130,7 @@ test("runtime-fix-plan escalates full-probe doctor timeouts without looping", as
     const result = await runCli(["runtime-fix-plan", `--api-base=${apiBase}`], {
       env: {
         HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "5000",
         HERMES_CRON_PROPOSAL_PATH: proposalPath,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
         PRIVATE_ALLOWED_EMAILS: "",
@@ -5070,6 +5205,7 @@ test("runtime-fix-plan preserves doctor progress when API connectivity times out
     const result = await runCli(["runtime-fix-plan", `--api-base=${apiBase}`], {
       env: {
         HERMES_BIN: fakeHermes,
+        HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "5000",
         HERMES_CRON_PROPOSAL_PATH: proposalPath,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
         PRIVATE_ALLOWED_EMAILS: "",

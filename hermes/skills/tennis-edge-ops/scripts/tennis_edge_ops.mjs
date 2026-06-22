@@ -10,18 +10,58 @@ const API_BASE = apiBaseArg ? apiBaseArg.slice("--api-base=".length) : "http://1
 const TOKEN_STDIN_FLAG = "--token-stdin";
 
 async function request(path, options = {}) {
+  const { timeoutMs, ...fetchOptions } = options;
+  const effectiveTimeoutMs = boundedHttpTimeoutMs(timeoutMs);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
   const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...fetchOptions,
+    signal: controller.signal,
     headers: {
       "Content-Type": "application/json",
-      ...(options.headers ?? {})
+      ...(fetchOptions.headers ?? {})
     }
-  });
+  }).catch((error) => {
+    if (error.name === "AbortError") {
+      throw new Error(`${fetchOptions.method ?? "GET"} ${path} timed out after ${effectiveTimeoutMs}ms`);
+    }
+    throw error;
+  }).finally(() => clearTimeout(timeout));
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`${options.method ?? "GET"} ${path} failed: ${response.status} ${body}`);
+    throw new Error(`${fetchOptions.method ?? "GET"} ${path} failed: ${response.status} ${body}`);
   }
   return response.json();
+}
+
+function boundedHttpTimeoutMs(value) {
+  const parsed = Number(value ?? process.env.HERMES_HTTP_TIMEOUT_MS ?? 5_000);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 5_000;
+  }
+  return Math.min(Math.max(Math.trunc(parsed), 100), 30_000);
+}
+
+async function safeRequest(path, fallback, label = path) {
+  try {
+    return { data: await request(path), error: null };
+  } catch (error) {
+    return {
+      data: fallbackFor(path, fallback, error),
+      error: {
+        label,
+        path,
+        message: String(error.message ?? error),
+      },
+    };
+  }
+}
+
+function fallbackFor(path, fallback, error) {
+  if (typeof fallback === "function") {
+    return fallback({ path, error });
+  }
+  return fallback;
 }
 
 async function adminHeaders() {
@@ -533,7 +573,205 @@ async function providerSmoke() {
   });
 }
 
+function backendUnavailableBriefing({ error }) {
+  return {
+    summary: `FastAPI local unavailable for Hermes intelligence: ${String(error.message ?? error)}`,
+    autopilot_enabled: false,
+    channel: "local_cli",
+    triage_model: "deterministic_fail_closed",
+    critical_model: "none",
+    entry_signals: 0,
+    provider_alerts: 1,
+    readiness_status: "blocked",
+    next_actions: [
+      "Start or inspect the local FastAPI service before protected automation.",
+      "Keep Hermes in observe/report mode while backend intelligence is unavailable.",
+    ],
+  };
+}
+
+function backendUnavailablePreflight({ error }) {
+  return {
+    status: "blocked",
+    generated_at: new Date().toISOString(),
+    checks: [
+      {
+        name: "backend_api",
+        status: "fail",
+        summary: `FastAPI local did not answer Hermes within the bounded timeout: ${String(error.message ?? error)}`,
+      },
+      {
+        name: "real_execution_hard_block",
+        status: "pass",
+        summary: "Hermes fail-closed fallback preserves real execution hard block.",
+      },
+    ],
+  };
+}
+
+function backendUnavailableAnomalies({ error }) {
+  return [
+    {
+      id: "backend_api_unreachable",
+      severity: "high",
+      status: "open",
+      summary: `Hermes could not collect internal API intelligence: ${String(error.message ?? error)}`,
+    },
+  ];
+}
+
+function backendUnavailableProviderHealth({ error }) {
+  return [
+    {
+      provider: "fastapi",
+      configured: true,
+      healthy: false,
+      status: "unreachable",
+      latency_ms: null,
+      quota_used: 0,
+      quota_limit: 0,
+      last_message_at: null,
+      note: String(error.message ?? error),
+    },
+  ];
+}
+
+function backendUnavailableDataQuality({ error }) {
+  return [
+    {
+      id: "backend_api_unreachable",
+      provider: "fastapi",
+      feed: "internal_api",
+      sequence_health: 0,
+      stale_ticks: 1,
+      blocked_signals: 1,
+      latency_ms: null,
+      notes: [String(error.message ?? error)],
+    },
+  ];
+}
+
+function backendUnavailableCostProfile() {
+  return {
+    active_plan: "lean_atp",
+    enabled_providers: [],
+    estimated_monthly_spend_usd: 0,
+    monthly_budget_usd: 500,
+    coverage_scope: ["atp_main", "grand_slam_men", "grand_slam_women"],
+    skipped_by_coverage_gate: 0,
+  };
+}
+
+function backendUnavailableCostReport() {
+  return {
+    live_api_calls: 0,
+    cost_per_signal_usd: null,
+    provider_calls: [],
+    web_socket_uptime_seconds: 0,
+  };
+}
+
+function backendUnavailablePaperPerformance() {
+  return {
+    readiness_status: "blocked",
+    roi: null,
+    clv: null,
+    settled_orders: 0,
+    open_orders: 0,
+    max_drawdown: null,
+  };
+}
+
+function backendUnavailableExecutionStatus() {
+  return {
+    real_execution_hard_block: true,
+    can_submit_real_orders: false,
+    stage: "paper",
+    execution_enabled: false,
+    venue: "none",
+  };
+}
+
+function backendUnavailableBankroll() {
+  return {
+    balance: null,
+    currency: null,
+    open_exposure: 0,
+    daily_pnl: 0,
+    weekly_pnl: 0,
+  };
+}
+
+function backendUnavailableIngestionRuns({ error }) {
+  const now = new Date().toISOString();
+  return [
+    {
+      id: "backend_api_unreachable",
+      run_type: "hermes_internal_api",
+      source: "fastapi",
+      status: "failed",
+      started_at: now,
+      completed_at: now,
+      summary: {
+        run_kind: "hermes_internal_api",
+        source: "fastapi",
+        final_status: "failed",
+        passed: false,
+        resync_required: false,
+        live_api_calls: 0,
+        notes: [String(error.message ?? error)],
+      },
+    },
+  ];
+}
+
+function backendUnavailableDashboardState({ error }) {
+  return {
+    operational_state: {
+      provider_mode: "backend_unavailable",
+      source_summary: {
+        total_matches: 0,
+        persisted_matches: 0,
+        match_freshness: [],
+      },
+      replay_lab: {
+        status: "unknown",
+      },
+      model_lab: {
+        status: "blocked",
+        production_training_examples: 0,
+        can_run_live_backtest: false,
+      },
+      api_onboarding: {
+        budget_chain_completed: false,
+        enterprise_eligible: false,
+        current_step: "backend_api",
+        next_action: "Restore local FastAPI before provider onboarding.",
+        core_ready: false,
+        steps: [],
+        warnings: [String(error.message ?? error)],
+      },
+    },
+  };
+}
+
 async function intelligenceData() {
+  const responses = await Promise.all([
+    safeRequest("/api/v1/agent/briefing", backendUnavailableBriefing, "briefing"),
+    safeRequest("/api/v1/agent/preflight", backendUnavailablePreflight, "preflight"),
+    safeRequest("/api/v1/agent/anomalies", backendUnavailableAnomalies, "anomalies"),
+    safeRequest("/api/v1/provider-health", backendUnavailableProviderHealth, "provider_health"),
+    safeRequest("/api/v1/provider-cursors", [], "provider_cursors"),
+    safeRequest("/api/v1/data-quality", backendUnavailableDataQuality, "data_quality"),
+    safeRequest("/api/v1/cost-profile", backendUnavailableCostProfile, "cost_profile"),
+    safeRequest("/api/v1/cost-report/daily", backendUnavailableCostReport, "cost_report"),
+    safeRequest("/api/v1/paper/performance", backendUnavailablePaperPerformance, "paper_performance"),
+    safeRequest("/api/v1/execution/status", backendUnavailableExecutionStatus, "execution_status"),
+    safeRequest("/api/v1/bankroll", backendUnavailableBankroll, "bankroll"),
+    safeRequest("/api/v1/signals/live", [], "live_signals"),
+    safeRequest("/api/v1/ingestion/runs", backendUnavailableIngestionRuns, "ingestion_runs"),
+    safeRequest("/api/v1/dashboard/live-state", backendUnavailableDashboardState, "dashboard_state"),
+  ]);
   const [
     briefing,
     preflightData,
@@ -549,22 +787,8 @@ async function intelligenceData() {
     liveSignals,
     ingestionRuns,
     dashboardState,
-  ] = await Promise.all([
-    request("/api/v1/agent/briefing"),
-    request("/api/v1/agent/preflight"),
-    request("/api/v1/agent/anomalies"),
-    request("/api/v1/provider-health"),
-    request("/api/v1/provider-cursors"),
-    request("/api/v1/data-quality"),
-    request("/api/v1/cost-profile"),
-    request("/api/v1/cost-report/daily"),
-    request("/api/v1/paper/performance"),
-    request("/api/v1/execution/status"),
-    request("/api/v1/bankroll"),
-    request("/api/v1/signals/live"),
-    request("/api/v1/ingestion/runs"),
-    request("/api/v1/dashboard/live-state"),
-  ]);
+  ] = responses.map((response) => response.data);
+  const requestErrors = responses.map((response) => response.error).filter(Boolean);
   return buildIntelligenceReport({
     briefing,
     preflightData,
@@ -580,6 +804,7 @@ async function intelligenceData() {
     liveSignals,
     ingestionRuns,
     dashboardState,
+    requestErrors,
   });
 }
 
@@ -961,6 +1186,7 @@ function buildIntelligenceReport({
   liveSignals,
   ingestionRuns,
   dashboardState,
+  requestErrors = [],
 }) {
   const failedPreflight = (preflightData.checks ?? []).filter((check) => check.status === "fail");
   const warningPreflight = (preflightData.checks ?? []).filter((check) => check.status === "warn");
@@ -991,6 +1217,7 @@ function buildIntelligenceReport({
     isDeferredEnterpriseProvider(cursor.provider, apiOnboarding)
   ));
   const blockers = [
+    ...requestErrors.map((error) => `backend_api:${error.label}`),
     ...failedPreflight.map((check) => `preflight:${check.name}`),
     ...unhealthyProviders.map((health) => `provider:${health.provider}:${health.status}`),
     ...activeCursorsRequiringResync.map((cursor) => `cursor:${cursor.provider}:${cursor.stream}`),
@@ -1079,6 +1306,7 @@ function buildIntelligenceReport({
       deferred_enterprise_cursors: deferredEnterpriseCursors.map(compactProviderCursor),
       data_quality: staleQuality.map(compactDataQuality),
       ingestion_runs: recentIngestionFailures.map(compactIngestionRun),
+      api_request_errors: requestErrors.slice(0, 10),
     },
     allowed_collection_paths: [
       "licensed_provider_api",

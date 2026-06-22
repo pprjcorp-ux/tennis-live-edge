@@ -19,17 +19,19 @@ function startServer(handler) {
   });
 }
 
-async function runCli(args, { stdin = "", env = {} } = {}) {
+async function runCli(args, { stdin = "", env = {}, timeoutMs = 15_000 } = {}) {
   const child = spawn(process.execPath, [SCRIPT, ...args], {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, ...env },
   });
+  const timeout = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
   const stdoutChunks = [];
   const stderrChunks = [];
   child.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
   child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
   child.stdin.end(stdin);
   const [exit] = await once(child, "close");
+  clearTimeout(timeout);
   const stdout = Buffer.concat(stdoutChunks).toString("utf8");
   const stderr = Buffer.concat(stderrChunks).toString("utf8");
   return { exit, stdout, stderr };
@@ -1641,6 +1643,66 @@ test("experiment-ledger appends experiment recommendations without executing act
     assert.equal(audit.next_experiment_id, "runtime_channel_recovery");
     assert.equal(audit.action_executed, false);
   } finally {
+    server.close();
+  }
+});
+
+test("experiment-ledger fails closed when backend API hangs", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-experiment-ledger-timeout-"));
+  const ledgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: stopped'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.error('gateway unreachable'); process.exit(1); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const called = [];
+  const { server, apiBase } = await startServer((request) => {
+    called.push({ url: request.url, method: request.method });
+  });
+
+  try {
+    const result = await runCli(["experiment-ledger", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_EXPERIMENT_LEDGER_PATH: ledgerPath,
+        HERMES_HTTP_TIMEOUT_MS: "100",
+      },
+      timeoutMs: 5_000,
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.some((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "experiment_ledger");
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.record.lab.mode, "experiment_lab");
+    assert.equal(payload.record.lab.safety.real_execution_hard_block, true);
+    assert.equal(
+      payload.record.lab.experiments.every((experiment) => experiment.executes_now === false),
+      true
+    );
+    assert.equal(
+      payload.record.lab.experiments.every((experiment) => experiment.provider_api_call_allowed === false),
+      true
+    );
+    const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const audit = JSON.parse(lines[0]);
+    assert.equal(audit.mode, "experiment_ledger_record");
+    assert.equal(audit.lab.active_ceiling.id, "observe");
+    assert.equal(audit.action_executed, false);
+  } finally {
+    server.closeAllConnections?.();
     server.close();
   }
 });

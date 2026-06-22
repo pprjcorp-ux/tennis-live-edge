@@ -89,6 +89,10 @@ It reads internal APIs only and emits one machine-readable recommendation:
 This gives Hermes enough state to choose between monitoring, safe paper
 autopilot, replay hardening, provider onboarding, and weekly learning review
 without scraping or bypassing external systems.
+All internal FastAPI reads are timeout bounded with `HERMES_HTTP_TIMEOUT_MS`
+(default 5000ms, clamped from 100ms to 30000ms). If the backend hangs, composed
+Hermes packets fail closed into `backend_api` blockers while keeping provider
+calls, paper orders, real execution, and LLM-per-tick decisions disabled.
 Deferred enterprise cursors are separated into `deferred_enterprise_cursors`
 until the budget chain is complete and enterprise is eligible, preventing
 Sportradar/Betradar/TXODDS placeholders from blocking lean budget work.

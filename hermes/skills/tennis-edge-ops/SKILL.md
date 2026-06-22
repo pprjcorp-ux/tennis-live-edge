@@ -94,6 +94,10 @@ reachability, local gateway reachability, persistence, provider key readiness,
 and the real-execution hard block.
 The `runtime-check` command runs read-only Hermes CLI diagnostics and captures
 status/doctor output as JSON. It must not repair, install, or restart services.
+Internal FastAPI requests are bounded by `HERMES_HTTP_TIMEOUT_MS` (default
+5000ms, clamped between 100ms and 30000ms). Composed commands must fail closed
+with `backend_api` blockers when the backend is unavailable or slow; they must
+not hang, spend provider quota, create paper orders, or submit real orders.
 The `intelligence` command is the preferred cron/Telegram status packet. It
 reads only internal FastAPI endpoints and produces a redacted JSON decision
 brief with operational mode, blockers, allowed collection paths, forbidden

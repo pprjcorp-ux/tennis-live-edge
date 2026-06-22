@@ -4582,6 +4582,73 @@ test("backlog-plan turns repeated ledgers into non-executing implementation prio
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
+test("backlog-plan skips stale runtime blockers after latest operator packet clears channel", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-runtime-cleared-"));
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const experimentRows = [
+    {
+      mode: "experiment_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      experiment_command_executed: false,
+      active_ceiling_id: "observe",
+      next_experiment_id: "runtime_channel_recovery",
+      next_experiment_command: "npm run hermes:runtime-fix-plan",
+      ready_experiment_ids: ["runtime_channel_recovery", "source_discovery_backfill"],
+      lab: { status: "ready" },
+    },
+  ];
+  const operatorRows = [
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    },
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm --silent run hermes:events",
+      packet: {
+        priority: "high",
+        status: "blocked",
+        cost_guard: { throttle_level: "blocked" },
+        runtime: {
+          status: "ready",
+          capability_summary: {
+            gateway_running: true,
+            usable_for_channel_delivery: true,
+          },
+        },
+      },
+    },
+  ];
+  writeFileSync(experimentLedgerPath, `${experimentRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  writeFileSync(operatorLedgerPath, `${operatorRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["backlog-plan"], {
+    env: {
+      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "backlog_plan");
+  assert.equal(payload.items.some((item) => item.id === "stabilize_hermes_runtime_channels"), false);
+  assert.equal(payload.next_item.id, "expand_allowed_source_backfill");
+  assert.equal(payload.evidence.runtime_priorities.runtime_cleared, true);
+  assert.equal(payload.evidence.runtime_priorities.latest_runtime_status, "ready");
+  assert.equal(payload.evidence.operator_ledger.top_blocker, "npm --silent run hermes:events");
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+});
+
 test("backlog-plan uses mission-ledger blockers as implementation evidence", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-mission-plan-"));
   const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");

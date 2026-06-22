@@ -9020,6 +9020,8 @@ function buildBacklogPlan({
       runtime_priorities: {
         next_priority: runtimePriorities.next_priority,
         total_priorities: runtimePriorities.priorities.length,
+        runtime_cleared: runtimePriorities.runtime_cleared === true,
+        latest_runtime_status: runtimePriorities.latest_runtime_status ?? null,
       },
     },
     safety: {
@@ -9921,6 +9923,7 @@ function buildBacklogItems({
   const grandSlamPredictionFrequency = grandSlamPhaseCounts.prediction_watch ?? 0;
   const grandSlamPaperFrequency = grandSlamPhaseCounts.paper_learning ?? 0;
   const runtimePriority = runtimePriorities.next_priority;
+  const runtimeCleared = runtimePriorities.runtime_cleared === true;
   const experimentRuntimeFrequency = countFor(experimentReport.next_experiment_counts, "runtime_channel_recovery");
   const operatorRuntimeFrequency = countFor(operatorReport.next_action_counts, "npm run hermes:runtime-check");
   const missionRuntimeFrequency = Math.max(
@@ -9936,11 +9939,11 @@ function buildBacklogItems({
     ? runtimePriority.frequency ?? 1
     : 0;
 
-  if (topExperiment === "runtime_channel_recovery"
+  if (!runtimeCleared && (topExperiment === "runtime_channel_recovery"
     || topBlocker === "npm run hermes:runtime-check"
     || runtimePriority?.id === "stabilize_hermes_runtime"
     || ["hermes gateway start", "npm run api:dev"].includes(topMissionAction)
-    || missionRuntimeFrequency > 0) {
+    || missionRuntimeFrequency > 0)) {
     items.push(backlogItem({
       id: "stabilize_hermes_runtime_channels",
       title: "Stabilize Hermes runtime and channel readiness before more autonomy",
@@ -11326,6 +11329,15 @@ function readOperatorLedgerRecords() {
 
 function buildOperatorLedgerReport({ path, records, invalid_rows: invalidRows }) {
   const nextActionCounts = rankedCounts(records.map((record) => record.next_action_command).filter(Boolean));
+  const latestRecord = records.at(-1) ?? null;
+  const latestRuntime = latestRecord?.packet?.runtime ?? {};
+  const latestCapabilities = latestRuntime.capability_summary ?? {};
+  const latestRuntimeStatus = latestRuntime.status ?? null;
+  const latestGatewayRunning = latestCapabilities.gateway_running === true;
+  const latestChannelDeliveryReady = latestCapabilities.usable_for_channel_delivery === true;
+  const runtimeCleared = latestRuntimeStatus === "ready"
+    && latestGatewayRunning
+    && latestChannelDeliveryReady;
   return {
     generated_at: new Date().toISOString(),
     mode: "operator_ledger_report",
@@ -11349,6 +11361,10 @@ function buildOperatorLedgerReport({ path, records, invalid_rows: invalidRows })
     throttle_counts: countValues(records.map((record) => record.packet?.cost_guard?.throttle_level).filter(Boolean)),
     next_action_counts: nextActionCounts,
     top_blocker: nextActionCounts[0]?.command ?? null,
+    latest_runtime_status: latestRuntimeStatus,
+    latest_gateway_running: latestGatewayRunning,
+    latest_channel_delivery_ready: latestChannelDeliveryReady,
+    runtime_cleared: runtimeCleared,
     safety: {
       can_submit_real_orders: false,
       can_create_paper_orders: false,
@@ -11899,9 +11915,11 @@ function rankedCounts(values) {
 }
 
 function buildRuntimeFixPriorities(report) {
+  const runtimeCleared = report.runtime_cleared === true;
   const priorities = report.next_action_counts
     .map((row) => runtimePriorityFor(row))
     .filter(Boolean)
+    .filter((priority) => !(runtimeCleared && priority.id === "stabilize_hermes_runtime"))
     .sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
   return {
     generated_at: new Date().toISOString(),
@@ -11921,9 +11939,15 @@ function buildRuntimeFixPriorities(report) {
       priority_counts: report.priority_counts,
       status_counts: report.status_counts,
       throttle_counts: report.throttle_counts,
+      latest_runtime_status: report.latest_runtime_status ?? null,
+      latest_gateway_running: report.latest_gateway_running === true,
+      latest_channel_delivery_ready: report.latest_channel_delivery_ready === true,
+      runtime_cleared: runtimeCleared,
     },
     next_priority: priorities[0] ?? null,
     priorities,
+    runtime_cleared: runtimeCleared,
+    latest_runtime_status: report.latest_runtime_status ?? null,
     operator_note: "No priority executes automatically; run the referenced diagnostic commands from a local operator shell only.",
     safety: {
       can_submit_real_orders: false,

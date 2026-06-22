@@ -62,6 +62,7 @@ function eventRouterFixtures(overrides = {}) {
       active_plan: "lean_atp",
       estimated_monthly_spend_usd: 377,
       monthly_budget_usd: 500,
+      coverage_scope: ["atp_main", "grand_slam_men", "grand_slam_women"],
     },
     "/api/v1/cost-report/daily": {
       live_api_calls: 3,
@@ -2050,6 +2051,116 @@ test("trigger-policy emits event wakeups without executing commands or live call
   }
 });
 
+test("trigger-policy wakes on Grand Slam prediction readiness without executing actions", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-trigger-slam-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: running'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('◆ API Connectivity'); process.exit(0); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const slamMatch = {
+    match: {
+      id: "slam_trigger_match",
+      tournament: "Wimbledon",
+      round: "R64",
+      tour: "ATP",
+      surface: "grass",
+      player1: { id: "p1", name: "Player One" },
+      player2: { id: "p2", name: "Player Two" },
+      state: { status: "live", p1_games: 3, p2_games: 2, point_score: "30-15" },
+    },
+    prediction: {
+      p1_win_prob: 0.62,
+      p2_win_prob: 0.38,
+      confidence: "Alta",
+      model_version: "baseline_v0",
+    },
+    signals: [],
+    freshness: {
+      source: "live",
+      persisted: true,
+      score_age_ms: 3000,
+      odds_age_ms: 2500,
+    },
+  };
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": [slamMatch],
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "live_with_keys",
+        source_summary: {
+          total_matches: 1,
+          persisted_matches: 1,
+          match_freshness: [
+            {
+              match_id: "slam_trigger_match",
+              source: "live",
+              persisted: true,
+              score_age_ms: 3000,
+              odds_age_ms: 2500,
+            },
+          ],
+        },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          steps: [],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli([
+      "trigger-policy",
+      `--api-base=${apiBase}`,
+      "--date=2026-07-01",
+    ], {
+      env: { HERMES_BIN: fakeHermes },
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.grand_slam_readiness.status, "prediction_ready");
+    assert.equal(payload.grand_slam_readiness.prediction_ready, true);
+    assert.equal(payload.grand_slam_readiness.visible_matches, 1);
+    assert.equal(payload.triggers.some((trigger) => trigger.id === "grand_slam_prediction_ready"), true);
+    const trigger = payload.triggers.find((item) => item.id === "grand_slam_prediction_ready");
+    assert.equal(trigger.command, "npm --silent run hermes:grand-slam-readiness");
+    assert.equal(trigger.executes_now, false);
+    assert.equal(trigger.provider_api_call_allowed, false);
+    assert.equal(trigger.can_create_paper_orders, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("ops-compiler produces a single non-executing orchestration packet", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-ops-compiler-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");
@@ -2142,6 +2253,8 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
     assert.equal(payload.llm_per_tick_allowed, false);
     assert.equal(payload.execution_graph[0].id, "trigger_policy");
     assert.equal(payload.execution_graph.some((node) => node.id === "source_discovery"), true);
+    assert.equal(payload.execution_graph.some((node) => node.id === "grand_slam_readiness"), true);
+    assert.equal(payload.grand_slam_readiness.prediction_ready, false);
     assert.equal(payload.execution_graph.every((node) => node.executes_now === false), true);
     assert.equal(payload.compiled_action.command, "npm run hermes:runtime-check");
     assert.equal(payload.compiled_action.executes_now, false);

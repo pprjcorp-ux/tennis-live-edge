@@ -171,15 +171,17 @@ open sportsbook UIs, bypass anti-bot/geolocation controls, extract sessions, or
 spend provider quota.
 
 `hermes:trigger-policy` is the preferred packet for deciding when Hermes should
-wake up. It turns runtime, events, source-discovery, quota and learning state
-into debounced triggers for cron, Telegram, dashboard, Cloudflare Agent and the
-OpenClaw gateway. It reports commands but does not run them, so every channel
-gets the same event-driven policy without asking an LLM to watch every tick.
+wake up. It turns runtime, events, source-discovery, Grand Slam readiness, quota
+and learning state into debounced triggers for cron, Telegram, dashboard,
+Cloudflare Agent and the OpenClaw gateway. It reports commands but does not run
+them, so every channel gets the same event-driven policy without asking an LLM
+to watch every tick.
 
 `hermes:ops-compiler` is the preferred all-in-one payload for external agent
-channels. It compiles trigger policy, source discovery, autonomy brief,
-operator packet and model routing into a single JSON object that a channel can
-summarize without re-running every command or inferring safety boundaries.
+channels. It compiles trigger policy, source discovery, Grand Slam readiness,
+autonomy brief, operator packet and model routing into a single JSON object that
+a channel can summarize without re-running every command or inferring safety
+boundaries.
 
 `hermes:capability-audit` is the objective audit packet. It scores Hermes
 against the current operating goal across runtime/channels, safe source

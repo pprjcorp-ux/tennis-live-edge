@@ -212,12 +212,12 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   with event triggers, cost tiers, success evidence, and explicit
   `provider_api_call_allowed=false`.
 - Hermes wakeup policy should consume `npm run hermes:trigger-policy`; it maps
-  runtime, events, source discovery, quota, and learning state into debounced
-  triggers for cron/webhook/Telegram/dashboard/Cloudflare/OpenClaw without
-  executing trigger commands.
+  runtime, events, source discovery, Grand Slam readiness, quota, and learning
+  state into debounced triggers for cron/webhook/Telegram/dashboard/Cloudflare/
+  OpenClaw without executing trigger commands.
 - Hermes external-agent orchestration should consume `npm run hermes:ops-compiler`;
-  it compiles trigger policy, source discovery, autonomy brief, operator packet,
-  and model routing into one non-executing payload.
+  it compiles trigger policy, source discovery, Grand Slam readiness, autonomy
+  brief, operator packet, and model routing into one non-executing payload.
 - Hermes objective/capability review should consume `npm run hermes:capability-audit`;
   it scores runtime, collection, statistics, paper autopilot, learning,
   orchestration, budget-chain, and enterprise-gate readiness without executing

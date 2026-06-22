@@ -234,13 +234,13 @@ evidence and blocked conditions. Provider routes remain operator-only and
 
 Use `hermes:trigger-policy` when cron, Telegram, dashboard, Cloudflare Agent or
 OpenClaw needs to know when Hermes should wake up. It emits debounced triggers
-and commands but never executes them, keeping LLM calls away from every odds
-tick.
+and commands, including Grand Slam readiness triggers, but never executes them,
+keeping LLM calls away from every odds tick.
 
 Use `hermes:ops-compiler` when an external agent channel needs one packet
 instead of several commands. It compiles trigger policy, source discovery,
-autonomy brief, operator packet and model routing into a single non-executing
-orchestration payload.
+Grand Slam readiness, autonomy brief, operator packet and model routing into a
+single non-executing orchestration payload.
 
 Use `hermes:capability-audit` when deciding whether Hermes is actually ready
 for more autonomy. It scores runtime, source discovery, live collection, live

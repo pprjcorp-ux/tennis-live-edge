@@ -1561,23 +1561,25 @@ async function sourceRouteMatrix() {
 }
 
 async function triggerPolicy() {
-  const [loop, report] = await Promise.all([
+  const [loop, report, grandSlam] = await Promise.all([
     safeLoopData(),
     intelligenceData(),
+    grandSlamReadinessData(),
   ]);
   const eventPlan = buildEventPlan(report);
   const sourcePlan = buildSourceDiscovery({ report, eventPlan });
-  printJson(buildTriggerPolicy({ loop, sourcePlan }));
+  printJson(buildTriggerPolicy({ loop, sourcePlan, grandSlam }));
 }
 
 async function opsCompiler() {
-  const [loop, report] = await Promise.all([
+  const [loop, report, grandSlam] = await Promise.all([
     safeLoopData(),
     intelligenceData(),
+    grandSlamReadinessData(),
   ]);
   const eventPlan = buildEventPlan(report);
   const sourcePlan = buildSourceDiscovery({ report, eventPlan });
-  const triggerPlan = buildTriggerPolicy({ loop, sourcePlan });
+  const triggerPlan = buildTriggerPolicy({ loop, sourcePlan, grandSlam });
   const runtimePriorities = buildRuntimeFixPriorities(buildOperatorLedgerReport(readOperatorLedgerRecords()));
   const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
   const operator = buildOperatorPacket(loop);
@@ -1585,6 +1587,7 @@ async function opsCompiler() {
     loop,
     sourcePlan,
     triggerPlan,
+    grandSlam,
     autonomyPlan,
     operator,
   }));
@@ -3518,8 +3521,8 @@ function sourceRouteRow({
   };
 }
 
-function buildTriggerPolicy({ loop, sourcePlan }) {
-  const triggers = buildWakeTriggers({ loop, sourcePlan });
+function buildTriggerPolicy({ loop, sourcePlan, grandSlam = null }) {
+  const triggers = buildWakeTriggers({ loop, sourcePlan, grandSlam });
   return {
     generated_at: new Date().toISOString(),
     mode: "trigger_policy",
@@ -3546,6 +3549,15 @@ function buildTriggerPolicy({ loop, sourcePlan }) {
       next_safe_command: sourcePlan.next_safe_command,
       safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
     },
+    grand_slam_readiness: grandSlam ? {
+      status: grandSlam.status,
+      prediction_ready: grandSlam.prediction_ready,
+      paper_ready: grandSlam.paper_ready,
+      active_grand_slams: grandSlam.active_grand_slams,
+      visible_matches: grandSlam.matches?.grand_slam_visible ?? 0,
+      prediction_rows: grandSlam.matches?.prediction_rows ?? 0,
+      next_action: grandSlam.next_action,
+    } : null,
     forbidden_actions: loop.forbidden_actions ?? sourcePlan.forbidden_actions ?? [],
     safety: {
       real_execution_hard_block: loop.safety?.real_execution_hard_block,
@@ -3559,7 +3571,7 @@ function buildTriggerPolicy({ loop, sourcePlan }) {
   };
 }
 
-function buildOpsCompiler({ loop, sourcePlan, triggerPlan, autonomyPlan, operator }) {
+function buildOpsCompiler({ loop, sourcePlan, triggerPlan, grandSlam, autonomyPlan, operator }) {
   const compiledAction = compileNextAction({ loop, triggerPlan, autonomyPlan, operator });
   return {
     generated_at: new Date().toISOString(),
@@ -3573,7 +3585,7 @@ function buildOpsCompiler({ loop, sourcePlan, triggerPlan, autonomyPlan, operato
     can_create_paper_orders: false,
     llm_per_tick_allowed: false,
     compiled_action: compiledAction,
-    execution_graph: buildExecutionGraph({ triggerPlan, sourcePlan, autonomyPlan, operator }),
+    execution_graph: buildExecutionGraph({ triggerPlan, sourcePlan, grandSlam, autonomyPlan, operator }),
     model_router: buildOpsModelRouter({ loop, triggerPlan }),
     operator_packet: {
       priority: operator.priority,
@@ -3593,6 +3605,15 @@ function buildOpsCompiler({ loop, sourcePlan, triggerPlan, autonomyPlan, operato
       trigger_count: triggerPlan.triggers.length,
       debounce_policy: triggerPlan.debounce_policy,
     },
+    grand_slam_readiness: grandSlam ? {
+      status: grandSlam.status,
+      prediction_ready: grandSlam.prediction_ready,
+      paper_ready: grandSlam.paper_ready,
+      active_grand_slams: grandSlam.active_grand_slams,
+      visible_matches: grandSlam.matches?.grand_slam_visible ?? 0,
+      prediction_rows: grandSlam.matches?.prediction_rows ?? 0,
+      next_action: grandSlam.next_action,
+    } : null,
     autonomy_brief: {
       recommended_lane: autonomyPlan.recommended_lane,
       autonomy_matrix: autonomyPlan.autonomy_matrix,
@@ -3640,7 +3661,7 @@ function compileNextAction({ loop, triggerPlan, autonomyPlan, operator }) {
   };
 }
 
-function buildExecutionGraph({ triggerPlan, sourcePlan, autonomyPlan, operator }) {
+function buildExecutionGraph({ triggerPlan, sourcePlan, grandSlam, autonomyPlan, operator }) {
   return [
     graphNode({
       id: "trigger_policy",
@@ -3653,6 +3674,14 @@ function buildExecutionGraph({ triggerPlan, sourcePlan, autonomyPlan, operator }
       command: "npm --silent run hermes:source-discovery",
       reason: "Map safe acquisition paths before collection work.",
       status: sourcePlan.status,
+    }),
+    graphNode({
+      id: "grand_slam_readiness",
+      command: "npm --silent run hermes:grand-slam-readiness",
+      reason: grandSlam
+        ? `Grand Slam readiness is ${grandSlam.status}; prediction_ready=${Boolean(grandSlam.prediction_ready)}.`
+        : "Evaluate Grand Slam prediction readiness when a Slam window or match rows are present.",
+      status: grandSlam?.status ?? "unknown",
     }),
     graphNode({
       id: "autonomy_brief",
@@ -5027,7 +5056,7 @@ function capabilityNextCommand({ loop, capabilities }) {
   };
 }
 
-function buildWakeTriggers({ loop, sourcePlan }) {
+function buildWakeTriggers({ loop, sourcePlan, grandSlam = null }) {
   const triggers = [];
   if (loop.status === "safety_stop") {
     triggers.push(wakeTrigger({
@@ -5091,6 +5120,9 @@ function buildWakeTriggers({ loop, sourcePlan }) {
       reason: "Review allowed acquisition routes before provider or public-context work.",
     }));
   }
+  for (const trigger of grandSlamWakeTriggers(grandSlam)) {
+    triggers.push(trigger);
+  }
   if (loop.budget_chain && !loop.budget_chain.completed) {
     triggers.push(wakeTrigger({
       id: "budget_chain_next_step",
@@ -5128,6 +5160,42 @@ function buildWakeTriggers({ loop, sourcePlan }) {
     }));
   }
   return dedupeWakeTriggers(triggers).sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+}
+
+function grandSlamWakeTriggers(grandSlam) {
+  if (!grandSlam || grandSlam.status === "off_calendar") return [];
+  const activeLabels = (grandSlam.active_grand_slams ?? []).map((slam) => slam.label).join(", ") || "visible Grand Slam";
+  if (grandSlam.status === "paper_ready") {
+    return [wakeTrigger({
+      id: "grand_slam_paper_ready",
+      priority: 12,
+      severity: "high",
+      command: "npm --silent run hermes:grand-slam-readiness",
+      condition: `grand_slam.paper_ready=true prediction_rows=${grandSlam.matches?.prediction_rows ?? 0}`,
+      reason: `${activeLabels} has paper-ready prediction rows; backend still controls any paper order route.`,
+    })];
+  }
+  if (grandSlam.prediction_ready) {
+    return [wakeTrigger({
+      id: "grand_slam_prediction_ready",
+      priority: 45,
+      severity: "medium",
+      command: "npm --silent run hermes:grand-slam-readiness",
+      condition: `grand_slam.prediction_ready=true prediction_rows=${grandSlam.matches?.prediction_rows ?? 0}`,
+      reason: `${activeLabels} has model probabilities; keep observing until live-window gates permit paper readiness.`,
+    })];
+  }
+  if (grandSlam.active_grand_slams?.length || Number(grandSlam.matches?.grand_slam_visible ?? 0) > 0) {
+    return [wakeTrigger({
+      id: "grand_slam_window_open",
+      priority: 55,
+      severity: "medium",
+      command: "npm --silent run hermes:grand-slam-readiness",
+      condition: `grand_slam.status=${grandSlam.status}`,
+      reason: `${activeLabels} requires readiness monitoring before prediction or collection escalation.`,
+    })];
+  }
+  return [];
 }
 
 function wakeTrigger({ id, priority, severity, command, condition, reason }) {

@@ -251,14 +251,14 @@ notes and manual operator notes. It includes event triggers, cost tiers,
 success evidence and blocked conditions while keeping
 `provider_api_call_allowed=false`.
 
-`hermes:trigger-policy` turns runtime, event, source-discovery, quota and
-learning state into safe wakeup triggers for cron, Telegram, dashboard,
-Cloudflare Agent and OpenClaw gateway. It never executes trigger commands and
-keeps LLM work out of per-tick processing.
+`hermes:trigger-policy` turns runtime, event, source-discovery, Grand Slam
+readiness, quota and learning state into safe wakeup triggers for cron,
+Telegram, dashboard, Cloudflare Agent and OpenClaw gateway. It never executes
+trigger commands and keeps LLM work out of per-tick processing.
 
 `hermes:ops-compiler` is the single orchestration packet for agent channels. It
-compiles trigger policy, source discovery, autonomy brief, operator packet and
-model routing into one non-executing payload.
+compiles trigger policy, source discovery, Grand Slam readiness, autonomy brief,
+operator packet and model routing into one non-executing payload.
 
 `hermes:capability-audit` scores Hermes against the actual operating objective:
 safe source discovery, live collection, live statistics, paper autopilot,

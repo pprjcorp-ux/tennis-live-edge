@@ -269,6 +269,45 @@ async function capabilityAudit() {
   }));
 }
 
+async function autonomyGates() {
+  const [loop, report] = await Promise.all([
+    safeLoopData(),
+    intelligenceData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const triggerPlan = buildTriggerPolicy({ loop, sourcePlan });
+  const runtimePriorities = buildRuntimeFixPriorities(buildOperatorLedgerReport(readOperatorLedgerRecords()));
+  const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
+  const operator = buildOperatorPacket(loop);
+  const opsPacket = buildOpsCompiler({
+    loop,
+    sourcePlan,
+    triggerPlan,
+    autonomyPlan,
+    operator,
+  });
+  const capabilityAuditPlan = buildCapabilityAudit({
+    loop,
+    report,
+    eventPlan,
+    sourcePlan,
+    autonomyPlan,
+    opsPacket,
+  });
+  const rehearsal = buildSchedulerRehearsal(loop);
+  const proposal = buildCronProposal(rehearsal);
+  const activation = buildActivationChecklist({ loop, rehearsal, proposal });
+  printJson(buildAutonomyGates({
+    loop,
+    report,
+    eventPlan,
+    sourcePlan,
+    capabilityAuditPlan,
+    activation,
+  }));
+}
+
 async function operatorPacket() {
   const loop = await safeLoopData();
   printJson(buildOperatorPacket(loop));
@@ -1792,6 +1831,204 @@ function buildCapabilityAudit({ loop, report, eventPlan, sourcePlan, autonomyPla
   };
 }
 
+function buildAutonomyGates({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, activation }) {
+  const gates = buildAutonomyGateRows({
+    loop,
+    report,
+    eventPlan,
+    sourcePlan,
+    capabilityAuditPlan,
+    activation,
+  });
+  const activeCeiling = highestPassedAutonomyGate(gates);
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "autonomy_gates",
+    objective: "prove_safe_autonomy_ceiling_before_budget_or_enterprise_escalation",
+    status: gates.some((gate) => gate.status === "blocked") ? "blocked" : "ready",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    active_ceiling: activeCeiling,
+    next_required_gate: nextAutonomyGate({ gates, activeCeiling }),
+    gates,
+    capability_audit: {
+      status: capabilityAuditPlan.status,
+      autonomy_ceiling: capabilityAuditPlan.autonomy_ceiling,
+      overall_score: capabilityAuditPlan.overall_score,
+    },
+    safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
+    blocked_routes: capabilityAuditPlan.blocked_routes,
+    forbidden_actions: loop.forbidden_actions ?? sourcePlan.forbidden_actions ?? [],
+    safety: {
+      real_execution_hard_block: loop.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      can_create_paper_orders: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function buildAutonomyGateRows({ loop, report, eventPlan, sourcePlan, activation }) {
+  const activationFailures = (activation.checks ?? []).filter((check) => check.status !== "pass");
+  const paperBlockers = [];
+  if (!eventPlan.can_run_paper_autopilot) paperBlockers.push("event_router_not_paper_ready");
+  if (!envConfigured(["ADMIN_API_TOKEN", "TENNIS_EDGE_ADMIN_API_TOKEN"])) paperBlockers.push("local_admin_secret_missing");
+  if (loop.safety?.real_execution_hard_block !== true) paperBlockers.push("real_execution_hard_block_missing");
+  const learningReady = loop.learning_review?.review_status === "ready";
+  const enterpriseEligible = loop.budget_chain?.enterprise_eligible === true;
+  return [
+    autonomyGate({
+      id: "observe",
+      label: "Observe internal state safely",
+      status: loop.safety?.real_execution_hard_block === true
+        && sourcePlan.safe_jailbreak_policy?.bypass_allowed === false
+        ? "pass"
+        : "blocked",
+      command: "npm --silent run hermes:safe-loop",
+      reason: "Observation is allowed only while real execution and unsafe source bypasses remain blocked.",
+      evidence: [
+        `real_execution_hard_block=${loop.safety?.real_execution_hard_block}`,
+        `bypass_allowed=${sourcePlan.safe_jailbreak_policy?.bypass_allowed}`,
+      ],
+      blockers: [
+        ...(loop.safety?.real_execution_hard_block === true ? [] : ["real_execution_hard_block_missing"]),
+        ...(sourcePlan.safe_jailbreak_policy?.bypass_allowed === false ? [] : ["unsafe_source_bypass_not_blocked"]),
+      ],
+    }),
+    autonomyGate({
+      id: "channel_ready",
+      label: "Use local channels and runtime packets",
+      status: loop.runtime?.status === "ready"
+        && loop.runtime?.runtime_findings?.gateway_service_status === "running"
+        && !["timed_out", "failed"].includes(loop.runtime?.runtime_findings?.doctor_status)
+        ? "pass"
+        : "blocked",
+      command: "npm run hermes:runtime-check",
+      reason: "Telegram, dashboard, cron and local channel packets need a healthy local runtime first.",
+      evidence: [
+        `runtime.status=${loop.runtime?.status ?? "unknown"}`,
+        `gateway_service_status=${loop.runtime?.runtime_findings?.gateway_service_status ?? "unknown"}`,
+        `doctor_status=${loop.runtime?.runtime_findings?.doctor_status ?? "unknown"}`,
+      ],
+      blockers: loop.runtime?.runtime_findings?.blockers ?? [],
+    }),
+    autonomyGate({
+      id: "cron_ready",
+      label: "Manually activate read-only scheduled checks",
+      status: activation.activation_allowed ? "pass" : "blocked",
+      command: "npm run hermes:activation-checklist",
+      reason: "Cron activation is allowed only when the proposal contains read-only, non-quota, non-order jobs.",
+      evidence: [
+        `activation_allowed=${activation.activation_allowed}`,
+        `failed_checks=${activationFailures.map((check) => check.id).join(",") || "none"}`,
+      ],
+      blockers: activationFailures.map((check) => check.id),
+    }),
+    autonomyGate({
+      id: "paper_ready",
+      label: "Protected paper autopilot may be operator-triggered",
+      status: paperBlockers.length ? "blocked" : "pass",
+      command: "npm run hermes:autopilot",
+      reason: "Paper orders still require the protected backend endpoint and admin token; this gate never creates them.",
+      evidence: [
+        `event_can_run_paper_autopilot=${eventPlan.can_run_paper_autopilot}`,
+        `entry_signals=${report.signal_snapshot?.entry_signals ?? 0}`,
+        `admin_token_configured=${envConfigured(["ADMIN_API_TOKEN", "TENNIS_EDGE_ADMIN_API_TOKEN"])}`,
+      ],
+      blockers: paperBlockers,
+      requiresAdminToken: true,
+    }),
+    autonomyGate({
+      id: "learning_ready",
+      label: "Run learning/readiness review",
+      status: learningReady ? "pass" : "blocked",
+      command: "npm --silent run hermes:learning-review",
+      reason: "Learning review needs enough settled paper evidence before model or staking review.",
+      evidence: [
+        `review_status=${loop.learning_review?.review_status ?? "unknown"}`,
+        `model=${loop.learning_review?.model_route?.model ?? "unknown"}`,
+      ],
+      blockers: learningReady ? [] : ["learning_review_not_ready"],
+    }),
+    autonomyGate({
+      id: "enterprise_review",
+      label: "Review enterprise feed eligibility",
+      status: enterpriseEligible ? "pass" : "locked",
+      command: "npm run api:check:operational-truth -- --pretty",
+      reason: "Enterprise remains locked until the full budget chain proves replay, smokes and healthy cursor evidence.",
+      evidence: [
+        `budget_chain_completed=${loop.budget_chain?.completed}`,
+        `enterprise_eligible=${loop.budget_chain?.enterprise_eligible}`,
+        `current_step=${loop.budget_chain?.current_step_label ?? "none"}`,
+      ],
+      blockers: enterpriseEligible ? [] : ["budget_chain_not_enterprise_eligible"],
+    }),
+  ];
+}
+
+function autonomyGate({
+  id,
+  label,
+  status,
+  command,
+  reason,
+  evidence,
+  blockers = [],
+  requiresAdminToken = false,
+}) {
+  return {
+    id,
+    label,
+    status,
+    command,
+    reason,
+    evidence,
+    blockers,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    requires_admin_token: Boolean(requiresAdminToken),
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function highestPassedAutonomyGate(gates) {
+  const contiguousPassed = [];
+  for (const gate of gates) {
+    if (gate.status !== "pass") break;
+    contiguousPassed.push(gate);
+  }
+  const gate = contiguousPassed.at(-1) ?? gates[0] ?? null;
+  return gate ? autonomyGateCeiling(gate) : null;
+}
+
+function nextAutonomyGate({ gates, activeCeiling }) {
+  const index = gates.findIndex((gate) => gate.id === activeCeiling?.id);
+  return gates.slice(Math.max(0, index + 1)).find((gate) => gate.status !== "pass") ?? null;
+}
+
+function autonomyGateCeiling(gate) {
+  return {
+    id: gate.id,
+    label: gate.label,
+    reason: gate.reason,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    executes_now: false,
+  };
+}
+
 function buildCapabilityRows({ loop, report, eventPlan, sourcePlan, autonomyPlan, opsPacket }) {
   const matrix = autonomyPlan.autonomy_matrix ?? {};
   const liveStats = loop.live_stats ?? {};
@@ -2967,6 +3204,12 @@ function schedulerSchedule(loop) {
       command: "npm --silent run hermes:capability-audit",
       everyMinutes: 15,
       reason: "Score Hermes autonomy limits and next safe command against current backend evidence without executing actions.",
+    }),
+    schedulerItem({
+      id: "autonomy_gates",
+      command: "npm --silent run hermes:autonomy-gates",
+      everyMinutes: 5,
+      reason: "Prove the current safe autonomy ceiling before channel, cron, paper or enterprise escalation.",
     }),
     schedulerItem({
       id: "runtime_check",
@@ -5066,6 +5309,7 @@ const commands = {
   "trigger-policy": triggerPolicy,
   "ops-compiler": opsCompiler,
   "capability-audit": capabilityAudit,
+  "autonomy-gates": autonomyGates,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,

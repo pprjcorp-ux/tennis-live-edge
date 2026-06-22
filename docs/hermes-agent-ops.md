@@ -36,6 +36,7 @@ npm run hermes:source-discovery
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit
+npm run hermes:autonomy-gates
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -180,6 +181,12 @@ for more autonomy. It scores runtime, source discovery, live collection, live
 statistics, protected paper autopilot, learning review, orchestration,
 budget-chain and enterprise-gate readiness from backend evidence. It never runs
 the next safe command it reports.
+
+Use `hermes:autonomy-gates` as the proof packet before increasing autonomy. It
+turns capability audit, cron activation checks, event routing, and budget-chain
+state into ordered `observe`, `channel_ready`, `cron_ready`, `paper_ready`,
+`learning_ready`, and `enterprise_review` gates. It reports `active_ceiling`
+and `next_required_gate`, stays read-only, and cannot create paper orders.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard

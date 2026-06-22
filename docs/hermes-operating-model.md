@@ -106,6 +106,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes for cron/webhook wakeup policy: `npm run hermes:trigger-policy`.
 - Every 5 minutes for an all-in-one agent-channel payload: `npm run hermes:ops-compiler`.
 - Every 15 minutes or before autonomy escalation: `npm run hermes:capability-audit`.
+- Every 5 minutes before channel/cron/paper escalation: `npm run hermes:autonomy-gates`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
 - Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
@@ -176,6 +177,13 @@ learning review, external-agent orchestration, budget-chain state and
 enterprise-gate state. It may report a next safe command, but it does not run
 that command and keeps provider spend, paper orders and real execution behind
 backend/operator gates.
+
+`hermes:autonomy-gates` is the escalation proof packet. It converts capability
+audit, activation-checklist, event-router, and budget-chain evidence into
+ordered gates: `observe`, `channel_ready`, `cron_ready`, `paper_ready`,
+`learning_ready`, and `enterprise_review`. Channels should use `active_ceiling`
+and `next_required_gate` instead of inferring autonomy from scattered command
+outputs. The command is read-only and cannot create paper orders by itself.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

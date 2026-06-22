@@ -50,6 +50,7 @@ npm run hermes:source-discovery
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit
+npm run hermes:autonomy-gates
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -197,6 +198,12 @@ gate. It is read-only and does not execute the next safe command it reports.
 Runtime diagnostics expose `runtime_findings` and manual diagnostic actions,
 including stopped gateway state and doctor timeout/failure state, without
 starting services from the repo command.
+
+`hermes:autonomy-gates` proves the current autonomy ceiling before escalation.
+It reports ordered gates, `active_ceiling`, and `next_required_gate` across
+observe, channel, cron, paper, learning, and enterprise review. It is read-only,
+does not create paper orders, and keeps enterprise locked until the budget chain
+is eligible.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

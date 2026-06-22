@@ -180,6 +180,11 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it scores runtime, collection, statistics, paper autopilot, learning,
   orchestration, budget-chain, and enterprise-gate readiness without executing
   the reported next command.
+- Hermes autonomy gate proof should consume `npm run hermes:autonomy-gates`;
+  it turns capability audit, cron activation checks, event routing, and the
+  budget chain into explicit pass/blocked/locked gates with `active_ceiling`
+  and `next_required_gate`, while remaining read-only and unable to create
+  paper orders itself.
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
   `next_action` it reports.
@@ -236,6 +241,7 @@ npm run hermes:source-discovery
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit
+npm run hermes:autonomy-gates
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist

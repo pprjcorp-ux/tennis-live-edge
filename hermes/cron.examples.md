@@ -140,6 +140,17 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Autonomy gates every 5 minutes to prove the current escalation ceiling:
+
+```bash
+hermes cron add \
+  --name tennis-edge-autonomy-gates \
+  --every 5m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:autonomy-gates from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report status, active_ceiling, next_required_gate, gates, capability_audit, and safety. Do not execute gate commands, create paper orders, spend provider quota, or submit real orders from this cron." \
+  --timeout-seconds 90
+```
+
 Compact operator packet every 5 minutes for Telegram/OpenClaw:
 
 ```bash

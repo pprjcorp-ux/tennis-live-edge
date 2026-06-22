@@ -49,6 +49,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-discovery
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs capability-audit
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-gates
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report
@@ -147,6 +148,10 @@ brief, operator packet, and model routing into one channel payload. It is
 read-only and must not execute compiled actions.
 The `capability-audit` command scores Hermes autonomy against current backend
 evidence. It is read-only and must not execute the next safe command it reports.
+The `autonomy-gates` command proves the highest current safe autonomy level with
+ordered gates, `active_ceiling`, and `next_required_gate`. It is read-only, must
+not create paper orders, and keeps enterprise review locked until the budget
+chain is eligible.
 Runtime commands should carry `runtime_findings` and non-executed diagnostic
 actions, with `mutates_runtime_if_run=true` for manual gateway/service changes.
 The `operator-packet` command compresses safe-loop into a short channel-safe

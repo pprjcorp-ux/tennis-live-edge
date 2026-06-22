@@ -297,7 +297,7 @@ export type ReplayContractProvider = {
   input_contracts: string[];
   output_contracts: string[];
   scenarios: string[];
-  status: "covered" | "pending";
+  status: "covered" | "pending" | "shadow" | "deferred";
   notes: string[];
 };
 
@@ -330,6 +330,7 @@ export type ReplayLabSnapshot = {
   status: "ready" | "collecting" | "blocked";
   source: "budget_replay_fixtures";
   providers: ReplayContractProvider[];
+  enterprise_shadow_providers: ReplayContractProvider[];
   scenarios: string[];
   last_contract_run_id: string | null;
   last_contract_status: string | null;

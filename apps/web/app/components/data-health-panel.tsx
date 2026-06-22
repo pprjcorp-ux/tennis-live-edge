@@ -40,6 +40,7 @@ function onboardingStatusClass(status: ApiOnboardingSnapshot["steps"][number]["s
 function replayStatusClass(status: ReplayLabSnapshot["status"] | ReplayLabSnapshot["providers"][number]["status"]) {
   if (status === "ready" || status === "covered") return "status statusEntry";
   if (status === "collecting") return "status statusMonitor";
+  if (status === "deferred" || status === "shadow") return "status statusMuted";
   return "status statusBlocked";
 }
 
@@ -626,6 +627,39 @@ export function DataHealthPanel({
             </div>
           ))}
         </div>
+        {replayLab.enterprise_shadow_providers.length ? (
+          <div className="replayContractRows" aria-label="Enterprise shadow provider contracts">
+            <div className="replayContractRow">
+              <div>
+                <strong>enterprise shadow</strong>
+                <span>deferred contracts only · no live keys, sockets, or quota</span>
+              </div>
+              <span className="status statusMonitor">deferred</span>
+              <span>separate from budget chain readiness</span>
+              <span>
+                {replayLab.enterprise_shadow_providers.length} providers
+              </span>
+              <span>offline fixtures</span>
+            </div>
+            {replayLab.enterprise_shadow_providers.map((provider) => (
+              <div
+                className="replayContractRow"
+                key={`shadow-${provider.provider}-${provider.adapter_contract}`}
+              >
+                <div>
+                  <strong>{provider.provider}</strong>
+                  <span>{provider.fake_api}</span>
+                </div>
+                <span className={replayStatusClass(provider.status)}>
+                  {provider.status}
+                </span>
+                <span>{provider.adapter_contract}</span>
+                <span>{provider.scenarios.join(", ")}</span>
+                <span>{provider.output_contracts.join(", ")}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
       <div className="panel">
         <div className="panelHeader">

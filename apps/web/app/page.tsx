@@ -197,6 +197,7 @@ export default function Page() {
     status: "collecting",
     source: "budget_replay_fixtures",
     providers: [],
+    enterprise_shadow_providers: [],
     scenarios: ["healthy", "gap", "resync_required"],
     last_contract_run_id: null,
     last_contract_status: null,

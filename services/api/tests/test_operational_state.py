@@ -1200,10 +1200,30 @@ def test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys() -> 
 
     replay_lab = service.replay_lab_readiness()
     providers = {provider.provider: provider for provider in replay_lab.providers}
+    enterprise_shadow = {
+        provider.provider: provider
+        for provider in replay_lab.enterprise_shadow_providers
+    }
 
     assert replay_lab.status == "ready"
     assert replay_lab.source == "budget_replay_fixtures"
     assert replay_lab.can_validate_without_live_keys is True
+    assert set(providers) == {
+        Provider.API_TENNIS,
+        Provider.ODDS_API_IO,
+        Provider.THE_ODDS_API,
+    }
+    assert set(enterprise_shadow) == {
+        Provider.SPORTRADAR,
+        Provider.BETRADAR_UOF,
+        Provider.TXODDS,
+        Provider.BETFAIR,
+    }
+    assert all(
+        provider.status == "deferred"
+        for provider in replay_lab.enterprise_shadow_providers
+    )
+    assert any("shadow/deferred" in note for note in replay_lab.notes)
     assert replay_lab.last_contract_run_id == "ingest_replay_contract_1"
     assert replay_lab.last_contract_status == "completed"
     assert replay_lab.last_contract_passed is True
@@ -1273,6 +1293,15 @@ def test_replay_lab_contract_matrix_freezes_provider_adapter_outputs() -> None:
         }
         for provider in replay_lab.providers
     }
+    enterprise_matrix = {
+        provider.provider: {
+            "adapter_contract": provider.adapter_contract,
+            "fake_api": provider.fake_api,
+            "scenarios": provider.scenarios,
+            "status": provider.status,
+        }
+        for provider in replay_lab.enterprise_shadow_providers
+    }
 
     assert matrix == {
         Provider.API_TENNIS: {
@@ -1298,6 +1327,32 @@ def test_replay_lab_contract_matrix_freezes_provider_adapter_outputs() -> None:
             "output_contracts": ["OddsTick", "ProviderLatency"],
             "scenarios": ["archive_snapshot"],
             "status": "covered",
+        },
+    }
+    assert enterprise_matrix == {
+        Provider.SPORTRADAR: {
+            "adapter_contract": "EnterpriseTimelineProviderAdapter",
+            "fake_api": "Offline Sportradar live timeline fixture",
+            "scenarios": ["timeline_point", "timeline_delay", "timeline_retirement"],
+            "status": "deferred",
+        },
+        Provider.BETRADAR_UOF: {
+            "adapter_contract": "EnterpriseMarketStateProviderAdapter",
+            "fake_api": "Offline Betradar UOF market-state fixture",
+            "scenarios": ["market_open", "market_suspended", "market_settled"],
+            "status": "deferred",
+        },
+        Provider.TXODDS: {
+            "adapter_contract": "EnterpriseInRunningOddsProviderAdapter",
+            "fake_api": "Offline TXODDS in-running tennis odds fixture",
+            "scenarios": ["in_running_odds", "price_move", "stale_quote"],
+            "status": "deferred",
+        },
+        Provider.BETFAIR: {
+            "adapter_contract": "EnterpriseExchangeMarketStreamAdapter",
+            "fake_api": "Offline Betfair exchange market stream fixture",
+            "scenarios": ["market_book", "price_ladder", "market_closed"],
+            "status": "deferred",
         },
     }
 

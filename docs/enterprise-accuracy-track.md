@@ -189,7 +189,9 @@ Hermes should not:
    `sample_enterprise_shadow_payloads`; fixtures remain separate from the
    budget replay contract runner.
 4. Extend Replay Lab to display enterprise fixture readiness separately from
-   budget chain readiness.
+   budget chain readiness. Implemented through
+   `operational_state.replay_lab.enterprise_shadow_providers`, which is
+   visibility only and does not activate enterprise feeds.
 5. Add model lab reports for accuracy by Grand Slam, gender, surface, round,
    odds bucket, and provider.
 6. Only after budget chain completion, activate one enterprise feed at a time in

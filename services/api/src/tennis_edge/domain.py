@@ -1121,6 +1121,9 @@ class ReplayLabSnapshot(BaseModel):
     status: Literal["ready", "collecting", "blocked"]
     source: Literal["budget_replay_fixtures"]
     providers: list[ReplayContractProvider]
+    enterprise_shadow_providers: list[ReplayContractProvider] = Field(
+        default_factory=list
+    )
     scenarios: list[str]
     last_contract_run_id: str | None = None
     last_contract_status: str | None = None

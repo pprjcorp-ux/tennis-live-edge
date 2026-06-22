@@ -35,7 +35,10 @@ from tennis_edge.services.cost_profile import (
 )
 from tennis_edge.services.enterprise_analytics import data_quality_snapshots
 from tennis_edge.services.execution_engine import execution_status
-from tennis_edge.services.provider_adapters import BUDGET_PROVIDER_CONTRACT_SPECS
+from tennis_edge.services.provider_adapters import (
+    BUDGET_PROVIDER_CONTRACT_SPECS,
+    ENTERPRISE_PROVIDER_CONTRACT_SPECS,
+)
 from tennis_edge.services.provider_cursor import default_provider_cursors
 from tennis_edge.services.storage import PersistentStore
 
@@ -512,9 +515,23 @@ class OperationalStateService:
             )
             for spec in BUDGET_PROVIDER_CONTRACT_SPECS
         ]
+        enterprise_shadow_providers = [
+            ReplayContractProvider(
+                provider=spec.provider,
+                adapter_contract=spec.adapter_contract,
+                fake_api=spec.fake_api,
+                input_contracts=list(spec.input_contracts),
+                output_contracts=list(spec.output_contracts),
+                scenarios=list(spec.scenarios),
+                status=spec.status,
+                notes=list(spec.notes),
+            )
+            for spec in ENTERPRISE_PROVIDER_CONTRACT_SPECS
+        ]
         notes = [
             "Replay fixtures are the fake API layer; live provider keys are not required.",
             "Run healthy, gap, and resync_required odds scenarios before enabling live websocket ingestion.",
+            "Enterprise provider contracts are shadow/deferred and separate from budget chain readiness.",
         ]
         if last_contract is None:
             notes.append("No persisted replay_contract_run has been recorded yet.")
@@ -532,6 +549,7 @@ class OperationalStateService:
             ),
             source="budget_replay_fixtures",
             providers=providers,
+            enterprise_shadow_providers=enterprise_shadow_providers,
             scenarios=["healthy", "gap", "resync_required"],
             last_contract_run_id=last_contract.id if last_contract else None,
             last_contract_status=last_contract.status if last_contract else None,

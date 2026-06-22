@@ -85,7 +85,9 @@ Enterprise provider contracts live separately in
 budget chain is complete. Offline enterprise fixtures for Sportradar timeline,
 Betradar market state, TXODDS odds, and Betfair market stream may validate
 contract shape, but they must not be wired into the budget replay runner or
-spend provider quota.
+spend provider quota. The dashboard may show these through
+`operational_state.replay_lab.enterprise_shadow_providers`; that field is
+readiness visibility, not provider activation.
 Live mode must not fall back to sample payloads implicitly; use
 `/api/v1/replay/run` with `use_fixture_seed=true` only for explicit admin
 rehearsal runs. Use `POST /api/v1/replay/contracts/run` before adding or

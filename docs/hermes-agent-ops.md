@@ -19,6 +19,7 @@ npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:intelligence
 npm run hermes:events
+npm run hermes:unblock-plan
 npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:learning-review
@@ -71,6 +72,11 @@ is required, whether paper orders can be created, and
 `can_submit_real_orders=false`. It blocks paper autopilot when preflight,
 provider health, cursor resync, data quality, budget-chain, or real-execution
 safety blockers exist.
+
+Use `hermes:unblock-plan` when the operator needs the fastest safe path from
+blocked state to budget-chain progress. It classifies blockers into read-only
+local diagnostics, explicit provider smoke, credential work, replay/data quality
+checks, learning collection, and deferred enterprise items.
 
 Use `hermes:playbook` when the operator or a Hermes channel needs a phase plan.
 It does not execute commands. It groups the current state into observe,

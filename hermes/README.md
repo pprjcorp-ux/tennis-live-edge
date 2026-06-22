@@ -33,6 +33,7 @@ npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:intelligence
 npm run hermes:events
+npm run hermes:unblock-plan
 npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:learning-review
@@ -70,6 +71,11 @@ cron/webhook routing. It can recommend commands such as `hermes:preflight`,
 Paper order creation is only marked possible for `paper_autopilot_candidate`
 when no high-severity data, cursor, provider, preflight, budget-chain, or real
 execution safety blocker exists.
+
+`hermes:unblock-plan` turns blockers into prioritized operator lanes: local
+runtime, provider smoke, provider credentials, data quality, learning
+collection, and deferred enterprise work. It is read-only and never runs the
+suggested commands.
 
 `hermes:playbook` converts the same state into phase-based operating steps:
 observe, stabilize data, complete the budget chain, collect learning evidence,

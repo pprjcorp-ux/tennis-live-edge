@@ -32,6 +32,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs unblock-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs playbook
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-stats
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review
@@ -77,6 +78,8 @@ The `events` command converts the intelligence packet into deterministic
 dispatch events for cron/webhook/Telegram. It reports an allowed command,
 admin-token requirement, and paper-order permission for each event; it never
 permits real order submission.
+The `unblock-plan` command classifies blockers into prioritized safe lanes. It
+is read-only and must not execute the suggested commands.
 The `playbook` command converts the current state into a phase-based operating
 plan with ready/waiting/blocked steps. It is a planner only; it does not execute
 commands or create orders.

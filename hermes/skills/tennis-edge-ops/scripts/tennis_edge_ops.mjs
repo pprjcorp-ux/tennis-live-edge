@@ -84,6 +84,13 @@ async function events() {
   printJson(buildEventPlan(report));
 }
 
+async function unblockPlan() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  const budgetPlan = buildBudgetChainPlan(report, eventPlan);
+  printJson(buildUnblockPlan(report, eventPlan, budgetPlan));
+}
+
 async function playbook() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -783,6 +790,162 @@ function buildEventPlan(report) {
     },
     forbidden_actions: report.forbidden_collection_paths ?? [],
     allowed_collection_paths: report.allowed_collection_paths ?? [],
+  };
+}
+
+function buildUnblockPlan(report, eventPlan, budgetPlan) {
+  const lanes = [
+    ...localRuntimeLanes(report),
+    ...providerSmokeLanes(budgetPlan),
+    ...providerCredentialLanes(report),
+    ...dataQualityLanes(report),
+    ...enterpriseDeferredLanes(report),
+    ...learningLanes(report),
+  ].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "unblock_plan",
+    source_mode: report.mode,
+    severity: eventPlan.severity,
+    summary: "Hermes unblock plan: classify blockers by safe next action, quota risk, and human dependency.",
+    can_run_paper_autopilot: eventPlan.can_run_paper_autopilot,
+    can_submit_real_orders: false,
+    provider_api_call_allowed: false,
+    next_best_action: lanes[0] ?? null,
+    lanes,
+    deferred_enterprise_cursors: report.degraded_items?.deferred_enterprise_cursors ?? [],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      llm_per_tick_allowed: false,
+      forbidden_actions: report.forbidden_collection_paths ?? [],
+    },
+  };
+}
+
+function localRuntimeLanes(report) {
+  const failed = report.degraded_items?.preflight_failed ?? [];
+  if (!failed.some((check) => check.name === "hermes_gateway")) return [];
+  return [unblockLane({
+    id: "local_runtime",
+    priority: 10,
+    status: "ready",
+    command: "hermes status && hermes doctor",
+    reason: "Hermes loopback gateway is not reachable; diagnose local runtime before protected automation.",
+    requiresHuman: false,
+    writes: false,
+    liveApiCalls: false,
+    quotaRisk: "none",
+  })];
+}
+
+function providerSmokeLanes(budgetPlan) {
+  const step = budgetPlan.current_step;
+  if (!step || step.smoke_completed || step.required_before_enable.length) return [];
+  return [unblockLane({
+    id: "provider_smoke",
+    priority: 20,
+    status: "operator_confirm",
+    command: "npm run hermes:provider-smoke",
+    reason: `Next budget step is ${step.provider}:${step.capability}; dry-run first, then use --execute-provider-call only from a local operator shell.`,
+    requiresHuman: true,
+    writes: true,
+    liveApiCalls: true,
+    quotaRisk: "explicit_operator_call_only",
+  })];
+}
+
+function providerCredentialLanes(report) {
+  const providers = report.degraded_items?.provider_health ?? [];
+  const missing = providers.filter((provider) => (
+    provider.configured === false || String(provider.status ?? "").includes("key missing")
+  ));
+  if (!missing.length) return [];
+  return [unblockLane({
+    id: "provider_credentials",
+    priority: 30,
+    status: "waiting_on_human",
+    command: "Update local .env with missing budget provider keys, then rerun npm run hermes:preflight.",
+    reason: `Missing or inactive budget providers: ${missing.map((provider) => provider.provider).join(", ")}.`,
+    requiresHuman: true,
+    writes: true,
+    liveApiCalls: false,
+    quotaRisk: "none_until_smoke",
+  })];
+}
+
+function dataQualityLanes(report) {
+  const snapshots = report.degraded_items?.data_quality ?? [];
+  if (!snapshots.length) return [];
+  return [unblockLane({
+    id: "data_quality",
+    priority: 40,
+    status: "ready",
+    command: "npm run api:check:operational-truth -- --pretty",
+    reason: "Persisted data quality reports stale or blocking provider ticks; use replay/contracts before new live API spend.",
+    requiresHuman: false,
+    writes: true,
+    liveApiCalls: false,
+    quotaRisk: "none",
+  })];
+}
+
+function enterpriseDeferredLanes(report) {
+  const cursors = report.degraded_items?.deferred_enterprise_cursors ?? [];
+  if (!cursors.length) return [];
+  return [unblockLane({
+    id: "enterprise_deferred",
+    priority: 80,
+    status: "deferred",
+    command: "No action in budget mode.",
+    reason: "Enterprise cursors are intentionally deferred until the budget chain and paper proof are complete.",
+    requiresHuman: false,
+    writes: false,
+    liveApiCalls: false,
+    quotaRisk: "deferred_enterprise_contract",
+  })];
+}
+
+function learningLanes(report) {
+  const learning = report.learning_snapshot ?? {};
+  if (learning.can_run_live_backtest && learning.readiness_status === "ready_for_review") return [];
+  return [unblockLane({
+    id: "learning_collection",
+    priority: 70,
+    status: "collecting",
+    command: "npm run hermes:ops:daily",
+    reason: "Model Lab still needs production training examples; keep daily paper/replay rehearsal running.",
+    requiresHuman: true,
+    writes: true,
+    liveApiCalls: false,
+    quotaRisk: "none",
+  })];
+}
+
+function unblockLane({
+  id,
+  priority,
+  status,
+  command,
+  reason,
+  requiresHuman,
+  writes,
+  liveApiCalls,
+  quotaRisk,
+}) {
+  return {
+    id,
+    priority,
+    status,
+    command,
+    reason,
+    requires_human: requiresHuman,
+    writes,
+    live_api_calls: liveApiCalls,
+    quota_risk: quotaRisk,
+    can_submit_real_orders: false,
+    provider_api_call_allowed: false,
   };
 }
 
@@ -1511,6 +1674,7 @@ const commands = {
   preflight,
   intelligence,
   events,
+  "unblock-plan": unblockPlan,
   playbook,
   "live-stats": liveStats,
   "learning-review": learningReview,

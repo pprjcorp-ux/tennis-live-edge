@@ -550,6 +550,7 @@ def main() -> int:
         for required in [
             "async function intelligence()",
             "async function events()",
+            "async function unblockPlan()",
             "async function playbook()",
             "async function liveStats()",
             "async function learningReview()",
@@ -557,6 +558,7 @@ def main() -> int:
             "async function providerSmoke()",
             "buildIntelligenceReport",
             "buildEventPlan",
+            "buildUnblockPlan",
             "buildPlaybook",
             "buildLiveStats",
             "buildLearningReview",
@@ -590,6 +592,7 @@ def main() -> int:
     for required in [
         "hermes:intelligence",
         "hermes:events",
+        "hermes:unblock-plan",
         "hermes:playbook",
         "hermes:live-stats",
         "hermes:learning-review",

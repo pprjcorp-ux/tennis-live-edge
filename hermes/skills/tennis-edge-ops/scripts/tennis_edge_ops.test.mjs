@@ -620,6 +620,129 @@ test("events ignore deferred enterprise cursor while budget chain is not enterpr
   }
 });
 
+test("unblock-plan classifies blockers into safe prioritized operator lanes", async () => {
+  const fixtures = eventRouterFixtures({
+    "/api/v1/agent/preflight": {
+      status: "blocked",
+      checks: [
+        {
+          name: "hermes_gateway",
+          status: "fail",
+          summary: "Hermes loopback gateway is not reachable.",
+        },
+        {
+          name: "real_execution_hard_block",
+          status: "pass",
+          summary: "blocked",
+        },
+      ],
+      generated_at: "2026-06-21T20:00:00Z",
+    },
+    "/api/v1/provider-health": [
+      {
+        provider: "api_tennis",
+        configured: false,
+        healthy: false,
+        status: "score primary key missing",
+      },
+      {
+        provider: "odds_api_io",
+        configured: false,
+        healthy: false,
+        status: "odds websocket key missing",
+      },
+      {
+        provider: "theoddsapi",
+        configured: true,
+        healthy: false,
+        status: "historical archive configured; stale persisted feed: odds/archive",
+      },
+    ],
+    "/api/v1/provider-cursors": [
+      {
+        provider: "sportradar",
+        stream: "tennis:score",
+        status: "resync_required",
+        resync_required: true,
+        note: "Enterprise score cursor waits for contract validation.",
+      },
+    ],
+    "/api/v1/data-quality": [
+      {
+        id: "dq_persisted_live_budget",
+        provider: "api_tennis",
+        feed: "persisted/live-budget",
+        sequence_health: 0.35,
+        stale_ticks: 7,
+        blocked_signals: 8,
+      },
+    ],
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          steps: [
+            {
+              order: 1,
+              provider: "theoddsapi",
+              capability: "archive_odds",
+              status: "configured",
+              configured: true,
+              current: true,
+              smoke_completed: false,
+              required_before_enable: [],
+              next_action: "Run TheOddsAPI archive-sync smoke and confirm persisted payload evidence.",
+              notes: [],
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["unblock-plan", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "unblock_plan");
+    assert.equal(payload.can_run_paper_autopilot, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.lanes[0].id, "local_runtime");
+    assert.equal(payload.lanes.some((lane) => lane.id === "provider_smoke" && lane.command === "npm run hermes:provider-smoke"), true);
+    assert.equal(payload.lanes.some((lane) => lane.id === "provider_credentials" && lane.requires_human), true);
+    assert.equal(payload.lanes.some((lane) => lane.id === "data_quality" && lane.command.includes("api:check:operational-truth")), true);
+    assert.equal(payload.lanes.some((lane) => lane.id === "enterprise_deferred" && lane.status === "deferred"), true);
+    assert.equal(payload.next_best_action.command, "hermes status && hermes doctor");
+    assert.equal(payload.safety.forbidden_actions.includes("sportsbook_ui_automation"), true);
+  } finally {
+    server.close();
+  }
+});
+
 test("playbook prioritizes data stabilization when cursor resync is required", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/provider-cursors": [

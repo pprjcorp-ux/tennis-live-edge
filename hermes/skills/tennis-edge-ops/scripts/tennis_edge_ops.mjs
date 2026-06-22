@@ -1786,12 +1786,14 @@ async function replayBackfillContract() {
   const sourcePlan = buildSourceDiscovery({ report, eventPlan });
   const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
   const sourceRouteReport = buildSourceRouteLedgerReport(readSourceRouteLedgerRecords());
+  const sourceIntakeReport = buildSourceIntakeLedgerReport(readSourceIntakeLedgerRecords());
   printJson(buildReplayBackfillContract({
     report,
     eventPlan,
     sourcePlan,
     sourceRoutes,
     sourceRouteReport,
+    sourceIntakeReport,
   }));
 }
 
@@ -4488,25 +4490,46 @@ function sourceRouteRow({
   };
 }
 
-function buildReplayBackfillContract({ report, eventPlan, sourcePlan, sourceRoutes, sourceRouteReport }) {
+function buildReplayBackfillContract({
+  report,
+  eventPlan,
+  sourcePlan,
+  sourceRoutes,
+  sourceRouteReport,
+  sourceIntakeReport = emptySourceIntakeLedgerReport(),
+}) {
   const route = sourceRoutes.routes?.find((item) => item.id === "replay_backfill") ?? null;
   const persistedMatches = Number(report.data_snapshot?.persisted_matches ?? 0);
   const replayStatus = report.data_snapshot?.replay_contract_ready ?? "unknown";
   const replayReady = replayStatus === "ready";
   const routeReady = route?.status === "ready_now";
+  const sourceIntakeAllowedReplay = sourceIntakeReport.top_allowed_contract === "route:replay_backfill"
+    || sourceIntakeReport.top_next_intake === "route:replay_backfill";
   const sourceRoutePressure = sourceRouteReport.top_next_route === "replay_backfill"
     ? "observed"
     : sourceRouteReport.total_records > 0
       ? "other_route_observed"
       : "collecting";
+  const sourceIntakePressure = sourceIntakeAllowedReplay
+    ? "allowed_contract_observed"
+    : sourceIntakeReport.total_records > 0
+      ? "other_intake_observed"
+      : "collecting";
   const safeCounters = sourceRouteReport.route_command_executed_count === 0
     && sourceRouteReport.provider_command_executed_count === 0
-    && sourceRouteReport.bypass_attempted_count === 0;
+    && sourceRouteReport.bypass_attempted_count === 0
+    && sourceIntakeReport.action_executed_count === 0
+    && sourceIntakeReport.intake_command_executed_count === 0
+    && sourceIntakeReport.dataset_fetch_attempted_count === 0
+    && sourceIntakeReport.provider_command_executed_count === 0
+    && sourceIntakeReport.bypass_attempted_count === 0;
   const gates = replayBackfillContractGates({
     routeReady,
     replayReady,
     persistedMatches,
     sourceRouteReport,
+    sourceIntakeReport,
+    sourceIntakeAllowedReplay,
     safeCounters,
     eventPlan,
   });
@@ -4525,6 +4548,7 @@ function buildReplayBackfillContract({ report, eventPlan, sourcePlan, sourceRout
     objective: "turn_replay_backfill_route_into_offline_operational_truth_contract_without_provider_calls",
     source_route: route,
     source_route_pressure: sourceRoutePressure,
+    source_intake_pressure: sourceIntakePressure,
     offline_contract: {
       id: "replay_backfill_to_operational_truth",
       adapter_boundary: "internal_fastapi_read_models",
@@ -4561,13 +4585,23 @@ function buildReplayBackfillContract({ report, eventPlan, sourcePlan, sourceRout
       blocked_route_counts: sourceRouteReport.blocked_route_counts,
       operator_required_route_counts: sourceRouteReport.operator_required_route_counts,
       route_command_executed_count: sourceRouteReport.route_command_executed_count,
+      source_intake_total_records: sourceIntakeReport.total_records,
+      source_intake_top_allowed_contract: sourceIntakeReport.top_allowed_contract,
+      source_intake_top_next_intake: sourceIntakeReport.top_next_intake,
+      source_intake_top_next_intake_lane: sourceIntakeReport.top_next_intake_lane,
+      source_intake_top_next_intake_command: sourceIntakeReport.top_next_intake_command,
+      source_intake_allowed_contract_counts: sourceIntakeReport.allowed_contract_counts,
+      intake_command_executed_count: sourceIntakeReport.intake_command_executed_count,
+      dataset_fetch_attempted_count: sourceIntakeReport.dataset_fetch_attempted_count,
       provider_command_executed_count: sourceRouteReport.provider_command_executed_count,
-      bypass_attempted_count: sourceRouteReport.bypass_attempted_count,
+      source_intake_provider_command_executed_count: sourceIntakeReport.provider_command_executed_count,
+      bypass_attempted_count: sourceRouteReport.bypass_attempted_count + sourceIntakeReport.bypass_attempted_count,
       data_quality_non_pass: report.data_snapshot?.data_quality_non_pass ?? 0,
       cursors_requiring_resync: report.data_snapshot?.cursors_requiring_resync ?? 0,
     },
     implementation_steps: [
       "inspect_operational_truth_replay_contract_output",
+      "use_source_intake_allowed_contract_when_it_proves_route_replay_backfill",
       "map_persisted_matches_score_ticks_odds_ticks_and_signals_into_replay_backfill_evidence",
       "add_or_update_backend_tests_for_replay_backfill_evidence_without_provider_calls",
       "surface_replay_backfill_evidence_in_hermes_source_route_packets",
@@ -4581,21 +4615,25 @@ function buildReplayBackfillContract({ report, eventPlan, sourcePlan, sourceRout
       "browser_sportsbook_automation_allowed=false",
       "bypass_allowed=false",
       "route_command_executed_count=0",
+      "intake_command_executed_count=0",
+      "dataset_fetch_attempted_count=0",
       "provider_command_executed_count=0",
       "bypass_attempted_count=0",
     ],
     validation_commands: [
       "npm --silent run hermes:replay-backfill-contract",
       "npm --silent run hermes:source-route-ledger-report",
+      "npm --silent run hermes:source-intake-ledger-report",
       "npm run api:check:operational-truth -- --pretty",
       "python3 scripts/check_private_runtime.py",
     ],
     gates,
-    next_action: replayBackfillNextAction({ blockingGates, sourceRouteReport, route }),
+    next_action: replayBackfillNextAction({ blockingGates, sourceRouteReport, sourceIntakeReport, route }),
     allowed_inputs: [
       "persisted_postgres_replay",
       "internal_fastapi_read_models",
       "local_source_route_ledger",
+      "local_source_intake_ledger",
       "offline_replay_contract_evidence",
     ],
     forbidden_actions: [
@@ -4628,6 +4666,8 @@ function replayBackfillContractGates({
   replayReady,
   persistedMatches,
   sourceRouteReport,
+  sourceIntakeReport,
+  sourceIntakeAllowedReplay,
   safeCounters,
   eventPlan,
 }) {
@@ -4652,22 +4692,29 @@ function replayBackfillContractGates({
     }),
     replayBackfillGate({
       id: "source_route_pressure",
-      status: sourceRouteReport.top_next_route === "replay_backfill" ? "pass" : "collecting",
+      status: sourceRouteReport.top_next_route === "replay_backfill" || sourceIntakeAllowedReplay ? "pass" : "collecting",
       evidence: [
         `top_next_route=${sourceRouteReport.top_next_route ?? "none"}`,
+        `top_allowed_contract=${sourceIntakeReport.top_allowed_contract ?? "none"}`,
+        `top_next_intake=${sourceIntakeReport.top_next_intake ?? "none"}`,
         `source_route_records=${sourceRouteReport.total_records}`,
+        `source_intake_records=${sourceIntakeReport.total_records}`,
       ],
-      command: "npm --silent run hermes:source-route-ledger-report",
+      command: sourceIntakeAllowedReplay
+        ? "npm --silent run hermes:source-intake-ledger-report"
+        : "npm --silent run hermes:source-route-ledger-report",
     }),
     replayBackfillGate({
       id: "no_protected_action_claims",
       status: safeCounters ? "pass" : "blocked",
       evidence: [
         `route_command_executed_count=${sourceRouteReport.route_command_executed_count}`,
-        `provider_command_executed_count=${sourceRouteReport.provider_command_executed_count}`,
-        `bypass_attempted_count=${sourceRouteReport.bypass_attempted_count}`,
+        `intake_command_executed_count=${sourceIntakeReport.intake_command_executed_count}`,
+        `dataset_fetch_attempted_count=${sourceIntakeReport.dataset_fetch_attempted_count}`,
+        `provider_command_executed_count=${sourceRouteReport.provider_command_executed_count + sourceIntakeReport.provider_command_executed_count}`,
+        `bypass_attempted_count=${sourceRouteReport.bypass_attempted_count + sourceIntakeReport.bypass_attempted_count}`,
       ],
-      command: "npm --silent run hermes:source-route-ledger-report",
+      command: "npm --silent run hermes:source-intake-ledger-report",
     }),
     replayBackfillGate({
       id: "budget_first_safety",
@@ -4697,8 +4744,8 @@ function replayBackfillGate({ id, status, evidence, command }) {
   };
 }
 
-function replayBackfillNextAction({ blockingGates, sourceRouteReport, route }) {
-  if (!sourceRouteReport.total_records) {
+function replayBackfillNextAction({ blockingGates, sourceRouteReport, sourceIntakeReport, route }) {
+  if (!sourceRouteReport.total_records && !sourceIntakeReport.total_records) {
     return {
       id: "collect_source_route_evidence",
       command: "npm --silent run hermes:source-route-ledger",

@@ -237,7 +237,13 @@ The `replay-backfill-contract` command turns the `replay_backfill` route into
 the offline `replay_backfill_to_operational_truth` contract. It maps persisted
 matches, score ticks, odds ticks, signals, paper orders and replay lab evidence
 into implementation inputs without provider calls, browser scraping,
-sportsbook automation or bypass.
+sportsbook automation or bypass. It may use `source-intake-ledger-report` as
+proof when `route:replay_backfill` is the top allowed contract, keeping
+operator-review, deferred and forbidden-quarantine sources out of execution.
+The emitted packet should expose `source_intake_pressure`, include
+`local_source_intake_ledger` as an allowed input, and list
+`use_source_intake_allowed_contract_when_it_proves_route_replay_backfill` as an
+implementation step.
 The `source-use-manifest` command audits each collection route, historical
 source and enterprise shadow provider before collection or import. It records
 allowed/deferred/operator-required status, license and attribution gates,

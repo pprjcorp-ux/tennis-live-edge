@@ -337,9 +337,15 @@ decisions become implementation work before provider spend or importer code.
 `hermes:replay-backfill-contract` turns the `replay_backfill` source route into
 an offline contract named `replay_backfill_to_operational_truth`. It maps
 persisted matches, score ticks, odds ticks, signals, paper orders and replay
-lab evidence into implementation inputs and acceptance criteria. It is
-read-only: no provider calls, no browser scraping, no sportsbook automation, no
-bypass, no paper order creation and no real execution.
+lab evidence into implementation inputs and acceptance criteria. It also
+accepts `source-intake-ledger-report` evidence when the top allowed contract is
+`route:replay_backfill`, so repeated intake decisions can become replay/read
+model work without re-running provider or route commands. It is read-only: no
+provider calls, no browser scraping, no sportsbook automation, no bypass, no
+paper order creation and no real execution.
+The contract exposes `source_intake_pressure`, accepts
+`local_source_intake_ledger` as an allowed input, and includes the implementation
+step `use_source_intake_allowed_contract_when_it_proves_route_replay_backfill`.
 
 `hermes:source-use-manifest` is the audit layer between safe source discovery
 and collection/import work. It creates one source-use row per collection route,

@@ -2502,6 +2502,113 @@ test("replay-backfill-contract turns replay route into offline evidence contract
   }
 });
 
+test("replay-backfill-contract accepts source-intake allowed contract evidence", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-replay-backfill-source-intake-"));
+  const sourceRouteLedgerPath = join(tempDir, "source-route-ledger.jsonl");
+  const sourceIntakeLedgerPath = join(tempDir, "source-intake-ledger.jsonl");
+  const sourceIntakeRows = [
+    {
+      mode: "source_intake_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      intake_command_executed: false,
+      dataset_fetch_attempted: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "ready",
+      next_intake_id: "route:replay_backfill",
+      next_intake_lane: "allowed_contract",
+      next_intake_command: "npm --silent run hermes:replay-backfill-contract",
+      recommended_action_id: "prepare_replay_backfill_contract",
+      recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
+      allowed_contract_ids: ["route:replay_backfill", "route:live_statistics"],
+      operator_review_ids: ["historical:jeff_sackmann_atp"],
+      deferred_ids: ["enterprise:sportradar"],
+      forbidden_quarantine_ids: ["route:sportsbook_browser"],
+    },
+    {
+      mode: "source_intake_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      intake_command_executed: false,
+      dataset_fetch_attempted: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "ready",
+      next_intake_id: "route:replay_backfill",
+      next_intake_lane: "allowed_contract",
+      next_intake_command: "npm --silent run hermes:replay-backfill-contract",
+      recommended_action_id: "prepare_replay_backfill_contract",
+      recommended_action_command: "npm --silent run hermes:replay-backfill-contract",
+      allowed_contract_ids: ["route:replay_backfill"],
+      operator_review_ids: ["historical:jeff_sackmann_atp", "historical:tennis_data_results_odds"],
+      deferred_ids: ["enterprise:sportradar"],
+      forbidden_quarantine_ids: ["route:sportsbook_browser"],
+    },
+  ];
+  writeFileSync(sourceRouteLedgerPath, "");
+  writeFileSync(sourceIntakeLedgerPath, `${sourceIntakeRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["replay-backfill-contract", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_SOURCE_ROUTE_LEDGER_PATH: sourceRouteLedgerPath,
+        HERMES_SOURCE_INTAKE_LEDGER_PATH: sourceIntakeLedgerPath,
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "replay_backfill_contract");
+    assert.equal(payload.status, "ready");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.source_route_pressure, "collecting");
+    assert.equal(payload.source_intake_pressure, "allowed_contract_observed");
+    assert.equal(payload.evidence.source_route_total_records, 0);
+    assert.equal(payload.evidence.source_intake_total_records, 2);
+    assert.equal(payload.evidence.source_intake_top_allowed_contract, "route:replay_backfill");
+    assert.equal(payload.evidence.source_intake_top_next_intake, "route:replay_backfill");
+    assert.equal(payload.evidence.intake_command_executed_count, 0);
+    assert.equal(payload.evidence.dataset_fetch_attempted_count, 0);
+    assert.equal(payload.evidence.source_intake_provider_command_executed_count, 0);
+    assert.equal(payload.evidence.bypass_attempted_count, 0);
+    assert.equal(payload.implementation_steps.includes("use_source_intake_allowed_contract_when_it_proves_route_replay_backfill"), true);
+    assert.equal(payload.acceptance_criteria.includes("intake_command_executed_count=0"), true);
+    assert.equal(payload.acceptance_criteria.includes("dataset_fetch_attempted_count=0"), true);
+    assert.equal(payload.validation_commands.includes("npm --silent run hermes:source-intake-ledger-report"), true);
+    const sourcePressureGate = payload.gates.find((gate) => gate.id === "source_route_pressure");
+    assert.equal(sourcePressureGate.status, "pass");
+    assert.equal(sourcePressureGate.command, "npm --silent run hermes:source-intake-ledger-report");
+    assert.equal(sourcePressureGate.evidence.includes("top_allowed_contract=route:replay_backfill"), true);
+    assert.equal(payload.gates.every((gate) => gate.status === "pass"), true);
+    assert.equal(payload.next_action.id, "implement_replay_backfill_evidence");
+    assert.equal(payload.allowed_inputs.includes("local_source_intake_ledger"), true);
+    assert.equal(payload.forbidden_actions.includes("sportsbook_ui_automation"), true);
+    assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
+    assert.equal(payload.safety.anti_bot_bypass_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("historical-backfill-plan ranks allowed historical sources without fetching them", async () => {
   const called = [];
   const fixtures = eventRouterFixtures();

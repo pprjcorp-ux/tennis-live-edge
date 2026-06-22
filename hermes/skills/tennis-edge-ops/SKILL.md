@@ -31,6 +31,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-check
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-readiness
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs unblock-plan
@@ -94,6 +95,10 @@ reachability, local gateway reachability, persistence, provider key readiness,
 and the real-execution hard block.
 The `runtime-check` command runs read-only Hermes CLI diagnostics and captures
 status/doctor output as JSON. It must not repair, install, or restart services.
+The `channel-readiness` command proves local channel prerequisites without
+FastAPI: Hermes CLI availability, gateway running state, bounded doctor pass,
+Telegram allowlist, private Access allowlist, and local admin token presence.
+It emits manual actions only and must keep `executes_now=false`.
 Internal FastAPI requests are bounded by `HERMES_HTTP_TIMEOUT_MS` (default
 5000ms, clamped between 100ms and 30000ms). Composed commands must fail closed
 with `backend_api` blockers when the backend is unavailable or slow; they must

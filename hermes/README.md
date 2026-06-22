@@ -32,6 +32,7 @@ npm run hermes:anomalies
 npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:runtime-check
+npm run hermes:channel-readiness
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:unblock-plan
@@ -83,6 +84,13 @@ for backend-approved `Entrada` signals. Real execution remains blocked by
 `hermes:runtime-check` runs `hermes status` and `hermes doctor` as local
 read-only diagnostics and returns JSON with stdout/stderr/exit codes. It does
 not start, stop, install, or repair Hermes services.
+
+`hermes:channel-readiness` is the non-mutating proof packet for moving from
+`observe` to `channel_ready`. It checks Hermes CLI availability, gateway
+running state, bounded doctor status, Telegram allowlist, private Access
+allowlist, and local admin token presence. Failed checks become ordered manual
+actions; the command never starts the gateway, edits `.env`, creates cron jobs,
+calls providers, or creates orders.
 
 `hermes:intelligence` is the high-signal operator packet for cron/Telegram. It
 aggregates provider health, cursor gaps, data quality, cost, paper performance,

@@ -121,6 +121,11 @@ async function runtimeCheck() {
   printJson(await runtimeCheckData());
 }
 
+async function channelReadiness() {
+  const runtime = await runtimeCheckData();
+  printJson(buildChannelReadiness(runtime));
+}
+
 async function runtimeCheckData() {
   const hermesBin = process.env.HERMES_BIN || "hermes";
   const commands = [
@@ -143,6 +148,228 @@ async function runtimeCheckData() {
     runtime_findings: runtimeFindings,
     diagnostic_actions: runtimeDiagnosticActions({ hasMissingCommand, hasFailure, runtimeFindings }),
     next_actions: runtimeCheckActions({ hasMissingCommand, hasFailure, runtimeFindings }),
+  };
+}
+
+function buildChannelReadiness(runtime) {
+  const checks = channelReadinessChecks(runtime);
+  const failedChecks = checks.filter((check) => check.status !== "pass");
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "channel_readiness",
+    status: failedChecks.length ? "blocked" : "ready",
+    readiness_ceiling: failedChecks.length ? "observe" : "channel_ready",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    checks,
+    next_action: channelReadinessActions({ checks, runtime })[0] ?? null,
+    actions: channelReadinessActions({ checks, runtime }),
+    acceptance_evidence: [
+      "gateway_service_status=running",
+      "doctor_status=passed",
+      "telegram_allowlist_configured=true",
+      "private_access_allowlist_configured=true",
+      "local_admin_secret_available=true",
+    ],
+    runtime: {
+      status: runtime.status,
+      runtime_findings: runtime.runtime_findings,
+      diagnostic_actions: runtime.diagnostic_actions,
+    },
+    operator_notes: failedChecks.length
+      ? [
+        "Resolve failed checks from a local operator shell before cron or Telegram activation.",
+        "This command does not start Hermes gateway, create jobs, edit .env, or call providers.",
+      ]
+      : [
+        "Channel prerequisites are ready; use npm run hermes:activation-checklist before manual cron activation.",
+        "Keep provider smoke and paper autopilot outside scheduled channel jobs.",
+      ],
+    forbidden_actions: [
+      "sportsbook_ui_automation",
+      "anti_bot_bypass",
+      "geolocation_bypass",
+      "credential_or_session_extraction",
+      "paywall_or_tos_circumvention",
+    ],
+    safety: {
+      real_execution_hard_block: true,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function channelReadinessChecks(runtime) {
+  const findings = runtime.runtime_findings ?? {};
+  return [
+    channelReadinessCheck({
+      id: "hermes_cli_available",
+      status: runtime.status === "missing" ? "fail" : "pass",
+      summary: runtime.status === "missing"
+        ? "Hermes CLI is not available in PATH."
+        : "Hermes CLI responded to bounded diagnostics.",
+      evidence: {
+        runtime_status: runtime.status,
+      },
+    }),
+    channelReadinessCheck({
+      id: "gateway_service_running",
+      status: findings.gateway_service_status === "running" ? "pass" : "fail",
+      summary: findings.gateway_service_status === "running"
+        ? "Hermes gateway service is running."
+        : `Hermes gateway service is ${findings.gateway_service_status ?? "unknown"}.`,
+      evidence: {
+        gateway_service_status: findings.gateway_service_status ?? "unknown",
+      },
+    }),
+    channelReadinessCheck({
+      id: "doctor_passed",
+      status: findings.doctor_status === "passed" ? "pass" : "fail",
+      summary: findings.doctor_status === "passed"
+        ? "Hermes doctor passed bounded diagnostics."
+        : `Hermes doctor status is ${findings.doctor_status ?? "unknown"}.`,
+      evidence: {
+        doctor_status: findings.doctor_status ?? "unknown",
+      },
+    }),
+    channelReadinessCheck({
+      id: "telegram_allowlist_configured",
+      status: envListCount(["HERMES_TELEGRAM_ALLOWED_USER_IDS", "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS"]) > 0 ? "pass" : "fail",
+      summary: "Telegram routing has an explicit local allowlist.",
+      evidence: {
+        configured_count: envListCount(["HERMES_TELEGRAM_ALLOWED_USER_IDS", "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS"]),
+      },
+    }),
+    channelReadinessCheck({
+      id: "private_access_allowlist_configured",
+      status: envListCount(["PRIVATE_ALLOWED_EMAILS", "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS"]) > 0 ? "pass" : "fail",
+      summary: "Private Access has an explicit local email allowlist.",
+      evidence: {
+        configured_count: envListCount(["PRIVATE_ALLOWED_EMAILS", "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS"]),
+      },
+    }),
+    channelReadinessCheck({
+      id: "local_admin_secret_available",
+      status: envConfigured(["ADMIN_API_TOKEN", "TENNIS_EDGE_ADMIN_API_TOKEN"]) ? "pass" : "fail",
+      summary: "Local admin token is available for protected backend-only actions; value is not printed.",
+    }),
+  ];
+}
+
+function channelReadinessCheck({ id, status, summary, evidence = {} }) {
+  return { id, status, summary, evidence };
+}
+
+function channelReadinessActions({ checks, runtime }) {
+  const byId = Object.fromEntries(checks.map((check) => [check.id, check]));
+  const actions = [];
+  if (byId.hermes_cli_available?.status !== "pass") {
+    actions.push(channelReadinessAction({
+      id: "expose_hermes_cli",
+      priority: 5,
+      lane: "local_runtime",
+      command: "command -v hermes",
+      reason: "Hermes CLI must be available before channel automation can be trusted.",
+    }));
+  }
+  if (byId.gateway_service_running?.status !== "pass") {
+    const diagnostic = (runtime.diagnostic_actions ?? [])
+      .find((action) => action.id === "start_gateway_manual_review");
+    actions.push(channelReadinessAction({
+      id: "start_gateway_manual_review",
+      priority: 10,
+      lane: "local_runtime",
+      command: diagnostic?.command ?? "hermes gateway start",
+      reason: diagnostic?.reason ?? "Hermes gateway must be running before Telegram/cron channel activation.",
+      mutatesRuntimeIfRun: true,
+      requiresOperatorConfirmation: true,
+    }));
+  }
+  if (byId.doctor_passed?.status !== "pass") {
+    actions.push(channelReadinessAction({
+      id: "rerun_bounded_runtime_check",
+      priority: 20,
+      lane: "local_runtime",
+      command: "npm run hermes:runtime-check",
+      reason: "Hermes doctor must pass bounded diagnostics before channel readiness is accepted.",
+    }));
+  }
+  if (byId.telegram_allowlist_configured?.status !== "pass") {
+    actions.push(channelReadinessAction({
+      id: "configure_telegram_allowlist",
+      priority: 30,
+      lane: "operator_reachability",
+      command: "Configure HERMES_TELEGRAM_ALLOWED_USER_IDS locally, then rerun npm run hermes:channel-readiness.",
+      reason: "Telegram channel commands must be allowlisted before use.",
+      requiresOperatorConfirmation: true,
+    }));
+  }
+  if (byId.private_access_allowlist_configured?.status !== "pass") {
+    actions.push(channelReadinessAction({
+      id: "configure_private_access_allowlist",
+      priority: 40,
+      lane: "private_access",
+      command: "Configure PRIVATE_ALLOWED_EMAILS locally, then rerun npm run hermes:channel-readiness.",
+      reason: "Private dashboard/API access must stay behind an explicit allowlist.",
+      requiresOperatorConfirmation: true,
+    }));
+  }
+  if (byId.local_admin_secret_available?.status !== "pass") {
+    actions.push(channelReadinessAction({
+      id: "configure_local_admin_token",
+      priority: 50,
+      lane: "local_secret",
+      command: "Configure ADMIN_API_TOKEN locally, then rerun npm run hermes:channel-readiness.",
+      reason: "Protected backend-only actions require a local admin token passed through stdin.",
+      requiresOperatorConfirmation: true,
+    }));
+  }
+  if (!actions.length) {
+    actions.push(channelReadinessAction({
+      id: "run_activation_checklist",
+      priority: 100,
+      lane: "manual_activation",
+      command: "npm run hermes:activation-checklist",
+      reason: "Channel prerequisites are ready; final cron activation still requires the activation checklist.",
+    }));
+  }
+  return actions.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+}
+
+function channelReadinessAction({
+  id,
+  priority,
+  lane,
+  command,
+  reason,
+  mutatesRuntimeIfRun = false,
+  requiresOperatorConfirmation = false,
+}) {
+  return {
+    id,
+    priority,
+    lane,
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    mutates_runtime_if_run: Boolean(mutatesRuntimeIfRun),
+    requires_operator_confirmation: Boolean(requiresOperatorConfirmation),
   };
 }
 
@@ -6116,6 +6343,7 @@ const commands = {
   runs,
   preflight,
   "runtime-check": runtimeCheck,
+  "channel-readiness": channelReadiness,
   intelligence,
   events,
   "unblock-plan": unblockPlan,

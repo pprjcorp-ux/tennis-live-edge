@@ -125,6 +125,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it is read-only and must not install, restart, repair, create LaunchAgents, or
   alter credentials. It should expose `runtime_findings` and diagnostic actions
   such as a stopped gateway as non-executed manual review steps.
+- Hermes channel readiness should consume `npm run hermes:channel-readiness`;
+  it is independent of FastAPI and should prove the `channel_ready` ceiling
+  with local runtime, Telegram allowlist, private Access allowlist, and admin
+  token checks before any cron/Telegram activation.
 - Hermes must defer enterprise-only cursor blockers while
   `enterprise_eligible=false`; Sportradar/Betradar/TXODDS placeholders should
   not block budget-chain work before enterprise activation.
@@ -254,6 +258,7 @@ npm run hermes:collection-plan
 npm run hermes:quota-plan
 npm run hermes:budget-chain
 npm run hermes:safe-loop
+npm run hermes:channel-readiness
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:trigger-policy

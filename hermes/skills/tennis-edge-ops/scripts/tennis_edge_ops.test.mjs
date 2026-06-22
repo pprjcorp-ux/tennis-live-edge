@@ -795,6 +795,91 @@ test("runtime-check captures Hermes local diagnostics without failing protected 
   assert.equal(payload.diagnostic_actions.some((action) => action.command.includes("launchctl kickstart")), false);
 });
 
+test("channel-readiness blocks channel activation without mutating runtime", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-channel-readiness-blocked-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✗ stopped\\nMessaging Platforms\\n  Telegram      ✗ not configured'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { setTimeout(() => {}, 10000); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+
+  const result = await runCli(["channel-readiness"], {
+    env: {
+      HERMES_BIN: fakeHermes,
+      HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
+      OPENCLAW_TELEGRAM_ALLOWED_USER_IDS: "",
+      PRIVATE_ALLOWED_EMAILS: "",
+      TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS: "",
+      ADMIN_API_TOKEN: "",
+      TENNIS_EDGE_ADMIN_API_TOKEN: "",
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "channel_readiness");
+  assert.equal(payload.status, "blocked");
+  assert.equal(payload.readiness_ceiling, "observe");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.llm_per_tick_allowed, false);
+  const checks = Object.fromEntries(payload.checks.map((check) => [check.id, check]));
+  assert.equal(checks.gateway_service_running.status, "fail");
+  assert.equal(checks.doctor_passed.status, "fail");
+  assert.equal(checks.telegram_allowlist_configured.status, "fail");
+  assert.equal(payload.next_action.id, "start_gateway_manual_review");
+  assert.equal(payload.next_action.executes_now, false);
+  assert.equal(payload.next_action.mutates_runtime_if_run, true);
+  assert.equal(payload.actions.some((action) => action.id === "configure_local_admin_token"), true);
+});
+
+test("channel-readiness proves channel_ready only when runtime and local allowlists pass", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-channel-readiness-ready-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✓ running\\nMessaging Platforms\\n  Telegram      ✓ configured'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('doctor ok'); process.exit(0); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+
+  const result = await runCli(["channel-readiness"], {
+    env: {
+      HERMES_BIN: fakeHermes,
+      HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
+      PRIVATE_ALLOWED_EMAILS: "operator@example.com",
+      ADMIN_API_TOKEN: "local-admin",
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "channel_readiness");
+  assert.equal(payload.status, "ready");
+  assert.equal(payload.readiness_ceiling, "channel_ready");
+  assert.equal(payload.checks.every((check) => check.status === "pass"), true);
+  assert.equal(payload.next_action.command, "npm run hermes:activation-checklist");
+  assert.equal(payload.next_action.executes_now, false);
+  assert.equal(payload.safety.real_execution_hard_block, true);
+  assert.equal(payload.safety.can_submit_real_orders, false);
+  assert.equal(payload.safety.provider_api_call_allowed, false);
+});
+
 test("safe-loop aggregates runtime and budget signals without protected actions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-hermes-loop-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

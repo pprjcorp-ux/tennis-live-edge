@@ -107,6 +107,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - When activation is blocked: `npm run hermes:runtime-fix-plan`.
 - Every 1-5 minutes during active windows: `npm run hermes:live-stats`.
 - Every 1-5 minutes during active windows: `npm run hermes:live-window`.
+- Every 1-5 minutes during active windows: `npm run hermes:match-pulse`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
 - Every 5 minutes while blocked: `npm run hermes:unblock-plan`.
@@ -188,6 +189,12 @@ window. It reuses the deterministic event and live-stats gates, returns
 `paper_ready`, `monitor`, `blocked`, or `safety_stop`, and keeps
 `next_action.executes_now=false` so cron or Telegram can report the decision
 without creating orders or spending quota.
+
+`hermes:match-pulse` is the preferred per-match watchlist packet. It ranks live
+matches by attention priority using freshness, pressure state, edge, signal
+status, and the global live-window gate. It lets Hermes focus collection and
+human attention on the right matches without running an LLM per tick or
+creating orders directly.
 
 `hermes:learning-review` is the preferred weekly packet. It packages the
 learning gates, ROI, CLV, settled paper volume, production training examples,

@@ -140,6 +140,18 @@ async function liveWindow() {
   printJson(buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan));
 }
 
+async function matchPulse() {
+  const [report, matches] = await Promise.all([
+    intelligenceData(),
+    request("/api/v1/live/matches"),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  const liveWindowPlan = buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan);
+  printJson(buildMatchPulse({ report, eventPlan, liveWindowPlan, matches }));
+}
+
 async function learningReview() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -2437,6 +2449,222 @@ function liveWindowAction({
   };
 }
 
+function buildMatchPulse({ report, eventPlan, liveWindowPlan, matches }) {
+  const watchlist = matches
+    .map((analysis) => matchPulseRow({ analysis, liveWindowPlan, eventPlan }))
+    .sort((a, b) => (
+      b.priority_score - a.priority_score
+      || a.match_id.localeCompare(b.match_id)
+    ));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "match_pulse",
+    status: matchPulseStatus(liveWindowPlan, watchlist),
+    live_window_status: liveWindowPlan.status,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    matches_seen: matches.length,
+    watchlist: watchlist.slice(0, 12),
+    top_match: watchlist[0] ?? null,
+    sampling_policy: liveWindowPlan.sampling_policy,
+    gates: liveWindowPlan.gates,
+    blockers: liveWindowPlan.blockers,
+    forbidden_actions: report.forbidden_collection_paths ?? [],
+    safety: liveWindowPlan.safety,
+  };
+}
+
+function matchPulseStatus(liveWindowPlan, watchlist) {
+  if (liveWindowPlan.status === "safety_stop") return "safety_stop";
+  if (liveWindowPlan.status === "blocked") return "blocked";
+  if (watchlist.some((row) => row.attention === "paper_candidate")) return "paper_candidate";
+  if (watchlist.length) return "monitor";
+  return "empty";
+}
+
+function matchPulseRow({ analysis, liveWindowPlan, eventPlan }) {
+  const match = analysis.match ?? {};
+  const freshness = analysis.freshness ?? {};
+  const signals = analysis.signals ?? [];
+  const bestSignal = chooseMatchPulseSignal(signals);
+  const scoreAge = Number(freshness.score_age_ms);
+  const oddsAge = Number(freshness.odds_age_ms);
+  const isScoreFresh = Number.isFinite(scoreAge) && scoreAge <= 30_000;
+  const isOddsFresh = Number.isFinite(oddsAge) && oddsAge <= 15_000;
+  const isLive = match.state?.status === "live";
+  const isPressure = Boolean(match.state?.is_break_point || match.state?.is_tiebreak);
+  const priorityScore = matchPulsePriority({
+    signal: bestSignal,
+    isLive,
+    isScoreFresh,
+    isOddsFresh,
+    isPressure,
+    liveWindowPlan,
+  });
+  const attention = matchPulseAttention({
+    signal: bestSignal,
+    isLive,
+    isScoreFresh,
+    isOddsFresh,
+    liveWindowPlan,
+  });
+  return {
+    match_id: match.id,
+    label: `${match.player1?.name ?? "Player 1"} vs ${match.player2?.name ?? "Player 2"}`,
+    tournament: match.tournament,
+    round: match.round,
+    tour: match.tour,
+    surface: match.surface,
+    status: match.state?.status,
+    score: {
+      sets: [match.state?.p1_sets ?? null, match.state?.p2_sets ?? null],
+      games: [match.state?.p1_games ?? null, match.state?.p2_games ?? null],
+      point: match.state?.point_score ?? null,
+      server_player_id: match.state?.server_player_id ?? null,
+      break_point: Boolean(match.state?.is_break_point),
+      tiebreak: Boolean(match.state?.is_tiebreak),
+    },
+    signal: bestSignal ? {
+      id: bestSignal.id,
+      status: bestSignal.status,
+      player_id: bestSignal.player_id,
+      player_name: bestSignal.player_name,
+      edge: bestSignal.edge,
+      threshold: bestSignal.threshold,
+      best_odds: bestSignal.best_odds,
+      confidence: bestSignal.confidence,
+      reason: bestSignal.reason,
+    } : null,
+    prediction: {
+      p1_win_prob: analysis.prediction?.p1_win_prob,
+      p2_win_prob: analysis.prediction?.p2_win_prob,
+      confidence: analysis.prediction?.confidence,
+      model_version: analysis.prediction?.model_version,
+    },
+    freshness: {
+      source: freshness.source,
+      persisted: Boolean(freshness.persisted),
+      score_age_ms: Number.isFinite(scoreAge) ? scoreAge : null,
+      odds_age_ms: Number.isFinite(oddsAge) ? oddsAge : null,
+      score_fresh: isScoreFresh,
+      odds_fresh: isOddsFresh,
+      provider_lineage: freshness.provider_lineage ?? [],
+    },
+    attention,
+    priority_score: priorityScore,
+    next_action: matchPulseAction({ attention, eventPlan, liveWindowPlan }),
+  };
+}
+
+function chooseMatchPulseSignal(signals) {
+  return [...signals].sort((a, b) => (
+    signalStatusRank(b.status) - signalStatusRank(a.status)
+    || Number(b.edge ?? 0) - Number(a.edge ?? 0)
+    || String(a.id ?? "").localeCompare(String(b.id ?? ""))
+  ))[0] ?? null;
+}
+
+function signalStatusRank(status) {
+  return {
+    Entrada: 4,
+    Monitorar: 3,
+    "Sem valor": 2,
+    Bloqueado: 1,
+  }[status] ?? 0;
+}
+
+function matchPulsePriority({
+  signal,
+  isLive,
+  isScoreFresh,
+  isOddsFresh,
+  isPressure,
+  liveWindowPlan,
+}) {
+  const edgeScore = Math.min(30, Math.max(0, Number(signal?.edge ?? 0) * 200));
+  const score = (
+    (signal?.status === "Entrada" ? 55 : signal?.status === "Monitorar" ? 20 : 0)
+    + (isLive ? 15 : 0)
+    + (isScoreFresh ? 10 : -10)
+    + (isOddsFresh ? 10 : -15)
+    + (isPressure ? 8 : 0)
+    + edgeScore
+    + (liveWindowPlan.status === "paper_ready" ? 10 : 0)
+    - (["blocked", "safety_stop"].includes(liveWindowPlan.status) ? 25 : 0)
+  );
+  return Math.max(0, Math.round(score));
+}
+
+function matchPulseAttention({
+  signal,
+  isLive,
+  isScoreFresh,
+  isOddsFresh,
+  liveWindowPlan,
+}) {
+  if (liveWindowPlan.status === "safety_stop" || liveWindowPlan.status === "blocked") {
+    return "blocked_watch";
+  }
+  if (!isScoreFresh || !isOddsFresh) {
+    return "stale_monitor";
+  }
+  if (signal?.status === "Entrada" && liveWindowPlan.status === "paper_ready") {
+    return "paper_candidate";
+  }
+  if (isLive) {
+    return "live_monitor";
+  }
+  return "cold_monitor";
+}
+
+function matchPulseAction({ attention, eventPlan, liveWindowPlan }) {
+  if (attention === "paper_candidate") {
+    return {
+      id: "paper_autopilot",
+      command: "npm run hermes:autopilot",
+      reason: "Fresh Entrada match in an open paper-ready live window; backend still controls paper order creation.",
+      requires_admin_token: true,
+      writes: false,
+      live_api_calls: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: true,
+      executes_now: false,
+    };
+  }
+  if (attention === "blocked_watch") {
+    return {
+      id: "route_events",
+      command: "npm --silent run hermes:events",
+      reason: `Live window is ${liveWindowPlan.status}; current event severity is ${eventPlan.severity}.`,
+      requires_admin_token: false,
+      writes: false,
+      live_api_calls: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      executes_now: false,
+    };
+  }
+  return {
+    id: "observe_match",
+    command: "npm --silent run hermes:match-pulse",
+    reason: "Keep match on low-cost internal watchlist until freshness and signal gates improve.",
+    requires_admin_token: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    executes_now: false,
+  };
+}
+
 function buildLearningReview(report, eventPlan, playbookPlan) {
   const learning = report.learning_snapshot ?? {};
   const budget = report.budget_chain_snapshot ?? {};
@@ -2793,6 +3021,7 @@ const commands = {
   playbook,
   "live-stats": liveStats,
   "live-window": liveWindow,
+  "match-pulse": matchPulse,
   "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,

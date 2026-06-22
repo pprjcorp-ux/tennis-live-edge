@@ -168,6 +168,17 @@ hermes cron add \
   --timeout-seconds 60
 ```
 
+Match pulse watchlist every 1-5 minutes during active windows:
+
+```bash
+hermes cron add \
+  --name tennis-edge-match-pulse \
+  --every 5m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:match-pulse from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report status, live_window_status, top_match, watchlist attention counts, blockers, and safety. Do not execute next_action, create orders, run provider smoke, or spend provider quota from this cron." \
+  --timeout-seconds 60
+```
+
 Budget-chain dry-run every 15 minutes during onboarding:
 
 ```bash

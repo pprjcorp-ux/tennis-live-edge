@@ -38,6 +38,7 @@ npm run hermes:unblock-plan
 npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:live-window
+npm run hermes:match-pulse
 npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
@@ -104,6 +105,11 @@ analysis on every tick.
 combines event gates, provider mode, freshness, budget-chain state, signal
 readiness, and execution safety into `paper_ready`, `monitor`, `blocked`, or
 `safety_stop`. It is read-only and never executes the returned next action.
+
+`hermes:match-pulse` ranks current matches by attention priority using live
+status, score/odds freshness, pressure state, edge, signal status, and the
+global live-window gate. It is read-only and can only recommend the protected
+paper autopilot route when the live window is `paper_ready`.
 
 `hermes:learning-review` is the weekly readiness packet. It summarizes
 settled paper evidence, production training examples, ROI/CLV readiness and

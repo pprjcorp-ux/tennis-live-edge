@@ -137,6 +137,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   execute commands, spend provider quota, create orders, or enable real
   execution, and should return `paper_ready`, `monitor`, `blocked`, or
   `safety_stop` with explicit gates.
+- Hermes per-match live triage should consume `npm run hermes:match-pulse`; it
+  is a read-only watchlist/ranking packet over `/api/v1/live/matches`, must not
+  create paper orders itself, and should only point to protected backend paper
+  autopilot when the global live-window gate is `paper_ready`.
 - Hermes weekly learning/readiness review should consume
   `npm run hermes:learning-review`; it is read-only, routes interpretation to
   the critical model, and must keep real execution blocked.
@@ -186,6 +190,7 @@ npm run hermes:events
 npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:live-window
+npm run hermes:match-pulse
 npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal

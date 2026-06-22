@@ -24,6 +24,7 @@ npm run hermes:unblock-plan
 npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:live-window
+npm run hermes:match-pulse
 npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
@@ -105,6 +106,12 @@ go/no-go answer for the current live window. It combines event severity,
 provider mode, score/odds freshness, signal readiness, budget-chain completion,
 and execution safety into `paper_ready`, `monitor`, `blocked`, or
 `safety_stop`. It never executes the returned `next_action`.
+
+Use `hermes:match-pulse` when Hermes needs per-match attention routing instead
+of a global status. It reads current matches and produces a priority watchlist
+using freshness, pressure state, edge, signal status, and the global
+live-window gate. It may recommend protected paper autopilot only when that
+global gate is `paper_ready`, and it never creates orders itself.
 
 Use `hermes:learning-review` for weekly ROI/CLV/calibration/readiness review.
 It is read-only, recommends the `gpt-5.5` route for interpretation, and keeps

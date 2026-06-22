@@ -37,6 +37,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs unblock-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs playbook
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-stats
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-window
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs match-pulse
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
@@ -98,6 +99,9 @@ and keeps LLM-per-tick disabled.
 The `live-window` command emits a read-only go/no-go decision for live
 operation. It returns `paper_ready`, `monitor`, `blocked`, or `safety_stop`
 with explicit gates and never executes the next action.
+The `match-pulse` command ranks live matches into a compact watchlist using
+freshness, pressure state, edge, signal status, and the live-window gate. It is
+read-only and never creates orders itself.
 The `learning-review` command emits a weekly readiness packet for ROI, CLV,
 production training examples, model review gates, and real-execution hard
 blocking. It is read-only and does not promote models.

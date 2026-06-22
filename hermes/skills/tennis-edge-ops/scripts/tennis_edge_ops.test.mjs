@@ -1518,6 +1518,219 @@ test("live-window emits a go/no-go packet without executing actions", async () =
   }
 });
 
+test("match-pulse ranks match attention without creating orders", async () => {
+  const matches = [
+    {
+      match: {
+        id: "match_live_edge",
+        tournament: "Wimbledon",
+        round: "R16",
+        tour: "ATP",
+        competition_level: "GRAND_SLAM",
+        surface: "grass",
+        player1: { id: "p1", name: "Player One" },
+        player2: { id: "p2", name: "Player Two" },
+        state: {
+          status: "live",
+          p1_sets: 1,
+          p2_sets: 1,
+          p1_games: 4,
+          p2_games: 3,
+          point_score: "40-30",
+          server_player_id: "p1",
+          is_tiebreak: false,
+          is_break_point: true,
+        },
+      },
+      prediction: {
+        p1_win_prob: 0.61,
+        p2_win_prob: 0.39,
+        confidence: "Alta",
+        model_version: "baseline_v0",
+      },
+      signals: [
+        {
+          id: "sig_edge",
+          match_id: "match_live_edge",
+          player_id: "p1",
+          player_name: "Player One",
+          status: "Entrada",
+          edge: 0.085,
+          threshold: 0.03,
+          confidence: "Alta",
+          best_odds: 2.05,
+          reason: "fresh edge",
+        },
+      ],
+      freshness: {
+        source: "live",
+        persisted: true,
+        score_age_ms: 4000,
+        odds_age_ms: 3000,
+        provider_lineage: ["api_tennis", "odds_api_io"],
+      },
+    },
+    {
+      match: {
+        id: "match_stale_monitor",
+        tournament: "Rome Masters",
+        round: "QF",
+        tour: "ATP",
+        competition_level: "ATP",
+        surface: "clay",
+        player1: { id: "p3", name: "Player Three" },
+        player2: { id: "p4", name: "Player Four" },
+        state: {
+          status: "live",
+          p1_sets: 0,
+          p2_sets: 0,
+          p1_games: 2,
+          p2_games: 2,
+          point_score: "15-15",
+          server_player_id: "p4",
+          is_tiebreak: false,
+          is_break_point: false,
+        },
+      },
+      prediction: {
+        p1_win_prob: 0.52,
+        p2_win_prob: 0.48,
+        confidence: "Media",
+        model_version: "baseline_v0",
+      },
+      signals: [
+        {
+          id: "sig_monitor",
+          match_id: "match_stale_monitor",
+          player_id: "p3",
+          player_name: "Player Three",
+          status: "Monitorar",
+          edge: 0.015,
+          threshold: 0.04,
+          confidence: "Media",
+          best_odds: 1.9,
+          reason: "below threshold",
+        },
+      ],
+      freshness: {
+        source: "persisted_fallback",
+        persisted: true,
+        score_age_ms: 45000,
+        odds_age_ms: 26000,
+        provider_lineage: ["api_tennis"],
+      },
+    },
+  ];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": matches,
+    "/api/v1/signals/live": [matches[0].signals[0], matches[1].signals[0]],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "live_with_keys",
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 12,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          steps: [],
+        },
+        source_summary: {
+          total_matches: 2,
+          persisted_matches: 2,
+          match_freshness: [
+            {
+              match_id: "match_live_edge",
+              source: "live",
+              persisted: true,
+              score_age_ms: 4000,
+              odds_age_ms: 3000,
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["match-pulse", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "match_pulse");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.live_window_status, "paper_ready");
+    assert.equal(payload.watchlist.length, 2);
+    assert.equal(payload.top_match.match_id, "match_live_edge");
+    assert.equal(payload.watchlist[0].attention, "paper_candidate");
+    assert.equal(payload.watchlist[0].next_action.command, "npm run hermes:autopilot");
+    assert.equal(payload.watchlist[0].next_action.executes_now, false);
+    assert.equal(payload.watchlist[1].attention, "stale_monitor");
+    assert.equal(payload.watchlist[0].priority_score > payload.watchlist[1].priority_score, true);
+  } finally {
+    server.close();
+  }
+
+  const blockedFixtures = eventRouterFixtures({
+    "/api/v1/live/matches": matches,
+    "/api/v1/provider-cursors": [
+      {
+        provider: "odds_api_io",
+        stream: "tennis.live",
+        status: "gap",
+        resync_required: true,
+        last_seq: 22,
+        expected_next_seq: 23,
+        gap_count: 1,
+      },
+    ],
+    "/api/v1/signals/live": [matches[0].signals[0]],
+  });
+  const { server: blockedServer, apiBase: blockedApiBase } = await startServer((request, response) => {
+    const payload = blockedFixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["match-pulse", `--api-base=${blockedApiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.live_window_status, "blocked");
+    assert.equal(payload.watchlist[0].attention, "blocked_watch");
+    assert.equal(payload.watchlist[0].next_action.command, "npm --silent run hermes:events");
+    assert.equal(payload.watchlist.every((item) => item.next_action.can_create_paper_orders === false), true);
+  } finally {
+    blockedServer.close();
+  }
+});
+
 test("budget-chain emits a dry-run provider onboarding plan without spending quota", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/signals/live": [],

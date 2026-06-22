@@ -54,6 +54,8 @@
     "hermes:learning-review": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review",
     "hermes:budget-chain": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain",
     "hermes:provider-smoke": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke",
+    "hermes:provider-smoke-ledger": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke-ledger",
+    "hermes:provider-smoke-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke-ledger-report",
     "hermes:safe-loop": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop",
     "hermes:autonomy-brief": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-brief",
     "hermes:source-discovery": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-discovery",

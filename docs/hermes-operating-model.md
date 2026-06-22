@@ -606,6 +606,13 @@ default output is blocked dry-run JSON; `--execute-provider-call` is required
 before it runs a supported provider smoke. That flag is operator-only and must
 not be used in scheduled Hermes jobs.
 
+`hermes:provider-smoke-ledger` persists the dry-run provider-smoke decision as
+local JSONL with `provider_command_executed=false` and `quota_spent=false`.
+`hermes:provider-smoke-ledger-report` summarizes repeated pending provider
+smokes so the operator can see which paid smoke is ready for explicit local
+confirmation, without spending quota or turning the budget chain into
+automation.
+
 ## Evidence Required Before More Autonomy
 
 - `npm run api:check:operational-truth -- --pretty` passes.

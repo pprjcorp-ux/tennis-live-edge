@@ -10171,6 +10171,148 @@ test("provider-smoke defaults to blocked dry-run and does not spend provider quo
   }
 });
 
+test("provider-smoke-ledger records dry-run evidence without provider calls", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-provider-smoke-ledger-"));
+  const ledgerPath = join(tempDir, "provider-smoke-ledger.jsonl");
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          warnings: [],
+          steps: [
+            {
+              order: 1,
+              provider: "theoddsapi",
+              capability: "archive_odds",
+              status: "ready_next",
+              configured: true,
+              current: true,
+              last_smoke_status: null,
+              last_smoke_at: null,
+              smoke_completed: false,
+              required_before_enable: [],
+              next_action: "Run TheOddsAPI archive-sync smoke and confirm persisted payload evidence.",
+              notes: ["Lowest-risk paid provider to connect first."],
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["provider-smoke-ledger", `--api-base=${apiBase}`], {
+      env: { HERMES_PROVIDER_SMOKE_LEDGER_PATH: ledgerPath },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    assert.equal(existsSync(ledgerPath), true);
+    const payload = JSON.parse(result.stdout);
+    const records = readFileSync(ledgerPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(payload.mode, "provider_smoke_ledger");
+    assert.equal(payload.writes, true);
+    assert.equal(payload.write_scope, "local_provider_smoke_jsonl_only");
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.record.provider_command_executed, false);
+    assert.equal(payload.record.quota_spent, false);
+    assert.equal(payload.record.provider, "theoddsapi");
+    assert.equal(payload.record.capability, "archive_odds");
+    assert.equal(payload.record.smoke_command, "npm run api:ingest:archive-odds -- --pretty");
+    assert.equal(payload.record.explicit_flag_required, "--execute-provider-call");
+    assert.equal(records.length, 1);
+    assert.equal(records[0].mode, "provider_smoke_ledger_record");
+  } finally {
+    server.close();
+  }
+});
+
+test("provider-smoke-ledger-report summarizes repeated dry-runs without quota spend", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-provider-smoke-ledger-report-"));
+  const ledgerPath = join(tempDir, "provider-smoke-ledger.jsonl");
+  const rows = [
+    {
+      mode: "provider_smoke_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      provider_command_executed: false,
+      provider_api_call_allowed: false,
+      quota_spent: false,
+      status: "blocked",
+      reason: "explicit_provider_call_flag_required",
+      provider: "theoddsapi",
+      capability: "archive_odds",
+      smoke_command: "npm run api:ingest:archive-odds -- --pretty",
+      explicit_flag_required: "--execute-provider-call",
+      requires_operator_confirmation: true,
+      blockers: [],
+    },
+    {
+      mode: "provider_smoke_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      provider_command_executed: false,
+      provider_api_call_allowed: false,
+      quota_spent: false,
+      status: "blocked",
+      reason: "explicit_provider_call_flag_required",
+      provider: "theoddsapi",
+      capability: "archive_odds",
+      smoke_command: "npm run api:ingest:archive-odds -- --pretty",
+      explicit_flag_required: "--execute-provider-call",
+      requires_operator_confirmation: true,
+      blockers: [],
+    },
+  ];
+  writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["provider-smoke-ledger-report"], {
+    env: { HERMES_PROVIDER_SMOKE_LEDGER_PATH: ledgerPath },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "provider_smoke_ledger_report");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.total_records, 2);
+  assert.equal(payload.provider_command_executed_count, 0);
+  assert.equal(payload.quota_spent_count, 0);
+  assert.equal(payload.top_provider, "theoddsapi");
+  assert.equal(payload.top_capability, "archive_odds");
+  assert.equal(payload.top_reason, "explicit_provider_call_flag_required");
+  assert.equal(payload.top_smoke_command, "npm run api:ingest:archive-odds -- --pretty");
+  assert.equal(payload.next_recommendation.requires_operator_confirmation, true);
+  assert.equal(payload.next_recommendation.provider_api_call_allowed, false);
+});
+
 test("learning-review summarizes model readiness without enabling real execution", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/signals/live": [],

@@ -2455,6 +2455,24 @@ async function providerSmoke() {
   });
 }
 
+async function providerSmokeLedger() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  const plan = buildBudgetChainPlan(report, eventPlan);
+  const dryRun = providerSmokeBlocked({
+    plan,
+    currentStep: plan.current_step,
+    reason: plan.current_step ? "explicit_provider_call_flag_required" : "no_current_budget_step",
+  });
+  const ledger = buildProviderSmokeLedger(dryRun);
+  writeProviderSmokeLedger(ledger.record);
+  printJson(ledger);
+}
+
+async function providerSmokeLedgerReport() {
+  printJson(buildProviderSmokeLedgerReport(readProviderSmokeLedgerRecords()));
+}
+
 function backendUnavailableBriefing({ error }) {
   return {
     summary: `FastAPI local unavailable for Hermes intelligence: ${String(error.message ?? error)}`,
@@ -15926,6 +15944,144 @@ function providerSmokeBlocked({ plan, currentStep, reason }) {
   };
 }
 
+function buildProviderSmokeLedger(dryRun) {
+  const path = providerSmokeLedgerPath();
+  const step = dryRun.current_step ?? null;
+  const record = {
+    generated_at: new Date().toISOString(),
+    mode: "provider_smoke_ledger_record",
+    dry_run: dryRun,
+    outcome: "observed",
+    action_executed: false,
+    provider_command_executed: false,
+    provider_api_call_allowed: false,
+    quota_spent: false,
+    status: dryRun.status,
+    reason: dryRun.reason,
+    provider: step?.provider ?? null,
+    capability: step?.capability ?? null,
+    smoke_command: dryRun.would_run ?? null,
+    explicit_flag_required: "--execute-provider-call",
+    requires_operator_confirmation: true,
+    blockers: dryRun.blockers ?? [],
+    safety: dryRun.safety,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "provider_smoke_ledger",
+    status: dryRun.status,
+    read_only: false,
+    writes: true,
+    write_scope: "local_provider_smoke_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    ledger: {
+      path,
+      format: "jsonl",
+      retention_note: "Local Hermes provider-smoke dry-run trace; do not commit runtime logs.",
+    },
+    record,
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function providerSmokeLedgerPath() {
+  return process.env.HERMES_PROVIDER_SMOKE_LEDGER_PATH || "hermes/runs/provider-smoke-ledger.jsonl";
+}
+
+function writeProviderSmokeLedger(record) {
+  const path = providerSmokeLedgerPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function readProviderSmokeLedgerRecords() {
+  const path = providerSmokeLedgerPath();
+  if (!existsSync(path)) {
+    return { path, records: [], invalid_rows: 0 };
+  }
+  const content = readFileSync(path, "utf8");
+  let invalidRows = 0;
+  const records = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalidRows += 1;
+        return [];
+      }
+    });
+  return { path, records, invalid_rows: invalidRows };
+}
+
+function buildProviderSmokeLedgerReport({ path, records, invalid_rows: invalidRows }) {
+  const providerCounts = rankedCounts(records.map((record) => record.provider).filter(Boolean));
+  const capabilityCounts = rankedCounts(records.map((record) => record.capability).filter(Boolean));
+  const reasonCounts = rankedCounts(records.map((record) => record.reason).filter(Boolean));
+  const commandCounts = rankedCounts(records.map((record) => record.smoke_command).filter(Boolean));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "provider_smoke_ledger_report",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger: {
+      path,
+      format: "jsonl",
+      invalid_rows: invalidRows,
+    },
+    total_records: records.length,
+    action_executed_count: records.filter((record) => record.action_executed === true).length,
+    provider_command_executed_count: records.filter((record) => record.provider_command_executed === true).length,
+    quota_spent_count: records.filter((record) => record.quota_spent === true).length,
+    status_counts: countValues(records.map((record) => record.status).filter(Boolean)),
+    provider_counts: providerCounts,
+    capability_counts: capabilityCounts,
+    reason_counts: reasonCounts,
+    smoke_command_counts: commandCounts,
+    top_provider: providerCounts[0]?.command ?? null,
+    top_capability: capabilityCounts[0]?.command ?? null,
+    top_reason: reasonCounts[0]?.command ?? null,
+    top_smoke_command: commandCounts[0]?.command ?? null,
+    latest_record: records[records.length - 1] ?? null,
+    next_recommendation: {
+      id: "operator_confirm_provider_smoke",
+      command: "npm run hermes:provider-smoke -- --execute-provider-call",
+      reason: "Only a local operator shell may run a quota-consuming provider smoke after reviewing this ledger.",
+      executes_now: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      requires_operator_confirmation: true,
+    },
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
 function budgetBlockers({ budget, eventPlan, currentStep }) {
   const blockers = [];
   if (!budget.core_ready) {
@@ -15980,6 +16136,8 @@ const commands = {
   "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,
+  "provider-smoke-ledger": providerSmokeLedger,
+  "provider-smoke-ledger-report": providerSmokeLedgerReport,
   "safe-loop": safeLoop,
   "autonomy-brief": autonomyBrief,
   "source-discovery": sourceDiscovery,

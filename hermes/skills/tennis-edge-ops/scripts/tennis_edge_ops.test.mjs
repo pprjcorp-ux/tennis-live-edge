@@ -106,6 +106,22 @@ function eventRouterFixtures(overrides = {}) {
           budget_chain_completed: true,
           enterprise_eligible: false,
           current_step: null,
+          steps: [
+            {
+              order: 1,
+              provider: "theoddsapi",
+              capability: "archive_odds",
+              status: "configured",
+              configured: true,
+              current: false,
+              last_smoke_status: "completed",
+              last_smoke_at: "2026-06-21T20:00:00Z",
+              smoke_completed: true,
+              required_before_enable: [],
+              next_action: "Keep as REST archive/comparison and never override fresher persisted live odds.",
+              notes: ["Lowest-risk paid provider to connect first."],
+            },
+          ],
         },
         source_summary: {
           total_matches: 2,
@@ -700,6 +716,89 @@ test("live-stats emits deterministic collection, processing, and sampling metric
     assert.equal(payload.sampling_policy.llm_per_tick_allowed, false);
     assert.equal(payload.safety.can_submit_real_orders, false);
     assert.equal(payload.next_safe_commands.some((command) => command.id === "paper_autopilot"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("budget-chain emits a dry-run provider onboarding plan without spending quota", async () => {
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          warnings: [],
+          steps: [
+            {
+              order: 1,
+              provider: "theoddsapi",
+              capability: "archive_odds",
+              status: "ready_next",
+              configured: true,
+              current: true,
+              last_smoke_status: null,
+              last_smoke_at: null,
+              smoke_completed: false,
+              required_before_enable: [],
+              next_action: "Run TheOddsAPI archive-sync smoke and confirm persisted payload evidence.",
+              notes: ["Lowest-risk paid provider to connect first."],
+            },
+            {
+              order: 2,
+              provider: "api_tennis",
+              capability: "score_livescore",
+              status: "blocked",
+              configured: false,
+              current: false,
+              last_smoke_status: null,
+              last_smoke_at: null,
+              smoke_completed: false,
+              required_before_enable: ["TheOddsAPI archive smoke completed"],
+              next_action: "Set API_TENNIS_KEY after archive odds are stable.",
+              notes: [],
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["budget-chain", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "dry_run");
+    assert.equal(payload.enterprise_eligible, false);
+    assert.equal(payload.current_step.provider, "theoddsapi");
+    assert.equal(payload.current_step.capability, "archive_odds");
+    assert.equal(payload.current_step.smoke_command, "npm run api:ingest:archive-odds -- --pretty");
+    assert.equal(payload.current_step.provider_api_call_allowed, false);
+    assert.equal(payload.current_step.requires_operator_confirmation, true);
+    assert.equal(payload.steps[1].status, "blocked");
+    assert.equal(payload.safety.can_submit_real_orders, false);
   } finally {
     server.close();
   }

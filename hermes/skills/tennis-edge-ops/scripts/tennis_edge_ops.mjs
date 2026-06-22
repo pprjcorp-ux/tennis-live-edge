@@ -97,6 +97,12 @@ async function liveStats() {
   printJson(buildLiveStats(report, eventPlan, playbookPlan));
 }
 
+async function budgetChain() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  printJson(buildBudgetChainPlan(report, eventPlan));
+}
+
 async function intelligenceData() {
   const [
     briefing,
@@ -384,6 +390,8 @@ function buildIntelligenceReport({
       enterprise_eligible: Boolean(apiOnboarding.enterprise_eligible),
       current_step: apiOnboarding.current_step,
       next_action: apiOnboarding.next_action,
+      core_ready: Boolean(apiOnboarding.core_ready),
+      steps: compactApiOnboardingSteps(apiOnboarding.steps ?? []),
       warnings: (apiOnboarding.warnings ?? []).slice(0, 5),
     },
     bankroll_snapshot: {
@@ -485,6 +493,23 @@ function compactMatchFreshness(rows) {
     persisted: row.persisted,
     score_age_ms: row.score_age_ms,
     odds_age_ms: row.odds_age_ms,
+  }));
+}
+
+function compactApiOnboardingSteps(steps) {
+  return steps.map((step) => ({
+    order: step.order,
+    provider: step.provider,
+    capability: step.capability,
+    status: step.status,
+    configured: step.configured,
+    current: step.current,
+    last_smoke_status: step.last_smoke_status,
+    last_smoke_at: step.last_smoke_at,
+    smoke_completed: step.smoke_completed,
+    required_before_enable: step.required_before_enable ?? [],
+    next_action: step.next_action,
+    notes: step.notes ?? [],
   }));
 }
 
@@ -1181,6 +1206,91 @@ function clampScore(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 }
 
+function buildBudgetChainPlan(report, eventPlan) {
+  const budget = report.budget_chain_snapshot ?? {};
+  const steps = budget.steps ?? [];
+  const currentStep = steps.find((step) => step.current)
+    ?? stepFromCurrentLabel(budget.current_step, steps)
+    ?? steps.find((step) => !step.smoke_completed)
+    ?? null;
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "dry_run",
+    current_step_label: budget.current_step,
+    budget_chain_completed: Boolean(budget.budget_chain_completed),
+    enterprise_eligible: Boolean(budget.enterprise_eligible),
+    core_ready: Boolean(budget.core_ready),
+    current_step: currentStep ? budgetStep(currentStep, true) : null,
+    steps: steps.map((step) => budgetStep(step, false)),
+    blockers: budgetBlockers({ budget, eventPlan, currentStep }),
+    policy: {
+      execute_provider_api_calls_by_default: false,
+      requires_operator_confirmation: true,
+      reason: "Budget onboarding can spend provider quota, so Hermes reports commands but does not run them automatically.",
+    },
+    safety: {
+      can_submit_real_orders: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+  };
+}
+
+function stepFromCurrentLabel(label, steps) {
+  if (!label || !steps.length) return null;
+  const match = String(label).match(/^(\d+)\.\s*([^:]+):(.+)$/);
+  if (!match) return null;
+  const order = Number(match[1]);
+  return steps.find((step) => Number(step.order) === order) ?? null;
+}
+
+function budgetStep(step, includeCommand) {
+  const command = smokeCommandFor(step);
+  return {
+    order: step.order,
+    provider: step.provider,
+    capability: step.capability,
+    status: step.status,
+    configured: Boolean(step.configured),
+    current: Boolean(step.current),
+    smoke_completed: Boolean(step.smoke_completed),
+    last_smoke_status: step.last_smoke_status,
+    last_smoke_at: step.last_smoke_at,
+    required_before_enable: step.required_before_enable ?? [],
+    next_action: step.next_action,
+    smoke_command: includeCommand ? command : command,
+    provider_api_call_allowed: false,
+    requires_operator_confirmation: true,
+    notes: step.notes ?? [],
+  };
+}
+
+function smokeCommandFor(step) {
+  const key = `${step.provider}:${step.capability}`;
+  return {
+    "theoddsapi:archive_odds": "npm run api:ingest:archive-odds -- --pretty",
+    "api_tennis:score_livescore": "npm run api:ingest:api-tennis -- --pretty",
+    "odds_api_io:live_odds_websocket": "npm run api:ingest:odds-stream -- --max-messages 5 --timeout-seconds 10",
+  }[key] ?? "npm run api:check:operational-truth -- --pretty";
+}
+
+function budgetBlockers({ budget, eventPlan, currentStep }) {
+  const blockers = [];
+  if (!budget.core_ready) {
+    blockers.push("core_not_ready");
+  }
+  if (eventPlan.events.some((item) => item.type === "real_execution_safety_violation")) {
+    blockers.push("real_execution_safety_violation");
+  }
+  if (currentStep?.required_before_enable?.length) {
+    blockers.push(...currentStep.required_before_enable);
+  }
+  if (!currentStep) {
+    blockers.push("no_current_budget_step");
+  }
+  return blockers;
+}
+
 const commands = {
   briefing,
   anomalies,
@@ -1190,6 +1300,7 @@ const commands = {
   events,
   playbook,
   "live-stats": liveStats,
+  "budget-chain": budgetChain,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

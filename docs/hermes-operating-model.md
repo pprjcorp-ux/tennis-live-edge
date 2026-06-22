@@ -16,7 +16,7 @@ Licensed feeds / replay / operator notes
   -> protected backend action only when gates pass
 ```
 
-Hermes can add leverage in eight places:
+Hermes can add leverage in nine places:
 
 1. Intelligence packets: combine provider health, cursor status, cost, data
    quality, paper performance, bankroll, signals, replay lab and onboarding
@@ -24,18 +24,20 @@ Hermes can add leverage in eight places:
 2. Live statistics packets: summarize collection, processing, freshness,
    signal readiness, learning progress, cost efficiency and sampling policy
    without LLM work per tick.
-3. Event routing: cron/webhook/gateway can wake Hermes only on useful events
+3. Budget-chain onboarding: expose the next paid-provider smoke as a dry-run
+   command with prerequisites and quota guardrails.
+4. Event routing: cron/webhook/gateway can wake Hermes only on useful events
    such as feed gaps, stale odds, critical anomalies, quota risk, new entry
    signals, or post-day settlement windows.
-4. Playbooks: deterministic phase plans turn events into safe next commands
+5. Playbooks: deterministic phase plans turn events into safe next commands
    without giving Hermes broad shell discretion.
-5. Model routing: cheap model for routine triage; strong model only for severe
+6. Model routing: cheap model for routine triage; strong model only for severe
    anomaly, weekly learning review, and real-execution-readiness reports.
-6. Memory: preserve operating lessons, provider quirks, recurring blockers and
+7. Memory: preserve operating lessons, provider quirks, recurring blockers and
    review outcomes, while keeping provider secrets outside prompts.
-7. Skill reuse: the `tennis-edge-ops` skill gives Hermes a narrow, repeatable
+8. Skill reuse: the `tennis-edge-ops` skill gives Hermes a narrow, repeatable
    command surface instead of broad shell improvisation.
-8. Human reachability: Telegram/dashboard can surface concise actions without
+9. Human reachability: Telegram/dashboard can surface concise actions without
    exposing the backend or provider credentials publicly.
 
 ## Safe Collection Boundary
@@ -69,7 +71,7 @@ data through browser tricks.
 ### Level 0: Observe
 
 Run `npm run hermes:intelligence`, `npm run hermes:live-stats`,
-`npm run hermes:events`, `npm run hermes:playbook` and
+`npm run hermes:budget-chain`, `npm run hermes:events`, `npm run hermes:playbook` and
 `npm run hermes:preflight`. No writes.
 
 ### Level 1: Rehearse
@@ -99,6 +101,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 
 - Every 5 minutes during active windows: `npm run hermes:intelligence`.
 - Every 1-5 minutes during active windows: `npm run hermes:live-stats`.
+- Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
 - Every 5 minutes during active windows: `npm run hermes:playbook`.
 - Every 15 minutes: `npm run hermes:preflight`.
@@ -130,6 +133,12 @@ statistics from persisted match state; cost utilization; and a sampling policy
 such as `cold_safe_mode`, `budget_chain_polling`, `paper_signal_watch`, or
 `learning_collection`. It keeps `llm_per_tick_allowed=false` so Hermes can be
 fast and cheap while Python/Postgres keep doing the tick math.
+
+`hermes:budget-chain` is the preferred provider-onboarding packet. It turns
+`api_onboarding.current_step` and its step list into a dry-run smoke plan:
+provider, capability, prerequisites, exact command, and quota policy. It never
+runs provider APIs by default; the operator must intentionally execute the
+reported command when ready.
 
 ## Evidence Required Before More Autonomy
 

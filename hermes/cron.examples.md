@@ -105,6 +105,17 @@ hermes cron add \
   --timeout-seconds 45
 ```
 
+Budget-chain dry-run every 15 minutes during onboarding:
+
+```bash
+hermes cron add \
+  --name tennis-edge-budget-chain \
+  --every 15m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:budget-chain from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report current_step, blockers, smoke_command, and provider_api_call_allowed. Do not execute the smoke command from this cron." \
+  --timeout-seconds 45
+```
+
 Paper autopilot every 5 minutes during live windows, only after
 `ADMIN_API_TOKEN` is available to Hermes as a local secret:
 

@@ -35,6 +35,7 @@ npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:playbook
 npm run hermes:live-stats
+npm run hermes:budget-chain
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
@@ -76,6 +77,11 @@ collection health, processing health, signal readiness, freshness buckets,
 learning progress, cost efficiency, and the safe sampling policy from internal
 FastAPI state. It is designed for frequent cron/Telegram use without LLM
 analysis on every tick.
+
+`hermes:budget-chain` turns API onboarding state into a dry-run provider smoke
+plan. It reports the current provider, required prerequisites, and exact smoke
+command, but defaults `provider_api_call_allowed=false` so Hermes cannot spend
+vendor quota without an explicit operator action.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

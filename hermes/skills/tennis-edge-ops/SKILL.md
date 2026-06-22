@@ -46,6 +46,10 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs playbook
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-stats
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-window
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs match-pulse
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs grand-slam-readiness
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs grand-slam-mission
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs grand-slam-mission-ledger
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs grand-slam-mission-ledger-report
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs collection-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs quota-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-controller
@@ -58,6 +62,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-brief
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-discovery
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-matrix
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs historical-backfill-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs capability-audit
@@ -106,6 +111,10 @@ reachability, local gateway reachability, persistence, provider key readiness,
 and the real-execution hard block.
 The `runtime-check` command runs read-only Hermes CLI diagnostics and captures
 status/doctor output as JSON. It must not repair, install, or restart services.
+It exposes `capability_summary` and `autonomy_impact` so a running gateway,
+configured model/provider and configured channels can still be used for
+read-only packets while doctor timeouts keep cron/channel/paper escalation
+blocked.
 The `doctor-triage` command runs bounded local probes for Hermes version,
 status, and a short doctor attempt. It should classify doctor timeouts without
 starting services, editing credentials, calling providers, or printing secrets.

@@ -303,6 +303,11 @@ Runtime findings from `hermes:runtime-check` flow into this packet, including
 gateway service status, doctor timeout/failure state, auth notes, messaging
 notes, and manual commands marked with `mutates_runtime_if_run` when they would
 alter Hermes if an operator ran them.
+`runtime-check` also emits `capability_summary` and `autonomy_impact`, which
+separate "usable for read-only summaries/ledgers" from "eligible for cron,
+channels, paper autopilot or execution". A running gateway plus configured
+model/provider is useful evidence, but it is not a bypass around doctor,
+allowlist, admin-token, provider-quota or real-execution gates.
 Specific runtime diagnostics outrank the generic runtime recheck. If the
 gateway is running but `hermes doctor` times out, the next action becomes
 `npm run hermes:doctor-triage`; if the gateway is stopped, manual gateway review
@@ -341,6 +346,8 @@ state, consumes provider quota, or is deferred. It does not execute commands.
 `hermes:runtime-check` is the local diagnostic packet for the first unblock
 lane. It runs the Hermes CLI in read-only mode and captures status/doctor
 evidence without changing any LaunchAgent, daemon, gateway, or provider config.
+Its capability summary lets Hermes keep producing internal operator packets
+from a partial runtime while preserving the observe-only ceiling.
 
 `hermes:playbook` is the preferred human/operator handoff. It groups the event
 state into phases: `observe`, `stabilize_data`, `budget_chain`,

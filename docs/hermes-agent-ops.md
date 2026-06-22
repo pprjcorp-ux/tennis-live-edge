@@ -94,7 +94,11 @@ outcomes without parsing free-form reason strings.
 
 Use `hermes:runtime-check` when `unblock-plan` prioritizes the local runtime
 lane. It captures `hermes status` and `hermes doctor` output in JSON but does
-not modify LaunchAgents, daemons, gateway state, or credentials.
+not modify LaunchAgents, daemons, gateway state, or credentials. It also emits
+`capability_summary` and `autonomy_impact` so a running gateway, configured
+model/provider or configured channel can still be used for read-only summaries
+and ledgers while doctor timeout blocks cron, channel escalation and paper
+autopilot.
 
 Use `hermes:doctor-triage` when runtime diagnostics report `doctor_timed_out`.
 It runs bounded local probes for version/status/doctor, classifies the likely
@@ -344,6 +348,9 @@ enabling real execution.
 It also surfaces `runtime_findings` from `hermes:runtime-check` as non-executed
 diagnostic actions, so a stopped gateway or bounded doctor timeout becomes an
 explicit manual review step instead of a vague runtime failure.
+Runtime capability summaries are advisory only: they can justify read-only
+operator packets, but never override doctor, allowlist, admin-token, provider
+quota or real-execution gates.
 
 ## Audit Trail
 

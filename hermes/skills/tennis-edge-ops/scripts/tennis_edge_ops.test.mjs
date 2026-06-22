@@ -796,6 +796,83 @@ test("runtime-check captures Hermes local diagnostics without failing protected 
   assert.equal(payload.diagnostic_actions.some((action) => action.command.includes("launchctl kickstart")), false);
 });
 
+test("runtime-check exposes usable Hermes capabilities while autonomy remains gated", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-hermes-capability-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log(`gateway: running",
+      "◆ Environment",
+      "  Project:      /Users/ppfahd/.hermes/hermes-agent",
+      "  Python:       3.11.15",
+      "  Model:        gpt-5.5",
+      "  Provider:     OpenAI API",
+      "◆ API Keys",
+      "  OpenAI        ✓ [REDACTED_API_KEY]",
+      "  OpenRouter    ✗ (not set)",
+      "  GitHub        ✗ (not set)",
+      "◆ Auth Providers",
+      "  Nous Portal   ✓ logged in",
+      "  OpenAI Codex  ✗ not logged in",
+      "◆ Terminal Backend",
+      "  Backend:      local",
+      "◆ Messaging Platforms",
+      "  Telegram      ✗ not configured",
+      "  Discord       ✓ configured (home: 123)",
+      "  Slack         ✗ not configured",
+      "◆ Gateway Service",
+      "  Status:       ✓ running",
+      "◆ Scheduled Jobs",
+      "  Jobs:         0",
+      "◆ Sessions",
+      "  Active:       2 session(s)`); process.exit(0); }",
+      "else if (process.argv[2] === 'doctor') { console.log('◆ API Connectivity\\n  Running 26 connectivity checks in parallel...'); setInterval(() => {}, 1000); }",
+      "else { process.exit(2); }",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+
+  const result = await runCli(["runtime-check"], {
+    env: { HERMES_BIN: fakeHermes },
+    timeoutMs: 8_000,
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "local_runtime_check");
+  assert.equal(payload.status, "degraded");
+  assert.equal(payload.runtime_findings.gateway_service_status, "running");
+  assert.equal(payload.runtime_findings.doctor_status, "timed_out");
+  assert.equal(payload.capability_summary.model, "gpt-5.5");
+  assert.equal(payload.capability_summary.provider, "OpenAI API");
+  assert.equal(payload.capability_summary.python, "3.11.15");
+  assert.equal(payload.capability_summary.terminal_backend, "local");
+  assert.equal(payload.capability_summary.gateway_running, true);
+  assert.equal(payload.capability_summary.scheduled_jobs, 0);
+  assert.equal(payload.capability_summary.active_sessions, 2);
+  assert.equal(payload.capability_summary.api_keys.openai, "configured");
+  assert.equal(payload.capability_summary.auth_providers.nous_portal, "logged_in");
+  assert.equal(payload.capability_summary.auth_providers.openai_codex, "missing");
+  assert.equal(payload.capability_summary.channels.telegram, "missing");
+  assert.equal(payload.capability_summary.channels.discord, "configured");
+  assert.deepEqual(payload.capability_summary.configured_channels, ["discord"]);
+  assert.equal(payload.capability_summary.openai_api_ready, true);
+  assert.equal(payload.capability_summary.usable_for_internal_packets, true);
+  assert.equal(payload.capability_summary.usable_for_channel_delivery, true);
+  assert.equal(payload.capability_summary.blocked_for_autonomous_cron, true);
+  assert.equal(payload.capability_summary.blocked_for_paper_autopilot, true);
+  assert.equal(payload.autonomy_impact.status, "partial_runtime_available");
+  assert.equal(payload.autonomy_impact.allowed_now.includes("operator_summary_generation"), true);
+  assert.equal(payload.autonomy_impact.blocked_until_operator_fix.includes("cron_activation"), true);
+  assert.equal(payload.autonomy_impact.blocked_until_operator_fix.includes("real_execution"), true);
+  assert.equal(payload.autonomy_impact.provider_api_call_allowed, false);
+  assert.equal(payload.autonomy_impact.can_submit_real_orders, false);
+  assert.equal(JSON.stringify(payload).includes("[REDACTED_API_KEY]"), true);
+});
+
 test("doctor-triage classifies a bounded doctor timeout without mutating runtime", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-doctor-triage-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

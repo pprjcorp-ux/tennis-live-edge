@@ -237,6 +237,7 @@ async function runtimeCheckData() {
   const hasMissingCommand = commands.some((item) => item.error_code === "command_not_found");
   const hasFailure = commands.some((item) => item.exit_code !== 0 || item.timed_out || item.error_code);
   const runtimeFindings = buildRuntimeFindings(commands);
+  const capabilitySummary = buildRuntimeCapabilitySummary({ commands, runtimeFindings });
   return {
     generated_at: new Date().toISOString(),
     mode: "local_runtime_check",
@@ -248,6 +249,8 @@ async function runtimeCheckData() {
     can_submit_real_orders: false,
     commands,
     runtime_findings: runtimeFindings,
+    capability_summary: capabilitySummary,
+    autonomy_impact: runtimeAutonomyImpact({ runtimeFindings, capabilitySummary, hasMissingCommand, hasFailure }),
     diagnostic_actions: runtimeDiagnosticActions({ hasMissingCommand, hasFailure, runtimeFindings }),
     next_actions: runtimeCheckActions({ hasMissingCommand, hasFailure, runtimeFindings }),
   };
@@ -304,6 +307,8 @@ function buildChannelReadiness(runtime) {
     runtime: {
       status: runtime.status,
       runtime_findings: runtime.runtime_findings,
+      capability_summary: runtime.capability_summary,
+      autonomy_impact: runtime.autonomy_impact,
       diagnostic_actions: runtime.diagnostic_actions,
     },
     operator_notes: failedChecks.length
@@ -2462,6 +2467,143 @@ function buildRuntimeFindings(commands) {
     doctor_progress: doctorCommand ? doctorProgress : null,
     doctor_timeout_ms: doctorCommand?.timeout_ms ?? null,
   };
+}
+
+function buildRuntimeCapabilitySummary({ commands, runtimeFindings }) {
+  const statusCommand = commands.find((item) => item.name === "hermes status");
+  const statusText = statusCommand?.stdout ?? "";
+  const channels = runtimeChannelSummary(statusText);
+  const apiKeys = runtimeApiKeySummary(statusText);
+  const authProviders = runtimeAuthProviderSummary(statusText);
+  const gatewayRunning = runtimeFindings.gateway_service_status === "running";
+  const openAiReady = apiKeys.openai === "configured" || (runtimeFindings.auth_notes ?? []).includes("openai_api_key_present");
+  const configuredChannels = Object.entries(channels)
+    .filter(([, value]) => value === "configured")
+    .map(([key]) => key);
+  return {
+    model: parseStatusLineValue(statusText, "Model"),
+    provider: parseStatusLineValue(statusText, "Provider"),
+    project: parseStatusLineValue(statusText, "Project"),
+    python: parseStatusLineValue(statusText, "Python"),
+    terminal_backend: parseStatusLineValue(statusText, "Backend"),
+    gateway_running: gatewayRunning,
+    scheduled_jobs: parseIntegerLineValue(statusText, "Jobs"),
+    active_sessions: parseIntegerLineValue(statusText, "Active"),
+    api_keys: apiKeys,
+    auth_providers: authProviders,
+    channels,
+    configured_channels: configuredChannels,
+    openai_api_ready: openAiReady,
+    nous_portal_ready: authProviders.nous_portal === "logged_in",
+    usable_for_internal_packets: gatewayRunning && openAiReady,
+    usable_for_channel_delivery: gatewayRunning && configuredChannels.length > 0,
+    blocked_for_autonomous_cron: runtimeFindings.doctor_status !== "passed",
+    blocked_for_paper_autopilot: true,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    provider_api_call_allowed: false,
+  };
+}
+
+function runtimeAutonomyImpact({ runtimeFindings, capabilitySummary, hasMissingCommand, hasFailure }) {
+  const usableForPackets = Boolean(capabilitySummary.usable_for_internal_packets);
+  const doctorBlocking = runtimeFindings.doctor_status !== "passed";
+  return {
+    status: hasMissingCommand
+      ? "missing_cli"
+      : usableForPackets && doctorBlocking
+        ? "partial_runtime_available"
+        : hasFailure
+          ? "degraded"
+          : "ready",
+    allowed_now: [
+      "internal_fastapi_packets",
+      ...(usableForPackets ? ["operator_summary_generation"] : []),
+      "ledger_reports",
+      "read_only_runtime_diagnostics",
+    ],
+    blocked_until_operator_fix: [
+      ...(doctorBlocking ? ["cron_activation", "channel_ready_gate"] : []),
+      ...(!capabilitySummary.usable_for_channel_delivery ? ["telegram_or_discord_delivery"] : []),
+      "paper_autopilot_without_admin_token",
+      "provider_quota_spend_without_operator",
+      "real_execution",
+    ],
+    reason: usableForPackets && doctorBlocking
+      ? "Hermes gateway/model path is usable for read-only packets, but doctor timeout keeps channel/cron autonomy blocked."
+      : hasMissingCommand
+        ? "Hermes CLI is missing, so only repo-local backend packets are safe."
+        : hasFailure
+          ? "Hermes runtime is degraded; stay observe-only."
+          : "Hermes runtime diagnostics are clean; still keep provider and real-execution gates closed.",
+    executes_now: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function parseStatusLineValue(output, label) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(output ?? "").match(new RegExp(`^\\s*${escaped}:\\s*(.+?)\\s*$`, "im"));
+  if (!match) return null;
+  return stripStatusGlyph(match[1]);
+}
+
+function parseIntegerLineValue(output, label) {
+  const value = parseStatusLineValue(output, label);
+  const match = String(value ?? "").match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
+function stripStatusGlyph(value) {
+  return String(value ?? "")
+    .replace(/[✓✗]/g, "")
+    .replace(/\[REDACTED_[^\]]+\]/g, "[redacted]")
+    .trim() || null;
+}
+
+function runtimeApiKeySummary(output) {
+  return {
+    openai: statusPresence(output, "OpenAI"),
+    openrouter: statusPresence(output, "OpenRouter"),
+    google_gemini: statusPresence(output, "Google / Gemini"),
+    deepseek: statusPresence(output, "DeepSeek"),
+    xai_grok: statusPresence(output, "xAI / Grok"),
+    github: statusPresence(output, "GitHub"),
+    browser_use: statusPresence(output, "Browser Use"),
+    browserbase: statusPresence(output, "Browserbase"),
+  };
+}
+
+function runtimeAuthProviderSummary(output) {
+  return {
+    nous_portal: /Nous Portal\s+✓ logged in/i.test(output) ? "logged_in" : statusPresence(output, "Nous Portal"),
+    openai_codex: /OpenAI Codex\s+✓/i.test(output) ? "logged_in" : statusPresence(output, "OpenAI Codex"),
+    qwen_oauth: /Qwen OAuth\s+✓/i.test(output) ? "logged_in" : statusPresence(output, "Qwen OAuth"),
+    xai_oauth: /xAI OAuth\s+✓/i.test(output) ? "logged_in" : statusPresence(output, "xAI OAuth"),
+  };
+}
+
+function runtimeChannelSummary(output) {
+  return {
+    telegram: statusPresence(output, "Telegram"),
+    discord: statusPresence(output, "Discord"),
+    whatsapp: statusPresence(output, "WhatsApp"),
+    slack: statusPresence(output, "Slack"),
+    email: statusPresence(output, "Email"),
+    signal: statusPresence(output, "Signal"),
+  };
+}
+
+function statusPresence(output, label) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const configuredPattern = new RegExp(`${escaped}\\s+✓`, "i");
+  const missingPattern = new RegExp(`${escaped}\\s+✗`, "i");
+  if (configuredPattern.test(output)) return "configured";
+  if (missingPattern.test(output)) return "missing";
+  return "unknown";
 }
 
 function parseDoctorProgress(output) {

@@ -127,7 +127,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes local runtime diagnostics should consume `npm run hermes:runtime-check`;
   it is read-only and must not install, restart, repair, create LaunchAgents, or
   alter credentials. It should expose `runtime_findings` and diagnostic actions
-  such as a stopped gateway as non-executed manual review steps.
+  such as a stopped gateway as non-executed manual review steps. It should also
+  expose `capability_summary`/`autonomy_impact` so a partial runtime can be used
+  for read-only summaries without unlocking cron, channels, paper orders,
+  provider calls, or real execution.
 - Hermes doctor timeout triage should consume `npm run hermes:doctor-triage`;
   it is a bounded read-only probe for Hermes version/status/doctor and should
   classify likely doctor timeout causes without starting services, editing
@@ -296,7 +299,8 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it must remain read-only, must not write manifests, run repair/restart/install
   commands, create jobs, spend provider quota, or create orders, and should
   expose only ordered manual/local diagnostic actions from failed activation
-  checks.
+  checks. Runtime capability summaries are advisory only and cannot override
+  doctor, allowlist, admin-token, provider-quota or real-execution gates.
 - Real execution requires a separate compliance/account/API activation task.
 
 ## Verification

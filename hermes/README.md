@@ -95,7 +95,10 @@ for backend-approved `Entrada` signals. Real execution remains blocked by
 
 `hermes:runtime-check` runs `hermes status` and `hermes doctor` as local
 read-only diagnostics and returns JSON with stdout/stderr/exit codes. It does
-not start, stop, install, or repair Hermes services.
+not start, stop, install, or repair Hermes services. It also exposes
+`capability_summary` and `autonomy_impact` so a partial runtime can still
+produce read-only packets when the gateway/model path is usable, while cron,
+channel escalation, paper autopilot and real execution stay blocked by gates.
 
 `hermes:doctor-triage` runs bounded local probes for Hermes version, status and
 a short doctor attempt. Use it when `runtime-check` reports
@@ -353,6 +356,8 @@ all checks pass.
 ordered local/operator actions. It is read-only, does not write the cron
 manifest, does not execute repair/restart/install commands, does not create
 jobs, and keeps provider API calls, paper orders, and real execution blocked.
+Capability summaries from runtime-check are advisory only and cannot override
+doctor, allowlist, local-admin, provider-quota or real-execution gates.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

@@ -90,6 +90,13 @@ async function playbook() {
   printJson(buildPlaybook(report, eventPlan));
 }
 
+async function liveStats() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  printJson(buildLiveStats(report, eventPlan, playbookPlan));
+}
+
 async function intelligenceData() {
   const [
     briefing,
@@ -349,6 +356,7 @@ function buildIntelligenceReport({
       provider_mode: operationalState.provider_mode,
       source_total_matches: sourceSummary.total_matches ?? 0,
       persisted_matches: sourceSummary.persisted_matches ?? 0,
+      match_freshness: compactMatchFreshness(sourceSummary.match_freshness ?? []),
       replay_contract_ready: replayLab.status ?? "unknown",
       data_quality_non_pass: staleQuality.length,
       unhealthy_providers: unhealthyProviders.length,
@@ -468,6 +476,16 @@ function compactIngestionRun(run) {
       notes: (run.summary?.notes ?? []).slice(0, 3),
     },
   };
+}
+
+function compactMatchFreshness(rows) {
+  return rows.slice(0, 10).map((row) => ({
+    match_id: row.match_id,
+    source: row.source,
+    persisted: row.persisted,
+    score_age_ms: row.score_age_ms,
+    odds_age_ms: row.odds_age_ms,
+  }));
 }
 
 function chooseRecommendedMode({
@@ -966,6 +984,203 @@ function compactPhases(steps) {
   }));
 }
 
+function buildLiveStats(report, eventPlan, playbookPlan) {
+  const data = report.data_snapshot ?? {};
+  const signals = report.signal_snapshot ?? {};
+  const learning = report.learning_snapshot ?? {};
+  const cost = report.cost_snapshot ?? {};
+  const budget = report.budget_chain_snapshot ?? {};
+  const freshness = freshnessStats(data.match_freshness ?? []);
+  const health = pipelineHealthScores({ data, signals, learning, eventPlan, freshness });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: report.mode,
+    active_phase: playbookPlan.active_phase,
+    provider_mode: data.provider_mode,
+    collection_status: collectionStatus({ data, eventPlan, freshness }),
+    processing_status: processingStatus({ data, learning, eventPlan }),
+    health_scores: health,
+    signal_stats: {
+      total: signals.total_signals ?? 0,
+      entry: signals.entry_signals ?? 0,
+      blocked: signals.blocked_signals ?? 0,
+      entry_rate: ratio(signals.entry_signals, signals.total_signals),
+      blocked_rate: ratio(signals.blocked_signals, signals.total_signals),
+      paper_autopilot_allowed: eventPlan.can_run_paper_autopilot,
+    },
+    freshness,
+    learning_progress: {
+      readiness_status: learning.readiness_status,
+      settled_orders: learning.settled_orders ?? 0,
+      production_training_examples: learning.production_training_examples ?? 0,
+      can_run_live_backtest: Boolean(learning.can_run_live_backtest),
+      roi: learning.roi,
+      clv: learning.clv,
+    },
+    cost_efficiency: {
+      active_plan: cost.active_plan,
+      estimated_monthly_spend_usd: cost.estimated_monthly_spend_usd,
+      monthly_budget_usd: cost.monthly_budget_usd,
+      budget_utilization: ratio(cost.estimated_monthly_spend_usd, cost.monthly_budget_usd),
+      daily_live_api_calls: cost.daily_live_api_calls ?? 0,
+      cost_per_signal_usd: cost.cost_per_signal_usd,
+    },
+    budget_chain: {
+      completed: Boolean(budget.budget_chain_completed),
+      enterprise_eligible: Boolean(budget.enterprise_eligible),
+      current_step: budget.current_step,
+    },
+    sampling_policy: chooseSamplingPolicy({ report, eventPlan, playbookPlan, health, budget }),
+    next_safe_commands: playbookPlan.steps
+      .filter((step) => step.status === "ready")
+      .map((step) => ({
+        id: step.id,
+        command: step.command,
+        phase: step.phase,
+        writes: step.writes,
+        live_api_calls: step.live_api_calls,
+        requires_admin_token: step.requires_admin_token,
+      })),
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+  };
+}
+
+function freshnessStats(rows) {
+  const scoreAges = rows.map((row) => Number(row.score_age_ms)).filter(Number.isFinite);
+  const oddsAges = rows.map((row) => Number(row.odds_age_ms)).filter(Number.isFinite);
+  return {
+    matches_sampled: rows.length,
+    persisted_matches_sampled: rows.filter((row) => row.persisted).length,
+    max_score_age_ms: maxOrNull(scoreAges),
+    max_odds_age_ms: maxOrNull(oddsAges),
+    avg_score_age_ms: averageOrNull(scoreAges),
+    avg_odds_age_ms: averageOrNull(oddsAges),
+    stale_score_matches: scoreAges.filter((age) => age > 30_000).length,
+    stale_odds_matches: oddsAges.filter((age) => age > 15_000).length,
+  };
+}
+
+function pipelineHealthScores({ data, signals, learning, eventPlan, freshness }) {
+  const highBlockers = (eventPlan.events ?? []).filter((item) => (
+    ["critical", "high"].includes(item.severity)
+  )).length;
+  const blockerPenalty = Math.min(60, highBlockers * 15);
+  const dataPenalty = (Number(data.unhealthy_providers ?? 0) * 12)
+    + (Number(data.cursors_requiring_resync ?? 0) * 25)
+    + (Number(data.data_quality_non_pass ?? 0) * 10)
+    + Math.min(20, Number(data.recent_ingestion_failures ?? 0) * 5);
+  const freshnessPenalty = Math.min(
+    30,
+    (Number(freshness.stale_score_matches ?? 0) * 5) + (Number(freshness.stale_odds_matches ?? 0) * 5)
+  );
+  const collection = clampScore(100 - dataPenalty - freshnessPenalty);
+  const processing = clampScore(100 - blockerPenalty - Math.min(30, Number(data.data_quality_non_pass ?? 0) * 10));
+  const signalReadiness = clampScore(
+    100
+      - blockerPenalty
+      - (Number(signals.blocked_signals ?? 0) > 0 ? 20 : 0)
+      + (Number(signals.entry_signals ?? 0) > 0 ? 10 : 0)
+  );
+  const learningReadiness = clampScore(
+    (learning.can_run_live_backtest ? 70 : 30)
+      + Math.min(20, Number(learning.production_training_examples ?? 0) / 25)
+      + (learning.readiness_status === "ready_for_review" ? 10 : 0)
+  );
+  return {
+    collection,
+    processing,
+    signal_readiness: signalReadiness,
+    learning_readiness: learningReadiness,
+    overall: Math.round((collection * 0.35) + (processing * 0.25) + (signalReadiness * 0.25) + (learningReadiness * 0.15)),
+  };
+}
+
+function chooseSamplingPolicy({ report, eventPlan, playbookPlan, health, budget }) {
+  if (eventPlan.events.some((item) => item.type === "real_execution_safety_violation")) {
+    return policy("safety_stop", "critical", 0, "Stop automation until real execution is hard-blocked again.");
+  }
+  if (health.collection < 50 || eventPlan.events.some((item) => item.type === "cursor_resync_required")) {
+    return policy("cold_safe_mode", "high", 0, "Use replay/contracts and internal status only until provider cursors and freshness recover.");
+  }
+  if (!budget.budget_chain_completed) {
+    return policy("budget_chain_polling", "medium", 5, `Complete budget step ${budget.current_step ?? "unknown"} before enterprise work.`);
+  }
+  if (eventPlan.can_run_paper_autopilot) {
+    return policy("paper_signal_watch", "medium", 1, "Poll internal state frequently enough to create paper orders through backend gates.");
+  }
+  if (playbookPlan.active_phase === "collect_learning") {
+    return policy("learning_collection", "low", 15, "Keep collecting settled paper evidence; avoid extra live API spend.");
+  }
+  if (report.mode === "steady_state_monitoring") {
+    return policy("steady_state", "low", 15, "Monitor internal summaries and run daily ops; no per-tick LLM work.");
+  }
+  return policy("operator_review", "medium", 5, "Review Hermes events before changing collection cadence.");
+}
+
+function collectionStatus({ data, eventPlan, freshness }) {
+  const blockers = eventPlan.events
+    .filter((item) => ["cursor_resync_required", "provider_health_degraded", "data_quality_degraded"].includes(item.type))
+    .map((item) => item.type);
+  return {
+    status: blockers.length ? "degraded" : "healthy",
+    provider_mode: data.provider_mode,
+    source_total_matches: data.source_total_matches ?? 0,
+    persisted_matches: data.persisted_matches ?? 0,
+    blockers: [...new Set(blockers)],
+    freshness,
+  };
+}
+
+function processingStatus({ data, learning, eventPlan }) {
+  return {
+    status: eventPlan.severity === "critical" ? "blocked" : eventPlan.severity === "high" ? "degraded" : "healthy",
+    replay_contract_ready: data.replay_contract_ready,
+    data_quality_non_pass: data.data_quality_non_pass ?? 0,
+    recent_ingestion_failures: data.recent_ingestion_failures ?? 0,
+    model_lab_status: learning.model_lab_status,
+    can_run_live_backtest: Boolean(learning.can_run_live_backtest),
+  };
+}
+
+function policy(name, severity, pollIntervalMinutes, reason) {
+  return {
+    name,
+    severity,
+    poll_interval_minutes: pollIntervalMinutes,
+    reason,
+    llm_per_tick_allowed: false,
+    live_api_calls_allowed: !["safety_stop", "cold_safe_mode"].includes(name),
+  };
+}
+
+function ratio(numerator, denominator) {
+  const num = Number(numerator ?? 0);
+  const den = Number(denominator ?? 0);
+  if (!Number.isFinite(num) || !Number.isFinite(den) || den <= 0) {
+    return 0;
+  }
+  return Number((num / den).toFixed(4));
+}
+
+function averageOrNull(values) {
+  if (!values.length) return null;
+  return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+}
+
+function maxOrNull(values) {
+  if (!values.length) return null;
+  return Math.max(...values);
+}
+
+function clampScore(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+
 const commands = {
   briefing,
   anomalies,
@@ -974,6 +1189,7 @@ const commands = {
   intelligence,
   events,
   playbook,
+  "live-stats": liveStats,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

@@ -20,6 +20,7 @@ npm run hermes:preflight
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:playbook
+npm run hermes:live-stats
 ADMIN_API_TOKEN=... npm run hermes:ops:daily
 ADMIN_API_TOKEN=... npm run hermes:autopilot
 ```
@@ -70,6 +71,11 @@ It does not execute commands. It groups the current state into observe,
 stabilize-data, budget-chain, collect-learning, paper-autopilot, and
 learning-review steps, with write/live-call flags and hard real-execution
 denials on every step.
+
+Use `hermes:live-stats` for high-frequency live operations summaries. It emits
+deterministic collection, processing, signal, freshness, cost, learning, and
+sampling-policy metrics from internal APIs only. This is the preferred packet
+for fast monitoring because it avoids per-tick LLM analysis.
 
 ## Audit Trail
 

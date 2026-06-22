@@ -119,6 +119,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   `hermes:autopilot` call.
 - Hermes operator handoff should consume `npm run hermes:playbook`; it is a
   planner only and must not execute listed commands or bypass backend gates.
+- Hermes high-frequency monitoring should consume `npm run hermes:live-stats`;
+  it provides deterministic live collection/processing metrics and keeps
+  `llm_per_tick_allowed=false`.
 - Real execution requires a separate compliance/account/API activation task.
 
 ## Verification
@@ -136,6 +139,7 @@ python3 scripts/check_private_runtime.py
 npm run api:check:operational-truth -- --pretty
 npm run hermes:events
 npm run hermes:playbook
+npm run hermes:live-stats
 ```
 
 `api:check:operational-truth` is the required integrated smoke before API

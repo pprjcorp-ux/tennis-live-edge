@@ -16,23 +16,26 @@ Licensed feeds / replay / operator notes
   -> protected backend action only when gates pass
 ```
 
-Hermes can add leverage in seven places:
+Hermes can add leverage in eight places:
 
 1. Intelligence packets: combine provider health, cursor status, cost, data
    quality, paper performance, bankroll, signals, replay lab and onboarding
    state into one safe JSON packet.
-2. Event routing: cron/webhook/gateway can wake Hermes only on useful events
+2. Live statistics packets: summarize collection, processing, freshness,
+   signal readiness, learning progress, cost efficiency and sampling policy
+   without LLM work per tick.
+3. Event routing: cron/webhook/gateway can wake Hermes only on useful events
    such as feed gaps, stale odds, critical anomalies, quota risk, new entry
    signals, or post-day settlement windows.
-3. Playbooks: deterministic phase plans turn events into safe next commands
+4. Playbooks: deterministic phase plans turn events into safe next commands
    without giving Hermes broad shell discretion.
-4. Model routing: cheap model for routine triage; strong model only for severe
+5. Model routing: cheap model for routine triage; strong model only for severe
    anomaly, weekly learning review, and real-execution-readiness reports.
-5. Memory: preserve operating lessons, provider quirks, recurring blockers and
+6. Memory: preserve operating lessons, provider quirks, recurring blockers and
    review outcomes, while keeping provider secrets outside prompts.
-6. Skill reuse: the `tennis-edge-ops` skill gives Hermes a narrow, repeatable
+7. Skill reuse: the `tennis-edge-ops` skill gives Hermes a narrow, repeatable
    command surface instead of broad shell improvisation.
-7. Human reachability: Telegram/dashboard can surface concise actions without
+8. Human reachability: Telegram/dashboard can surface concise actions without
    exposing the backend or provider credentials publicly.
 
 ## Safe Collection Boundary
@@ -65,8 +68,9 @@ data through browser tricks.
 
 ### Level 0: Observe
 
-Run `npm run hermes:intelligence`, `npm run hermes:events`,
-`npm run hermes:playbook` and `npm run hermes:preflight`. No writes.
+Run `npm run hermes:intelligence`, `npm run hermes:live-stats`,
+`npm run hermes:events`, `npm run hermes:playbook` and
+`npm run hermes:preflight`. No writes.
 
 ### Level 1: Rehearse
 
@@ -94,6 +98,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 ## Recommended Cron Graph
 
 - Every 5 minutes during active windows: `npm run hermes:intelligence`.
+- Every 1-5 minutes during active windows: `npm run hermes:live-stats`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
 - Every 5 minutes during active windows: `npm run hermes:playbook`.
 - Every 15 minutes: `npm run hermes:preflight`.
@@ -118,6 +123,13 @@ state into phases: `observe`, `stabilize_data`, `budget_chain`,
 a command, write/live-call flags, admin-token requirement, and a hard
 `can_submit_real_orders=false` value. Hermes can use it as a low-cost dispatch
 map without asking an LLM to infer safety gates from raw status.
+
+`hermes:live-stats` is the preferred high-frequency packet. It produces
+health scores for collection, processing, signals and learning; freshness
+statistics from persisted match state; cost utilization; and a sampling policy
+such as `cold_safe_mode`, `budget_chain_polling`, `paper_signal_watch`, or
+`learning_collection`. It keeps `llm_per_tick_allowed=false` so Hermes can be
+fast and cheap while Python/Postgres keep doing the tick math.
 
 ## Evidence Required Before More Autonomy
 

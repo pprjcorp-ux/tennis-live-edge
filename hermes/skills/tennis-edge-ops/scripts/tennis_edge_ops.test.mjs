@@ -107,6 +107,26 @@ function eventRouterFixtures(overrides = {}) {
           enterprise_eligible: false,
           current_step: null,
         },
+        source_summary: {
+          total_matches: 2,
+          persisted_matches: 2,
+          match_freshness: [
+            {
+              match_id: "match_1",
+              source: "live",
+              persisted: true,
+              score_age_ms: 8000,
+              odds_age_ms: 5000,
+            },
+            {
+              match_id: "match_2",
+              source: "live",
+              persisted: true,
+              score_age_ms: 40000,
+              odds_age_ms: 22000,
+            },
+          ],
+        },
       },
     },
     ...overrides,
@@ -646,6 +666,40 @@ test("playbook keeps enterprise locked when budget chain is incomplete", async (
     const budgetStep = payload.steps.find((step) => step.id === "budget_chain_next_step");
     assert.equal(budgetStep.status, "ready");
     assert.match(budgetStep.reason, /theoddsapi:archive_odds/);
+  } finally {
+    server.close();
+  }
+});
+
+test("live-stats emits deterministic collection, processing, and sampling metrics", async () => {
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["live-stats", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "paper_autopilot_candidate");
+    assert.equal(payload.active_phase, "paper_autopilot");
+    assert.equal(payload.signal_stats.entry, 1);
+    assert.equal(payload.signal_stats.entry_rate, 0.5);
+    assert.equal(payload.freshness.matches_sampled, 2);
+    assert.equal(payload.freshness.stale_score_matches, 1);
+    assert.equal(payload.freshness.stale_odds_matches, 1);
+    assert.equal(payload.sampling_policy.name, "paper_signal_watch");
+    assert.equal(payload.sampling_policy.llm_per_tick_allowed, false);
+    assert.equal(payload.safety.can_submit_real_orders, false);
+    assert.equal(payload.next_safe_commands.some((command) => command.id === "paper_autopilot"), true);
   } finally {
     server.close();
   }

@@ -25,6 +25,7 @@
     "hermes:intelligence": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence",
     "hermes:events": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events",
     "hermes:playbook": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs playbook",
+    "hermes:live-stats": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-stats",
     "hermes:ops:daily": "zsh -lc 'set -a; source .env; set +a; printf \"%s\" \"$ADMIN_API_TOKEN\" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin'",
     "hermes:autopilot": "zsh -lc 'set -a; source .env; set +a; printf \"%s\" \"$ADMIN_API_TOKEN\" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin'",
     "hermes:test": "node --test hermes/skills/tennis-edge-ops/scripts/*.test.mjs",

@@ -34,6 +34,7 @@ npm run hermes:preflight
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:playbook
+npm run hermes:live-stats
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
@@ -69,6 +70,12 @@ observe, stabilize data, complete the budget chain, collect learning evidence,
 paper autopilot, and weekly learning review. It does not run commands. It marks
 each step as `ready`, `waiting`, or `blocked`, and always keeps
 `can_submit_real_orders=false`.
+
+`hermes:live-stats` is the low-cost live operations packet. It derives
+collection health, processing health, signal readiness, freshness buckets,
+learning progress, cost efficiency, and the safe sampling policy from internal
+FastAPI state. It is designed for frequent cron/Telegram use without LLM
+analysis on every tick.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

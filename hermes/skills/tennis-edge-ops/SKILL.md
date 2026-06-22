@@ -43,6 +43,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs scheduler-rehearsal
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs cron-proposal
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs activation-checklist
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-fix-plan
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
@@ -117,6 +118,10 @@ The `activation-checklist` command is the final non-mutating gate before a
 human creates cron jobs. It exposes manual commands only when runtime,
 Telegram/private allowlists, local admin secret presence, safe manifest, and
 real-execution hard block all pass.
+The `runtime-fix-plan` command turns failed activation gates into ordered
+manual/local diagnostic actions. It is read-only, does not write manifests,
+does not repair/restart/install services, and does not create jobs, paper
+orders, provider API calls, or real orders.
 The `autopilot` command also runs preflight internally and aborts before calling
 protected backend actions when the preflight status is `blocked`.
 

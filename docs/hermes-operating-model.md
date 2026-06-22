@@ -104,6 +104,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Before any real cron change: `npm run hermes:scheduler-rehearsal`.
 - To generate a reviewable cron manifest: `npm run hermes:cron-proposal`.
 - Final gate before manual cron creation: `npm run hermes:activation-checklist`.
+- When activation is blocked: `npm run hermes:runtime-fix-plan`.
 - Every 1-5 minutes during active windows: `npm run hermes:live-stats`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
@@ -142,6 +143,11 @@ creates any Hermes cron jobs. It requires clean runtime diagnostics, Telegram
 allowlist, private-access allowlist, local admin secret presence, a safe cron
 manifest, zero executed rehearsal commands, and real-execution hard block. It
 prints manual activation commands only when every gate passes.
+
+`hermes:runtime-fix-plan` is the read-only remediation packet for blocked
+activation. It reuses the same gates in memory, does not write the proposal
+manifest, does not execute repair/restart/install commands, and returns only
+ordered manual/local diagnostic actions.
 
 `hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
 turns the internal intelligence packet into compact events such as

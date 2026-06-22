@@ -114,6 +114,16 @@ Only when `activation_allowed=true`, review the returned
 `manual_activation_commands` and create jobs manually from a local operator
 shell. The checklist itself does not call `hermes cron add`.
 
+If activation is blocked, run the read-only fix planner manually:
+
+```bash
+npm --silent run hermes:runtime-fix-plan
+```
+
+Do not schedule `runtime-fix-plan`. It is an operator diagnostic packet only and
+must not create jobs, write manifests, run repairs, spend provider quota, or
+create paper orders.
+
 Event router every 5 minutes during active windows:
 
 ```bash

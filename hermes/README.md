@@ -44,6 +44,7 @@ npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist
+npm run hermes:runtime-fix-plan
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
@@ -136,6 +137,11 @@ private-access email allowlist, local admin secret presence, cron manifest
 safety, no executed commands, and the real-execution hard block. It prints only
 booleans/counts for secrets and exposes manual activation commands only when
 all checks pass.
+
+`hermes:runtime-fix-plan` converts failed activation-checklist gates into
+ordered local/operator actions. It is read-only, does not write the cron
+manifest, does not execute repair/restart/install commands, does not create
+jobs, and keeps provider API calls, paper orders, and real execution blocked.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

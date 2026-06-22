@@ -157,6 +157,11 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   secrets, and should expose manual activation commands only when runtime,
   Telegram allowlist, private access allowlist, local admin secret, safe cron
   manifest, and real-execution hard block all pass.
+- Hermes runtime fix planning should consume `npm run hermes:runtime-fix-plan`;
+  it must remain read-only, must not write manifests, run repair/restart/install
+  commands, create jobs, spend provider quota, or create orders, and should
+  expose only ordered manual/local diagnostic actions from failed activation
+  checks.
 - Real execution requires a separate compliance/account/API activation task.
 
 ## Verification
@@ -180,6 +185,7 @@ npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist
+npm run hermes:runtime-fix-plan
 ```
 
 `api:check:operational-truth` is the required integrated smoke before API

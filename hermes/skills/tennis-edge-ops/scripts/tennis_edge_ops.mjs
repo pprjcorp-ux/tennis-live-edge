@@ -197,6 +197,14 @@ async function activationChecklist() {
   printJson(buildActivationChecklist({ loop, rehearsal, proposal }));
 }
 
+async function runtimeFixPlan() {
+  const loop = await safeLoopData();
+  const rehearsal = buildSchedulerRehearsal(loop);
+  const proposal = buildCronProposal(rehearsal);
+  const activation = buildActivationChecklist({ loop, rehearsal, proposal });
+  printJson(buildRuntimeFixPlan({ loop, rehearsal, proposal, activation }));
+}
+
 async function providerSmoke() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -1566,6 +1574,191 @@ function envListCount(names) {
     .filter(Boolean).length;
 }
 
+function buildRuntimeFixPlan({ loop, rehearsal, proposal, activation }) {
+  const actions = runtimeFixActions(activation);
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "runtime_fix_plan",
+    status: activation.activation_allowed ? "ready" : "blocked",
+    activation_allowed: activation.activation_allowed,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    created_jobs: false,
+    executed_commands: [],
+    next_action: actions[0] ?? null,
+    actions,
+    activation_checks: activation.checks,
+    cron_proposal: {
+      proposal_path: proposal.proposal_path,
+      job_count: proposal.jobs.length,
+    },
+    runtime: {
+      status: loop.runtime?.status,
+      active_phase: loop.active_phase,
+      next_tick: rehearsal.next_tick,
+    },
+    forbidden_actions: activation.forbidden_actions,
+    safety: activation.safety,
+  };
+}
+
+function runtimeFixActions(activation) {
+  const actions = (activation.checks ?? [])
+    .filter((check) => check.status === "fail")
+    .map(runtimeFixActionFor)
+    .filter(Boolean)
+    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+
+  if (!actions.length && activation.activation_allowed) {
+    actions.push(fixAction({
+      id: "review_manual_activation_commands",
+      priority: 100,
+      lane: "manual_activation",
+      command: "Review manual_activation_commands from npm run hermes:activation-checklist.",
+      reason: "All activation checks passed; final cron creation remains a manual operator action.",
+      requiresHuman: true,
+      notes: [
+        "Do not create jobs from runtime-fix-plan.",
+        "Keep provider smoke and autopilot outside scheduled cron jobs.",
+      ],
+    }));
+  }
+
+  return actions;
+}
+
+function runtimeFixActionFor(check) {
+  const reason = check.summary;
+  const checkId = check.id ?? check.name;
+  const actions = {
+    hermes_runtime_ready: {
+      id: "fix_hermes_runtime_ready",
+      priority: 10,
+      lane: "local_runtime",
+      command: "npm run hermes:runtime-check",
+      reason,
+      requiresHuman: false,
+      notes: [
+        "Inspect Hermes status and doctor output.",
+        "Do not restart, install, repair, or edit LaunchAgents from this command.",
+      ],
+    },
+    telegram_allowlist_configured: {
+      id: "fix_telegram_allowlist_configured",
+      priority: 30,
+      lane: "operator_reachability",
+      command: "Configure HERMES_TELEGRAM_ALLOWED_USER_IDS locally, then rerun npm run hermes:activation-checklist.",
+      reason,
+      requiresHuman: true,
+      notes: [
+        "Telegram routing must stay allowlisted.",
+        "Do not print chat ids or tokens into committed files.",
+      ],
+    },
+    private_access_allowlist_configured: {
+      id: "fix_private_access_allowlist_configured",
+      priority: 40,
+      lane: "private_access",
+      command: "Configure PRIVATE_ALLOWED_EMAILS locally, then rerun npm run hermes:activation-checklist.",
+      reason,
+      requiresHuman: true,
+      notes: [
+        "Private domain access must stay behind an explicit allowlist.",
+        "Do not modify Cloudflare Access policies from this command.",
+      ],
+    },
+    local_admin_secret_available: {
+      id: "fix_local_admin_secret_available",
+      priority: 50,
+      lane: "local_secret",
+      command: "Configure ADMIN_API_TOKEN locally, then rerun npm run hermes:activation-checklist.",
+      reason,
+      requiresHuman: true,
+      notes: [
+        "Keep ADMIN_API_TOKEN local-only and out of Git.",
+        "Protected commands must receive the token through stdin or local environment loading.",
+      ],
+    },
+    cron_manifest_safe: {
+      id: "fix_cron_manifest_safe",
+      priority: 20,
+      lane: "cron_manifest",
+      command: "npm --silent run hermes:cron-proposal",
+      reason,
+      requiresHuman: false,
+      notes: [
+        "Review the generated manifest before manual cron creation.",
+        "Never schedule provider-smoke execution or paper autopilot from cron.",
+      ],
+    },
+    rehearsal_did_not_execute: {
+      id: "fix_rehearsal_did_not_execute",
+      priority: 5,
+      lane: "scheduler_safety",
+      command: "Stop automation and inspect Hermes runs before continuing.",
+      reason,
+      requiresHuman: true,
+      notes: [
+        "A rehearsal must never execute commands.",
+        "Treat this as a safety incident until the audit is understood.",
+      ],
+    },
+    real_execution_hard_block: {
+      id: "fix_real_execution_hard_block",
+      priority: 1,
+      lane: "execution_safety",
+      command: "Stop automation and restore REAL_EXECUTION_HARD_BLOCK=true before continuing.",
+      reason,
+      requiresHuman: true,
+      notes: [
+        "No real order path may be enabled by Hermes activation.",
+        "Do not continue cron activation until the backend reports can_submit_real_orders=false.",
+      ],
+    },
+  };
+  const action = actions[checkId];
+  return action ? fixAction(action) : fixAction({
+    id: `fix_${String(checkId ?? "unknown").replaceAll(/[^a-zA-Z0-9_:-]/g, "_")}`,
+    priority: 90,
+    lane: "manual_review",
+    command: "Inspect npm run hermes:activation-checklist and resolve this failed gate manually.",
+    reason,
+    requiresHuman: true,
+    notes: ["Unknown activation gate; keep automation blocked until reviewed."],
+  });
+}
+
+function fixAction({
+  id,
+  priority,
+  lane,
+  command,
+  reason,
+  requiresHuman,
+  notes = [],
+}) {
+  return {
+    id,
+    priority,
+    lane,
+    command,
+    reason,
+    requires_human: requiresHuman,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    executes_now: false,
+    notes,
+  };
+}
+
 function localRuntimeLanes(report) {
   const failed = report.degraded_items?.preflight_failed ?? [];
   if (!failed.some((check) => check.name === "hermes_gateway")) return [];
@@ -2427,6 +2620,7 @@ const commands = {
   "scheduler-rehearsal": schedulerRehearsal,
   "cron-proposal": cronProposal,
   "activation-checklist": activationChecklist,
+  "runtime-fix-plan": runtimeFixPlan,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

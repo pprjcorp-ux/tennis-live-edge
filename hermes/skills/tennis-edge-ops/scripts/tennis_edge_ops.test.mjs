@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1172,6 +1172,76 @@ test("activation-checklist blocks cron activation when runtime or operator gates
     assert.equal(payload.checks.some((check) => check.id === "hermes_runtime_ready" && check.status === "fail"), true);
     assert.equal(payload.checks.some((check) => check.id === "telegram_allowlist_configured" && check.status === "fail"), true);
     assert.equal(payload.checks.some((check) => check.id === "private_access_allowlist_configured" && check.status === "fail"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("runtime-fix-plan turns failed activation checks into non-mutating actions", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-runtime-fix-"));
+  const proposalPath = join(tempDir, "cron-proposal.json");
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: stopped'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.error('gateway unreachable'); process.exit(1); }",
+      "if (process.argv[2] === 'cron') { console.error('cron must not be called'); process.exit(9); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const fixtures = eventRouterFixtures({
+    "/api/v1/agent/preflight": {
+      status: "blocked",
+      checks: [
+        { name: "hermes_gateway", status: "fail", summary: "Hermes loopback gateway is not reachable." },
+        { name: "real_execution_hard_block", status: "pass", summary: "blocked" },
+      ],
+      generated_at: "2026-06-21T20:00:00Z",
+    },
+    "/api/v1/signals/live": [],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["runtime-fix-plan", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_CRON_PROPOSAL_PATH: proposalPath,
+        HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
+        PRIVATE_ALLOWED_EMAILS: "",
+        ADMIN_API_TOKEN: "",
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(existsSync(proposalPath), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "runtime_fix_plan");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.created_jobs, false);
+    assert.equal(payload.executed_commands.length, 0);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.next_action.id, "fix_hermes_runtime_ready");
+    assert.equal(payload.actions.some((action) => action.id === "fix_telegram_allowlist_configured" && action.requires_human), true);
+    assert.equal(payload.actions.some((action) => action.id === "fix_private_access_allowlist_configured" && action.requires_human), true);
+    assert.equal(payload.actions.some((action) => action.id === "fix_local_admin_secret_available" && action.requires_human), true);
+    assert.equal(payload.actions.every((action) => action.executes_now === false), true);
   } finally {
     server.close();
   }

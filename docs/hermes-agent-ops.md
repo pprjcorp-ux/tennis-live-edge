@@ -30,6 +30,7 @@ npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist
+npm run hermes:runtime-fix-plan
 ADMIN_API_TOKEN=... npm run hermes:ops:daily
 ADMIN_API_TOKEN=... npm run hermes:autopilot
 ```
@@ -135,6 +136,12 @@ manual cron creation. It checks Hermes runtime health, Telegram allowlist,
 private-access email allowlist, local admin token presence, cron manifest
 safety, no executed commands, and the real-execution hard block. Manual
 activation commands are empty until every check passes.
+
+Use `hermes:runtime-fix-plan` when activation is blocked and the operator needs
+the next safest remediation step. It derives ordered actions from failed
+activation gates without writing manifests, running repair/restart/install
+commands, creating jobs, spending provider quota, creating paper orders, or
+enabling real execution.
 
 ## Audit Trail
 

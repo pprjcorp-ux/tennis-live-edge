@@ -35,6 +35,7 @@
     "hermes:scheduler-rehearsal": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs scheduler-rehearsal",
     "hermes:cron-proposal": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs cron-proposal",
     "hermes:activation-checklist": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs activation-checklist",
+    "hermes:runtime-fix-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-fix-plan",
     "hermes:ops:daily": "zsh -lc 'set -a; source .env; set +a; printf \"%s\" \"$ADMIN_API_TOKEN\" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin'",
     "hermes:autopilot": "zsh -lc 'set -a; source .env; set +a; printf \"%s\" \"$ADMIN_API_TOKEN\" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin'",
     "hermes:test": "node --test hermes/skills/tennis-edge-ops/scripts/*.test.mjs",

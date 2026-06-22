@@ -669,6 +669,7 @@ def main() -> int:
         "hermes:events",
         "hermes:unblock-plan",
         "hermes:runtime-check",
+        "hermes:doctor-triage",
         "hermes:channel-readiness",
         "hermes:channel-recovery-plan",
         "hermes:backend-readiness",

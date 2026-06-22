@@ -125,6 +125,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it is read-only and must not install, restart, repair, create LaunchAgents, or
   alter credentials. It should expose `runtime_findings` and diagnostic actions
   such as a stopped gateway as non-executed manual review steps.
+- Hermes doctor timeout triage should consume `npm run hermes:doctor-triage`;
+  it is a bounded read-only probe for Hermes version/status/doctor and should
+  classify likely doctor timeout causes without starting services, editing
+  credentials, or printing secret values.
 - Hermes channel readiness should consume `npm run hermes:channel-readiness`;
   it is independent of FastAPI and should prove the `channel_ready` ceiling
   with local runtime, Telegram allowlist, private Access allowlist, and admin
@@ -281,6 +285,7 @@ npm run hermes:quota-plan
 npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:channel-readiness
+npm run hermes:doctor-triage
 npm run hermes:channel-recovery-plan
 npm run hermes:backend-readiness
 npm run hermes:mission-control

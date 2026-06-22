@@ -42,6 +42,14 @@ function boundedHttpTimeoutMs(value) {
   return Math.min(Math.max(Math.trunc(parsed), 100), 30_000);
 }
 
+function boundedDoctorTriageTimeoutMs(value = process.env.HERMES_DOCTOR_TRIAGE_TIMEOUT_MS) {
+  const parsed = Number(value ?? 1_500);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 1_500;
+  }
+  return Math.min(Math.max(Math.trunc(parsed), 100), 5_000);
+}
+
 async function safeRequest(path, fallback, label = path) {
   try {
     return { data: await request(path), error: null };
@@ -119,6 +127,10 @@ async function preflight() {
 
 async function runtimeCheck() {
   printJson(await runtimeCheckData());
+}
+
+async function doctorTriage() {
+  printJson(await doctorTriageData());
 }
 
 async function channelReadiness() {
@@ -215,6 +227,29 @@ async function runtimeCheckData() {
     diagnostic_actions: runtimeDiagnosticActions({ hasMissingCommand, hasFailure, runtimeFindings }),
     next_actions: runtimeCheckActions({ hasMissingCommand, hasFailure, runtimeFindings }),
   };
+}
+
+async function doctorTriageData() {
+  const hermesBin = process.env.HERMES_BIN || "hermes";
+  const doctorTimeoutMs = boundedDoctorTriageTimeoutMs();
+  const commands = [
+    await runLocalCommand("hermes version", hermesBin, ["--version"], 1_000),
+    await runLocalCommand("hermes status", hermesBin, ["status"], 2_000),
+    await runLocalCommand("hermes doctor short", hermesBin, ["doctor"], doctorTimeoutMs),
+  ];
+  const runtimeFindings = buildRuntimeFindings([
+    commands.find((item) => item.name === "hermes status"),
+    {
+      ...commands.find((item) => item.name === "hermes doctor short"),
+      name: "hermes doctor",
+    },
+  ].filter(Boolean));
+  return buildDoctorTriage({
+    hermesBin,
+    doctorTimeoutMs,
+    commands,
+    runtimeFindings,
+  });
 }
 
 function buildChannelReadiness(runtime) {
@@ -709,6 +744,179 @@ function buildChannelRecoveryPlan({ runtime, channel }) {
       llm_per_tick_allowed: false,
     },
   };
+}
+
+function buildDoctorTriage({ hermesBin, doctorTimeoutMs, commands, runtimeFindings }) {
+  const versionCommand = commands.find((item) => item.name === "hermes version");
+  const statusCommand = commands.find((item) => item.name === "hermes status");
+  const doctorCommand = commands.find((item) => item.name === "hermes doctor short");
+  const likelyCause = doctorTriageLikelyCause({ versionCommand, statusCommand, doctorCommand, runtimeFindings });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "doctor_triage",
+    status: doctorCommand?.exit_code === 0 && !doctorCommand?.timed_out ? "ready" : "blocked",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    hermes_bin_source: process.env.HERMES_BIN ? "env" : "path",
+    hermes_bin_name: hermesBin,
+    doctor_timeout_ms: doctorTimeoutMs,
+    runtime_findings: runtimeFindings,
+    likely_cause: likelyCause,
+    command_summary: commands.map((item) => ({
+      name: item.name,
+      exit_code: item.exit_code,
+      timed_out: item.timed_out,
+      error_code: item.error_code,
+      stdout_preview: doctorTriagePreview(item.stdout),
+      stderr_preview: doctorTriagePreview(item.stderr),
+    })),
+    next_safe_actions: doctorTriageActions({ likelyCause, runtimeFindings }),
+    verification_commands: [
+      "npm run hermes:doctor-triage",
+      "npm run hermes:runtime-check",
+      "npm run hermes:channel-readiness",
+    ],
+    operator_note: "This triage is bounded and read-only; it does not edit .env, start Hermes services, create cron jobs, call providers, or print secret values.",
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+      secret_value_printed: false,
+    },
+  };
+}
+
+function doctorTriageLikelyCause({ versionCommand, statusCommand, doctorCommand, runtimeFindings }) {
+  if ([versionCommand, statusCommand, doctorCommand].some((item) => item?.error_code === "command_not_found")) {
+    return "hermes_cli_not_found";
+  }
+  if (runtimeFindings.gateway_service_status === "stopped") {
+    return "gateway_service_stopped";
+  }
+  if (runtimeFindings.gateway_service_status === "unknown" && statusCommand?.exit_code !== 0) {
+    return "gateway_status_unavailable";
+  }
+  if (doctorCommand?.timed_out) {
+    return runtimeFindings.gateway_service_status === "running"
+      ? "doctor_timeout_with_gateway_running"
+      : "doctor_timeout";
+  }
+  if (doctorCommand?.exit_code && doctorCommand.exit_code !== 0) {
+    return "doctor_exited_nonzero";
+  }
+  if (doctorCommand?.exit_code === 0) {
+    return "doctor_passed_short_probe";
+  }
+  return "unknown";
+}
+
+function doctorTriageActions({ likelyCause, runtimeFindings }) {
+  const base = [
+    doctorTriageAction({
+      id: "keep_channel_observe_only",
+      priority: 90,
+      command: "npm run hermes:channel-readiness",
+      reason: "Channel activation stays observe-only until doctor and allowlist gates pass.",
+    }),
+  ];
+  if (likelyCause === "hermes_cli_not_found") {
+    return [
+      doctorTriageAction({
+        id: "expose_hermes_cli",
+        priority: 10,
+        command: "command -v hermes",
+        reason: "Hermes is not available to the repo wrapper; expose the installed CLI before channel automation.",
+      }),
+      ...base,
+    ];
+  }
+  if (likelyCause === "gateway_service_stopped") {
+    return [
+      doctorTriageAction({
+        id: "manual_gateway_start_review",
+        priority: 10,
+        command: "hermes gateway start",
+        reason: "Gateway is stopped; start it only from a local operator shell after reviewing Hermes status.",
+        mutatesRuntimeIfRun: true,
+        requiresOperatorConfirmation: true,
+      }),
+      ...base,
+    ];
+  }
+  if (likelyCause === "doctor_timeout_with_gateway_running" || likelyCause === "doctor_timeout") {
+    return [
+      doctorTriageAction({
+        id: "bounded_doctor_recheck",
+        priority: 10,
+        command: "HERMES_DOCTOR_TRIAGE_TIMEOUT_MS=5000 npm run hermes:doctor-triage",
+        reason: "Doctor timed out in the short probe; rerun a bounded longer probe before any channel activation.",
+      }),
+      doctorTriageAction({
+        id: "inspect_runtime_status",
+        priority: 20,
+        command: "npm run hermes:runtime-check",
+        reason: `Current gateway=${runtimeFindings.gateway_service_status}; use sanitized repo diagnostics instead of unbounded doctor calls.`,
+      }),
+      ...base,
+    ];
+  }
+  if (likelyCause === "doctor_exited_nonzero") {
+    return [
+      doctorTriageAction({
+        id: "inspect_sanitized_doctor_output",
+        priority: 10,
+        command: "npm run hermes:doctor-triage",
+        reason: "Doctor returned non-zero; inspect sanitized stdout/stderr previews before enabling channels.",
+      }),
+      ...base,
+    ];
+  }
+  return [
+    doctorTriageAction({
+      id: "rerun_runtime_check",
+      priority: 10,
+      command: "npm run hermes:runtime-check",
+      reason: "Short doctor probe passed or produced no hard blocker; verify the full bounded runtime check.",
+    }),
+    ...base,
+  ];
+}
+
+function doctorTriageAction({
+  id,
+  priority,
+  command,
+  reason,
+  mutatesRuntimeIfRun = false,
+  requiresOperatorConfirmation = false,
+}) {
+  return {
+    id,
+    priority,
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+    mutates_runtime_if_run: Boolean(mutatesRuntimeIfRun),
+    requires_operator_confirmation: Boolean(requiresOperatorConfirmation),
+  };
+}
+
+function doctorTriagePreview(value) {
+  return String(value ?? "").slice(0, 500);
 }
 
 function channelRecoveryEnvRequirements() {
@@ -1730,9 +1938,11 @@ function runLocalCommand(name, commandName, args = [], timeoutMs = 5_000) {
     const stdoutChunks = [];
     const stderrChunks = [];
     let settled = false;
+    let didTimeout = false;
     const startedAt = new Date();
     const timeout = setTimeout(() => {
       if (settled) return;
+      didTimeout = true;
       child.kill("SIGTERM");
     }, timeoutMs);
 
@@ -1767,7 +1977,7 @@ function runLocalCommand(name, commandName, args = [], timeoutMs = 5_000) {
         completed_at: new Date().toISOString(),
         exit_code: exitCode,
         signal,
-        timed_out: signal === "SIGTERM" && exitCode === null,
+        timed_out: didTimeout,
         error_code: null,
         stdout: sanitizeCommandOutput(stdout),
         stderr: sanitizeCommandOutput(stderr),
@@ -7325,6 +7535,7 @@ const commands = {
   runs,
   preflight,
   "runtime-check": runtimeCheck,
+  "doctor-triage": doctorTriage,
   "channel-readiness": channelReadiness,
   "channel-recovery-plan": channelRecoveryPlan,
   "backend-readiness": backendReadiness,

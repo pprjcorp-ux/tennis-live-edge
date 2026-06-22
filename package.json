@@ -23,6 +23,7 @@
     "hermes:runs": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs",
     "hermes:preflight": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight",
     "hermes:runtime-check": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-check",
+    "hermes:doctor-triage": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs doctor-triage",
     "hermes:channel-readiness": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-readiness",
     "hermes:channel-recovery-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-recovery-plan",
     "hermes:backend-readiness": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backend-readiness",

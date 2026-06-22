@@ -31,6 +31,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-check
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs doctor-triage
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-readiness
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-recovery-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backend-readiness
@@ -101,6 +102,9 @@ reachability, local gateway reachability, persistence, provider key readiness,
 and the real-execution hard block.
 The `runtime-check` command runs read-only Hermes CLI diagnostics and captures
 status/doctor output as JSON. It must not repair, install, or restart services.
+The `doctor-triage` command runs bounded local probes for Hermes version,
+status, and a short doctor attempt. It should classify doctor timeouts without
+starting services, editing credentials, calling providers, or printing secrets.
 The `channel-readiness` command proves local channel prerequisites without
 FastAPI: Hermes CLI availability, gateway running state, bounded doctor pass,
 Telegram allowlist, private Access allowlist, and local admin token presence.

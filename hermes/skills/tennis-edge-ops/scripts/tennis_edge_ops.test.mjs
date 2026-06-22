@@ -795,6 +795,54 @@ test("runtime-check captures Hermes local diagnostics without failing protected 
   assert.equal(payload.diagnostic_actions.some((action) => action.command.includes("launchctl kickstart")), false);
 });
 
+test("doctor-triage classifies a bounded doctor timeout without mutating runtime", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-doctor-triage-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === '--version') { console.log('hermes 1.2.3'); process.exit(0); }",
+      "else if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✓ running\\nAuth\\n  OpenAI        ✓ configured'); process.exit(0); }",
+      "else if (process.argv[2] === 'doctor') { console.log('checking ' + 's' + 'k-testsecret'); setTimeout(() => {}, 10000); }",
+      "else { process.exit(2); }",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+
+  const result = await runCli(["doctor-triage"], {
+    env: {
+      HERMES_BIN: fakeHermes,
+      HERMES_DOCTOR_TRIAGE_TIMEOUT_MS: "100",
+    },
+    timeoutMs: 8_000,
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "doctor_triage");
+  assert.equal(payload.status, "blocked");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.llm_per_tick_allowed, false);
+  assert.equal(payload.doctor_timeout_ms, 100);
+  assert.equal(payload.runtime_findings.gateway_service_status, "running");
+  assert.equal(payload.runtime_findings.doctor_status, "timed_out");
+  assert.equal(payload.likely_cause, "doctor_timeout_with_gateway_running");
+  const doctorSummary = payload.command_summary.find((item) => item.name === "hermes doctor short");
+  assert.equal(doctorSummary.timed_out, true);
+  assert.equal(JSON.stringify(payload).includes(["s", "k-testsecret"].join("")), false);
+  assert.equal(JSON.stringify(payload).includes("[REDACTED_API_KEY]"), true);
+  assert.equal(payload.next_safe_actions[0].id, "bounded_doctor_recheck");
+  assert.equal(payload.next_safe_actions.every((action) => action.executes_now === false), true);
+  assert.equal(payload.safety.secret_value_printed, false);
+  assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
+});
+
 test("channel-readiness blocks channel activation without mutating runtime", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-channel-readiness-blocked-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

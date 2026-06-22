@@ -32,6 +32,7 @@ npm run hermes:anomalies
 npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:runtime-check
+npm run hermes:doctor-triage
 npm run hermes:channel-readiness
 npm run hermes:channel-recovery-plan
 npm run hermes:backend-readiness
@@ -90,6 +91,11 @@ for backend-approved `Entrada` signals. Real execution remains blocked by
 `hermes:runtime-check` runs `hermes status` and `hermes doctor` as local
 read-only diagnostics and returns JSON with stdout/stderr/exit codes. It does
 not start, stop, install, or repair Hermes services.
+
+`hermes:doctor-triage` runs bounded local probes for Hermes version, status and
+a short doctor attempt. Use it when `runtime-check` reports
+`doctor_timed_out`; it classifies likely causes, redacts command output, and
+prints only non-executed manual actions.
 
 `hermes:channel-readiness` is the non-mutating proof packet for moving from
 `observe` to `channel_ready`. It checks Hermes CLI availability, gateway

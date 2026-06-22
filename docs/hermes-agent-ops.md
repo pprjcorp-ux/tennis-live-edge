@@ -18,6 +18,7 @@ npm run hermes:anomalies
 npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:runtime-check
+npm run hermes:doctor-triage
 npm run hermes:channel-readiness
 npm run hermes:channel-recovery-plan
 npm run hermes:backend-readiness
@@ -88,6 +89,10 @@ outcomes without parsing free-form reason strings.
 Use `hermes:runtime-check` when `unblock-plan` prioritizes the local runtime
 lane. It captures `hermes status` and `hermes doctor` output in JSON but does
 not modify LaunchAgents, daemons, gateway state, or credentials.
+
+Use `hermes:doctor-triage` when runtime diagnostics report `doctor_timed_out`.
+It runs bounded local probes for version/status/doctor, classifies the likely
+cause, redacts output previews, and emits only non-executed manual actions.
 
 Use `hermes:channel-readiness` to prove the channel gate before cron/Telegram
 activation. It is independent of FastAPI and checks only local runtime/channel

@@ -2104,6 +2104,7 @@ async function experimentLabData() {
   const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
   const sourceRouteReport = buildSourceRouteLedgerReport(readSourceRouteLedgerRecords());
   const sourceUseReport = buildSourceUseLedgerReport(readSourceUseLedgerRecords());
+  const sourceIntakeReport = buildSourceIntakeLedgerReport(readSourceIntakeLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
   const backlogPlan = buildBacklogPlan({
     experimentReport,
@@ -2113,6 +2114,7 @@ async function experimentLabData() {
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
+    sourceIntakeReport,
     runtimePriorities,
   });
   const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
@@ -2179,6 +2181,7 @@ function autonomyEffectivenessData() {
   const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
   const sourceRouteReport = buildSourceRouteLedgerReport(readSourceRouteLedgerRecords());
   const sourceUseReport = buildSourceUseLedgerReport(readSourceUseLedgerRecords());
+  const sourceIntakeReport = buildSourceIntakeLedgerReport(readSourceIntakeLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
   const backlog = buildBacklogPlan({
     experimentReport,
@@ -2188,6 +2191,7 @@ function autonomyEffectivenessData() {
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
+    sourceIntakeReport,
     runtimePriorities,
   });
   const effectiveness = buildAutonomyEffectiveness({
@@ -2198,6 +2202,7 @@ function autonomyEffectivenessData() {
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
+    sourceIntakeReport,
     runtimePriorities,
     backlog,
   });
@@ -2209,6 +2214,7 @@ function autonomyEffectivenessData() {
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
+    sourceIntakeReport,
     runtimePriorities,
     backlog,
     effectiveness,
@@ -8506,6 +8512,23 @@ function experimentFromBacklogGuidance(backlogPlan) {
       ],
     });
   }
+  if (nextItem?.id === "harden_source_intake_feedback_loop") {
+    return experimentRow({
+      id: "source_intake_feedback_loop",
+      title: "Convert repeated source-intake queues into offline contract work",
+      status: "ready",
+      priorityScore: Math.min(100, 89 + Number(nextItem.frequency ?? 0) * 4),
+      command: "npm --silent run hermes:source-intake-ledger-report",
+      hypothesis: "Using observed intake queues should identify the next allowed offline/internal contract while keeping operator-review, deferred and forbidden sources out of execution.",
+      prerequisites: ["source_intake_ledger", "source_intake_plan", "dataset_fetch_not_attempted"],
+      successMetrics: ["top_allowed_contract", "top_operator_review", "top_deferred", "dataset_fetch_attempted_count", "provider_command_executed_count"],
+      evidence: [
+        `backlog_next_item=${nextItem.id}`,
+        `frequency=${nextItem.frequency ?? 0}`,
+        `source=${(nextItem.source ?? []).join(",")}`,
+      ],
+    });
+  }
   return null;
 }
 
@@ -8664,6 +8687,7 @@ function buildBacklogPlan({
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
+  sourceIntakeReport = emptySourceIntakeLedgerReport(),
   runtimePriorities,
 }) {
   const items = buildBacklogItems({
@@ -8674,6 +8698,7 @@ function buildBacklogPlan({
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
+    sourceIntakeReport,
     runtimePriorities,
   })
     .sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
@@ -8764,6 +8789,25 @@ function buildBacklogPlan({
         provider_command_executed_count: sourceUseReport.provider_command_executed_count,
         bypass_attempted_count: sourceUseReport.bypass_attempted_count,
       },
+      source_intake_ledger: {
+        path: sourceIntakeReport.ledger?.path,
+        total_records: sourceIntakeReport.total_records,
+        top_next_intake: sourceIntakeReport.top_next_intake,
+        top_next_intake_lane: sourceIntakeReport.top_next_intake_lane,
+        top_next_intake_command: sourceIntakeReport.top_next_intake_command,
+        top_allowed_contract: sourceIntakeReport.top_allowed_contract,
+        top_operator_review: sourceIntakeReport.top_operator_review,
+        top_deferred: sourceIntakeReport.top_deferred,
+        top_forbidden_quarantine: sourceIntakeReport.top_forbidden_quarantine,
+        allowed_contract_counts: sourceIntakeReport.allowed_contract_counts,
+        operator_review_counts: sourceIntakeReport.operator_review_counts,
+        deferred_counts: sourceIntakeReport.deferred_counts,
+        forbidden_quarantine_counts: sourceIntakeReport.forbidden_quarantine_counts,
+        intake_command_executed_count: sourceIntakeReport.intake_command_executed_count,
+        dataset_fetch_attempted_count: sourceIntakeReport.dataset_fetch_attempted_count,
+        provider_command_executed_count: sourceIntakeReport.provider_command_executed_count,
+        bypass_attempted_count: sourceIntakeReport.bypass_attempted_count,
+      },
       runtime_priorities: {
         next_priority: runtimePriorities.next_priority,
         total_priorities: runtimePriorities.priorities.length,
@@ -8785,6 +8829,10 @@ function emptySourceRouteLedgerReport() {
 
 function emptySourceUseLedgerReport() {
   return buildSourceUseLedgerReport({ path: sourceUseLedgerPath(), records: [], invalid_rows: 0 });
+}
+
+function emptySourceIntakeLedgerReport() {
+  return buildSourceIntakeLedgerReport({ path: sourceIntakeLedgerPath(), records: [], invalid_rows: 0 });
 }
 
 function buildBacklogPlanWithEnterpriseReadiness(backlogPlan, enterpriseReadiness) {
@@ -8926,6 +8974,7 @@ function buildAutonomyEffectiveness({
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
+  sourceIntakeReport = emptySourceIntakeLedgerReport(),
   runtimePriorities,
   backlog,
 }) {
@@ -8937,6 +8986,7 @@ function buildAutonomyEffectiveness({
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
+    sourceIntakeReport,
   });
   const protectedClaims = autonomyProtectedActionClaims({
     experimentReport,
@@ -8946,6 +8996,7 @@ function buildAutonomyEffectiveness({
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
+    sourceIntakeReport,
   });
   const repeatPressure = autonomyRepeatPressure({
     experimentReport,
@@ -8955,6 +9006,7 @@ function buildAutonomyEffectiveness({
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
+    sourceIntakeReport,
     runtimePriorities,
   });
   const score = autonomyEffectivenessScore({ evidenceTotals, protectedClaims, repeatPressure });
@@ -9003,6 +9055,16 @@ function buildAutonomyEffectiveness({
           ?? sourceUseReport.top_forbidden_source
           ?? sourceUseReport.top_next_action,
         command: sourceUseReport.next_recommendation?.command ?? "npm --silent run hermes:source-use-ledger-report",
+      }),
+      source_intake: effectivenessLane({
+        id: "source_intake",
+        repeated_count: repeatPressure.source_intake,
+        top_signal: sourceIntakeReport.top_allowed_contract
+          ?? sourceIntakeReport.top_operator_review
+          ?? sourceIntakeReport.top_deferred
+          ?? sourceIntakeReport.top_forbidden_quarantine
+          ?? sourceIntakeReport.top_next_intake,
+        command: sourceIntakeReport.top_next_intake_command ?? "npm --silent run hermes:source-intake-ledger-report",
       }),
       grand_slam_prediction: effectivenessLane({
         id: "grand_slam_prediction",
@@ -9069,6 +9131,7 @@ function autonomyEvidenceTotals({
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
+  sourceIntakeReport = emptySourceIntakeLedgerReport(),
 }) {
   const total_records = sumNumbers([
     experimentReport.total_records,
@@ -9078,6 +9141,7 @@ function autonomyEvidenceTotals({
     grandSlamMissionReport.total_records,
     sourceRouteReport.total_records,
     sourceUseReport.total_records,
+    sourceIntakeReport.total_records,
   ]);
   return {
     total_records,
@@ -9088,6 +9152,7 @@ function autonomyEvidenceTotals({
     grand_slam_mission_records: grandSlamMissionReport.total_records,
     source_route_records: sourceRouteReport.total_records,
     source_use_records: sourceUseReport.total_records,
+    source_intake_records: sourceIntakeReport.total_records,
     has_multi_lane_evidence: [
       experimentReport.total_records,
       operatorReport.total_records,
@@ -9096,6 +9161,7 @@ function autonomyEvidenceTotals({
       grandSlamMissionReport.total_records,
       sourceRouteReport.total_records,
       sourceUseReport.total_records,
+      sourceIntakeReport.total_records,
     ].filter((count) => Number(count ?? 0) > 0).length >= 2,
   };
 }
@@ -9108,6 +9174,7 @@ function autonomyProtectedActionClaims({
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
+  sourceIntakeReport = emptySourceIntakeLedgerReport(),
 }) {
   return {
     total: sumNumbers([
@@ -9132,6 +9199,11 @@ function autonomyProtectedActionClaims({
       sourceUseReport.manifest_command_executed_count,
       sourceUseReport.provider_command_executed_count,
       sourceUseReport.bypass_attempted_count,
+      sourceIntakeReport.action_executed_count,
+      sourceIntakeReport.intake_command_executed_count,
+      sourceIntakeReport.dataset_fetch_attempted_count,
+      sourceIntakeReport.provider_command_executed_count,
+      sourceIntakeReport.bypass_attempted_count,
     ]),
     operator_actions: operatorReport.action_executed_count,
     provider_commands: sumNumbers([
@@ -9139,12 +9211,16 @@ function autonomyProtectedActionClaims({
       grandSlamMissionReport.provider_command_executed_count,
       sourceRouteReport.provider_command_executed_count,
       sourceUseReport.provider_command_executed_count,
+      sourceIntakeReport.provider_command_executed_count,
     ]),
     route_commands: sourceRouteReport.route_command_executed_count,
     manifest_commands: sourceUseReport.manifest_command_executed_count,
+    intake_commands: sourceIntakeReport.intake_command_executed_count,
+    dataset_fetches: sourceIntakeReport.dataset_fetch_attempted_count,
     bypass_attempts: sumNumbers([
       sourceRouteReport.bypass_attempted_count,
       sourceUseReport.bypass_attempted_count,
+      sourceIntakeReport.bypass_attempted_count,
     ]),
     paper_orders: sumNumbers([
       liveControllerReport.paper_order_created_count,
@@ -9166,6 +9242,7 @@ function autonomyRepeatPressure({
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
+  sourceIntakeReport = emptySourceIntakeLedgerReport(),
   runtimePriorities,
 }) {
   const runtime = Math.max(
@@ -9199,16 +9276,24 @@ function autonomyRepeatPressure({
     firstCount(sourceUseReport.license_review_source_counts),
     firstCount(sourceUseReport.next_action_counts),
   );
+  const sourceIntake = Math.max(
+    firstCount(sourceIntakeReport.allowed_contract_counts),
+    firstCount(sourceIntakeReport.operator_review_counts),
+    firstCount(sourceIntakeReport.deferred_counts),
+    firstCount(sourceIntakeReport.forbidden_quarantine_counts),
+    firstCount(sourceIntakeReport.next_intake_counts),
+  );
   const operator = firstCount(operatorReport.next_action_counts);
   return {
     runtime,
     live_collection: liveCollection,
     source_routes: sourceRoutes,
     source_use: sourceUse,
+    source_intake: sourceIntake,
     grand_slam: grandSlam,
     experiment,
     operator,
-    max_repeated_count: Math.max(runtime, liveCollection, sourceRoutes, sourceUse, grandSlam, experiment, operator),
+    max_repeated_count: Math.max(runtime, liveCollection, sourceRoutes, sourceUse, sourceIntake, grandSlam, experiment, operator),
   };
 }
 
@@ -9447,6 +9532,13 @@ function implementationStepsFor(item) {
       "prove_manifest_provider_and_bypass_counters_remain_zero",
       ...genericSteps.slice(2),
     ],
+    harden_source_intake_feedback_loop: [
+      "review_source_intake_ledger_report_for_allowed_operator_deferred_and_forbidden_queues",
+      "map_the_top_allowed_contract_to_replay_or_internal_fastapi_read_model_without_fetching_data",
+      "keep_operator_review_deferred_and_forbidden_quarantine_sources_out_of_execution",
+      "prove_intake_dataset_provider_and_bypass_counters_remain_zero",
+      ...genericSteps.slice(2),
+    ],
     complete_budget_chain_before_enterprise: [
       "prove_budget_chain_completion_requirements_from_operational_truth",
       "keep_enterprise_eligibility_false_until_cursor_and_smoke_evidence_pass",
@@ -9481,6 +9573,7 @@ function buildBacklogItems({
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
+  sourceIntakeReport = emptySourceIntakeLedgerReport(),
   runtimePriorities,
 }) {
   const items = [];
@@ -9510,6 +9603,16 @@ function buildBacklogItems({
     sourceUseDeferredFrequency,
     sourceUseForbiddenFrequency,
     sourceUseLicenseFrequency,
+  );
+  const sourceIntakeAllowedFrequency = firstCount(sourceIntakeReport.allowed_contract_counts);
+  const sourceIntakeOperatorFrequency = firstCount(sourceIntakeReport.operator_review_counts);
+  const sourceIntakeDeferredFrequency = firstCount(sourceIntakeReport.deferred_counts);
+  const sourceIntakeForbiddenFrequency = firstCount(sourceIntakeReport.forbidden_quarantine_counts);
+  const sourceIntakeFrequency = Math.max(
+    sourceIntakeAllowedFrequency,
+    sourceIntakeOperatorFrequency,
+    sourceIntakeDeferredFrequency,
+    sourceIntakeForbiddenFrequency,
   );
   const grandSlamPhaseCounts = grandSlamMissionReport.active_phase_counts ?? {};
   const grandSlamRestoreFrequency = grandSlamPhaseCounts.restore_operational_truth ?? 0;
@@ -9661,6 +9764,39 @@ function buildBacklogItems({
         "operator_required_or_deferred_sources_reviewed",
       ],
       blocks: ["source_use_manifest", "source_use_ledger", "license_review", "enterprise_deferred", "safe_jailbreak_policy"],
+    }));
+  }
+
+  if (sourceIntakeFrequency > 0) {
+    items.push(backlogItem({
+      id: "harden_source_intake_feedback_loop",
+      title: "Harden source-intake decisions before importer contracts",
+      priority: 24,
+      source: ["source_intake_ledger"],
+      frequency: sourceIntakeFrequency,
+      rationale: "Repeated source-intake queues show which offline/internal contract should be implemented next, and which sources must stay operator-reviewed, deferred or quarantined.",
+      targetFiles: [
+        "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+        "hermes/skills/tennis-edge-ops/SKILL.md",
+        "hermes/README.md",
+        "scripts/check_private_runtime.py",
+      ],
+      validationCommands: [
+        "npm --silent run hermes:source-intake-ledger-report",
+        "npm --silent run hermes:source-intake-plan",
+        "python3 scripts/check_private_runtime.py",
+      ],
+      acceptanceEvidence: [
+        "source_intake_ledger.total_records>=2",
+        `source_intake_ledger.top_allowed_contract=${sourceIntakeReport.top_allowed_contract ?? "none"}`,
+        `source_intake_ledger.top_operator_review=${sourceIntakeReport.top_operator_review ?? "none"}`,
+        `source_intake_ledger.top_deferred=${sourceIntakeReport.top_deferred ?? "none"}`,
+        "intake_command_executed_count=0",
+        "dataset_fetch_attempted_count=0",
+        "provider_command_executed_count=0",
+        "bypass_attempted_count=0",
+      ],
+      blocks: ["source_intake_plan", "offline_import_contract", "license_review", "enterprise_deferred", "safe_jailbreak_policy"],
     }));
   }
 

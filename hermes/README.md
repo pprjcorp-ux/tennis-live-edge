@@ -388,6 +388,13 @@ repeated `allowed_contract`, `operator_review`, `deferred`, and
 `forbidden_quarantine` decisions before any importer or provider activation.
 The ledger write scope is `local_source_intake_jsonl_only`, and the report JSON
 mode is `source_intake_ledger_report`.
+`hermes:backlog-plan`, `hermes:experiment-lab`,
+`hermes:autonomy-effectiveness`, and `hermes:implementation-handoff` consume
+this report as the `source_intake` lane. Repeated intake queues become the
+`harden_source_intake_feedback_loop` work order, which may only route the top
+allowed contract into replay/internal FastAPI read-model work while keeping
+operator-review, deferred enterprise and forbidden-quarantine sources out of
+execution.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam
@@ -491,11 +498,21 @@ must review operator-required, deferred and forbidden sources, map the top
 source to license terms, contract status or enterprise deferred gates, keep
 dataset fetch/provider quota/forbidden routes operator-gated, and prove
 manifest/provider/bypass counters remain zero.
+When that work order is `harden_source_intake_feedback_loop`, the suggested
+steps must review allowed/operator/deferred/forbidden intake queues, map the top
+allowed contract to replay or internal FastAPI read-model work without fetching
+data, keep operator-review/deferred/quarantined sources out of execution, and
+prove intake/dataset/provider/bypass counters remain zero.
 The machine-readable handoff evidence includes `source_use_records`,
-`source_use`, `review_source_use_ledger_report_for_operator_required_deferred_and_forbidden_sources`,
+`source_use`, `source_intake_records`, `source_intake`,
+`review_source_use_ledger_report_for_operator_required_deferred_and_forbidden_sources`,
 `map_the_top_source_to_license_terms_contract_status_or_enterprise_deferred_gate`,
-`prove_manifest_provider_and_bypass_counters_remain_zero`, and
-`manifest_command_executed=false`.
+`prove_manifest_provider_and_bypass_counters_remain_zero`,
+`review_source_intake_ledger_report_for_allowed_operator_deferred_and_forbidden_queues`,
+`map_the_top_allowed_contract_to_replay_or_internal_fastapi_read_model_without_fetching_data`,
+`prove_intake_dataset_provider_and_bypass_counters_remain_zero`,
+`manifest_command_executed=false`, `intake_command_executed_count=0`, and
+`dataset_fetch_attempted_count=0`.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

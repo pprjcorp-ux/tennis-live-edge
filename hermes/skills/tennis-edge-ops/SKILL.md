@@ -262,6 +262,12 @@ contract as local JSONL only, with no contract execution, dataset fetch,
 provider command or bypass. The `source-intake-ledger-report` command
 summarizes repeated allowed-contract, operator-review, deferred and forbidden
 quarantine decisions before importer or provider work.
+Backlog, experiment, autonomy-effectiveness and implementation-handoff packets
+must consume that report as the `source_intake` lane. Repeated intake queues
+should become `harden_source_intake_feedback_loop`, which can only convert the
+top allowed contract into replay/internal FastAPI read-model work while keeping
+operator-review, deferred enterprise and forbidden-quarantine sources out of
+execution.
 The `trigger-policy` command maps current state to debounced wakeup triggers
 for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
 read-only and must not execute trigger commands. Partial runtime should emit a
@@ -306,6 +312,11 @@ source-use ledger report, map operator-required/deferred/forbidden sources to
 license terms, contract status or enterprise deferred gates, keep dataset
 fetch/provider quota/forbidden routes operator-gated, and prove
 manifest/provider/bypass counters remain zero.
+For `harden_source_intake_feedback_loop`, the handoff should review the
+source-intake ledger report, map the top allowed contract to replay or internal
+FastAPI read-model work without fetching data, keep operator-review, deferred
+and forbidden-quarantine sources out of execution, and prove intake, dataset,
+provider and bypass counters remain zero.
 Runtime commands should carry `runtime_findings` and non-executed diagnostic
 actions, with `mutates_runtime_if_run=true` for manual gateway/service changes.
 When `runtime_findings` already include a specific diagnostic action, the

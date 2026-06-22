@@ -40,6 +40,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs scheduler-rehearsal
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
@@ -104,6 +105,9 @@ The `safe-loop` command is the preferred autonomous packet. It aggregates
 runtime, intelligence, events, unblock-plan, playbook, live-stats, budget-chain,
 and learning review into one read-only decision and never creates orders or
 spends provider quota.
+The `scheduler-rehearsal` command turns safe-loop output into a proposed local
+schedule and writes only a local JSONL audit row. It must not create cron jobs
+or execute scheduled commands.
 The `autopilot` command also runs preflight internally and aborts before calling
 protected backend actions when the preflight status is `blocked`.
 

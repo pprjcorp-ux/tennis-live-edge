@@ -41,6 +41,7 @@ npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
+npm run hermes:scheduler-rehearsal
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
@@ -116,6 +117,11 @@ local runtime check, intelligence, event routing, unblock plan, playbook,
 live-stats, budget-chain, and weekly-learning packets into one read-only JSON
 decision. It never creates paper orders, spends provider quota, calls provider
 smoke execution, or submits real orders.
+
+`hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
+local schedule and appends a JSONL audit row to `hermes/runs/`. It does not
+create real cron jobs, execute commands, create paper orders, spend provider
+quota, or submit real orders.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

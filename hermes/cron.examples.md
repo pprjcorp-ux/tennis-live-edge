@@ -84,6 +84,16 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Scheduler rehearsal before creating or changing real cron jobs:
+
+```bash
+npm --silent run hermes:scheduler-rehearsal
+```
+
+This writes only a local JSONL audit row under `hermes/runs/`. It does not call
+`hermes cron add`, execute recommended commands, create orders, run provider
+smoke, or spend provider quota.
+
 Event router every 5 minutes during active windows:
 
 ```bash

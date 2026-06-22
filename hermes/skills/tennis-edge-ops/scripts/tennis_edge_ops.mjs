@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 const command = process.argv[2] ?? "briefing";
 const apiBaseArg = process.argv.find((arg) => arg.startsWith("--api-base="));
@@ -144,6 +146,10 @@ async function budgetChain() {
 }
 
 async function safeLoop() {
+  printJson(await safeLoopData());
+}
+
+async function safeLoopData() {
   const [runtime, report] = await Promise.all([
     runtimeCheckData(),
     intelligenceData(),
@@ -154,7 +160,7 @@ async function safeLoop() {
   const playbookPlan = buildPlaybook(report, eventPlan);
   const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
   const learningPlan = buildLearningReview(report, eventPlan, playbookPlan);
-  printJson(buildSafeLoop({
+  return buildSafeLoop({
     runtime,
     report,
     eventPlan,
@@ -163,7 +169,14 @@ async function safeLoop() {
     playbookPlan,
     liveStatsPlan,
     learningPlan,
-  }));
+  });
+}
+
+async function schedulerRehearsal() {
+  const loop = await safeLoopData();
+  const rehearsal = buildSchedulerRehearsal(loop);
+  writeSchedulerAudit(rehearsal);
+  printJson(rehearsal);
 }
 
 async function providerSmoke() {
@@ -1163,6 +1176,149 @@ function dedupeLoopCommands(commands) {
   });
 }
 
+function buildSchedulerRehearsal(loop) {
+  const schedule = schedulerSchedule(loop);
+  const nextTick = chooseSchedulerNextTick(loop, schedule);
+  const auditPath = schedulerAuditPath();
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "scheduler_rehearsal",
+    status: loop.status,
+    source_mode: loop.source_mode,
+    active_phase: loop.active_phase,
+    read_only: false,
+    writes: true,
+    write_scope: "local_audit_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    next_tick: nextTick,
+    schedule,
+    safe_loop: {
+      status: loop.status,
+      active_phase: loop.active_phase,
+      next_best_command: loop.next_best_command,
+      sampling_policy: loop.live_stats?.sampling_policy,
+      safety: loop.safety,
+    },
+    audit_log: {
+      path: auditPath,
+      format: "jsonl",
+      retention_note: "Local operator artifact; do not commit runtime logs.",
+    },
+    forbidden_actions: loop.forbidden_actions,
+    safety: {
+      real_execution_hard_block: loop.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function schedulerSchedule(loop) {
+  const policy = loop.live_stats?.sampling_policy ?? {};
+  const baseMinutes = Number(policy.poll_interval_minutes ?? 5);
+  const safeLoopInterval = loop.status === "runtime_degraded"
+    ? 5
+    : baseMinutes > 0
+      ? baseMinutes
+      : 5;
+  const rows = [
+    schedulerItem({
+      id: "safe_loop",
+      command: "npm --silent run hermes:safe-loop",
+      everyMinutes: safeLoopInterval,
+      reason: "Refresh the full autonomous packet without executing suggested actions.",
+    }),
+    schedulerItem({
+      id: "runtime_check",
+      command: "npm run hermes:runtime-check",
+      everyMinutes: loop.runtime?.status === "ready" ? 30 : 5,
+      reason: "Capture Hermes local runtime diagnostics while gateway is degraded or before protected automation.",
+    }),
+    schedulerItem({
+      id: "event_router",
+      command: "npm --silent run hermes:events",
+      everyMinutes: 5,
+      reason: "Keep deterministic event routing available for channels without creating orders.",
+    }),
+    schedulerItem({
+      id: "live_stats",
+      command: "npm --silent run hermes:live-stats",
+      everyMinutes: policy.name === "paper_signal_watch" ? 1 : 5,
+      reason: `Monitor collection and freshness under ${policy.name ?? "unknown"} policy.`,
+    }),
+  ];
+  if (loop.budget_chain && !loop.budget_chain.completed) {
+    rows.push(schedulerItem({
+      id: "budget_chain",
+      command: "npm --silent run hermes:budget-chain",
+      everyMinutes: 15,
+      reason: "Track budget provider onboarding without running provider smoke execution.",
+    }));
+  }
+  if (loop.active_phase === "collect_learning" || loop.learning_review?.review_status !== "ready") {
+    rows.push(schedulerItem({
+      id: "learning_review",
+      command: "npm --silent run hermes:learning-review",
+      everyMinutes: 24 * 60,
+      reason: "Review ROI/CLV readiness periodically; deterministic gates still decide promotion.",
+    }));
+  }
+  return dedupeSchedule(rows);
+}
+
+function schedulerItem({ id, command, everyMinutes, reason }) {
+  return {
+    id,
+    command,
+    every_minutes: everyMinutes,
+    reason,
+    execute_now: false,
+    writes: false,
+    live_api_calls: false,
+    requires_admin_token: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    provider_api_call_allowed: false,
+  };
+}
+
+function dedupeSchedule(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    if (seen.has(item.command)) return false;
+    seen.add(item.command);
+    return true;
+  });
+}
+
+function chooseSchedulerNextTick(loop, schedule) {
+  const preferredCommand = loop.next_best_command?.command;
+  const fromLoop = schedule.find((item) => item.command === preferredCommand);
+  if (fromLoop) return fromLoop;
+  if (loop.status === "runtime_degraded") {
+    return schedule.find((item) => item.id === "runtime_check") ?? schedule[0] ?? null;
+  }
+  return schedule[0] ?? null;
+}
+
+function schedulerAuditPath() {
+  return process.env.HERMES_SCHEDULER_RUN_LOG || "hermes/runs/scheduler-rehearsal.jsonl";
+}
+
+function writeSchedulerAudit(rehearsal) {
+  const path = schedulerAuditPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(rehearsal)}\n`, "utf8");
+}
+
 function localRuntimeLanes(report) {
   const failed = report.degraded_items?.preflight_failed ?? [];
   if (!failed.some((check) => check.name === "hermes_gateway")) return [];
@@ -2021,6 +2177,7 @@ const commands = {
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,
   "safe-loop": safeLoop,
+  "scheduler-rehearsal": schedulerRehearsal,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

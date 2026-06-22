@@ -101,6 +101,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 
 - Every 5 minutes during active windows: `npm run hermes:intelligence`.
 - Every 5 minutes when Hermes needs one autonomous packet: `npm run hermes:safe-loop`.
+- Before any real cron change: `npm run hermes:scheduler-rehearsal`.
 - Every 1-5 minutes during active windows: `npm run hermes:live-stats`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
@@ -122,6 +123,12 @@ lanes, playbook phases, live stats, budget-chain state, and learning review
 into one JSON decision. It is read-only and keeps
 `provider_api_call_allowed=false`, `llm_per_tick_allowed=false`, and
 `can_submit_real_orders=false`.
+
+`hermes:scheduler-rehearsal` is the dry-run bridge between safe-loop output and
+real Hermes cron configuration. It computes proposed intervals, chooses the
+next safe tick, and appends a local JSONL audit row under `hermes/runs/`. It
+does not create cron jobs, execute scheduled commands, create paper orders, or
+spend provider quota.
 
 `hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
 turns the internal intelligence packet into compact events such as

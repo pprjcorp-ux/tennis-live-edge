@@ -145,6 +145,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it aggregates runtime, intelligence, event routing, playbook, live stats,
   budget-chain, and learning review packets, but must remain read-only and must
   never create paper orders, spend provider quota, or submit real orders itself.
+- Hermes scheduler rehearsal should consume `npm run hermes:scheduler-rehearsal`;
+  it may write only local JSONL audit rows under `hermes/runs/`, must not create
+  real cron jobs, and must never execute the commands it schedules.
 - Real execution requires a separate compliance/account/API activation task.
 
 ## Verification
@@ -165,6 +168,7 @@ npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:budget-chain
 npm run hermes:safe-loop
+npm run hermes:scheduler-rehearsal
 ```
 
 `api:check:operational-truth` is the required integrated smoke before API

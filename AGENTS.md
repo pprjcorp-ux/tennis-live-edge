@@ -168,6 +168,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes data-source discovery should consume `npm run hermes:source-discovery`;
   it maps score, odds, archive, public context, operator notes, and replay to
   allowed acquisition paths without live provider calls or scraping.
+- Hermes wakeup policy should consume `npm run hermes:trigger-policy`; it maps
+  runtime, events, source discovery, quota, and learning state into debounced
+  triggers for cron/webhook/Telegram/dashboard/Cloudflare/OpenClaw without
+  executing trigger commands.
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
   `next_action` it reports.
@@ -221,6 +225,7 @@ npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
+npm run hermes:trigger-policy
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist

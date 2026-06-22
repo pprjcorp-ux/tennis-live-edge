@@ -1119,6 +1119,110 @@ test("source-discovery maps safe data acquisition paths without bypasses or live
   }
 });
 
+test("trigger-policy emits event wakeups without executing commands or live calls", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-trigger-policy-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: stopped'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.error('gateway unreachable'); process.exit(1); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/agent/preflight": {
+      status: "blocked",
+      checks: [
+        { name: "hermes_gateway", status: "fail", summary: "Hermes loopback gateway is not reachable." },
+        { name: "real_execution_hard_block", status: "pass", summary: "blocked" },
+      ],
+      generated_at: "2026-06-21T20:00:00Z",
+    },
+    "/api/v1/provider-cursors": [
+      { provider: "odds_api_io", stream: "tennis:moneyline", resync_required: true },
+    ],
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 1, persisted_matches: 1 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          steps: [
+            {
+              order: 1,
+              provider: "theoddsapi",
+              capability: "archive_odds",
+              status: "ready_next",
+              configured: true,
+              current: true,
+              smoke_completed: false,
+              required_before_enable: [],
+              next_action: "Run archive smoke manually.",
+              notes: [],
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["trigger-policy", `--api-base=${apiBase}`], {
+      env: { HERMES_BIN: fakeHermes },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "trigger_policy");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.wakeup_channels.includes("cron"), true);
+    assert.equal(payload.wakeup_channels.includes("cloudflare_agent"), true);
+    assert.equal(payload.triggers.some((trigger) => trigger.id === "runtime_degraded"), true);
+    assert.equal(payload.triggers.some((trigger) => trigger.id === "source_discovery"), true);
+    assert.equal(payload.triggers.some((trigger) => trigger.id === "cursor_resync_required"), true);
+    assert.equal(payload.triggers.every((trigger) => trigger.executes_now === false), true);
+    assert.equal(payload.triggers.every((trigger) => trigger.provider_api_call_allowed === false), true);
+    assert.equal(payload.next_wakeup.command, "npm run hermes:runtime-check");
+    assert.equal(payload.debounce_policy.llm_per_tick_allowed, false);
+    assert.equal(payload.forbidden_actions.includes("anti_bot_bypass"), true);
+  } finally {
+    server.close();
+  }
+});
+
 test("operator-packet emits a compact channel-safe decision summary", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

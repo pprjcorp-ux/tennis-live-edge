@@ -33,6 +33,7 @@ npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
+npm run hermes:trigger-policy
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -161,6 +162,11 @@ Use `hermes:source-discovery` when Hermes needs to improve collection coverage
 without spending quota or scraping. It maps score state, live odds, archive
 odds, closing-line proxy, live statistics, public context, operator notes and
 replay backfill to allowed acquisition paths and blocked routes.
+
+Use `hermes:trigger-policy` when cron, Telegram, dashboard, Cloudflare Agent or
+OpenClaw needs to know when Hermes should wake up. It emits debounced triggers
+and commands but never executes them, keeping LLM calls away from every odds
+tick.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard

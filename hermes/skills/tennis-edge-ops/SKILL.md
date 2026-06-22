@@ -46,6 +46,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-brief
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-discovery
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report
@@ -136,6 +137,9 @@ is read-only and must not execute the queued actions.
 The `source-discovery` command maps useful data classes to allowed acquisition
 paths and blocked routes. It is read-only and must treat jailbreak as route
 discovery, never bypass.
+The `trigger-policy` command maps current state to debounced wakeup triggers
+for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
+read-only and must not execute trigger commands.
 The `operator-packet` command compresses safe-loop into a short channel-safe
 decision for Telegram/OpenClaw. It is read-only and never executes the next
 safe action it reports.

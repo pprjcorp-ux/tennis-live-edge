@@ -208,6 +208,16 @@ async function sourceDiscovery() {
   printJson(buildSourceDiscovery({ report, eventPlan }));
 }
 
+async function triggerPolicy() {
+  const [loop, report] = await Promise.all([
+    safeLoopData(),
+    intelligenceData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  printJson(buildTriggerPolicy({ loop, sourcePlan }));
+}
+
 async function operatorPacket() {
   const loop = await safeLoopData();
   printJson(buildOperatorPacket(loop));
@@ -1339,6 +1349,178 @@ function buildSourceDiscovery({ report, eventPlan }) {
   };
 }
 
+function buildTriggerPolicy({ loop, sourcePlan }) {
+  const triggers = buildWakeTriggers({ loop, sourcePlan });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "trigger_policy",
+    status: loop.status,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    wakeup_channels: ["cron", "telegram", "dashboard", "cloudflare_agent", "openclaw_gateway"],
+    debounce_policy: {
+      min_seconds_between_same_trigger: 300,
+      coalesce_by: ["trigger_id", "command"],
+      llm_per_tick_allowed: false,
+      provider_api_call_allowed: false,
+      reason: "Wake on summarized state changes; deterministic Python/Postgres handles tick math.",
+    },
+    next_wakeup: triggers[0] ?? null,
+    triggers,
+    source_discovery: {
+      status: sourcePlan.status,
+      next_safe_command: sourcePlan.next_safe_command,
+      safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
+    },
+    forbidden_actions: loop.forbidden_actions ?? sourcePlan.forbidden_actions ?? [],
+    safety: {
+      real_execution_hard_block: loop.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      can_create_paper_orders: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function buildWakeTriggers({ loop, sourcePlan }) {
+  const triggers = [];
+  if (loop.status === "safety_stop") {
+    triggers.push(wakeTrigger({
+      id: "safety_stop",
+      priority: 0,
+      severity: "critical",
+      command: "npm run hermes:preflight",
+      condition: "real execution safety violation or forbidden route detected",
+      reason: "Stop automation review until safety is inspected.",
+    }));
+  }
+  if (loop.runtime?.status !== "ready") {
+    triggers.push(wakeTrigger({
+      id: "runtime_degraded",
+      priority: 10,
+      severity: "high",
+      command: "npm run hermes:runtime-check",
+      condition: `runtime.status=${loop.runtime?.status ?? "unknown"}`,
+      reason: "Collect local Hermes diagnostics before protected automation.",
+    }));
+  }
+  for (const event of loop.event_summary?.events ?? []) {
+    if (event.type === "provider_health_degraded") {
+      triggers.push(wakeTrigger({
+        id: "provider_health_degraded",
+        priority: 20,
+        severity: event.severity,
+        command: "npm run hermes:preflight",
+        condition: "provider health degraded",
+        reason: "Review provider health and quota state without spending live calls.",
+      }));
+    }
+    if (event.type === "cursor_resync_required") {
+      triggers.push(wakeTrigger({
+        id: "cursor_resync_required",
+        priority: 15,
+        severity: event.severity,
+        command: "npm --silent run hermes:events",
+        condition: "provider cursor requires resync",
+        reason: "Keep live odds decisions blocked until cursor state clears.",
+      }));
+    }
+    if (event.type === "data_quality_degraded") {
+      triggers.push(wakeTrigger({
+        id: "data_quality_degraded",
+        priority: 25,
+        severity: event.severity,
+        command: "npm --silent run hermes:intelligence",
+        condition: "data quality degraded",
+        reason: "Refresh redacted operator packet before changing collection cadence.",
+      }));
+    }
+  }
+  if (sourcePlan.status !== "ready") {
+    triggers.push(wakeTrigger({
+      id: "source_discovery",
+      priority: 30,
+      severity: sourcePlan.status === "blocked" ? "high" : "medium",
+      command: "npm --silent run hermes:source-discovery",
+      condition: `source_discovery.status=${sourcePlan.status}`,
+      reason: "Review allowed acquisition routes before provider or public-context work.",
+    }));
+  }
+  if (loop.budget_chain && !loop.budget_chain.completed) {
+    triggers.push(wakeTrigger({
+      id: "budget_chain_next_step",
+      priority: 40,
+      severity: "medium",
+      command: "npm --silent run hermes:budget-chain",
+      condition: `current_step=${loop.budget_chain.current_step_label ?? "unknown"}`,
+      reason: "Track next budget provider onboarding step without running smoke execution.",
+    }));
+  }
+  triggers.push(wakeTrigger({
+    id: "live_statistics",
+    priority: 80,
+    severity: loop.live_stats?.sampling_policy?.severity ?? "low",
+    command: "npm --silent run hermes:live-stats",
+    condition: `sampling_policy=${loop.live_stats?.sampling_policy?.name ?? "unknown"}`,
+    reason: "Summarize live collection and freshness thresholds without LLM per tick.",
+  }));
+  triggers.push(wakeTrigger({
+    id: "quota_guard",
+    priority: 85,
+    severity: loop.quota_plan?.throttle_level === "blocked" ? "high" : "medium",
+    command: "npm --silent run hermes:quota-plan",
+    condition: `throttle=${loop.quota_plan?.throttle_level ?? "unknown"}`,
+    reason: "Apply budget utilization guardrails before any collection cadence change.",
+  }));
+  if (loop.learning_review?.review_status !== "ready") {
+    triggers.push(wakeTrigger({
+      id: "learning_review",
+      priority: 95,
+      severity: "low",
+      command: "npm --silent run hermes:learning-review",
+      condition: `learning_review.status=${loop.learning_review?.review_status ?? "unknown"}`,
+      reason: "Review ROI/CLV readiness periodically; no model promotion from Hermes.",
+    }));
+  }
+  return dedupeWakeTriggers(triggers).sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+}
+
+function wakeTrigger({ id, priority, severity, command, condition, reason }) {
+  return {
+    id,
+    priority,
+    severity,
+    condition,
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function dedupeWakeTriggers(triggers) {
+  const seen = new Set();
+  return triggers.filter((trigger) => {
+    const key = `${trigger.id}:${trigger.command}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function acquisitionRoute({
   primaryPath,
   status,
@@ -2115,6 +2297,12 @@ function schedulerSchedule(loop) {
       command: "npm --silent run hermes:source-discovery",
       everyMinutes: 15,
       reason: "Review allowed acquisition paths and blocked source routes without spending provider quota.",
+    }),
+    schedulerItem({
+      id: "trigger_policy",
+      command: "npm --silent run hermes:trigger-policy",
+      everyMinutes: 5,
+      reason: "Refresh safe wakeup triggers for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway.",
     }),
     schedulerItem({
       id: "runtime_check",
@@ -4187,6 +4375,7 @@ const commands = {
   "safe-loop": safeLoop,
   "autonomy-brief": autonomyBrief,
   "source-discovery": sourceDiscovery,
+  "trigger-policy": triggerPolicy,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,

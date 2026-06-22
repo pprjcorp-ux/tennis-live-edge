@@ -103,6 +103,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes when Hermes needs one autonomous packet: `npm run hermes:safe-loop`.
 - Every 5 minutes when Hermes needs the highest-level autonomy decision: `npm run hermes:autonomy-brief`.
 - Every 5-15 minutes during collection work: `npm run hermes:source-discovery`.
+- Every 5 minutes for cron/webhook wakeup policy: `npm run hermes:trigger-policy`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
 - Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
@@ -154,6 +155,12 @@ backfill to allowed acquisition paths. It can say "use public allowed research"
 or "record a manual operator note", but it must never scrape restricted pages,
 open sportsbook UIs, bypass anti-bot/geolocation controls, extract sessions, or
 spend provider quota.
+
+`hermes:trigger-policy` is the preferred packet for deciding when Hermes should
+wake up. It turns runtime, events, source-discovery, quota and learning state
+into debounced triggers for cron, Telegram, dashboard, Cloudflare Agent and the
+OpenClaw gateway. It reports commands but does not run them, so every channel
+gets the same event-driven policy without asking an LLM to watch every tick.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

@@ -216,7 +216,8 @@ chain is eligible.
 The `experiment-lab` command ranks safe research/test paths with hypotheses,
 prerequisites, `success_metrics`, evidence, and command previews. It is
 read-only and must not execute experiments, spend provider quota, or create
-orders.
+orders. It also reads backlog-plan evidence from local ledgers to prioritize
+experiments that match repeated operational blockers.
 The `experiment-ledger` command appends that lab decision to local JSONL with
 `experiment_command_executed=false`. The `experiment-ledger-report` command
 summarizes repeated experiment recommendations without writing or executing.

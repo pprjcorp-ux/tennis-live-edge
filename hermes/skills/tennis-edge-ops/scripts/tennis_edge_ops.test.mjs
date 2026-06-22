@@ -2253,6 +2253,10 @@ test("autonomy-gates proves the highest safe autonomy level without executing ac
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
         ADMIN_API_TOKEN: "local-admin",
+        HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
+        HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
+        HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
+        HERMES_LIVE_CONTROLLER_LEDGER_PATH: join(tempDir, "live-controller-ledger.jsonl"),
       },
     });
 
@@ -2438,6 +2442,96 @@ test("experiment-lab ranks safe Hermes experiments without executing actions", a
     assert.equal(byId.live_collection_cadence.status, "ready");
     assert.equal(payload.next_experiment.id, "paper_autopilot_rehearsal");
     assert.equal(payload.safety.real_execution_hard_block, true);
+  } finally {
+    server.close();
+  }
+});
+
+test("experiment-lab prioritizes live-controller backlog evidence", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-experiment-lab-controller-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status: running'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('doctor: ok'); process.exit(0); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const controllerRows = [
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "blocked",
+      action: "freeze_collection",
+      next_safe_command: "npm --silent run hermes:events",
+      throttle_level: "blocked",
+      source_route_id: "replay_backfill",
+    },
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "blocked",
+      action: "freeze_collection",
+      next_safe_command: "npm --silent run hermes:events",
+      throttle_level: "blocked",
+      source_route_id: "replay_backfill",
+    },
+  ];
+  writeFileSync(controllerLedgerPath, `${controllerRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["experiment-lab", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
+        PRIVATE_ALLOWED_EMAILS: "operator@example.com",
+        ADMIN_API_TOKEN: "local-admin",
+        HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
+        HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
+        HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
+        HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "experiment_lab");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.backlog_guidance.next_item_id, "harden_live_controller_feedback_loop");
+    assert.equal(payload.backlog_guidance.next_item_source.includes("live_controller_ledger"), true);
+    assert.equal(payload.next_experiment.id, "live_controller_feedback_loop");
+    assert.equal(payload.next_experiment.command, "npm --silent run hermes:backlog-plan");
+    assert.equal(payload.next_experiment.executes_now, false);
+    assert.equal(payload.next_experiment.provider_api_call_allowed, false);
+    assert.equal(payload.next_experiment.can_submit_real_orders, false);
+    assert.equal(payload.next_experiment.evidence.includes("backlog_next_item=harden_live_controller_feedback_loop"), true);
   } finally {
     server.close();
   }

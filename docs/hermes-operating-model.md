@@ -200,7 +200,9 @@ Hermes experiment has the best expected operational value right now, then ranks
 runtime recovery, source discovery, live collection cadence, paper autopilot
 rehearsal, learning review, and enterprise eligibility. The packet includes
 hypotheses, prerequisites, `success_metrics`, evidence and command previews,
-but it does not run experiments, spend provider quota or create orders.
+but it does not run experiments, spend provider quota or create orders. It also
+uses local `backlog-plan` evidence so repeated live-controller freezes,
+throttles or provider candidates can become the next safe experiment.
 
 `hermes:experiment-ledger` is the local trace for those experiment decisions.
 It appends JSONL rows under `hermes/runs/` with the lab payload, active ceiling,

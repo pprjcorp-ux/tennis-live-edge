@@ -1591,7 +1591,18 @@ async function experimentLabData() {
   const eventPlan = buildEventPlan(report);
   const sourcePlan = buildSourceDiscovery({ report, eventPlan });
   const triggerPlan = buildTriggerPolicy({ loop, sourcePlan });
-  const runtimePriorities = buildRuntimeFixPriorities(buildOperatorLedgerReport(readOperatorLedgerRecords()));
+  const experimentReport = buildExperimentLedgerReport(readExperimentLedgerRecords());
+  const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
+  const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
+  const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
+  const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
+  const backlogPlan = buildBacklogPlan({
+    experimentReport,
+    operatorReport,
+    missionReport,
+    liveControllerReport,
+    runtimePriorities,
+  });
   const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
   const operator = buildOperatorPacket(loop);
   const opsPacket = buildOpsCompiler({
@@ -1627,6 +1638,7 @@ async function experimentLabData() {
     sourcePlan,
     capabilityAuditPlan,
     gates,
+    backlogPlan,
   });
 }
 
@@ -3816,8 +3828,16 @@ function autonomyGateCeiling(gate) {
   };
 }
 
-function buildExperimentLab({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, gates }) {
-  const experiments = buildExperimentRows({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, gates })
+function buildExperimentLab({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, gates, backlogPlan }) {
+  const experiments = buildExperimentRows({
+    loop,
+    report,
+    eventPlan,
+    sourcePlan,
+    capabilityAuditPlan,
+    gates,
+    backlogPlan,
+  })
     .sort((a, b) => b.priority_score - a.priority_score || a.id.localeCompare(b.id));
   return {
     generated_at: new Date().toISOString(),
@@ -3833,6 +3853,13 @@ function buildExperimentLab({ loop, report, eventPlan, sourcePlan, capabilityAud
     llm_per_tick_allowed: false,
     active_ceiling: gates.active_ceiling,
     next_required_gate: gates.next_required_gate,
+    backlog_guidance: {
+      status: backlogPlan.status,
+      next_item_id: backlogPlan.next_item?.id ?? null,
+      next_item_title: backlogPlan.next_item?.title ?? null,
+      next_item_source: backlogPlan.next_item?.source ?? [],
+      total_items: backlogPlan.items.length,
+    },
     next_experiment: experiments.find((experiment) => experiment.status === "ready") ?? experiments[0] ?? null,
     experiments,
     blocked_routes: gates.blocked_routes,
@@ -3849,7 +3876,7 @@ function buildExperimentLab({ loop, report, eventPlan, sourcePlan, capabilityAud
   };
 }
 
-function buildExperimentRows({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, gates }) {
+function buildExperimentRows({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, gates, backlogPlan }) {
   const gateById = Object.fromEntries((gates.gates ?? []).map((gate) => [gate.id, gate]));
   const runtimeReady = gateById.channel_ready?.status === "pass";
   const cronReady = gateById.cron_ready?.status === "pass";
@@ -3858,7 +3885,7 @@ function buildExperimentRows({ loop, report, eventPlan, sourcePlan, capabilityAu
   const enterpriseEligible = gateById.enterprise_review?.status === "pass";
   const replayOrPersisted = Number(report.data_snapshot?.persisted_matches ?? 0) > 0
     || report.data_snapshot?.provider_mode === "replay";
-  return [
+  const rows = [
     experimentRow({
       id: "runtime_channel_recovery",
       title: "Recover local Hermes runtime and channel confidence",
@@ -3949,6 +3976,30 @@ function buildExperimentRows({ loop, report, eventPlan, sourcePlan, capabilityAu
       ],
     }),
   ];
+  const backlogExperiment = experimentFromBacklogGuidance(backlogPlan);
+  return backlogExperiment ? [backlogExperiment, ...rows] : rows;
+}
+
+function experimentFromBacklogGuidance(backlogPlan) {
+  const nextItem = backlogPlan.next_item;
+  if (nextItem?.id !== "harden_live_controller_feedback_loop") {
+    return null;
+  }
+  return experimentRow({
+    id: "live_controller_feedback_loop",
+    title: "Convert repeated live-controller decisions into safer collection work",
+    status: "ready",
+    priorityScore: Math.min(100, 92 + Number(nextItem.frequency ?? 0) * 4),
+    command: "npm --silent run hermes:backlog-plan",
+    hypothesis: "Using observed live-controller ledger patterns should improve collection cadence and data-quality work without granting execution authority.",
+    prerequisites: ["live_controller_ledger", "backlog_plan", "provider_commands_not_executed"],
+    successMetrics: ["top_repeated_action", "throttle_counts", "provider_command_executed_count", "paper_order_created_count"],
+    evidence: [
+      `backlog_next_item=${nextItem.id}`,
+      `frequency=${nextItem.frequency ?? 0}`,
+      `source=${(nextItem.source ?? []).join(",")}`,
+    ],
+  });
 }
 
 function experimentRow({

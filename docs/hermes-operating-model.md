@@ -103,6 +103,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes when Hermes needs one autonomous packet: `npm run hermes:safe-loop`.
 - Every 5 minutes when Hermes needs the highest-level autonomy decision: `npm run hermes:autonomy-brief`.
 - Every 5-15 minutes during collection work: `npm run hermes:source-discovery`.
+- Manual/weekly review for offline priors: `npm run hermes:historical-backfill-plan`.
 - Every 5 minutes for cron/webhook wakeup policy: `npm run hermes:trigger-policy`.
 - Every 5 minutes for an all-in-one agent-channel payload: `npm run hermes:ops-compiler`.
 - Every 15 minutes or before autonomy escalation: `npm run hermes:capability-audit`.
@@ -164,11 +165,18 @@ not.
 
 `hermes:source-discovery` is the preferred packet for improving data coverage
 without expanding authority. It maps score state, live odds, archive odds,
-closing-line proxy, live statistics, public context, manual notes and replay
-backfill to allowed acquisition paths. It can say "use public allowed research"
-or "record a manual operator note", but it must never scrape restricted pages,
-open sportsbook UIs, bypass anti-bot/geolocation controls, extract sessions, or
-spend provider quota.
+closing-line proxy, live statistics, public context, manual notes, replay
+backfill and historical public backfill to allowed acquisition paths. It can
+say "use public allowed research" or "record a manual operator note", but it
+must never scrape restricted pages, open sportsbook UIs, bypass anti-bot/
+geolocation controls, extract sessions, or spend provider quota.
+
+`hermes:historical-backfill-plan` is the preferred packet for offline priors and
+backtest depth. It ranks internal persisted replay, Jeff Sackmann ATP/WTA/Slam
+datasets, Tennis-Data CSVs and licensed archive odds while exposing license,
+attribution, commercial-clearance and source-manifest gates. It does not fetch
+or import data; future import scripts must be separate, operator-approved and
+license-aware.
 
 `hermes:trigger-policy` is the preferred packet for deciding when Hermes should
 wake up. It turns runtime, events, source-discovery, Grand Slam readiness, quota

@@ -1826,10 +1826,13 @@ test("source-discovery maps safe data acquisition paths without bypasses or live
     assert.equal(payload.llm_per_tick_allowed, false);
     assert.equal(payload.source_mode, "investigate");
     assert.equal(payload.discovery_scope.includes("score_state"), true);
+    assert.equal(payload.discovery_scope.includes("historical_public_backfill"), true);
     assert.equal(payload.acquisition_matrix.score_state.primary_path, "licensed_provider_api");
     assert.equal(payload.acquisition_matrix.odds_live.status, "blocked");
     assert.equal(payload.acquisition_matrix.odds_live.blockers.includes("cursor_resync_required"), true);
     assert.equal(payload.acquisition_matrix.replay_backfill.primary_path, "persisted_postgres_replay");
+    assert.equal(payload.acquisition_matrix.historical_public_backfill.primary_path, "public_historical_csv_or_git");
+    assert.equal(payload.acquisition_matrix.historical_public_backfill.command, "npm --silent run hermes:historical-backfill-plan");
     assert.equal(payload.acquisition_matrix.public_context.primary_path, "public_allowed_research");
     assert.equal(payload.acquisition_matrix.operator_notes.primary_path, "manual_operator_note");
     assert.equal(payload.provider_routes.some((route) => route.provider === "theoddsapi"), true);
@@ -1934,6 +1937,11 @@ test("source-route-matrix ranks allowed routes without provider spend or bypass"
     assert.equal(byId.odds_live_websocket.status, "blocked");
     assert.equal(byId.odds_live_websocket.blocked_when.includes("cursor_resync_required"), true);
     assert.equal(byId.odds_live_websocket.provider_api_call_allowed, false);
+    assert.equal(byId.historical_public_backfill.status, "operator_review");
+    assert.equal(byId.historical_public_backfill.operator_required, true);
+    assert.equal(byId.historical_public_backfill.cost_tier, "free_public_with_license_constraints");
+    assert.equal(byId.historical_public_backfill.command, "npm --silent run hermes:historical-backfill-plan");
+    assert.equal(byId.historical_public_backfill.blocked_when.includes("commercial_use_not_cleared"), true);
     assert.equal(byId.odds_archive_budget_smoke.status, "operator_ready");
     assert.equal(byId.odds_archive_budget_smoke.operator_required, true);
     assert.equal(byId.live_statistics.llm_per_tick_allowed, false);
@@ -1942,6 +1950,57 @@ test("source-route-matrix ranks allowed routes without provider spend or bypass"
     assert.equal(payload.event_policy.blocked_triggers.includes("llm_per_odds_tick"), true);
     assert.equal(payload.safe_jailbreak_policy.bypass_allowed, false);
     assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("historical-backfill-plan ranks allowed historical sources without fetching them", async () => {
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["historical-backfill-plan", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "historical_backfill_plan");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.next_source.id, "internal_persisted_replay");
+    assert.equal(payload.source_route.id, "historical_public_backfill");
+    assert.equal(payload.review_summary.total_sources >= 6, true);
+    assert.equal(payload.review_summary.license_review_required >= 4, true);
+    const byId = Object.fromEntries(payload.sources.map((source) => [source.id, source]));
+    assert.equal(byId.internal_persisted_replay.status, "ready_now");
+    assert.equal(byId.jeff_sackmann_atp.license_review_required, true);
+    assert.equal(byId.jeff_sackmann_atp.commercial_clearance_required, true);
+    assert.equal(byId.jeff_sackmann_wta.coverage.includes("Grand Slam women"), true);
+    assert.equal(byId.jeff_sackmann_slam_pointbypoint.use_cases.includes("markov_point_engine_calibration"), true);
+    assert.equal(byId.tennis_data_results_odds.blockers.includes("terms_review_required"), true);
+    assert.equal(payload.gates.find((gate) => gate.id === "safe_jailbreak_policy").status, "pass");
+    assert.equal(payload.safe_jailbreak_policy.bypass_allowed, false);
+    assert.equal(payload.safe_jailbreak_policy.live_scraping_allowed, false);
+    assert.equal(payload.forbidden_actions.includes("live_scoreboard_scraping"), true);
+    assert.equal(payload.operator_steps.some((step) => step.includes("source manifest")), true);
   } finally {
     server.close();
   }
@@ -2606,6 +2665,8 @@ test("experiment-lab ranks safe Hermes experiments without executing actions", a
     assert.equal(byId.paper_autopilot_rehearsal.status, "ready");
     assert.equal(byId.paper_autopilot_rehearsal.success_metrics.includes("paper_orders_created"), true);
     assert.equal(byId.live_collection_cadence.status, "ready");
+    assert.equal(byId.source_discovery_backfill.command, "npm --silent run hermes:historical-backfill-plan");
+    assert.equal(byId.source_discovery_backfill.success_metrics.includes("historical_sources_ranked"), true);
     assert.equal(payload.next_experiment.id, "paper_autopilot_rehearsal");
     assert.equal(payload.safety.real_execution_hard_block, true);
   } finally {

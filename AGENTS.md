@@ -205,12 +205,19 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it is read-only, event-driven, no LLM per tick, and must treat "jailbreak" as
   allowed-path discovery only, never bypass or sportsbook automation.
 - Hermes data-source discovery should consume `npm run hermes:source-discovery`;
-  it maps score, odds, archive, public context, operator notes, and replay to
-  allowed acquisition paths without live provider calls or scraping.
+  it maps score, odds, archive, public context, operator notes, replay, and
+  historical public backfill to allowed acquisition paths without live provider
+  calls or scraping.
 - Hermes source-route ranking should consume `npm run hermes:source-route-matrix`;
   it turns allowed paths into prioritized replay/internal/provider/manual routes
   with event triggers, cost tiers, success evidence, and explicit
   `provider_api_call_allowed=false`.
+- Hermes historical backfill planning should consume
+  `npm run hermes:historical-backfill-plan`; it ranks internal replay, public
+  historical datasets, and licensed archive odds for offline priors/backtests,
+  but must not fetch, scrape, import, spend quota, create paper orders, or
+  treat historical data as live state. License, attribution, commercial-use, and
+  source-manifest gates must remain explicit.
 - Hermes wakeup policy should consume `npm run hermes:trigger-policy`; it maps
   runtime, events, source discovery, Grand Slam readiness, quota, and learning
   state into debounced triggers for cron/webhook/Telegram/dashboard/Cloudflare/
@@ -312,6 +319,7 @@ npm run hermes:mission-ledger-report
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:source-route-matrix
+npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit

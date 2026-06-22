@@ -56,6 +56,7 @@ npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:source-route-matrix
+npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit
@@ -246,10 +247,17 @@ read-only and turns "jailbreak" into route discovery, not bypass.
 
 `hermes:source-route-matrix` ranks those allowed paths into budget-first
 operating routes: replay backfill, internal live statistics, closing-line
-proxy, archive odds smoke, score state, live websocket odds, public context
-notes and manual operator notes. It includes event triggers, cost tiers,
-success evidence and blocked conditions while keeping
+proxy, public historical backfill, archive odds smoke, score state, live
+websocket odds, public context notes and manual operator notes. It includes
+event triggers, cost tiers, success evidence and blocked conditions while keeping
 `provider_api_call_allowed=false`.
+
+`hermes:historical-backfill-plan` ranks offline data sources that can improve
+priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam
+datasets, Tennis-Data CSVs and licensed archive odds. It is read-only and
+operator-review only: it does not fetch, scrape, import, spend quota or create
+orders, and it flags license, attribution and commercial-clearance gates before
+any future importer exists.
 
 `hermes:trigger-policy` turns runtime, event, source-discovery, Grand Slam
 readiness, quota and learning state into safe wakeup triggers for cron,

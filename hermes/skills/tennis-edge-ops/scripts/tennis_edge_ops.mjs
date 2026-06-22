@@ -1560,6 +1560,23 @@ async function sourceRouteMatrix() {
   printJson(buildSourceRouteMatrix({ report, eventPlan, sourcePlan }));
 }
 
+async function historicalBackfillPlan() {
+  const [report, grandSlam] = await Promise.all([
+    intelligenceData(),
+    grandSlamReadinessData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+  printJson(buildHistoricalBackfillPlan({
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    grandSlam,
+  }));
+}
+
 async function triggerPolicy() {
   const [loop, report, grandSlam] = await Promise.all([
     safeLoopData(),
@@ -3230,6 +3247,7 @@ function buildSourceDiscovery({ report, eventPlan }) {
       "public_context",
       "operator_notes",
       "replay_backfill",
+      "historical_public_backfill",
     ],
     acquisition_matrix: {
       score_state: acquisitionRoute({
@@ -3282,6 +3300,12 @@ function buildSourceDiscovery({ report, eventPlan }) {
         status: "ready",
         command: "npm run api:check:operational-truth -- --pretty",
         reason: "Replay is the safest way to validate collection and processing before live spend.",
+      }),
+      historical_public_backfill: acquisitionRoute({
+        primaryPath: "public_historical_csv_or_git",
+        status: "operator_review",
+        command: "npm --silent run hermes:historical-backfill-plan",
+        reason: "Use public historical ATP/WTA/Slam datasets only after license/attribution review; never scrape live scoreboards.",
       }),
     },
     provider_routes: providerRoutes,
@@ -3338,6 +3362,7 @@ function buildSourceRouteMatrix({ report, eventPlan, sourcePlan }) {
         "quota_guardrail",
         "paper_settlement",
         "daily_ops_window",
+        "historical_backfill_review",
       ],
       blocked_triggers: [
         "browser_sportsbook_scrape",
@@ -3350,6 +3375,7 @@ function buildSourceRouteMatrix({ report, eventPlan, sourcePlan }) {
       "Cloudflare scheduled-agent pattern: wake on schedules/events, not every tick.",
       "OpenAI Agents guardrail pattern: validate tool use before sensitive actions.",
       "Odds websocket pattern: block live decisions on cursor gaps/resync instead of trusting stale stream state.",
+      "Public historical datasets can improve priors/backtests only after license review and offline ingestion.",
     ],
     safe_jailbreak_policy: {
       meaning: "Use allowed alternate paths around cost/latency gaps: replay, internal APIs, licensed providers, and manual notes.",
@@ -3415,6 +3441,20 @@ function buildSourceRouteRows({ report, eventPlan, sourcePlan }) {
       trigger: "paper_settlement",
       maxCadence: "daily",
       successEvidence: ["closing_line_snapshot", "paper_settlement", "training_example"],
+    }),
+    sourceRouteRow({
+      id: "historical_public_backfill",
+      priority: 35,
+      lane: "public_historical",
+      purpose: "Backfill ATP/WTA/Slam match, ranking and point-level priors from allowed public historical datasets after license review.",
+      source: matrix.historical_public_backfill,
+      status: "operator_review",
+      costTier: "free_public_with_license_constraints",
+      trigger: "historical_backfill_review",
+      maxCadence: "manual_or_weekly_offline",
+      blockedWhen: ["license_not_reviewed", "commercial_use_not_cleared", "attribution_missing", "live_scraping_requested"],
+      successEvidence: ["source_manifest_recorded", "license_reviewed", "offline_import_fixture_ready", "no_live_provider_calls"],
+      operatorRequired: true,
     }),
     sourceRouteRow({
       id: "odds_archive_budget_smoke",
@@ -4005,6 +4045,289 @@ function autonomyGateCeiling(gate) {
   };
 }
 
+function buildHistoricalBackfillPlan({ report, eventPlan, sourcePlan, sourceRoutes, grandSlam }) {
+  const sources = buildHistoricalBackfillSources({ report, grandSlam });
+  const readyNow = sources.filter((source) => source.status === "ready_now");
+  const operatorReady = sources.filter((source) => source.status === "operator_review");
+  const blocked = sources.filter((source) => source.status === "blocked");
+  const nextSource = readyNow[0] ?? operatorReady[0] ?? sources[0] ?? null;
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "historical_backfill_plan",
+    status: nextSource ? "ready" : "blocked",
+    source_mode: report.mode,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    objective: "rank_allowed_historical_backfill_sources_for_tennis_prediction_without_live_scraping",
+    next_source: nextSource,
+    sources,
+    source_route: sourceRoutes.routes?.find((route) => route.id === "historical_public_backfill") ?? null,
+    grand_slam_context: {
+      status: grandSlam?.status ?? "unknown",
+      active_grand_slams: grandSlam?.active_grand_slams ?? [],
+      visible_matches: grandSlam?.matches?.grand_slam_visible ?? 0,
+      prediction_rows: grandSlam?.matches?.prediction_rows ?? 0,
+    },
+    review_summary: {
+      ready_now: readyNow.length,
+      operator_review: operatorReady.length,
+      blocked: blocked.length,
+      total_sources: sources.length,
+      license_review_required: sources.filter((source) => source.license_review_required).length,
+      commercial_clearance_required: sources.filter((source) => source.commercial_clearance_required).length,
+    },
+    gates: historicalBackfillGates({ report, eventPlan, sourcePlan, sources }),
+    operator_steps: [
+      "Review each source license and attribution requirement before import.",
+      "Create a local source manifest before any download/import script is allowed.",
+      "Use historical backfill only for offline priors, backtests and calibration; live decisions still require fresh score/odds state.",
+      "Do not scrape live scoreboards, sportsbook UIs, anti-bot protected pages, paywalled data, or login-only sources.",
+    ],
+    research_basis: [
+      {
+        id: "jeff_sackmann_tennis_atp_wta",
+        url: "https://github.com/JeffSackmann/tennis_atp",
+        note: "ATP/WTA historical tennis results, rankings and stats are useful for priors; license requires attribution and non-commercial use.",
+      },
+      {
+        id: "tennis_data_csv",
+        url: "https://www.tennis-data.co.uk/data.php",
+        note: "Historical tennis results and betting odds CSVs can help odds/backtest features after terms review.",
+      },
+      {
+        id: "tennis_slam_pointbypoint",
+        url: "https://github.com/JeffSackmann/tennis_slam_pointbypoint",
+        note: "Grand Slam point-by-point history can help BO5/BO3 and point-state calibration after license review.",
+      },
+    ],
+    safe_jailbreak_policy: {
+      meaning: "Use public/licensed historical sources as offline backfill routes; never bypass access controls or treat old data as live state.",
+      bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      provider_quota_spend_requires_operator: true,
+      live_scraping_allowed: false,
+    },
+    forbidden_actions: [
+      ...(report.forbidden_collection_paths ?? []),
+      "live_scoreboard_scraping",
+      "sportsbook_ui_automation",
+      "paywall_or_terms_bypass",
+      "commercial_use_without_license_clearance",
+    ],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function buildHistoricalBackfillSources({ report, grandSlam }) {
+  const persistedMatches = Number(report.data_snapshot?.persisted_matches ?? 0);
+  const productionExamples = Number(report.learning_snapshot?.production_training_examples ?? 0);
+  return [
+    historicalBackfillSource({
+      id: "internal_persisted_replay",
+      priority: 10,
+      provider: "tennis_live_edge_postgres",
+      dataset: "Persisted canonical matches, score ticks, odds ticks, paper settlements and training examples",
+      coverage: ["ATP main", "Grand Slam men", "Grand Slam women", "persisted provider/replay fixtures"],
+      useCases: ["pipeline_validation", "closing_line_proxy", "signal_gate_regression", "paper_learning"],
+      status: persistedMatches > 0 ? "ready_now" : "blocked",
+      costTier: "free_local",
+      license: "internal_private_operational_data",
+      licenseReviewRequired: false,
+      commercialClearanceRequired: false,
+      command: "npm run api:check:operational-truth -- --pretty",
+      evidence: [
+        `persisted_matches=${persistedMatches}`,
+        `production_training_examples=${productionExamples}`,
+      ],
+      blockers: persistedMatches > 0 ? [] : ["no_persisted_matches"],
+    }),
+    historicalBackfillSource({
+      id: "jeff_sackmann_atp",
+      priority: 20,
+      provider: "JeffSackmann/tennis_atp",
+      dataset: "ATP historical rankings, results and match stats CSV files",
+      coverage: ["ATP main", "ATP qualifiers/challenger/futures where available", "Grand Slam men"],
+      useCases: ["surface_elo_seed", "ranking_trend_features", "serve_return_priors", "BO5_history"],
+      status: "operator_review",
+      costTier: "free_public_noncommercial",
+      license: "CC BY-NC-SA 4.0 per Tennis Abstract repository",
+      licenseReviewRequired: true,
+      commercialClearanceRequired: true,
+      attributionRequired: true,
+      command: "Create a local source manifest; then run a future offline importer only after license review.",
+      evidence: ["public_git_csv_available", "noncommercial_license_requires_review"],
+      blockers: ["license_review_required", "source_manifest_missing"],
+      sourceUrl: "https://github.com/JeffSackmann/tennis_atp",
+    }),
+    historicalBackfillSource({
+      id: "jeff_sackmann_wta",
+      priority: 30,
+      provider: "JeffSackmann/tennis_wta",
+      dataset: "WTA historical rankings, results and match stats CSV files",
+      coverage: ["WTA tour", "Grand Slam women"],
+      useCases: ["grand_slam_women_priors", "surface_elo_seed", "ranking_trend_features"],
+      status: "operator_review",
+      costTier: "free_public_noncommercial",
+      license: "CC BY-NC-SA 4.0 per Tennis Abstract repository",
+      licenseReviewRequired: true,
+      commercialClearanceRequired: true,
+      attributionRequired: true,
+      command: "Create a local source manifest; then run a future offline importer only after license review.",
+      evidence: ["public_git_csv_available", "noncommercial_license_requires_review"],
+      blockers: ["license_review_required", "source_manifest_missing"],
+      sourceUrl: "https://github.com/JeffSackmann/tennis_wta",
+    }),
+    historicalBackfillSource({
+      id: "jeff_sackmann_slam_pointbypoint",
+      priority: 40,
+      provider: "JeffSackmann/tennis_slam_pointbypoint",
+      dataset: "Grand Slam point-by-point historical data",
+      coverage: ["Australian Open", "Roland Garros", "Wimbledon", "US Open"],
+      useCases: ["markov_point_engine_calibration", "tiebreak_and_pressure_features", "BO5_point_state_priors"],
+      status: "operator_review",
+      costTier: "free_public_noncommercial",
+      license: "CC BY-NC-SA 4.0 per Tennis Abstract repository",
+      licenseReviewRequired: true,
+      commercialClearanceRequired: true,
+      attributionRequired: true,
+      command: "Create a local source manifest; then run a future offline point-state importer only after license review.",
+      evidence: [
+        "public_grand_slam_point_history_available",
+        `current_grand_slam_status=${grandSlam?.status ?? "unknown"}`,
+      ],
+      blockers: ["license_review_required", "source_manifest_missing"],
+      sourceUrl: "https://github.com/JeffSackmann/tennis_slam_pointbypoint",
+    }),
+    historicalBackfillSource({
+      id: "tennis_data_results_odds",
+      priority: 50,
+      provider: "Tennis-Data.co.uk",
+      dataset: "Historical tennis results and fixed odds CSV/Excel files",
+      coverage: ["ATP historical results/odds", "WTA historical results/odds where available"],
+      useCases: ["market_prior_features", "closing_line_proxy_baseline", "odds_bucket_calibration"],
+      status: "operator_review",
+      costTier: "free_public_terms_review",
+      license: "Public historical CSVs; terms and attribution must be reviewed before import.",
+      licenseReviewRequired: true,
+      commercialClearanceRequired: true,
+      attributionRequired: true,
+      command: "Create a local source manifest; then run a future offline odds/results importer only after terms review.",
+      evidence: ["public_csv_available", "historical_odds_available"],
+      blockers: ["terms_review_required", "source_manifest_missing"],
+      sourceUrl: "https://www.tennis-data.co.uk/data.php",
+    }),
+    historicalBackfillSource({
+      id: "theoddsapi_archive",
+      priority: 60,
+      provider: "TheOddsAPI",
+      dataset: "Licensed historical odds/archive snapshots",
+      coverage: ["provider-supported tennis markets"],
+      useCases: ["archive_odds_comparison", "closing_line_proxy", "provider_crosscheck"],
+      status: report.budget_chain_snapshot?.current_step && String(report.budget_chain_snapshot.current_step).includes("theoddsapi")
+        ? "operator_review"
+        : "monitor",
+      costTier: "budget_paid_or_existing_key",
+      license: "Paid API terms; private use only, no redistribution.",
+      licenseReviewRequired: true,
+      commercialClearanceRequired: false,
+      command: "npm --silent run hermes:budget-chain",
+      evidence: [
+        `budget_chain_completed=${Boolean(report.budget_chain_snapshot?.budget_chain_completed)}`,
+        `current_step=${report.budget_chain_snapshot?.current_step ?? "none"}`,
+      ],
+      blockers: ["operator_smoke_required", "quota_review_required"],
+    }),
+  ].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+}
+
+function historicalBackfillSource({
+  id,
+  priority,
+  provider,
+  dataset,
+  coverage,
+  useCases,
+  status,
+  costTier,
+  license,
+  licenseReviewRequired,
+  commercialClearanceRequired,
+  attributionRequired = false,
+  command,
+  evidence,
+  blockers,
+  sourceUrl = null,
+}) {
+  return {
+    id,
+    priority,
+    provider,
+    dataset,
+    coverage,
+    use_cases: useCases,
+    status,
+    cost_tier: costTier,
+    license,
+    license_review_required: Boolean(licenseReviewRequired),
+    commercial_clearance_required: Boolean(commercialClearanceRequired),
+    attribution_required: Boolean(attributionRequired),
+    source_url: sourceUrl,
+    command,
+    evidence,
+    blockers,
+    execute_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function historicalBackfillGates({ report, eventPlan, sourcePlan, sources }) {
+  return [
+    historicalBackfillGate({
+      id: "real_execution_hard_block",
+      status: report.safety?.real_execution_hard_block === true ? "pass" : "fail",
+      summary: "Real execution must remain hard-blocked while building backfill.",
+    }),
+    historicalBackfillGate({
+      id: "safe_jailbreak_policy",
+      status: sourcePlan.safe_jailbreak_policy?.bypass_allowed === false ? "pass" : "fail",
+      summary: "Backfill can only use licensed/public allowed paths, never bypass.",
+    }),
+    historicalBackfillGate({
+      id: "no_cursor_resync_before_live_use",
+      status: eventPlan.events.some((event) => event.type === "cursor_resync_required") ? "warn" : "pass",
+      summary: "Historical backfill may be planned during cursor gaps, but live decisions still freeze on resync.",
+    }),
+    historicalBackfillGate({
+      id: "license_review_queue_visible",
+      status: sources.some((source) => source.license_review_required) ? "pass" : "warn",
+      summary: `${sources.filter((source) => source.license_review_required).length} sources require license/terms review before import.`,
+    }),
+  ];
+}
+
+function historicalBackfillGate({ id, status, summary }) {
+  return { id, status, summary };
+}
+
 function buildExperimentLab({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, gates, backlogPlan }) {
   const experiments = buildExperimentRows({
     loop,
@@ -4083,10 +4406,10 @@ function buildExperimentRows({ loop, report, eventPlan, sourcePlan, capabilityAu
       title: "Find allowed low-cost data backfill routes",
       status: sourcePlan.safe_jailbreak_policy?.bypass_allowed === false ? "ready" : "blocked",
       priorityScore: replayOrPersisted ? 65 : 90,
-      command: "npm --silent run hermes:source-discovery",
+      command: "npm --silent run hermes:historical-backfill-plan",
       hypothesis: "Allowed API/replay/operator-note routes can improve data density without scraping, bypass, or paid quota spend.",
       prerequisites: ["licensed_or_internal_sources_only"],
-      successMetrics: ["allowed_collection_paths", "blocked_routes_count", "persisted_matches"],
+      successMetrics: ["historical_sources_ranked", "license_review_queue", "persisted_matches"],
       evidence: [
         `discovery_scope=${(sourcePlan.discovery_scope ?? []).join(",")}`,
         `persisted_matches=${report.data_snapshot?.persisted_matches ?? 0}`,
@@ -9068,6 +9391,7 @@ const commands = {
   "autonomy-brief": autonomyBrief,
   "source-discovery": sourceDiscovery,
   "source-route-matrix": sourceRouteMatrix,
+  "historical-backfill-plan": historicalBackfillPlan,
   "trigger-policy": triggerPolicy,
   "ops-compiler": opsCompiler,
   "capability-audit": capabilityAudit,

@@ -42,6 +42,7 @@ npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:source-route-matrix
+npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit
@@ -231,6 +232,12 @@ path should feed live stats next. It ranks replay, internal API, licensed
 provider and manual-note routes by priority, trigger, cost tier, success
 evidence and blocked conditions. Provider routes remain operator-only and
 `provider_api_call_allowed=false`.
+
+Use `hermes:historical-backfill-plan` when Hermes needs more offline evidence
+for priors, calibration or backtests. It ranks internal replay, public
+historical datasets and licensed archive odds with license/attribution gates.
+It must not fetch, scrape, import, spend quota, create orders or treat old data
+as live state.
 
 Use `hermes:trigger-policy` when cron, Telegram, dashboard, Cloudflare Agent or
 OpenClaw needs to know when Hermes should wake up. It emits debounced triggers

@@ -80,7 +80,7 @@ def _model_routes(settings: Settings, *, critical: bool = False) -> list[AgentMo
     routes = [
         AgentModelRoute(
             task="triage, briefing, routine paper-autopilot summaries",
-            model=settings.openclaw_triage_model,
+            model=settings.hermes_triage_model,
             reason="Cheap route for routine monitoring; deterministic Python still computes edge, risk and orders.",
             estimated_cost_usd=0.02,
         )
@@ -89,7 +89,7 @@ def _model_routes(settings: Settings, *, critical: bool = False) -> list[AgentMo
         routes.append(
             AgentModelRoute(
                 task="critical anomaly, readiness review, model-promotion report",
-                model=settings.openclaw_critical_model,
+                model=settings.hermes_critical_model,
                 reason="Strong route reserved for high-impact reviews; default is GPT-5.5 Pro lane.",
                 estimated_cost_usd=0.4,
             )
@@ -108,7 +108,7 @@ def _summarize_anomalies(anomalies: list[AgentAnomaly]) -> str:
     return "; ".join(summaries)
 
 
-def probe_openclaw_gateway(host: str = "127.0.0.1", port: int = 18789) -> bool:
+def probe_hermes_gateway(host: str = "127.0.0.1", port: int = 18789) -> bool:
     try:
         with socket.create_connection((host, port), timeout=0.5):
             return True
@@ -122,7 +122,7 @@ def build_agent_preflight(
     provider_health: list[ProviderHealth],
     execution_status: ExecutionStatus,
     persistence_last_error: str | None,
-    gateway_probe: Callable[[], bool] = probe_openclaw_gateway,
+    gateway_probe: Callable[[], bool] = probe_hermes_gateway,
 ) -> AgentPreflight:
     checks = [
         AgentPreflightCheck(
@@ -136,9 +136,9 @@ def build_agent_preflight(
             name="admin_api_token",
             status="pass" if settings.admin_api_token else "warn",
             summary=(
-                "Admin token configured for protected OpenClaw actions."
+                "Admin token configured for protected Hermes actions."
                 if settings.admin_api_token
-                else "Admin token missing; OpenClaw can read but cannot run autopilot/backtests."
+                else "Admin token missing; Hermes can read but cannot run autopilot/backtests."
             ),
         )
     )
@@ -151,12 +151,12 @@ def build_agent_preflight(
         gateway_detail = None
     checks.append(
         AgentPreflightCheck(
-            name="openclaw_gateway",
+            name="hermes_gateway",
             status="pass" if gateway_ok else "fail",
             summary=(
-                "OpenClaw loopback gateway is reachable."
+                "Hermes loopback gateway is reachable."
                 if gateway_ok
-                else "OpenClaw loopback gateway is not reachable."
+                else "Hermes loopback gateway is not reachable."
             ),
             detail=gateway_detail,
         )
@@ -184,7 +184,7 @@ def build_agent_preflight(
             summary=(
                 "Real execution hard block is active."
                 if execution_status.real_execution_hard_block and not execution_status.can_submit_real_orders
-                else "Real execution is not hard-blocked; OpenClaw must not operate autonomously."
+                else "Real execution is not hard-blocked; Hermes must not operate autonomously."
             ),
         )
     )
@@ -404,16 +404,16 @@ def detect_anomalies(
         )
 
     estimated_agent_spend = round((cost_report.signals_generated * 0.02) + 0.4, 2)
-    if estimated_agent_spend > settings.openclaw_daily_model_budget_usd:
+    if estimated_agent_spend > settings.hermes_daily_model_budget_usd:
         anomalies.append(
             AgentAnomaly(
                 id=_run_id("anom"),
                 severity="warning",
                 category="cost",
-                summary="Estimated OpenClaw model spend exceeds daily budget",
+                summary="Estimated Hermes model spend exceeds daily budget",
                 detail=(
                     f"estimated_agent_spend={estimated_agent_spend:.2f}, "
-                    f"model_budget={settings.openclaw_daily_model_budget_usd:.2f}"
+                    f"model_budget={settings.hermes_daily_model_budget_usd:.2f}"
                 ),
                 blocked_signals=0,
                 detected_at=_now(),
@@ -473,8 +473,8 @@ def build_agent_briefing(
         next_actions.insert(0, "Investigar anomalias criticas antes de qualquer novo paper burst.")
 
     return AgentBriefing(
-        autopilot_enabled=settings.openclaw_autopilot_enabled,
-        channel=",".join(settings.openclaw_channels),
+        autopilot_enabled=settings.hermes_autopilot_enabled,
+        channel=",".join(settings.hermes_channels),
         allowed_actions=[
             "read_status",
             "read_signals",
@@ -483,10 +483,10 @@ def build_agent_briefing(
             "run_backtest",
             "write_agent_audit_log",
         ],
-        triage_model=settings.openclaw_triage_model,
-        critical_model=settings.openclaw_critical_model,
-        router_policy=settings.openclaw_router_policy,
-        daily_model_budget_usd=settings.openclaw_daily_model_budget_usd,
+        triage_model=settings.hermes_triage_model,
+        critical_model=settings.hermes_critical_model,
+        router_policy=settings.hermes_router_policy,
+        daily_model_budget_usd=settings.hermes_daily_model_budget_usd,
         live_matches=sum(1 for analysis in analyses if analysis.match.state.status == "live"),
         entry_signals=len(entries),
         paper_orders=sum(1 for order in order_snapshot if order.status == OrderStatus.PAPER),
@@ -494,7 +494,7 @@ def build_agent_briefing(
         provider_alerts=len(anomalies),
         readiness_status=paper_performance.readiness_status,
         summary=(
-            f"OpenClaw can monitor {len(analyses)} matches and {len(entries)} entry signals. "
+            f"Hermes can monitor {len(analyses)} matches and {len(entries)} entry signals. "
             f"Real execution remains blocked: {execution_status.real_execution_hard_block}."
         ),
         next_actions=next_actions,
@@ -526,12 +526,12 @@ def run_agent_autopilot(
     critical_anomalies = _critical_anomalies(anomalies)
     critical = bool(request.request_real_execution) or bool(critical_anomalies)
 
-    if not settings.openclaw_autopilot_enabled:
+    if not settings.hermes_autopilot_enabled:
         actions.append(
             AgentAction(
                 type="autopilot",
                 status=AgentActionStatus.BLOCKED,
-                summary="OpenClaw autopilot disabled by configuration.",
+                summary="Hermes autopilot disabled by configuration.",
                 created_at=_now(),
             )
         )
@@ -569,7 +569,7 @@ def run_agent_autopilot(
                     analyses,
                     OrderRequest(
                         signal_id=signal.id,
-                        notes=request.notes or "openclaw autopilot paper order",
+                        notes=request.notes or "hermes autopilot paper order",
                     ),
                     real=False,
                     orders=order_snapshot,
@@ -618,7 +618,7 @@ def run_agent_autopilot(
                 type="real_execution",
                 status=AgentActionStatus.BLOCKED,
                 summary=(
-                    "Real execution request blocked in OpenClaw phase. "
+                    "Real execution request blocked in Hermes phase. "
                     "Backend REAL_EXECUTION_HARD_BLOCK remains authoritative."
                 ),
                 created_at=_now(),

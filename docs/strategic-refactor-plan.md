@@ -27,7 +27,7 @@ The repository already has the right macro shape:
 - Budget and enterprise operating profiles.
 - Provider adapters for API-Tennis, TheOddsAPI, Odds-API.io, Sportradar,
   Betradar UOF, TXODDS, and future Betfair execution.
-- OpenClaw Agent Ops skill and docs.
+- Hermes Agent Ops skill and docs.
 - Execution safety defaults: `EXECUTION_ENABLED=false`,
   `EXECUTION_STAGE=paper`, and `REAL_EXECUTION_HARD_BLOCK=true`.
 
@@ -46,17 +46,26 @@ signal, paper execution, and learning layers can be verified independently.
 - Public GitHub repo with canonical `budget` and `enterprise` branches.
 - Existing CI workflow on pushes/PRs to both canonical branches.
 
-### OpenClaw
+### Hermes
 
-Observed local OpenClaw runtime:
+Observed local Hermes runtime:
 
-- Version: `2026.5.28`.
-- Gateway: local loopback `ws://127.0.0.1:18789`, reachable.
-- Agents available: main operator, ops, security, QA, research, browser, and
-  builder-oriented workspaces.
-- Existing Tennis Edge skill: `openclaw/skills/tennis-edge-ops`.
+- Version: `v0.17.0 (2026.6.19)`.
+- Gateway service: installed under launchd but currently stopped.
+- Messaging: Telegram is not configured yet.
+- Model/provider state: OpenAI API and Nous Portal are available locally; the
+  default Hermes model route is `gpt-5.4-mini`.
+- Existing Tennis Edge skill: `hermes/skills/tennis-edge-ops`.
 
-Use OpenClaw as an operations layer:
+Hermes replaces what OpenClaw did in this project. The old OpenClaw layer was a
+local operator around safe FastAPI endpoints: briefing, anomaly scan, persisted
+run audit, protected daily ops rehearsal, and paper-only autopilot. Hermes keeps
+that role but adds a cleaner current CLI, skill/runtime ecosystem, local status
+checks, model/provider routing, cron/webhook primitives, memory/tools surfaces,
+and a broader gateway stack. None of those capabilities should move model math
+or execution decisions out of the deterministic backend.
+
+Use Hermes as an operations layer:
 
 - daily briefing;
 - feed/cursor anomaly monitoring;
@@ -65,7 +74,7 @@ Use OpenClaw as an operations layer:
 - readiness reports after enough paper data;
 - sub-agent research and QA on bounded tasks.
 
-Do not use OpenClaw for:
+Do not use Hermes for:
 
 - model math;
 - direct Betfair calls;
@@ -127,7 +136,7 @@ Success definition:
 - Every paper order has a fill, settlement, CLV, P&L, and model version.
 - Backtests are walk-forward and generated from persisted historical rows, not
   synthetic sample data.
-- OpenClaw can operate and report, but cannot bypass deterministic backend
+- Hermes can operate and report, but cannot bypass deterministic backend
   gates.
 
 ## Refactor Architecture
@@ -187,17 +196,17 @@ Implementation direction:
 
 ### 4. Agent Ops Plane
 
-Keep OpenClaw as a bounded operator:
+Keep Hermes as a bounded operator:
 
 ```text
-Backend APIs -> OpenClaw Skill -> Briefing/Anomaly/Paper Autopilot/Reports
+Backend APIs -> Hermes Skill -> Briefing/Anomaly/Paper Autopilot/Reports
 ```
 
 Implementation direction:
 
 - add a backend `agent_runs` persistence table if it is not already fully
   persisted;
-- have OpenClaw write run summaries through APIs, not files;
+- have Hermes write run summaries through APIs, not files;
 - route routine summaries to the cheaper model;
 - route severe anomaly, promotion review, and real-readiness review to the
   critical model;
@@ -212,7 +221,7 @@ Goal: make persisted state the source of truth.
 Current implementation status: persisted/replay source truth is enforced by
 runtime checks. `OperationalStateSnapshot.source_summary` now exposes
 per-match `match_freshness` rows, not just aggregate counts, so dashboard and
-OpenClaw can audit whether each match is persisted, replay-backed, live, or
+Hermes can audit whether each match is persisted, replay-backed, live, or
 runtime-only before any signal is trusted. Replay contracts also expose
 per-provider `provider_contracts` evidence, making expected vs. observed
 adapter artifacts visible before live API keys are introduced.
@@ -260,7 +269,7 @@ recorded at settlement, and paper performance reports ROI/CLV by model, odds
 bucket, surface, tour, and provider when enough settled orders exist.
 Auto-settlement returns structured per-order `decisions` alongside readable
 reasons, so skipped, failed, settled, and training-example-missing outcomes can
-be audited by dashboard/OpenClaw after restart.
+be audited by dashboard/Hermes after restart.
 
 Tasks:
 
@@ -304,28 +313,28 @@ Acceptance:
 - model version is visible on every prediction, persisted training example,
   backtest, registry entry, and paper result.
 
-### Milestone 4: OpenClaw Operating Layer
+### Milestone 4: Hermes Operating Layer
 
 Goal: add autonomy without weakening safety.
 
 Current implementation status: first persistence slice complete. Agent Ops now
 persists autopilot run logs, model routes, action summaries, and paper orders
-created by OpenClaw through backend gates. The OpenClaw commands still use
+created by Hermes through backend gates. The Hermes commands still use
 Dashboard/API channels only and real execution remains blocked.
 
 Tasks:
 
-- install/copy the Tennis Edge skill into the OpenClaw runtime;
+- install/copy the Tennis Edge skill into the Hermes runtime;
 - add cron jobs for briefing, anomalies, post-day report, and weekly learning;
 - add health preflight for gateway, API, database, and provider keys;
 - persist agent run logs and model route/cost estimates.
 
 Acceptance:
 
-- OpenClaw can produce reports and create paper orders only through backend
+- Hermes can produce reports and create paper orders only through backend
   gates;
 - unknown Telegram/remote channels cannot trigger admin actions;
-- real execution remains blocked even if OpenClaw requests it.
+- real execution remains blocked even if Hermes requests it.
 
 ### Milestone 5: Private Operator Surface
 
@@ -362,7 +371,7 @@ The highest-leverage order is:
 2. decision snapshots and risk reasons;
 3. realistic paper settlement and CLV;
 4. model registry and walk-forward evaluation;
-5. OpenClaw automation;
+5. Hermes automation;
 6. Cloudflare private operator surface;
 7. enterprise feed adapters;
 8. real-execution readiness review.
@@ -379,13 +388,13 @@ weeks:
 ```text
 Option A: Conservative
 - budget feeds only
-- no OpenClaw paper autopilot
+- no Hermes paper autopilot
 - dashboard/manual paper orders
 - best when validating correctness first
 
 Option B: Paper Autopilot
 - budget feeds only
-- OpenClaw can create paper orders via backend gates
+- Hermes can create paper orders via backend gates
 - daily/weekly reports enabled
 - best default for collecting learning data
 
@@ -400,8 +409,8 @@ Recommended choice: **Option B: Paper Autopilot**.
 
 ## External References
 
-- [OpenClaw docs](https://docs.openclaw.ai/tools): skills, tool policy,
-  sandbox, cron, and local managed skills.
+- Local Hermes CLI/docs: skills, tool policy, security audit, cron, gateway,
+  profiles, and local managed skills.
 - [Cloudflare Access private apps](https://developers.cloudflare.com/cloudflare-one/applications/non-http/self-hosted-private-app/)
   and [Cloudflare Tunnel routing](https://developers.cloudflare.com/tunnel/routing/):
   private self-hosted apps through outbound tunnels and identity policies.

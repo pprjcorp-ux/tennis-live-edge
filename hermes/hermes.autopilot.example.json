@@ -12,7 +12,7 @@
     },
     "telegram": {
       "enabled": true,
-      "allowed_user_ids_env": "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS",
+      "allowed_user_ids_env": "HERMES_TELEGRAM_ALLOWED_USER_IDS",
       "pairing_required": true
     }
   },

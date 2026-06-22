@@ -10,7 +10,7 @@ positive-EV signals with abstention and risk gates.
   men's/women's Grand Slam singles defaults, approximately `$500/mo` vendor
   target, and enterprise feeds disabled.
 - `enterprise`: complete enterprise profile with ROI/CLV paper trading,
-  Betfair execution architecture hard-blocked by default, OpenClaw Autopilot,
+  Betfair execution architecture hard-blocked by default, Hermes Autopilot,
   provider health, replay/backtest lab, and private runtime docs.
 
 This branch is the `budget` profile. It keeps the complete core architecture,
@@ -83,7 +83,7 @@ example without any live API calls.
 - [Enterprise profile](docs/enterprise-profile.md)
 - [Execution safety](docs/execution-safety.md)
 - [Provider access runbook](docs/provider-access-runbook.md)
-- [OpenClaw Autopilot](docs/openclaw-autopilot.md)
+- [Hermes Agent Ops](docs/hermes-agent-ops.md)
 - [Cloudflare private access](infra/cloudflare/README.md)
 
 ## Budget Defaults
@@ -100,7 +100,7 @@ Use `.env.example` as the contract. The important budget defaults are:
 - `EXECUTION_ENABLED=false`
 - `EXECUTION_STAGE=paper`
 - `REAL_EXECUTION_HARD_BLOCK=true`
-- `OPENCLAW_CRITICAL_MODEL=gpt-5.5`
+- `HERMES_CRITICAL_MODEL=gpt-5.5`
 
 The system is analytical software, not betting advice or a profit guarantee.
 No browser automation, scraping, geolocation bypass, or direct LLM-initiated
@@ -144,5 +144,5 @@ the protected `POST /api/v1/ops/daily` endpoint. This executes replay contracts,
 paper auto-settlement, and the Model Lab `training_examples` backtest path while
 reporting `live_api_calls=0`, so it is safe to run before provider credentials
 are configured. Auto-settlement returns structured `decisions` for each
-candidate order, so operators and OpenClaw can audit why an order settled,
+candidate order, so operators and Hermes can audit why an order settled,
 skipped, failed, or did not produce a ready `training_example`.

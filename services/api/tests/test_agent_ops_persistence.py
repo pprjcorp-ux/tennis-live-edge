@@ -100,7 +100,7 @@ def test_agent_autopilot_persists_run_and_created_paper_orders() -> None:
 
     result = asyncio.run(
         repo.agent_autopilot(
-            AgentAutopilotRequest(source="openclaw", create_paper_orders=True, max_paper_orders=2)
+            AgentAutopilotRequest(source="hermes", create_paper_orders=True, max_paper_orders=2)
         )
     )
 
@@ -139,7 +139,7 @@ def test_agent_autopilot_blocks_paper_orders_when_provider_latency_is_critical()
 
     result = asyncio.run(
         repo.agent_autopilot(
-            AgentAutopilotRequest(source="openclaw", create_paper_orders=True, max_paper_orders=2)
+            AgentAutopilotRequest(source="hermes", create_paper_orders=True, max_paper_orders=2)
         )
     )
 
@@ -159,8 +159,8 @@ def test_agent_runs_prefers_persisted_runs_after_restart() -> None:
     run = AgentRun(
         id="agent_persisted",
         run_type=AgentRunType.AUTOPILOT_EVALUATE,
-        source="openclaw",
-        summary="Persisted OpenClaw run.",
+        source="hermes",
+        summary="Persisted Hermes run.",
     )
     repo = AnalysisRepository(Settings(data_mode="sample"))
     store = AgentStoreStub(repo.store)
@@ -175,14 +175,14 @@ def test_agent_briefing_prefers_persisted_latest_run_over_process_memory() -> No
     stale_run = AgentRun(
         id="agent_stale_memory",
         run_type=AgentRunType.AUTOPILOT_EVALUATE,
-        source="openclaw",
+        source="hermes",
         summary="Stale process run.",
         created_at=datetime.now(timezone.utc) + timedelta(minutes=5),
     )
     persisted_run = AgentRun(
         id="agent_persisted_latest",
         run_type=AgentRunType.AUTOPILOT_EVALUATE,
-        source="openclaw",
+        source="hermes",
         summary="Persisted latest run.",
         created_at=datetime.now(timezone.utc),
     )
@@ -203,7 +203,7 @@ def test_live_agent_runs_do_not_use_process_memory_when_persisted_missing() -> N
     memory_run = AgentRun(
         id="agent_live_memory_only",
         run_type=AgentRunType.AUTOPILOT_EVALUATE,
-        source="openclaw",
+        source="hermes",
         summary="Memory-only run must not become live audit truth.",
     )
     AGENT_RUNS.append(memory_run)
@@ -220,7 +220,7 @@ def test_sample_agent_runs_do_not_use_process_memory_when_repository_cache_empty
     memory_run = AgentRun(
         id="agent_sample_memory_only",
         run_type=AgentRunType.AUTOPILOT_EVALUATE,
-        source="openclaw",
+        source="hermes",
         summary="Memory-only run must not become sample repository truth.",
     )
     AGENT_RUNS.append(memory_run)
@@ -237,7 +237,7 @@ def test_live_agent_briefing_does_not_use_memory_latest_run_when_persisted_missi
     memory_run = AgentRun(
         id="agent_live_memory_latest",
         run_type=AgentRunType.AUTOPILOT_EVALUATE,
-        source="openclaw",
+        source="hermes",
         summary="Memory latest run must not appear in live briefing.",
     )
     AGENT_RUNS.append(memory_run)
@@ -288,7 +288,7 @@ def test_agent_ops_uses_persisted_orders_after_restart() -> None:
     briefing = asyncio.run(repo.agent_briefing())
     result = asyncio.run(
         repo.agent_autopilot(
-            AgentAutopilotRequest(source="openclaw", create_paper_orders=True, max_paper_orders=1)
+            AgentAutopilotRequest(source="hermes", create_paper_orders=True, max_paper_orders=1)
         )
     )
 

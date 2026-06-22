@@ -805,7 +805,7 @@ def test_operational_write_methods_degrade_on_schema_drift() -> None:
     agent_run = AgentRun(
         id="agent_write_drift",
         run_type=AgentRunType.AUTOPILOT_EVALUATE,
-        source="openclaw",
+        source="hermes",
         summary="write drift test",
         created_at=source_ts,
     )

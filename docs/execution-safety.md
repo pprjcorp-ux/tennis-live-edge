@@ -9,7 +9,7 @@ Real-money betting is not enabled in either canonical branch.
 - `EXECUTION_STAGE=paper` by default.
 - Only Betfair Exchange API is modeled for future execution.
 - No browser automation, scraping, geolocation bypass, or sportsbook UI control.
-- No LLM, OpenClaw agent, Cloudflare Agent, or browser tool may submit bets
+- No LLM, Hermes agent, Cloudflare Agent, or browser tool may submit bets
   directly.
 
 ## Allowed in Current Phase

@@ -357,7 +357,7 @@ export type IngestionRunRecord = {
     | "replay_run"
     | "replay_contract_run"
     | "daily_operational_run";
-  source: "api" | "cli" | "openclaw" | "cron" | "system";
+  source: "api" | "cli" | "hermes" | "openclaw" | "cron" | "system";
   status: "completed" | "collecting" | "degraded" | "skipped" | "failed";
   summary: Record<string, unknown>;
   started_at: string;
@@ -676,7 +676,7 @@ export type DailyOperationalBacktestStatus = {
 export type DailyOperationalRunResult = {
   status: "completed" | "collecting" | "degraded";
   generated_at: string;
-  source: "api" | "cli" | "openclaw" | "cron" | "system";
+  source: "api" | "cli" | "hermes" | "openclaw" | "cron" | "system";
   live_api_calls: number;
   match_id: string;
   replay_contracts: ReplayContractRunResult;
@@ -733,7 +733,7 @@ export type AgentAction = {
 export type AgentRun = {
   id: string;
   run_type: AgentRunType;
-  source: "dashboard" | "telegram" | "cron" | "openclaw" | "system";
+  source: "dashboard" | "telegram" | "cron" | "hermes" | "openclaw" | "system";
   model_routes: AgentModelRoute[];
   actions: AgentAction[];
   summary: string;
@@ -784,7 +784,7 @@ export type AgentBriefing = {
 };
 
 export type AgentAutopilotRequest = {
-  source?: "dashboard" | "telegram" | "cron" | "openclaw" | "system";
+  source?: "dashboard" | "telegram" | "cron" | "hermes" | "openclaw" | "system";
   create_paper_orders?: boolean;
   request_real_execution?: boolean;
   max_paper_orders?: number;

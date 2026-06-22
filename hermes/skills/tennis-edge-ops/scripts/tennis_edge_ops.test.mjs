@@ -56,7 +56,7 @@ test("autopilot aborts before protected action when preflight is blocked", async
     });
 
     assert.equal(result.exit, 1);
-    assert.match(result.stderr, /preflight.*blocked/i);
+    assert.match(result.stderr, /Hermes preflight blocked autopilot/i);
     assert.equal(autopilotCalled, false);
   } finally {
     server.close();
@@ -65,6 +65,7 @@ test("autopilot aborts before protected action when preflight is blocked", async
 
 test("autopilot proceeds when preflight is degraded but not blocked", async () => {
   let autopilotCalled = false;
+  let receivedBody = null;
   const { server, apiBase } = await startServer((request, response) => {
     if (request.url === "/api/v1/agent/preflight") {
       response.setHeader("content-type", "application/json");
@@ -73,15 +74,20 @@ test("autopilot proceeds when preflight is degraded but not blocked", async () =
     }
     if (request.url === "/api/v1/agent/autopilot/evaluate") {
       autopilotCalled = true;
-      response.setHeader("content-type", "application/json");
-      response.end(
-        JSON.stringify({
-          run: { id: "agent_1", summary: "ok", actions: [] },
-          paper_orders_created: 0,
-          paper_orders_skipped: 0,
-          real_execution_blocked: false,
-        })
-      );
+      const chunks = [];
+      request.on("data", (chunk) => chunks.push(chunk));
+      request.on("end", () => {
+        receivedBody = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        response.setHeader("content-type", "application/json");
+        response.end(
+          JSON.stringify({
+            run: { id: "agent_1", summary: "ok", actions: [] },
+            paper_orders_created: 0,
+            paper_orders_skipped: 0,
+            real_execution_blocked: false,
+          })
+        );
+      });
       return;
     }
     response.statusCode = 404;
@@ -95,6 +101,8 @@ test("autopilot proceeds when preflight is degraded but not blocked", async () =
 
     assert.equal(result.exit, 0);
     assert.equal(autopilotCalled, true);
+    assert.equal(receivedBody.source, "hermes");
+    assert.equal(receivedBody.request_real_execution, false);
   } finally {
     server.close();
   }

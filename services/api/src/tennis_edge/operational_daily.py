@@ -90,7 +90,7 @@ async def run_daily_operational_loop(
     model_version: str = "prematch_ensemble_v1",
     feature_set: str = "live_budget_v1",
     run_paper_rehearsal: bool = False,
-    source: Literal["api", "cli", "openclaw", "cron", "system"] = "cli",
+    source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "cli",
 ) -> DailyOperationalRunResult:
     started_at = datetime.now(timezone.utc)
     replay = await run_replay_contracts(

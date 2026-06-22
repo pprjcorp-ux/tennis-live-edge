@@ -5,7 +5,7 @@ description: Operate the local Tennis Live Edge backend through safe Agent Ops A
 
 # Tennis Edge Ops
 
-Use this skill for OpenClaw-local operations against the private Tennis Live Edge
+Use this skill for Hermes-local operations against the private Tennis Live Edge
 FastAPI backend.
 
 ## Boundaries
@@ -21,17 +21,17 @@ FastAPI backend.
 
 ```bash
 npm run api:ingest:live-budget
-node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingest-live-budget
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingest-live-budget
 npm run api:ingest
 printf '{"event_id":"smoke-event","seq":1,"timestamp":"2026-06-07T20:00:00Z","data":{"bookmaker":"SmokeBook","market":"h2h","selections":[{"player_id":"p1","odds":1.8},{"player_id":"p2","odds":2.1}]}}' | TENNIS_EDGE_DATA_MODE=sample TENNIS_EDGE_PERSISTENCE_ENABLED=false npm run api:ingest:odds-message
 npm run api:ingest:odds-stream -- --max-messages 25 --timeout-seconds 30
-node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs briefing
-node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies
-node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
-node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
-node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
-printf "%s" "$ADMIN_API_TOKEN" | node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
-printf "%s" "$ADMIN_API_TOKEN" | node openclaw/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs briefing
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
+printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
+printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
 
 The `api:ingest` command runs one provider ingestion cycle and prints a JSON
@@ -41,7 +41,7 @@ it combines score snapshot, odds websocket ingestion, and execution safety state
 in one JSON report.
 The `ingest-live-budget` skill command wraps that npm script and preserves
 machine-readable JSON for Telegram/cron reports.
-Recent ingestion cycles are also journaled in `ingestion_runs` and exposed at
+Recent ingestion cycles are journaled in `ingestion_runs` and exposed at
 `GET /api/v1/ingestion/runs` when persistence is enabled; use the
 `ingestion-runs` skill command to print them.
 The `api:ingest:odds-message` command reads one Odds-API.io websocket-style JSON
@@ -68,7 +68,7 @@ is not read by the skill from `.env` or process environment.
 
 ## Cost Router
 
-- Routine route: `OPENCLAW_TRIAGE_MODEL`, default `gpt-5.4-mini`.
-- Critical route: `OPENCLAW_CRITICAL_MODEL`, default `gpt-5.5`.
+- Routine route: `HERMES_TRIAGE_MODEL`, default `gpt-5.4-mini`.
+- Critical route: `HERMES_CRITICAL_MODEL`, default `gpt-5.5`.
 - Use the critical route only for severe anomalies, model-promotion reports, and
   real-execution readiness reviews.

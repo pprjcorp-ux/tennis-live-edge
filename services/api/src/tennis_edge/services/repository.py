@@ -236,7 +236,7 @@ class AnalysisRepository:
         self,
         request: IngestionRunRequest | None = None,
         *,
-        source: Literal["api", "cli", "openclaw", "cron", "system"] = "system",
+        source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "system",
     ) -> IngestionRunResult:
         started_at = self._now()
         target_date = request.target_date if request and request.target_date else date.today()
@@ -266,7 +266,7 @@ class AnalysisRepository:
         request: IngestionRunRequest | None = None,
         *,
         score_source=None,
-        source: Literal["api", "cli", "openclaw", "cron", "system"] = "system",
+        source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "system",
     ) -> ScoreSyncResult:
         started_at = self._now()
         target_date = request.target_date if request and request.target_date else date.today()
@@ -341,7 +341,7 @@ class AnalysisRepository:
         self,
         *,
         archive_source=None,
-        source: Literal["api", "cli", "openclaw", "cron", "system"] = "system",
+        source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "system",
     ) -> ArchiveOddsSyncResult:
         started_at = self._now()
         if not self.settings.the_odds_api_key and archive_source is None:
@@ -416,7 +416,7 @@ class AnalysisRepository:
         ],
         summary: dict,
         *,
-        source: Literal["api", "cli", "openclaw", "cron", "system"] = "system",
+        source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "system",
         started_at: datetime | None = None,
     ) -> IngestionRunRecord:
         completed_at = self._now()
@@ -732,7 +732,7 @@ class AnalysisRepository:
         return sorted(
             merged.values(),
             key=lambda run: (
-                any(route.model == self.settings.openclaw_critical_model for route in run.model_routes),
+                any(route.model == self.settings.hermes_critical_model for route in run.model_routes),
                 run.created_at,
             ),
             reverse=True,
@@ -1074,7 +1074,7 @@ class AnalysisRepository:
         self,
         request: ReplayRunRequest,
         *,
-        source: Literal["api", "cli", "openclaw", "cron", "system"] = "api",
+        source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "api",
     ) -> ReplayRunResult:
         analyses = await self.analyses_for_date(date.today())
         signal_count = sum(
@@ -1153,7 +1153,7 @@ class AnalysisRepository:
         self,
         request: ReplayContractRunRequest,
         *,
-        source: Literal["api", "cli", "openclaw", "cron", "system"] = "api",
+        source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "api",
     ) -> ReplayContractRunResult:
         scenario_results: list[ReplayContractScenarioResult] = []
         for scenario in request.scenarios:

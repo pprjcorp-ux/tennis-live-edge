@@ -84,18 +84,18 @@ async function autopilot() {
   const preflightData = await request("/api/v1/agent/preflight");
   if (preflightData.status === "blocked") {
     throw new Error(
-      `OpenClaw preflight blocked autopilot: ${summarizeFailedChecks(preflightData.checks)}`
+      `Hermes preflight blocked autopilot: ${summarizeFailedChecks(preflightData.checks)}`
     );
   }
   const data = await request("/api/v1/agent/autopilot/evaluate", {
     method: "POST",
     headers: await adminHeaders(),
     body: JSON.stringify({
-      source: "openclaw",
+      source: "hermes",
       create_paper_orders: true,
       request_real_execution: false,
       max_paper_orders: 3,
-      notes: "openclaw local skill paper autopilot"
+      notes: "hermes local skill paper autopilot"
     })
   });
   printJson({

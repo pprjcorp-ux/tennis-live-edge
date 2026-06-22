@@ -177,7 +177,7 @@ def test_v1_provider_cursor_resync_requires_token_and_persists_status() -> None:
     assert response.json()["cursor"]["resync_required"] is False
 
 
-def test_v1_agent_ops_endpoints_expose_openclaw_router() -> None:
+def test_v1_agent_ops_endpoints_expose_hermes_router() -> None:
     briefing = client.get("/api/v1/agent/briefing")
     anomalies = client.get("/api/v1/agent/anomalies")
     runs = client.get("/api/v1/agent/runs")
@@ -207,7 +207,7 @@ def test_v1_agent_autopilot_creates_paper_orders_and_blocks_real_request() -> No
         "/api/v1/agent/autopilot/evaluate",
         headers=ADMIN_HEADERS,
         json={
-            "source": "openclaw",
+            "source": "hermes",
             "create_paper_orders": True,
             "request_real_execution": True,
             "max_paper_orders": 2,
@@ -216,7 +216,7 @@ def test_v1_agent_autopilot_creates_paper_orders_and_blocks_real_request() -> No
     second = client.post(
         "/api/v1/agent/autopilot/evaluate",
         headers=ADMIN_HEADERS,
-        json={"source": "openclaw", "create_paper_orders": True, "max_paper_orders": 2},
+        json={"source": "hermes", "create_paper_orders": True, "max_paper_orders": 2},
     )
     orders = client.get("/api/v1/orders")
     runs = client.get("/api/v1/agent/runs")

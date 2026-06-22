@@ -6,7 +6,7 @@
   singles profile, approximately `$500/mo` vendor target, enterprise feeds
   disabled.
 - `enterprise`: full enterprise profile, ROI/CLV paper trading, Betfair
-  architecture hard-blocked by default, OpenClaw Autopilot, private runtime docs.
+  architecture hard-blocked by default, Hermes Autopilot, private runtime docs.
 
 Do not create more long-lived product branches without explicit request. Older
 `codex/*` branches are archive-only after consolidation.
@@ -27,10 +27,10 @@ Do not commit `.env`, `.logs/`, `.venv/`, `.next/`, `node_modules/`,
 - `apps/web`: Next.js dashboard.
 - `infra/schema.sql`: Postgres/Timescale event-sourced schema.
 - `infra/cloudflare`: Cloudflare Tunnel/Access docs.
-- `openclaw`: local-only OpenClaw skill/config examples.
+- `hermes`: local-only Hermes skill/config examples.
 - `docs`: shared architecture plus branch-specific operating docs.
 - `docs/strategic-refactor-plan.md`: current product objective, best v2
-  direction, refactor order, and OpenClaw/Cloudflare/provider strategy.
+  direction, refactor order, and Hermes/Cloudflare/provider strategy.
 
 ## Runtime Defaults
 
@@ -42,7 +42,7 @@ Enterprise branch:
 - `EXECUTION_ENABLED=false`
 - `EXECUTION_STAGE=paper`
 - `REAL_EXECUTION_HARD_BLOCK=true`
-- `OPENCLAW_CRITICAL_MODEL=gpt-5.5`
+- `HERMES_CRITICAL_MODEL=gpt-5.5`
 
 Budget branch:
 
@@ -107,7 +107,7 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 
 - The system can abstain; no forced picks.
 - No real-money execution is enabled by default in any branch.
-- No LLM, OpenClaw agent, Cloudflare Agent, browser automation, scraping, or
+- No LLM, Hermes agent, Cloudflare Agent, browser automation, scraping, or
   geolocation workaround may place bets directly.
 - Agents may only explain, monitor, review, or call internal APIs that enforce
   deterministic backend gates.
@@ -137,7 +137,7 @@ provider quota.
 When the local API is running:
 
 ```bash
-npm run openclaw:briefing
+npm run hermes:briefing
 curl -s http://localhost:8000/api/v1/execution/status
 curl -s http://localhost:8000/api/v1/cost-profile
 ```

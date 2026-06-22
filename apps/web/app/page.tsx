@@ -459,7 +459,7 @@ export default function Page() {
         create_paper_orders: true,
         request_real_execution: false,
         max_paper_orders: 3,
-        notes: "dashboard manual openclaw autopilot"
+        notes: "dashboard manual hermes autopilot"
       });
       setAutopilotResult(result);
       const [
@@ -738,7 +738,7 @@ export default function Page() {
           ["data", "Data Health"],
           ["models", "Model Lab"],
           ["paper", "Paper Trading"],
-          ["agent", "OpenClaw Autopilot"],
+          ["agent", "Hermes Autopilot"],
           ["resolution", "Entity Resolution"],
           ["risk", "Risk/Bankroll"]
         ].map(([id, label]) => (
@@ -955,7 +955,7 @@ export default function Page() {
             <div className="panel">
               <div className="panelHeader">
                 <div>
-                  <p className="eyebrow">OpenClaw Autopilot</p>
+                  <p className="eyebrow">Hermes Autopilot</p>
                   <h2>Dashboard + Telegram paper ops</h2>
                 </div>
                 <Bot size={20} />
@@ -977,7 +977,7 @@ export default function Page() {
                 ))}
               </div>
               <div className="agentSummary">
-                <p>{agentBriefing?.summary ?? "OpenClaw aguardando briefing da API local."}</p>
+                <p>{agentBriefing?.summary ?? "Hermes aguardando briefing da API local."}</p>
                 <div className="agentActionBar">
                   <button onClick={triggerAgentAutopilot} disabled={busy}>
                     <Play size={15} />

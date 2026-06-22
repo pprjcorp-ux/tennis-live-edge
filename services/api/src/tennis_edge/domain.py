@@ -723,7 +723,7 @@ class DailyOperationalExecutionSnapshot(BaseModel):
 class DailyOperationalRunResult(BaseModel):
     status: Literal["completed", "collecting", "degraded"]
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    source: Literal["api", "cli", "openclaw", "cron", "system"] = "system"
+    source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "system"
     live_api_calls: int = 0
     match_id: str
     replay_contracts: ReplayContractRunResult
@@ -794,7 +794,7 @@ class AgentAction(BaseModel):
 class AgentRun(BaseModel):
     id: str
     run_type: AgentRunType
-    source: Literal["dashboard", "telegram", "cron", "openclaw", "system"] = "system"
+    source: Literal["dashboard", "telegram", "cron", "hermes", "openclaw", "system"] = "system"
     model_routes: list[AgentModelRoute] = Field(default_factory=list)
     actions: list[AgentAction] = Field(default_factory=list)
     summary: str
@@ -902,7 +902,7 @@ class IngestionRunRecord(BaseModel):
         "replay_contract_run",
         "daily_operational_run",
     ]
-    source: Literal["api", "cli", "openclaw", "cron", "system"] = "system"
+    source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "system"
     status: Literal["completed", "collecting", "degraded", "skipped", "failed"]
     summary: dict[str, Any] = Field(default_factory=dict)
     started_at: datetime
@@ -963,7 +963,7 @@ class ProviderCursorResyncResult(BaseModel):
 
 
 class AgentAutopilotRequest(BaseModel):
-    source: Literal["dashboard", "telegram", "cron", "openclaw", "system"] = "dashboard"
+    source: Literal["dashboard", "telegram", "cron", "hermes", "openclaw", "system"] = "dashboard"
     create_paper_orders: bool = True
     request_real_execution: bool = False
     max_paper_orders: int = Field(default=3, ge=1, le=10)

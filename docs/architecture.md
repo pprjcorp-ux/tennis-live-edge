@@ -9,11 +9,11 @@ decide whether the system behaves as budget or enterprise.
 - `services/api`: FastAPI API, provider adapters, feature/model/signal engines,
   replay/backtest services, execution safety gates, and Agent Ops endpoints.
 - `apps/web`: local dashboard for live board, data health, model lab, paper
-  trading, risk/bankroll, entity resolution, and OpenClaw Autopilot.
+  trading, risk/bankroll, entity resolution, and Hermes Autopilot.
 - `infra/schema.sql`: event-sourced Postgres/Timescale schema for raw payloads,
   score/odds ticks, predictions, signals, paper orders, model versions, and
   execution controls/audit events.
-- `openclaw/`: local-only OpenClaw skill, policy example, and cron examples.
+- `hermes/`: local-only Hermes skill, policy example, and cron examples.
 
 ## Runtime Flow
 
@@ -71,7 +71,7 @@ decide whether the system behaves as budget or enterprise.
     source, the active model/feature set, settled example count, and whether a
     live backtest can run without synthetic fallback.
 15. `OperationalStateSnapshot.source_summary` includes aggregate source counts
-    plus per-match `match_freshness` evidence, so dashboard/OpenClaw can verify
+    plus per-match `match_freshness` evidence, so dashboard/Hermes can verify
     whether each match came from live providers, persisted fallback, replay, or
     runtime-only sample state before trusting a signal.
 16. API onboarding is a derived read-model inside `OperationalStateSnapshot`.
@@ -131,7 +131,7 @@ decide whether the system behaves as budget or enterprise.
     `quota exhausted` status; live readiness keeps the dashboard available but
     blocks actionable `Entrada` signals until quota is restored or the runtime
     is switched to monitor/replay.
-21. OpenClaw Agent Ops calls internal APIs only; autopilot runs and any created
+21. Hermes Agent Ops calls internal APIs only; autopilot runs and any created
     paper orders are persisted so restart recovery includes the operational
     audit trail.
 

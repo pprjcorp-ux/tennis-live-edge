@@ -52,7 +52,7 @@ async def run_odds_stream_ingestion(
     max_messages: int = 25,
     timeout_seconds: float = 30,
     force: bool = False,
-    source: Literal["api", "cli", "openclaw", "cron", "system"] = "cli",
+    source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "cli",
 ) -> dict[str, object]:
     settings = repo.settings
     summary = {

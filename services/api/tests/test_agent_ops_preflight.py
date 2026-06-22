@@ -35,7 +35,7 @@ def test_agent_preflight_reports_ready_when_safety_and_gateway_are_healthy() -> 
     )
 
     assert preflight.status == "ready"
-    assert {check.name: check.status for check in preflight.checks}["openclaw_gateway"] == "pass"
+    assert {check.name: check.status for check in preflight.checks}["hermes_gateway"] == "pass"
     assert {check.name: check.status for check in preflight.checks}["real_execution_hard_block"] == "pass"
 
 
@@ -86,7 +86,7 @@ def test_agent_preflight_degrades_for_missing_keys_gateway_and_persistence() -> 
 
     assert preflight.status == "blocked"
     assert statuses["admin_api_token"] == "warn"
-    assert statuses["openclaw_gateway"] == "fail"
+    assert statuses["hermes_gateway"] == "fail"
     assert statuses["persistence"] == "fail"
     assert statuses["real_execution_hard_block"] == "fail"
     assert statuses["provider_keys"] == "warn"

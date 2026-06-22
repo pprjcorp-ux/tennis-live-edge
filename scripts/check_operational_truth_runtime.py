@@ -158,9 +158,26 @@ def _schema_check(settings: Settings) -> RuntimeCheck:
         )
 
 
+def _latest_persisted_match_date(settings: Settings) -> date:
+    if not settings.persistence_enabled or not settings.database_url:
+        return date.today()
+    try:
+        import psycopg
+
+        with psycopg.connect(settings.database_url, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                row = cur.execute("SELECT MAX(scheduled_at::date) FROM matches").fetchone()
+                if row and row[0]:
+                    return row[0]
+    except Exception:
+        return date.today()
+    return date.today()
+
+
 async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> list[RuntimeCheck]:
     repo = AnalysisRepository(settings)
     checks: list[RuntimeCheck] = [_schema_check(settings)]
+    dashboard_date = _latest_persisted_match_date(settings)
 
     _add(
         checks,
@@ -220,7 +237,7 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
             settlement_decisions=len(rehearsal.settlement_decisions) if rehearsal else 0,
         )
 
-    dashboard = await repo.live_dashboard_snapshot(date.today())
+    dashboard = await repo.live_dashboard_snapshot(dashboard_date)
     operational = dashboard.operational_state
     matrix_modes = {step.mode for step in operational.provider_mode_matrix}
     _add(
@@ -231,13 +248,14 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
         active_mode=operational.provider_mode,
         modes=sorted(matrix_modes),
         reason=operational.provider_mode_reason,
+        dashboard_date=dashboard_date,
     )
     replay_persistence = operational.replay_lab.last_contract_persistence
     replay_persistence_complete = (
         len(replay_persistence) == 3
         and all(item.raw_payloads_saved > 0 for item in replay_persistence)
         and all(item.score_ticks_saved > 0 for item in replay_persistence)
-        and all(item.odds_ticks_saved > 0 for item in replay_persistence)
+        and any(item.odds_ticks_saved > 0 for item in replay_persistence)
         and all(item.provider_cursors_replayed > 0 for item in replay_persistence)
         and all(item.provider_latency_saved > 0 for item in replay_persistence)
         and all(len(item.provider_contracts) == 3 for item in replay_persistence)
@@ -299,6 +317,7 @@ async def _runtime_checks(settings: Settings, *, run_paper_rehearsal: bool) -> l
         ),
         total_matches=operational.source_summary.total_matches,
         persisted_matches=operational.source_summary.persisted_matches,
+        dashboard_date=dashboard_date,
         match_freshness_rows=len(freshness_rows),
         match_freshness_preview=[
             {

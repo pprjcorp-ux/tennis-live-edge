@@ -47,7 +47,7 @@ async def run_replay_contracts(
     *,
     match_id: str,
     scenarios: list[ReplayContractScenario] | None = None,
-    source: Literal["api", "cli", "openclaw", "cron", "system"] = "cli",
+    source: Literal["api", "cli", "hermes", "openclaw", "cron", "system"] = "cli",
 ) -> ReplayContractRunResult:
     request = ReplayContractRunRequest(match_id=match_id)
     if scenarios:

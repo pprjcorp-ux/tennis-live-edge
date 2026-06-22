@@ -4228,6 +4228,170 @@ test("quota-plan throttles collection cadence near budget limits", async () => {
   }
 });
 
+test("live-controller compiles live data decisions without executing collection", async () => {
+  const matches = [
+    {
+      match: {
+        id: "match_controller_hot",
+        tournament: "Roland Garros",
+        round: "R16",
+        tour: "WTA",
+        competition_level: "GRAND_SLAM",
+        surface: "clay",
+        player1: { id: "p1", name: "Player One" },
+        player2: { id: "p2", name: "Player Two" },
+        state: {
+          status: "live",
+          p1_sets: 1,
+          p2_sets: 1,
+          p1_games: 5,
+          p2_games: 4,
+          point_score: "40-30",
+          server_player_id: "p1",
+          is_tiebreak: false,
+          is_break_point: true,
+        },
+      },
+      prediction: { p1_win_prob: 0.62, p2_win_prob: 0.38, confidence: "Alta", model_version: "baseline_v0" },
+      signals: [
+        {
+          id: "sig_controller",
+          match_id: "match_controller_hot",
+          player_id: "p1",
+          player_name: "Player One",
+          status: "Entrada",
+          edge: 0.075,
+          threshold: 0.03,
+          confidence: "Alta",
+          best_odds: 2.1,
+          reason: "fresh edge",
+        },
+      ],
+      freshness: {
+        source: "live",
+        persisted: true,
+        score_age_ms: 3000,
+        odds_age_ms: 2000,
+        provider_lineage: ["api_tennis", "odds_api_io"],
+      },
+    },
+  ];
+  const dashboard = {
+    operational_state: {
+      provider_mode: "live_with_keys",
+      replay_lab: { status: "ready" },
+      model_lab: { status: "collecting", production_training_examples: 18, can_run_live_backtest: false },
+      api_onboarding: {
+        core_ready: true,
+        budget_chain_completed: true,
+        enterprise_eligible: false,
+        current_step: null,
+        steps: [],
+      },
+      source_summary: {
+        total_matches: 1,
+        persisted_matches: 1,
+        match_freshness: [
+          { match_id: "match_controller_hot", source: "live", persisted: true, score_age_ms: 3000, odds_age_ms: 2000 },
+        ],
+      },
+    },
+  };
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": matches,
+    "/api/v1/signals/live": [matches[0].signals[0]],
+    "/api/v1/dashboard/live-state": dashboard,
+    "/api/v1/cost-profile": {
+      active_plan: "lean_atp",
+      estimated_monthly_spend_usd: 300,
+      monthly_budget_usd: 500,
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["live-controller", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "live_controller");
+    assert.equal(payload.status, "paper_ready");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.operator_decision.action, "paper_autopilot_candidate");
+    assert.equal(payload.operator_decision.protected_backend_action.command, "npm run hermes:autopilot");
+    assert.equal(payload.operator_decision.protected_backend_action.executes_now, false);
+    assert.equal(payload.operator_decision.protected_backend_action.provider_api_call_allowed, false);
+    assert.equal(payload.operator_decision.top_match_id, "match_controller_hot");
+    assert.equal(payload.collection.provider_candidates.every((command) => command.provider_api_call_allowed === false), true);
+    assert.equal(payload.collection.provider_candidates.every((command) => command.executes_now === false), true);
+    assert.equal(payload.control_policy.event_driven_not_tick_driven, true);
+    assert.equal(payload.control_policy.provider_spend_requires_operator, true);
+    assert.equal(payload.safety.can_submit_real_orders, false);
+  } finally {
+    server.close();
+  }
+
+  const blockedFixtures = eventRouterFixtures({
+    "/api/v1/live/matches": matches,
+    "/api/v1/signals/live": [matches[0].signals[0]],
+    "/api/v1/dashboard/live-state": dashboard,
+    "/api/v1/provider-cursors": [
+      {
+        provider: "odds_api_io",
+        stream: "tennis.live",
+        status: "gap",
+        resync_required: true,
+        last_seq: 30,
+        expected_next_seq: 31,
+        gap_count: 1,
+      },
+    ],
+  });
+  const { server: blockedServer, apiBase: blockedApiBase } = await startServer((request, response) => {
+    const payload = blockedFixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["live-controller", `--api-base=${blockedApiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.operator_decision.action, "freeze_collection");
+    assert.equal(payload.operator_decision.next_safe_command.command, "npm --silent run hermes:events");
+    assert.equal(payload.operator_decision.next_safe_command.executes_now, false);
+    assert.equal(payload.match_pulse.target_summary.lanes.frozen, 1);
+    assert.equal(payload.quota.throttle.level, "blocked");
+    assert.equal(payload.collection.provider_candidates.length, 0);
+    assert.equal(payload.events.some((event) => event.type === "cursor_resync_required"), true);
+    assert.equal(payload.safety.can_submit_real_orders, false);
+  } finally {
+    blockedServer.close();
+  }
+});
+
 test("budget-chain emits a dry-run provider onboarding plan without spending quota", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/signals/live": [],

@@ -1406,6 +1406,31 @@ async function quotaPlan() {
   printJson(buildQuotaPlan({ report, collection }));
 }
 
+async function liveController() {
+  const [report, matches] = await Promise.all([
+    intelligenceData(),
+    liveMatchesData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  const liveWindowPlan = buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan);
+  const pulse = buildMatchPulse({ report, eventPlan, liveWindowPlan, matches });
+  const collection = buildCollectionPlan({ report, eventPlan, liveWindowPlan, pulse });
+  const quota = buildQuotaPlan({ report, collection });
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+  printJson(buildLiveController({
+    report,
+    eventPlan,
+    liveWindowPlan,
+    pulse,
+    collection,
+    quota,
+    sourceRoutes,
+  }));
+}
+
 async function learningReview() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -7400,6 +7425,222 @@ function quotaProviderCommands(collection, throttle) {
   }));
 }
 
+function buildLiveController({
+  report,
+  eventPlan,
+  liveWindowPlan,
+  pulse,
+  collection,
+  quota,
+  sourceRoutes,
+}) {
+  const decision = chooseLiveControllerDecision({
+    eventPlan,
+    liveWindowPlan,
+    pulse,
+    collection,
+    quota,
+    sourceRoutes,
+  });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "live_controller",
+    status: liveControllerStatus({ liveWindowPlan, quota }),
+    summary: `Hermes live controller: action=${decision.action}, live_window=${liveWindowPlan.status}, quota=${quota.throttle?.level}`,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    provider_mode: liveWindowPlan.provider_mode,
+    operator_decision: decision,
+    live_window: {
+      status: liveWindowPlan.status,
+      window_open: liveWindowPlan.window_open,
+      autopilot_candidate: liveWindowPlan.autopilot_candidate,
+      blockers: liveWindowPlan.blockers,
+    },
+    match_pulse: {
+      status: pulse.status,
+      matches_seen: pulse.matches_seen,
+      top_match: pulse.top_match,
+      target_summary: summarizeControllerTargets(quota.effective_targets),
+    },
+    collection: {
+      status: collection.status,
+      provider_command_count: collection.provider_commands.length,
+      safe_command_count: collection.safe_commands.length,
+      provider_candidates: collection.provider_commands.map(sanitizeControllerCommand),
+    },
+    quota: {
+      status: quota.status,
+      throttle: quota.throttle,
+      effective_target_count: quota.effective_targets.length,
+      provider_command_count: quota.provider_commands.length,
+    },
+    source_route: {
+      status: sourceRoutes.status,
+      next_route: sourceRoutes.next_route,
+      blocked_routes: (sourceRoutes.routes ?? []).filter((route) => route.status === "blocked").map((route) => route.id),
+    },
+    control_policy: {
+      event_driven_not_tick_driven: true,
+      allowed_route_optimization_only: true,
+      provider_spend_requires_operator: true,
+      provider_commands_execute_now: false,
+      strong_model_per_tick_allowed: false,
+      sportsbook_bypass_allowed: false,
+    },
+    forbidden_actions: report.forbidden_collection_paths ?? [],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+    events: eventPlan.events.map((item) => ({
+      type: item.type,
+      severity: item.severity,
+      can_create_orders: item.can_create_orders,
+      allowed_command: item.allowed_command,
+    })),
+  };
+}
+
+function liveControllerStatus({ liveWindowPlan, quota }) {
+  if (liveWindowPlan.status === "safety_stop" || quota.status === "safety_stop") return "safety_stop";
+  if (liveWindowPlan.status === "blocked" || quota.status === "blocked") return "blocked";
+  if (quota.status === "throttled") return "throttled";
+  if (liveWindowPlan.status === "paper_ready") return "paper_ready";
+  if (quota.status === "normal") return "live_watch";
+  return "monitor";
+}
+
+function chooseLiveControllerDecision({
+  eventPlan,
+  liveWindowPlan,
+  pulse,
+  collection,
+  quota,
+  sourceRoutes,
+}) {
+  if (["safety_stop", "blocked"].includes(liveWindowPlan.status) || ["safety_stop", "blocked"].includes(quota.status)) {
+    const command = quota.safe_commands[0] ?? collection.safe_commands[0] ?? liveWindowPlan.next_action;
+    return liveControllerDecision({
+      action: "freeze_collection",
+      reason: `Live data collection is frozen until blockers clear; severity=${eventPlan.severity}.`,
+      nextCommand: command,
+      cadence: "frozen",
+      sourceRoute: sourceRoutes.next_route,
+    });
+  }
+  if (quota.status === "throttled") {
+    return liveControllerDecision({
+      action: "throttle_internal_watch",
+      reason: quota.throttle?.reason ?? "Quota guardrail is active; keep collection selective.",
+      nextCommand: quota.safe_commands[0],
+      cadence: "throttled",
+      sourceRoute: sourceRoutes.next_route,
+    });
+  }
+  if (liveWindowPlan.autopilot_candidate && eventPlan.can_run_paper_autopilot) {
+    return liveControllerDecision({
+      action: "paper_autopilot_candidate",
+      reason: "Fresh Entrada exists in a paper-ready window; backend-only paper autopilot is the protected next route.",
+      nextCommand: liveWindowPlan.next_action,
+      protectedCommand: liveWindowPlan.next_action,
+      cadence: "hot_watch",
+      sourceRoute: sourceRoutes.next_route,
+      topMatch: pulse.top_match,
+    });
+  }
+  if (collection.status === "live_watch") {
+    return liveControllerDecision({
+      action: "operator_provider_candidate",
+      reason: "Hot or warm matches are present; provider ingestion remains an operator-only candidate.",
+      nextCommand: collection.safe_commands[0],
+      providerCommand: collection.provider_commands[0] ?? null,
+      cadence: "event_driven_watchlist",
+      sourceRoute: sourceRoutes.next_route,
+      topMatch: pulse.top_match,
+    });
+  }
+  return liveControllerDecision({
+    action: "observe_internal_state",
+    reason: "No protected paper route or live provider cadence escalation is currently justified.",
+    nextCommand: collection.safe_commands[0] ?? liveWindowPlan.next_action,
+    cadence: "monitor",
+    sourceRoute: sourceRoutes.next_route,
+    topMatch: pulse.top_match,
+  });
+}
+
+function liveControllerDecision({
+  action,
+  reason,
+  nextCommand,
+  protectedCommand = null,
+  providerCommand = null,
+  cadence,
+  sourceRoute,
+  topMatch = null,
+}) {
+  return {
+    action,
+    reason,
+    cadence,
+    next_safe_command: sanitizeControllerCommand(nextCommand),
+    protected_backend_action: protectedCommand ? sanitizeControllerCommand(protectedCommand) : null,
+    provider_candidate: providerCommand ? sanitizeControllerCommand(providerCommand) : null,
+    source_route_id: sourceRoute?.id ?? null,
+    source_route_lane: sourceRoute?.lane ?? null,
+    top_match_id: topMatch?.match_id ?? null,
+    executes_now: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+  };
+}
+
+function sanitizeControllerCommand(command) {
+  if (!command) return null;
+  return {
+    id: command.id,
+    command: command.command,
+    reason: command.reason,
+    requires_admin_token: Boolean(command.requires_admin_token),
+    writes: Boolean(command.writes),
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: Boolean(command.can_create_paper_orders),
+    executes_now: false,
+  };
+}
+
+function summarizeControllerTargets(targets) {
+  const counts = {};
+  for (const target of targets ?? []) {
+    const lane = target.lane ?? "unknown";
+    counts[lane] = (counts[lane] ?? 0) + 1;
+  }
+  return {
+    total: (targets ?? []).length,
+    lanes: counts,
+    fastest_score_poll_seconds: minPositive((targets ?? []).map((target) => target.score_poll_seconds)),
+    fastest_odds_poll_seconds: minPositive((targets ?? []).map((target) => target.odds_poll_seconds)),
+  };
+}
+
+function minPositive(values) {
+  const positive = values.map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  return positive.length ? Math.min(...positive) : 0;
+}
+
 function buildLearningReview(report, eventPlan, playbookPlan) {
   const learning = report.learning_snapshot ?? {};
   const budget = report.budget_chain_snapshot ?? {};
@@ -7767,6 +8008,7 @@ const commands = {
   "match-pulse": matchPulse,
   "collection-plan": collectionPlan,
   "quota-plan": quotaPlan,
+  "live-controller": liveController,
   "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,

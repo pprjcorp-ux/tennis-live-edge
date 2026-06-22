@@ -124,6 +124,8 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 1-5 minutes during active windows: `npm run hermes:match-pulse`.
 - Every 1-5 minutes during active windows: `npm run hermes:collection-plan`.
 - Every 1-5 minutes during active windows: `npm run hermes:quota-plan`.
+- Every 1-5 minutes when a channel needs one live-data decision:
+  `npm run hermes:live-controller`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
 - Every 5 minutes while blocked: `npm run hermes:unblock-plan`.
@@ -309,6 +311,16 @@ operator candidate rather than an executed action.
 spend utilization guardrails to the collection plan, slows or freezes desired
 cadence when needed, and suppresses provider command candidates while the guard
 is active.
+
+`hermes:live-controller` is the preferred live-data control packet. It compiles
+live-window, match-pulse, collection-plan, quota-plan and source-route-matrix
+into one operator decision: freeze collection, throttle internal watch, observe
+internal state, keep a provider command as operator-only candidate, or request
+protected paper autopilot through the backend. It is the right packet for
+Hermes/Telegram/Cloudflare/OpenClaw-style channels because it avoids stitching
+together multiple command outputs and weakening the safety contract. It remains
+read-only: no provider quota spend, no provider command execution, no paper
+order creation by itself, no real execution, and no LLM per tick.
 
 `hermes:learning-review` is the preferred weekly packet. It packages the
 learning gates, ROI, CLV, settled paper volume, production training examples,

@@ -17,6 +17,7 @@ npm run hermes:briefing
 npm run hermes:anomalies
 npm run hermes:runs
 npm run hermes:preflight
+npm run hermes:runtime-check
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:unblock-plan
@@ -53,6 +54,10 @@ Model Lab `training_examples` backtest path while reporting `live_api_calls=0`.
 The auto-settlement response includes structured per-order `decisions`, so
 Hermes can summarize settled, skipped, failed, and training-example-missing
 outcomes without parsing free-form reason strings.
+
+Use `hermes:runtime-check` when `unblock-plan` prioritizes the local runtime
+lane. It captures `hermes status` and `hermes doctor` output in JSON but does
+not modify LaunchAgents, daemons, gateway state, or credentials.
 
 For higher autonomy, use `hermes:intelligence` as the default scheduled packet.
 It reads internal APIs only and emits one machine-readable recommendation:

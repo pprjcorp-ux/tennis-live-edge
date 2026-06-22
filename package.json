@@ -22,6 +22,7 @@
     "hermes:anomalies": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies",
     "hermes:runs": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs",
     "hermes:preflight": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight",
+    "hermes:runtime-check": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-check",
     "hermes:intelligence": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence",
     "hermes:events": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events",
     "hermes:unblock-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs unblock-plan",

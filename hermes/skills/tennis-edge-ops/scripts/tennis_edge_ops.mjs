@@ -75,6 +75,28 @@ async function preflight() {
   });
 }
 
+async function runtimeCheck() {
+  const hermesBin = process.env.HERMES_BIN || "hermes";
+  const commands = [
+    await runLocalCommand("hermes status", hermesBin, ["status"]),
+    await runLocalCommand("hermes doctor", hermesBin, ["doctor"]),
+  ];
+  const hasMissingCommand = commands.some((item) => item.error_code === "command_not_found");
+  const hasFailure = commands.some((item) => item.exit_code !== 0 || item.timed_out || item.error_code);
+  printJson({
+    generated_at: new Date().toISOString(),
+    mode: "local_runtime_check",
+    status: hasMissingCommand ? "missing" : hasFailure ? "degraded" : "ready",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    commands,
+    next_actions: runtimeCheckActions({ hasMissingCommand, hasFailure }),
+  });
+}
+
 async function intelligence() {
   printJson(await intelligenceData());
 }
@@ -327,6 +349,89 @@ function runNpmJson(scriptName, args = []) {
       }
     });
   });
+}
+
+function runLocalCommand(name, commandName, args = [], timeoutMs = 5_000) {
+  return new Promise((resolve) => {
+    const child = spawn(commandName, args, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    let settled = false;
+    const startedAt = new Date();
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      child.kill("SIGTERM");
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
+    child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve({
+        name,
+        command: [commandName, ...args].join(" "),
+        started_at: startedAt.toISOString(),
+        completed_at: new Date().toISOString(),
+        exit_code: null,
+        timed_out: false,
+        error_code: error.code === "ENOENT" ? "command_not_found" : "spawn_error",
+        stdout: "",
+        stderr: sanitizeCommandOutput(error.message),
+      });
+    });
+    child.on("close", (exitCode, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+      const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      resolve({
+        name,
+        command: [commandName, ...args].join(" "),
+        started_at: startedAt.toISOString(),
+        completed_at: new Date().toISOString(),
+        exit_code: exitCode,
+        signal,
+        timed_out: signal === "SIGTERM" && exitCode === null,
+        error_code: null,
+        stdout: sanitizeCommandOutput(stdout),
+        stderr: sanitizeCommandOutput(stderr),
+      });
+    });
+  });
+}
+
+function sanitizeCommandOutput(output) {
+  return String(output ?? "")
+    .replace(/\bsk-[^\s]+/g, "[REDACTED_API_KEY]")
+    .replace(/\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_TOKEN]")
+    .replace(/\s+$/g, "")
+    .slice(0, 4_000);
+}
+
+function runtimeCheckActions({ hasMissingCommand, hasFailure }) {
+  if (hasMissingCommand) {
+    return [
+      "Install or expose the Hermes CLI before enabling runtime automation.",
+      "Keep using internal FastAPI packets while Hermes gateway is unavailable.",
+    ];
+  }
+  if (hasFailure) {
+    return [
+      "Inspect Hermes status and doctor output before running protected autopilot.",
+      "Keep cron/Telegram routes in observe mode until the loopback gateway is reachable.",
+    ];
+  }
+  return [
+    "Hermes CLI diagnostics are clean; rerun npm run hermes:preflight.",
+    "Keep real execution hard-blocked.",
+  ];
 }
 
 function dailyOpsBody() {
@@ -1672,6 +1777,7 @@ const commands = {
   anomalies,
   runs,
   preflight,
+  "runtime-check": runtimeCheck,
   intelligence,
   events,
   "unblock-plan": unblockPlan,

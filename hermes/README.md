@@ -31,6 +31,7 @@ npm run hermes:briefing
 npm run hermes:anomalies
 npm run hermes:runs
 npm run hermes:preflight
+npm run hermes:runtime-check
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:unblock-plan
@@ -55,6 +56,10 @@ skill script itself does not read `.env` files or print secret values.
 rehearsal without live API calls. `hermes:autopilot` only creates paper orders
 for backend-approved `Entrada` signals. Real execution remains blocked by
 `REAL_EXECUTION_HARD_BLOCK=true`.
+
+`hermes:runtime-check` runs `hermes status` and `hermes doctor` as local
+read-only diagnostics and returns JSON with stdout/stderr/exit codes. It does
+not start, stop, install, or repair Hermes services.
 
 `hermes:intelligence` is the high-signal operator packet for cron/Telegram. It
 aggregates provider health, cursor gaps, data quality, cost, paper performance,

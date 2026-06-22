@@ -104,6 +104,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
 - Every 5 minutes while blocked: `npm run hermes:unblock-plan`.
+- When local runtime is first blocker: `npm run hermes:runtime-check`.
 - Every 5 minutes during active windows: `npm run hermes:playbook`.
 - Every 15 minutes: `npm run hermes:preflight`.
 - Every 15 minutes: `npm run hermes:anomalies`.
@@ -127,6 +128,10 @@ Sportradar/Betradar/TXODDS contracts that are intentionally inactive.
 `hermes:unblock-plan` is the preferred blocked-state packet. It ranks safe
 lanes by priority and labels whether each lane needs a human, writes local
 state, consumes provider quota, or is deferred. It does not execute commands.
+
+`hermes:runtime-check` is the local diagnostic packet for the first unblock
+lane. It runs the Hermes CLI in read-only mode and captures status/doctor
+evidence without changing any LaunchAgent, daemon, gateway, or provider config.
 
 `hermes:playbook` is the preferred human/operator handoff. It groups the event
 state into phases: `observe`, `stabilize_data`, `budget_chain`,

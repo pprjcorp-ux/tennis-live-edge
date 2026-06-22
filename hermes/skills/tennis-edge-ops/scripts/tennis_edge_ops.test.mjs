@@ -1,5 +1,8 @@
 import { once } from "node:events";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import http from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -741,6 +744,44 @@ test("unblock-plan classifies blockers into safe prioritized operator lanes", as
   } finally {
     server.close();
   }
+});
+
+test("runtime-check captures Hermes local diagnostics without failing protected flow", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-hermes-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: stopped sk-p...sq0A'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.error('gateway unreachable'); process.exit(1); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+
+  const result = await runCli(["runtime-check"], {
+    env: { HERMES_BIN: fakeHermes },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "local_runtime_check");
+  assert.equal(payload.status, "degraded");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.commands.length, 2);
+  assert.equal(payload.commands[0].name, "hermes status");
+  assert.equal(payload.commands[0].exit_code, 0);
+  assert.match(payload.commands[0].stdout, /gateway: stopped/);
+  assert.equal(payload.commands[0].stdout.includes("sk-p"), false);
+  assert.match(payload.commands[0].stdout, /\[REDACTED_API_KEY\]/);
+  assert.equal(payload.commands[1].name, "hermes doctor");
+  assert.equal(payload.commands[1].exit_code, 1);
+  assert.match(payload.commands[1].stderr, /gateway unreachable/);
 });
 
 test("playbook prioritizes data stabilization when cursor resync is required", async () => {

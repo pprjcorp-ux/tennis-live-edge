@@ -30,6 +30,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs anomalies
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-check
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs unblock-plan
@@ -68,6 +69,8 @@ The `autopilot` command creates paper orders only through
 The `preflight` command should run before cron/autopilot jobs; it checks API
 reachability, local gateway reachability, persistence, provider key readiness,
 and the real-execution hard block.
+The `runtime-check` command runs read-only Hermes CLI diagnostics and captures
+status/doctor output as JSON. It must not repair, install, or restart services.
 The `intelligence` command is the preferred cron/Telegram status packet. It
 reads only internal FastAPI endpoints and produces a redacted JSON decision
 brief with operational mode, blockers, allowed collection paths, forbidden

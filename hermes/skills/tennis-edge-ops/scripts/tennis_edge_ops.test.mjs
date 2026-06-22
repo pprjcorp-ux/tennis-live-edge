@@ -1101,6 +1101,58 @@ test("operator-ledger-report summarizes local recommendations without executing 
   assert.equal(payload.top_blocker, "npm run hermes:runtime-check");
 });
 
+test("runtime-fix-priorities converts ledger blockers into non-mutating priorities", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-runtime-priorities-"));
+  const ledgerPath = join(tempDir, "operator-ledger.jsonl");
+  const rows = [
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    },
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    },
+    {
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm --silent run hermes:events",
+      packet: { priority: "medium", status: "blocked", cost_guard: { throttle_level: "cost_watch" } },
+    },
+  ];
+  writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["runtime-fix-priorities"], {
+    env: { HERMES_OPERATOR_LEDGER_PATH: ledgerPath },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "runtime_fix_priorities");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.ledger_report.total_records, 3);
+  assert.equal(payload.priorities[0].id, "stabilize_hermes_runtime");
+  assert.equal(payload.priorities[0].source_command, "npm run hermes:runtime-check");
+  assert.equal(payload.priorities[0].frequency, 2);
+  assert.equal(payload.priorities[0].executes_now, false);
+  assert.equal(payload.priorities[0].provider_api_call_allowed, false);
+  assert.equal(payload.priorities[0].can_submit_real_orders, false);
+  assert.equal(payload.priorities[1].id, "inspect_event_router_blockers");
+  assert.equal(payload.next_priority.id, "stabilize_hermes_runtime");
+  assert.equal(payload.operator_note.includes("No priority executes automatically"), true);
+});
+
 test("scheduler-rehearsal records a safe loop plan without executing commands", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-scheduler-"));
   const runLog = join(tempDir, "scheduler-runs.jsonl");

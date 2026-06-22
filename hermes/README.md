@@ -48,6 +48,7 @@ npm run hermes:safe-loop
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
+npm run hermes:runtime-fix-priorities
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist
@@ -159,6 +160,10 @@ safe action, cost guard and safety flags in a compact read-only JSON packet.
 `hermes:operator-ledger-report` summarizes the local ledger without writing. It
 counts priorities, statuses, outcomes, throttle states, repeated next actions
 and any accidental executed-action rows.
+
+`hermes:runtime-fix-priorities` converts the ledger report into ordered local
+improvement priorities. It is read-only and never runs the repeated commands it
+surfaces.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

@@ -39,6 +39,7 @@
     "hermes:operator-packet": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet",
     "hermes:operator-ledger": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger",
     "hermes:operator-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report",
+    "hermes:runtime-fix-priorities": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-fix-priorities",
     "hermes:scheduler-rehearsal": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs scheduler-rehearsal",
     "hermes:cron-proposal": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs cron-proposal",
     "hermes:activation-checklist": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs activation-checklist",

@@ -117,6 +117,17 @@ hermes cron add \
   --timeout-seconds 60
 ```
 
+Runtime fix priorities hourly:
+
+```bash
+hermes cron add \
+  --name tennis-edge-runtime-fix-priorities \
+  --every 1h \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:runtime-fix-priorities from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report next_priority, priorities, ledger_report.top_blocker, and safety. Do not execute diagnostic_command or source_command." \
+  --timeout-seconds 60
+```
+
 Scheduler rehearsal before creating or changing real cron jobs:
 
 ```bash

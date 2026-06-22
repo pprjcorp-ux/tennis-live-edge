@@ -213,6 +213,11 @@ async function operatorLedgerReport() {
   printJson(buildOperatorLedgerReport(readOperatorLedgerRecords()));
 }
 
+async function runtimeFixPriorities() {
+  const report = buildOperatorLedgerReport(readOperatorLedgerRecords());
+  printJson(buildRuntimeFixPriorities(report));
+}
+
 async function safeLoopData() {
   const [runtime, report, matches] = await Promise.all([
     runtimeCheckData(),
@@ -1436,6 +1441,124 @@ function rankedCounts(values) {
   return Object.entries(counts)
     .map(([command, count]) => ({ command, count }))
     .sort((a, b) => b.count - a.count || a.command.localeCompare(b.command));
+}
+
+function buildRuntimeFixPriorities(report) {
+  const priorities = report.next_action_counts
+    .map((row) => runtimePriorityFor(row))
+    .filter(Boolean)
+    .sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "runtime_fix_priorities",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger_report: {
+      ledger: report.ledger,
+      total_records: report.total_records,
+      action_executed_count: report.action_executed_count,
+      top_blocker: report.top_blocker,
+      priority_counts: report.priority_counts,
+      status_counts: report.status_counts,
+      throttle_counts: report.throttle_counts,
+    },
+    next_priority: priorities[0] ?? null,
+    priorities,
+    operator_note: "No priority executes automatically; run the referenced diagnostic commands from a local operator shell only.",
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+  };
+}
+
+function runtimePriorityFor(row) {
+  const command = row.command;
+  if (command === "npm run hermes:runtime-check") {
+    return runtimePriority({
+      id: "stabilize_hermes_runtime",
+      priority: 10,
+      lane: "local_runtime",
+      sourceCommand: command,
+      frequency: row.count,
+      reason: "Hermes runtime diagnostics are the most repeated next action.",
+      diagnosticCommand: "npm run hermes:runtime-check",
+    });
+  }
+  if (command === "npm --silent run hermes:events") {
+    return runtimePriority({
+      id: "inspect_event_router_blockers",
+      priority: 20,
+      lane: "event_routing",
+      sourceCommand: command,
+      frequency: row.count,
+      reason: "Event routing blockers are recurring in operator decisions.",
+      diagnosticCommand: "npm --silent run hermes:events",
+    });
+  }
+  if (command === "npm --silent run hermes:quota-plan") {
+    return runtimePriority({
+      id: "review_quota_throttle",
+      priority: 30,
+      lane: "cost_guard",
+      sourceCommand: command,
+      frequency: row.count,
+      reason: "Quota throttle review is recurring in operator decisions.",
+      diagnosticCommand: "npm --silent run hermes:quota-plan",
+    });
+  }
+  return runtimePriority({
+    id: `review_${slug(command)}`,
+    priority: 90,
+    lane: "operator_review",
+    sourceCommand: command,
+    frequency: row.count,
+    reason: "Repeated next action has no specialized remediation lane yet.",
+    diagnosticCommand: command,
+  });
+}
+
+function runtimePriority({
+  id,
+  priority,
+  lane,
+  sourceCommand,
+  frequency,
+  reason,
+  diagnosticCommand,
+}) {
+  return {
+    id,
+    priority,
+    lane,
+    source_command: sourceCommand,
+    frequency,
+    reason,
+    diagnostic_command: diagnosticCommand,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    requires_admin_token: false,
+  };
+}
+
+function slug(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64) || "unknown";
 }
 
 function operatorPriority(loop) {
@@ -3633,6 +3756,7 @@ const commands = {
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,
+  "runtime-fix-priorities": runtimeFixPriorities,
   "scheduler-rehearsal": schedulerRehearsal,
   "cron-proposal": cronProposal,
   "activation-checklist": activationChecklist,

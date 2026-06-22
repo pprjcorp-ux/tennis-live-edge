@@ -104,6 +104,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
 - Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
+- Hourly/daily to rank repeated local fixes: `npm run hermes:runtime-fix-priorities`.
 - Before any real cron change: `npm run hermes:scheduler-rehearsal`.
 - To generate a reviewable cron manifest: `npm run hermes:cron-proposal`.
 - Final gate before manual cron creation: `npm run hermes:activation-checklist`.
@@ -146,6 +147,10 @@ quality without granting more authority.
 `hermes:operator-ledger-report` is the read-only quality summary over that
 ledger. It identifies recurrent blockers and repeated next actions so the
 backend can be improved from observed operations instead of intuition.
+
+`hermes:runtime-fix-priorities` maps those recurrent blockers into a ranked
+non-mutating remediation queue. It is the bridge from observation to local
+operator action without giving Hermes write authority.
 
 `hermes:scheduler-rehearsal` is the dry-run bridge between safe-loop output and
 real Hermes cron configuration. It computes proposed intervals, chooses the

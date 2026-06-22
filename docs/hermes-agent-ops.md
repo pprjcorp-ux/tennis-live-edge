@@ -34,6 +34,7 @@ npm run hermes:safe-loop
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
+npm run hermes:runtime-fix-priorities
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist
@@ -159,6 +160,10 @@ and `action_executed=false`; it never executes the reported next action.
 Use `hermes:operator-ledger-report` for operational quality review. It reads
 the local ledger and reports repeated priorities, statuses, outcomes, throttle
 states, next actions and any rows that claim an action was executed.
+
+Use `hermes:runtime-fix-priorities` to convert repeated ledger blockers into a
+ranked local remediation queue. It only reports diagnostic commands and never
+executes them.
 
 Use `hermes:scheduler-rehearsal` before creating or changing real Hermes cron
 jobs. It converts the current safe-loop packet into proposed intervals and

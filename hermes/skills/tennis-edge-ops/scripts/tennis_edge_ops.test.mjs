@@ -985,6 +985,119 @@ test("backend-readiness fails closed when FastAPI hangs", async () => {
   }
 });
 
+test("mission-control prioritizes backend restore when internal API hangs", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-mission-control-backend-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✓ running'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('doctor ok'); process.exit(0); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const called = [];
+  const { server, apiBase } = await startServer((request) => {
+    called.push({ url: request.url, method: request.method });
+  });
+
+  try {
+    const result = await runCli(["mission-control", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_HTTP_TIMEOUT_MS: "100",
+        HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
+        PRIVATE_ALLOWED_EMAILS: "operator@example.com",
+        ADMIN_API_TOKEN: "local-admin",
+      },
+      timeoutMs: 8_000,
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.some((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "mission_control");
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.next_action.lane, "backend");
+    assert.equal(payload.next_action.command, "npm run api:dev");
+    assert.equal(payload.next_action.executes_now, false);
+    assert.equal(payload.next_action.mutates_runtime_if_run, true);
+    assert.equal(payload.packets.backend_readiness.status, "blocked");
+    assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+  }
+});
+
+test("mission-control prioritizes Hermes channel before live-window routes", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-mission-control-channel-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✗ stopped\\nMessaging Platforms\\n  Telegram      ✗ not configured'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.error('gateway unreachable'); process.exit(1); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": [
+      { match_id: "match_1", status: "live" },
+    ],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["mission-control", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "mission_control");
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.active_ceiling, "observe");
+    assert.equal(payload.next_action.lane, "channel");
+    assert.equal(payload.next_action.command, "hermes gateway start");
+    assert.equal(payload.next_action.executes_now, false);
+    assert.equal(payload.next_action.mutates_runtime_if_run, true);
+    assert.equal(payload.packets.backend_readiness.status, "ready");
+    assert.equal(payload.packets.channel_readiness.status, "blocked");
+    assert.equal(payload.packets.source_routes.next_route, "replay_backfill");
+    assert.equal(payload.lanes.every((lane) => lane.can_submit_real_orders === false), true);
+    assert.equal(payload.safe_jailbreak_policy.bypass_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("safe-loop aggregates runtime and budget signals without protected actions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-hermes-loop-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

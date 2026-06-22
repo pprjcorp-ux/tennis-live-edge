@@ -33,6 +33,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runtime-check
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-readiness
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backend-readiness
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-control
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs unblock-plan
@@ -105,6 +106,10 @@ The `backend-readiness` command proves local FastAPI readiness with bounded
 internal GETs against preflight, dashboard live-state, live matches, provider
 health, cost profile and execution status. It must fail closed, preserve the
 real-execution hard block, and never start services itself.
+The `mission-control` command is the one-packet entrypoint for external agents:
+it merges backend readiness, channel readiness, source-route matrix and
+live-window into ordered lanes and one next action. It must not execute that
+action.
 Internal FastAPI requests are bounded by `HERMES_HTTP_TIMEOUT_MS` (default
 5000ms, clamped between 100ms and 30000ms). Composed commands must fail closed
 with `backend_api` blockers when the backend is unavailable or slow; they must

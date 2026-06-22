@@ -133,6 +133,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it should verify internal FastAPI endpoints, dashboard state, live matches,
   provider health, cost profile, and execution hard-block before live-window or
   paper routing.
+- Hermes mission control should consume `npm run hermes:mission-control`; it
+  should merge backend readiness, channel readiness, source routes and
+  live-window into one ordered next action without executing anything.
 - Hermes must defer enterprise-only cursor blockers while
   `enterprise_eligible=false`; Sportradar/Betradar/TXODDS placeholders should
   not block budget-chain work before enterprise activation.
@@ -268,6 +271,7 @@ npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:channel-readiness
 npm run hermes:backend-readiness
+npm run hermes:mission-control
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
 npm run hermes:source-route-matrix

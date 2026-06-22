@@ -34,6 +34,7 @@ npm run hermes:preflight
 npm run hermes:runtime-check
 npm run hermes:channel-readiness
 npm run hermes:backend-readiness
+npm run hermes:mission-control
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:unblock-plan
@@ -99,6 +100,12 @@ starting services: preflight, dashboard live-state, live matches, provider
 health, cost profile and execution status. It confirms real execution remains
 hard-blocked and emits manual actions such as `npm run api:dev` only when the
 API is unavailable.
+
+`hermes:mission-control` is the single safest entrypoint for external agents or
+operator channels. It merges backend readiness, channel readiness, source-route
+matrix and live-window into one ordered `next_action`, preserving
+`executes_now=false`, `provider_api_call_allowed=false`, and
+`can_submit_real_orders=false` on every lane.
 
 `hermes:intelligence` is the high-signal operator packet for cron/Telegram. It
 aggregates provider health, cursor gaps, data quality, cost, paper performance,

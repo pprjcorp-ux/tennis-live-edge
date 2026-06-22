@@ -20,6 +20,7 @@ npm run hermes:preflight
 npm run hermes:runtime-check
 npm run hermes:channel-readiness
 npm run hermes:backend-readiness
+npm run hermes:mission-control
 npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:unblock-plan
@@ -97,6 +98,12 @@ live-window, match-pulse, source-route or paper-autopilot packets. It checks
 preflight, dashboard live-state, live matches, provider health, cost profile and
 execution status with bounded internal GETs, then fails closed into manual
 actions if the backend is unavailable.
+
+Use `hermes:mission-control` as the preferred one-packet entrypoint for Hermes,
+Telegram, dashboard, Cloudflare Agent or any external orchestrator. It merges
+backend readiness, channel readiness, source-route matrix and live-window into
+ordered lanes and one `next_action`, while every lane remains non-executing and
+real execution stays blocked.
 
 For higher autonomy, use `hermes:intelligence` as the default scheduled packet.
 It reads internal APIs only and emits one machine-readable recommendation:

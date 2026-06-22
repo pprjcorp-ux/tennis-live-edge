@@ -130,6 +130,31 @@ async function backendReadiness() {
   printJson(await backendReadinessData());
 }
 
+async function missionControl() {
+  printJson(await missionControlData());
+}
+
+async function missionControlData() {
+  const runtime = await runtimeCheckData();
+  const channel = buildChannelReadiness(runtime);
+  const backend = await backendReadinessData();
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  const liveWindowPlan = buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan);
+  return buildMissionControl({
+    backend,
+    channel,
+    report,
+    eventPlan,
+    sourceRoutes,
+    liveWindowPlan,
+  });
+}
+
 async function backendReadinessData() {
   const responses = await Promise.all([
     safeRequest("/api/v1/agent/preflight", backendUnavailablePreflight, "preflight"),
@@ -618,6 +643,200 @@ function backendReadinessAction({
     llm_per_tick_allowed: false,
     mutates_runtime_if_run: Boolean(mutatesRuntimeIfRun),
     requires_operator_confirmation: Boolean(requiresOperatorConfirmation),
+  };
+}
+
+function buildMissionControl({
+  backend,
+  channel,
+  report,
+  eventPlan,
+  sourceRoutes,
+  liveWindowPlan,
+}) {
+  const lanes = missionControlLanes({ backend, channel, report, eventPlan, sourceRoutes, liveWindowPlan });
+  const nextAction = missionControlNextAction(lanes);
+  const hardBlocked = lanes.some((lane) => lane.status === "blocked" && lane.priority < 70);
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "mission_control",
+    status: hardBlocked ? "blocked" : "ready",
+    active_ceiling: channel.readiness_ceiling ?? "observe",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    summary: missionControlSummary({ backend, channel, liveWindowPlan, sourceRoutes }),
+    next_action: nextAction,
+    lanes,
+    packets: {
+      backend_readiness: {
+        status: backend.status,
+        endpoint_summary: backend.endpoint_summary,
+        request_error_count: backend.request_errors?.length ?? 0,
+      },
+      channel_readiness: {
+        status: channel.status,
+        readiness_ceiling: channel.readiness_ceiling,
+        failed_checks: (channel.checks ?? [])
+          .filter((check) => check.status !== "pass")
+          .map((check) => check.id),
+      },
+      live_window: {
+        status: liveWindowPlan.status,
+        window_open: liveWindowPlan.window_open,
+        blockers: liveWindowPlan.blockers ?? [],
+      },
+      source_routes: {
+        status: sourceRoutes.status,
+        next_route: sourceRoutes.next_route?.id ?? null,
+        route_count: sourceRoutes.routes?.length ?? 0,
+      },
+    },
+    safe_jailbreak_policy: sourceRoutes.safe_jailbreak_policy,
+    forbidden_actions: report.forbidden_collection_paths ?? [],
+    acceptance_evidence: [
+      "backend_readiness.status=ready",
+      "channel_readiness.readiness_ceiling=channel_ready",
+      "source_routes.next_route is explicit and non-executing",
+      "live_window evaluated before paper autopilot",
+      "real_execution_hard_block=true",
+    ],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block === true
+        && backend.safety?.real_execution_hard_block === true,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function missionControlSummary({ backend, channel, liveWindowPlan, sourceRoutes }) {
+  return [
+    `backend=${backend.status}`,
+    `channel=${channel.status}:${channel.readiness_ceiling}`,
+    `live_window=${liveWindowPlan.status}`,
+    `next_route=${sourceRoutes.next_route?.id ?? "none"}`,
+  ].join(" | ");
+}
+
+function missionControlLanes({ backend, channel, report, eventPlan, sourceRoutes, liveWindowPlan }) {
+  return [
+    missionControlLane({
+      id: "backend",
+      priority: 10,
+      status: backend.status,
+      command: backend.next_action?.command ?? "npm --silent run hermes:backend-readiness",
+      reason: backend.next_action?.reason ?? "Verify FastAPI internal endpoints before live-window routing.",
+      blockers: (backend.checks ?? []).filter((check) => check.status === "fail").map((check) => check.id),
+      source: "backend_readiness",
+      mutatesRuntimeIfRun: Boolean(backend.next_action?.mutates_runtime_if_run),
+      requiresOperatorConfirmation: Boolean(backend.next_action?.requires_operator_confirmation),
+    }),
+    missionControlLane({
+      id: "channel",
+      priority: 20,
+      status: channel.status,
+      command: channel.next_action?.command ?? "npm --silent run hermes:channel-readiness",
+      reason: channel.next_action?.reason ?? "Verify Hermes gateway/channel prerequisites before cron or Telegram automation.",
+      blockers: (channel.checks ?? []).filter((check) => check.status !== "pass").map((check) => check.id),
+      source: "channel_readiness",
+      mutatesRuntimeIfRun: Boolean(channel.next_action?.mutates_runtime_if_run),
+      requiresOperatorConfirmation: Boolean(channel.next_action?.requires_operator_confirmation),
+    }),
+    missionControlLane({
+      id: "safety",
+      priority: 30,
+      status: report.safety?.real_execution_hard_block === true
+        && eventPlan.safety?.can_submit_real_orders === false
+        ? "ready"
+        : "blocked",
+      command: "npm --silent run hermes:backend-readiness",
+      reason: "Real execution and unsafe collection paths must remain blocked before any higher autonomy.",
+      blockers: report.safety?.real_execution_hard_block === true ? [] : ["real_execution_hard_block_missing"],
+      source: "intelligence",
+    }),
+    missionControlLane({
+      id: "live_window",
+      priority: 40,
+      status: liveWindowPlan.status === "blocked" || liveWindowPlan.status === "safety_stop"
+        ? "blocked"
+        : "ready",
+      command: liveWindowPlan.next_action?.command ?? "npm --silent run hermes:live-window",
+      reason: liveWindowPlan.next_action?.reason ?? "Evaluate the current live window before paper autopilot.",
+      blockers: liveWindowPlan.blockers ?? [],
+      source: "live_window",
+    }),
+    missionControlLane({
+      id: "source_routes",
+      priority: 50,
+      status: sourceRoutes.status,
+      command: sourceRoutes.next_route?.command ?? "npm --silent run hermes:source-route-matrix",
+      reason: sourceRoutes.next_route?.reason ?? "Use allowed data routes only.",
+      blockers: sourceRoutes.next_route?.blocked_when ?? [],
+      source: "source_route_matrix",
+      requiresOperatorConfirmation: Boolean(sourceRoutes.next_route?.operator_required),
+    }),
+  ].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+}
+
+function missionControlLane({
+  id,
+  priority,
+  status,
+  command,
+  reason,
+  blockers = [],
+  source,
+  mutatesRuntimeIfRun = false,
+  requiresOperatorConfirmation = false,
+}) {
+  return {
+    id,
+    priority,
+    status,
+    command,
+    reason,
+    blockers,
+    source,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    mutates_runtime_if_run: Boolean(mutatesRuntimeIfRun),
+    requires_operator_confirmation: Boolean(requiresOperatorConfirmation),
+  };
+}
+
+function missionControlNextAction(lanes) {
+  const blockedLane = lanes.find((lane) => lane.status === "blocked");
+  const lane = blockedLane ?? lanes.find((item) => item.status === "ready") ?? lanes[0] ?? null;
+  if (!lane) return null;
+  return {
+    id: `${lane.id}_next_action`,
+    lane: lane.id,
+    command: lane.command,
+    reason: lane.reason,
+    source: lane.source,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    mutates_runtime_if_run: lane.mutates_runtime_if_run,
+    requires_operator_confirmation: lane.requires_operator_confirmation,
   };
 }
 
@@ -6828,6 +7047,7 @@ const commands = {
   "runtime-check": runtimeCheck,
   "channel-readiness": channelReadiness,
   "backend-readiness": backendReadiness,
+  "mission-control": missionControl,
   intelligence,
   events,
   "unblock-plan": unblockPlan,

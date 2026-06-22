@@ -34,6 +34,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs playbook
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-stats
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
@@ -80,6 +81,9 @@ commands or create orders.
 The `live-stats` command emits deterministic live collection, processing,
 freshness, signal, cost, and learning metrics. It is safe for frequent polling
 and keeps LLM-per-tick disabled.
+The `learning-review` command emits a weekly readiness packet for ROI, CLV,
+production training examples, model review gates, and real-execution hard
+blocking. It is read-only and does not promote models.
 The `budget-chain` command emits a dry-run provider onboarding plan. It can
 name the next smoke command, but it does not execute provider APIs or spend
 quota.

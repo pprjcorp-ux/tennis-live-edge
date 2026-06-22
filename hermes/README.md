@@ -35,6 +35,7 @@ npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:playbook
 npm run hermes:live-stats
+npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:ops:daily
@@ -78,6 +79,11 @@ collection health, processing health, signal readiness, freshness buckets,
 learning progress, cost efficiency, and the safe sampling policy from internal
 FastAPI state. It is designed for frequent cron/Telegram use without LLM
 analysis on every tick.
+
+`hermes:learning-review` is the weekly readiness packet. It summarizes
+settled paper evidence, production training examples, ROI/CLV readiness and
+high-severity blockers, routes interpretation to `gpt-5.5`, and still returns
+`real_execution_recommendation=keep_blocked`.
 
 `hermes:budget-chain` turns API onboarding state into a dry-run provider smoke
 plan. It reports the current provider, required prerequisites, and exact smoke

@@ -140,6 +140,6 @@ hermes cron add \
   --cron "0 20 * * 0" \
   --tz America/Sao_Paulo \
   --model gpt-5.5 \
-  --message "Use the tennis-edge-ops skill and local API reports to prepare a weekly ROI/CLV/calibration/readiness review. Do not enable real execution." \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:learning-review from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report review_status, metrics, gates, blockers, and next_actions. Do not enable real execution." \
   --timeout-seconds 180
 ```

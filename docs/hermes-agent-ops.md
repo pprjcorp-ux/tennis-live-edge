@@ -21,6 +21,7 @@ npm run hermes:intelligence
 npm run hermes:events
 npm run hermes:playbook
 npm run hermes:live-stats
+npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
 ADMIN_API_TOKEN=... npm run hermes:ops:daily
@@ -78,6 +79,10 @@ Use `hermes:live-stats` for high-frequency live operations summaries. It emits
 deterministic collection, processing, signal, freshness, cost, learning, and
 sampling-policy metrics from internal APIs only. This is the preferred packet
 for fast monitoring because it avoids per-tick LLM analysis.
+
+Use `hermes:learning-review` for weekly ROI/CLV/calibration/readiness review.
+It is read-only, recommends the `gpt-5.5` route for interpretation, and keeps
+`real_execution_recommendation=keep_blocked` until a separate compliance task.
 
 Use `hermes:budget-chain` before running any paid provider smoke. It reports
 the active onboarding step and the exact command to run, while keeping

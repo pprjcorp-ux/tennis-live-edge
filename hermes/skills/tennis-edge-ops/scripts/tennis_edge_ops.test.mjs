@@ -872,3 +872,74 @@ test("provider-smoke defaults to blocked dry-run and does not spend provider quo
     server.close();
   }
 });
+
+test("learning-review summarizes model readiness without enabling real execution", async () => {
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+    "/api/v1/paper/performance": {
+      readiness_status: "ready_for_review",
+      roi: 0.08,
+      clv: 0.018,
+      settled_orders: 540,
+      brier_score: 0.19,
+      log_loss: 0.58,
+      max_drawdown: 0.04,
+      readiness_reasons: ["500+ settled paper signals reached"],
+    },
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "live_with_keys",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "ready",
+          production_training_examples: 540,
+          total_training_examples: 540,
+          rehearsal_training_examples: 0,
+          can_run_live_backtest: true,
+          reasons: [],
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          warnings: [],
+          steps: [],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["learning-review", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "weekly_learning_review");
+    assert.equal(payload.review_status, "ready");
+    assert.equal(payload.model_route.model, "gpt-5.5");
+    assert.equal(payload.metrics.settled_orders, 540);
+    assert.equal(payload.metrics.roi, 0.08);
+    assert.equal(payload.metrics.clv, 0.018);
+    assert.equal(payload.gates.budget_chain_completed, true);
+    assert.equal(payload.gates.can_run_live_backtest, true);
+    assert.equal(payload.gates.ready_for_review, true);
+    assert.equal(payload.real_execution_recommendation, "keep_blocked");
+    assert.equal(payload.safety.can_submit_real_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.next_actions.includes("Run protected backtest/calibration review before any model promotion."), true);
+  } finally {
+    server.close();
+  }
+});

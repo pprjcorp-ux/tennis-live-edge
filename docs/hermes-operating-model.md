@@ -107,7 +107,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 15 minutes: `npm run hermes:preflight`.
 - Every 15 minutes: `npm run hermes:anomalies`.
 - Daily morning: `npm run hermes:ops:daily`.
-- Weekly: strong-model learning/readiness review.
+- Weekly: `npm run hermes:learning-review` for the strong-model learning/readiness packet.
 
 Do not run LLM analysis on every odds tick. Tick math belongs to Python and
 Postgres; Hermes wakes only on summarized state or event thresholds.
@@ -133,6 +133,11 @@ statistics from persisted match state; cost utilization; and a sampling policy
 such as `cold_safe_mode`, `budget_chain_polling`, `paper_signal_watch`, or
 `learning_collection`. It keeps `llm_per_tick_allowed=false` so Hermes can be
 fast and cheap while Python/Postgres keep doing the tick math.
+
+`hermes:learning-review` is the preferred weekly packet. It packages the
+learning gates, ROI, CLV, settled paper volume, production training examples,
+budget-chain completion and high-severity blockers for a `gpt-5.5` review. It
+does not promote a model and always keeps real execution blocked.
 
 `hermes:budget-chain` is the preferred provider-onboarding packet. It turns
 `api_onboarding.current_step` and its step list into a dry-run smoke plan:

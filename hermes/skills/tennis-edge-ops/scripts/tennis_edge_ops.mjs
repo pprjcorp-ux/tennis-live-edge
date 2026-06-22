@@ -97,6 +97,13 @@ async function liveStats() {
   printJson(buildLiveStats(report, eventPlan, playbookPlan));
 }
 
+async function learningReview() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  printJson(buildLearningReview(report, eventPlan, playbookPlan));
+}
+
 async function budgetChain() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -1139,6 +1146,103 @@ function buildLiveStats(report, eventPlan, playbookPlan) {
   };
 }
 
+function buildLearningReview(report, eventPlan, playbookPlan) {
+  const learning = report.learning_snapshot ?? {};
+  const budget = report.budget_chain_snapshot ?? {};
+  const safety = report.safety ?? {};
+  const readyForReview = learning.readiness_status === "ready_for_review";
+  const canRunBacktest = Boolean(learning.can_run_live_backtest);
+  const budgetComplete = Boolean(budget.budget_chain_completed);
+  const highBlockers = eventPlan.events.filter((item) => ["critical", "high"].includes(item.severity));
+  const reviewStatus = (
+    readyForReview && canRunBacktest && budgetComplete && highBlockers.length === 0
+      ? "ready"
+      : highBlockers.length
+        ? "blocked"
+        : "collecting"
+  );
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "weekly_learning_review",
+    review_status: reviewStatus,
+    active_phase: playbookPlan.active_phase,
+    model_route: {
+      model: "gpt-5.5",
+      task: "weekly ROI/CLV/calibration/readiness interpretation",
+      reason: "Use the strong route for periodic review only; deterministic backend gates still decide promotion and execution.",
+      estimated_cost_usd: 0.4,
+    },
+    metrics: {
+      readiness_status: learning.readiness_status,
+      settled_orders: learning.settled_orders ?? 0,
+      production_training_examples: learning.production_training_examples ?? 0,
+      roi: learning.roi ?? null,
+      clv: learning.clv ?? null,
+      model_lab_status: learning.model_lab_status,
+    },
+    gates: {
+      budget_chain_completed: budgetComplete,
+      enterprise_eligible: Boolean(budget.enterprise_eligible),
+      can_run_live_backtest: canRunBacktest,
+      ready_for_review: readyForReview,
+      high_severity_blockers: highBlockers.length,
+      real_execution_hard_block: safety.real_execution_hard_block === true,
+    },
+    blockers: [
+      ...(!budgetComplete ? ["budget_chain_incomplete"] : []),
+      ...(!canRunBacktest ? ["live_backtest_dataset_not_ready"] : []),
+      ...(!readyForReview ? ["paper_readiness_not_ready_for_review"] : []),
+      ...highBlockers.map((item) => `${item.type}:${item.reason}`),
+      ...(safety.can_submit_real_orders ? ["real_execution_not_blocked"] : []),
+    ],
+    next_actions: learningReviewActions({ reviewStatus, budgetComplete, canRunBacktest, readyForReview, highBlockers }),
+    real_execution_recommendation: "keep_blocked",
+    llm_per_tick_allowed: false,
+    safety: {
+      real_execution_hard_block: safety.real_execution_hard_block,
+      can_submit_real_orders: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+  };
+}
+
+function learningReviewActions({ reviewStatus, budgetComplete, canRunBacktest, readyForReview, highBlockers }) {
+  if (highBlockers.length) {
+    return [
+      "Resolve high-severity provider, cursor, data-quality, or preflight blockers before learning review.",
+      "Run npm run hermes:events and npm run api:check:operational-truth -- --pretty.",
+      "Keep real execution hard-blocked.",
+    ];
+  }
+  if (!budgetComplete) {
+    return [
+      "Complete the budget provider chain before enterprise or real-execution readiness review.",
+      "Run npm run hermes:budget-chain and use npm run hermes:provider-smoke only from a local operator shell.",
+      "Keep collecting paper/replay evidence.",
+    ];
+  }
+  if (!canRunBacktest || !readyForReview) {
+    return [
+      "Keep daily ops rehearsal and paper settlement running until production training examples are sufficient.",
+      "Do not promote models from rehearsal-only or synthetic evidence.",
+      "Keep real execution hard-blocked.",
+    ];
+  }
+  if (reviewStatus === "ready") {
+    return [
+      "Run protected backtest/calibration review before any model promotion.",
+      "Compare ROI, CLV, Brier, log loss, calibration error, and max drawdown against champion.",
+      "Produce a readiness report; do not enable real execution in this phase.",
+    ];
+  }
+  return [
+    "Continue collecting settled paper evidence.",
+    "Keep Hermes on monitoring and report mode.",
+    "Keep real execution hard-blocked.",
+  ];
+}
+
 function freshnessStats(rows) {
   const scoreAges = rows.map((row) => Number(row.score_age_ms)).filter(Number.isFinite);
   const oddsAges = rows.map((row) => Number(row.odds_age_ms)).filter(Number.isFinite);
@@ -1395,6 +1499,7 @@ const commands = {
   events,
   playbook,
   "live-stats": liveStats,
+  "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,
   "ingestion-runs": ingestionRuns,

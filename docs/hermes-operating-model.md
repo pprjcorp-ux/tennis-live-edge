@@ -323,7 +323,9 @@ next safe tick, and appends a local JSONL audit row under `hermes/runs/`. It
 does not create cron jobs, execute scheduled commands, create paper orders, or
 spend provider quota. Grand Slam readiness is scheduled as a read-only lane:
 low-frequency when no Slam is active, tighter during Slam windows, and five
-minutes when persisted Grand Slam rows are paper-ready.
+minutes when persisted Grand Slam rows are paper-ready. Enterprise readiness is
+also scheduled as a read-only gate before the lower-frequency enterprise
+accuracy plan, so provider review stays behind backend evidence.
 
 `hermes:cron-proposal` turns the rehearsal into a local review manifest with
 exact `hermes cron add` command previews. It is still non-mutating: it does not

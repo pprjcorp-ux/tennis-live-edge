@@ -276,8 +276,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   OpenClaw without executing trigger commands. Partial runtime should produce a
   diagnostic wakeup and a separate read-only summary wakeup.
 - Hermes external-agent orchestration should consume `npm run hermes:ops-compiler`;
-  it compiles trigger policy, source discovery, Grand Slam readiness, autonomy
-  brief, operator packet, and model routing into one non-executing payload.
+  it compiles trigger policy, source discovery, Grand Slam readiness,
+  enterprise readiness, autonomy brief, operator packet, and model routing into
+  one non-executing payload.
 - Hermes objective/capability review should consume `npm run hermes:capability-audit`;
   it scores runtime, collection, statistics, paper autopilot, learning,
   orchestration, budget-chain, and enterprise-gate readiness without executing

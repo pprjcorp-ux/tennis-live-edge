@@ -293,8 +293,8 @@ diagnostic and read-only summary triggers.
 
 Use `hermes:ops-compiler` when an external agent channel needs one packet
 instead of several commands. It compiles trigger policy, source discovery,
-Grand Slam readiness, autonomy brief, operator packet and model routing into a
-single non-executing orchestration payload.
+Grand Slam readiness, enterprise readiness, autonomy brief, operator packet and
+model routing into a single non-executing orchestration payload.
 
 Use `hermes:capability-audit` when deciding whether Hermes is actually ready
 for more autonomy. It scores runtime, source discovery, live collection, live

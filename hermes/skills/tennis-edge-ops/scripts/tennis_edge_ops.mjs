@@ -1773,6 +1773,7 @@ async function opsCompiler() {
     historicalBackfill,
     grandSlam,
   });
+  const enterpriseReadinessPacket = buildEnterpriseReadinessPacket({ report, eventPlan });
   const triggerPlan = buildTriggerPolicy({ loop, sourcePlan, grandSlam });
   const runtimePriorities = buildRuntimeFixPriorities(buildOperatorLedgerReport(readOperatorLedgerRecords()));
   const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
@@ -1785,6 +1786,7 @@ async function opsCompiler() {
     autonomyPlan,
     operator,
     effectiveness,
+    enterpriseReadiness: enterpriseReadinessPacket,
     enterpriseAccuracy,
     scorelineForecast,
   }));
@@ -3993,6 +3995,7 @@ function buildOpsCompiler({
   autonomyPlan,
   operator,
   effectiveness = null,
+  enterpriseReadiness = null,
   enterpriseAccuracy = null,
   scorelineForecast = null,
 }) {
@@ -4016,6 +4019,7 @@ function buildOpsCompiler({
       autonomyPlan,
       operator,
       effectiveness,
+      enterpriseReadiness,
       enterpriseAccuracy,
       scorelineForecast,
     }),
@@ -4054,6 +4058,7 @@ function buildOpsCompiler({
       autonomy_matrix: autonomyPlan.autonomy_matrix,
     },
     autonomy_effectiveness: autonomyEffectivenessSummary(effectiveness),
+    enterprise_readiness: enterpriseReadinessSummary(enterpriseReadiness),
     enterprise_accuracy: enterpriseAccuracySummary(enterpriseAccuracy),
     grand_slam_scoreline_forecast: scorelineForecast ? grandSlamScorelineForecastSummary(scorelineForecast) : null,
     safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
@@ -4106,6 +4111,7 @@ function buildExecutionGraph({
   autonomyPlan,
   operator,
   effectiveness = null,
+  enterpriseReadiness = null,
   enterpriseAccuracy = null,
   scorelineForecast = null,
 }) {
@@ -4149,6 +4155,14 @@ function buildExecutionGraph({
       command: "npm --silent run hermes:autonomy-effectiveness",
       reason: `Autonomy effectiveness is ${effectiveness.status}; score=${effectiveness.score}.`,
       status: effectiveness.status,
+    }));
+  }
+  if (enterpriseReadiness) {
+    nodes.push(graphNode({
+      id: "enterprise_readiness",
+      command: "npm --silent run hermes:enterprise-readiness",
+      reason: `Enterprise readiness is ${enterpriseReadiness.status}; blockers=${enterpriseReadiness.activation_blockers?.length ?? 0}.`,
+      status: enterpriseReadiness.status,
     }));
   }
   if (enterpriseAccuracy) {
@@ -5519,6 +5533,23 @@ function enterpriseAccuracySummary(plan) {
     scoreline_gate_count: plan.scoreline_forecast_contract?.acceptance_gates?.length ?? 0,
     next_action: plan.next_action,
     safe_jailbreak_policy: plan.safe_jailbreak_policy,
+  };
+}
+
+function enterpriseReadinessSummary(packet) {
+  if (!packet) return null;
+  return {
+    status: packet.status,
+    operator_contract_review_allowed: Boolean(packet.operator_contract_review_allowed),
+    budget_gate: packet.budget_gate,
+    replay_gate: {
+      budget_replay_status: packet.replay_gate?.budget_replay_status ?? "unknown",
+      shadow_provider_count: packet.replay_gate?.shadow_provider_count ?? 0,
+      missing_shadow_providers: packet.replay_gate?.missing_shadow_providers ?? [],
+    },
+    activation_blockers: packet.activation_blockers ?? [],
+    next_action: packet.next_action,
+    safe_jailbreak_policy: packet.safe_jailbreak_policy,
   };
 }
 
@@ -9442,6 +9473,12 @@ function schedulerSchedule(loop, grandSlam = null) {
       reason: "Project Grand Slam winners and set scorelines from existing backend probabilities without provider calls or orders.",
     }),
     schedulerItem({
+      id: "enterprise_readiness",
+      command: "npm --silent run hermes:enterprise-readiness",
+      everyMinutes: 60,
+      reason: "Gate enterprise provider review through backend shadow-contract and budget-chain evidence.",
+    }),
+    schedulerItem({
       id: "enterprise_accuracy_plan",
       command: "npm --silent run hermes:enterprise-accuracy-plan",
       everyMinutes: 12 * 60,
@@ -9730,6 +9767,8 @@ function cronMessageFor(item, rehearsal) {
                 ? "Report status, forecast_ready_rows, top_forecast projected_winner/projected_scoreline, blockers, next_action, and safety only."
               : item.id === "enterprise_accuracy_plan"
                 ? "Report status, budget_gate, top_provider, provider_count, scoreline gates, next_action, and safety only."
+                : item.id === "enterprise_readiness"
+                  ? "Report status, budget_gate, replay_gate shadow_provider_count, activation_blockers, next_action, and safety only."
               : item.id === "autonomy_effectiveness"
                 ? "Report status, score, next_action, repeat_pressure, protected_action_claims, and safety only."
           : item.id === "budget_chain"

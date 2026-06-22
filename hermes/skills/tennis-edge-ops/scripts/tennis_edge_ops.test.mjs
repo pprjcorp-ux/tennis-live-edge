@@ -102,7 +102,10 @@ function eventRouterFixtures(overrides = {}) {
       operational_state: {
         provider_mode: "replay",
         source_summary: { total_matches: 2, persisted_matches: 2 },
-        replay_lab: { status: "ready" },
+        replay_lab: {
+          status: "ready",
+          enterprise_shadow_providers: enterpriseShadowProviderFixtures(),
+        },
         model_lab: {
           status: "collecting",
           production_training_examples: 0,
@@ -153,6 +156,47 @@ function eventRouterFixtures(overrides = {}) {
     },
     ...overrides,
   };
+}
+
+function enterpriseShadowProviderFixtures() {
+  return [
+    {
+      provider: "sportradar",
+      adapter_contract: "EnterpriseTimelineProviderAdapter",
+      fake_api: "Offline Sportradar live timeline fixture",
+      status: "deferred",
+      scenarios: ["timeline_point", "timeline_delay", "timeline_retirement"],
+      output_contracts: ["ScoreTick", "PointEvent", "ProviderLatency"],
+      notes: ["provider_api_call_allowed=false"],
+    },
+    {
+      provider: "betradar_uof",
+      adapter_contract: "EnterpriseMarketStateProviderAdapter",
+      fake_api: "Offline Betradar UOF market-state fixture",
+      status: "deferred",
+      scenarios: ["market_open", "market_suspended", "market_settled"],
+      output_contracts: ["MarketState", "ProviderLatency"],
+      notes: ["provider_api_call_allowed=false"],
+    },
+    {
+      provider: "txodds",
+      adapter_contract: "EnterpriseInRunningOddsProviderAdapter",
+      fake_api: "Offline TXODDS in-running tennis odds fixture",
+      status: "deferred",
+      scenarios: ["in_running_odds", "price_move", "stale_quote"],
+      output_contracts: ["OddsTick", "ProviderLatency"],
+      notes: ["provider_api_call_allowed=false"],
+    },
+    {
+      provider: "betfair",
+      adapter_contract: "EnterpriseExchangeMarketStreamAdapter",
+      fake_api: "Offline Betfair exchange market stream fixture",
+      status: "deferred",
+      scenarios: ["market_book", "price_ladder", "market_closed"],
+      output_contracts: ["ProviderLatency", "exchange_market_depth"],
+      notes: ["provider_api_call_allowed=false"],
+    },
+  ];
 }
 
 function partialHermesScript() {
@@ -474,7 +518,10 @@ test("intelligence produces a safe operator packet from internal APIs only", asy
       operational_state: {
         provider_mode: "replay",
         source_summary: { total_matches: 2, persisted_matches: 2 },
-        replay_lab: { status: "ready" },
+        replay_lab: {
+          status: "ready",
+          enterprise_shadow_providers: enterpriseShadowProviderFixtures(),
+        },
         model_lab: {
           status: "collecting",
           production_training_examples: 0,
@@ -616,7 +663,10 @@ test("events ignore deferred enterprise cursor while budget chain is not enterpr
       operational_state: {
         provider_mode: "replay",
         source_summary: { total_matches: 2, persisted_matches: 2 },
-        replay_lab: { status: "ready" },
+        replay_lab: {
+          status: "ready",
+          enterprise_shadow_providers: enterpriseShadowProviderFixtures(),
+        },
         model_lab: {
           status: "collecting",
           production_training_examples: 0,
@@ -2324,7 +2374,10 @@ test("trigger-policy emits event wakeups without executing commands or live call
       operational_state: {
         provider_mode: "replay",
         source_summary: { total_matches: 1, persisted_matches: 1 },
-        replay_lab: { status: "ready" },
+        replay_lab: {
+          status: "ready",
+          enterprise_shadow_providers: enterpriseShadowProviderFixtures(),
+        },
         model_lab: {
           status: "collecting",
           production_training_examples: 0,
@@ -2605,7 +2658,10 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
       operational_state: {
         provider_mode: "replay",
         source_summary: { total_matches: 1, persisted_matches: 1 },
-        replay_lab: { status: "ready" },
+        replay_lab: {
+          status: "ready",
+          enterprise_shadow_providers: enterpriseShadowProviderFixtures(),
+        },
         model_lab: {
           status: "collecting",
           production_training_examples: 0,
@@ -2673,6 +2729,7 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
     assert.equal(payload.execution_graph.some((node) => node.id === "source_discovery"), true);
     assert.equal(payload.execution_graph.some((node) => node.id === "grand_slam_readiness"), true);
     assert.equal(payload.execution_graph.some((node) => node.id === "autonomy_effectiveness"), true);
+    assert.equal(payload.execution_graph.some((node) => node.id === "enterprise_readiness"), true);
     assert.equal(payload.execution_graph.some((node) => node.id === "enterprise_accuracy_plan"), true);
     assert.equal(payload.grand_slam_readiness.prediction_ready, false);
     assert.equal(payload.execution_graph.every((node) => node.executes_now === false), true);
@@ -2680,6 +2737,11 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
     assert.equal(Number.isFinite(payload.autonomy_effectiveness.score), true);
     assert.equal(payload.autonomy_effectiveness.next_action.command, "npm --silent run hermes:implementation-handoff");
     assert.equal(payload.autonomy_effectiveness.protected_action_claims.total, 0);
+    assert.equal(payload.enterprise_readiness.status, "locked_on_budget_chain");
+    assert.equal(payload.enterprise_readiness.replay_gate.shadow_provider_count, 4);
+    assert.deepEqual(payload.enterprise_readiness.replay_gate.missing_shadow_providers, []);
+    assert.equal(payload.enterprise_readiness.next_action.command, "npm --silent run hermes:budget-chain");
+    assert.equal(payload.enterprise_readiness.safe_jailbreak_policy.provider_quota_spend_allowed_from_this_command, false);
     assert.equal(payload.enterprise_accuracy.status, "locked_on_budget_chain");
     assert.equal(payload.enterprise_accuracy.top_provider.id, "sportradar_tennis_tier1");
     assert.equal(payload.enterprise_accuracy.provider_count, 8);
@@ -4209,6 +4271,12 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(effectivenessItem.can_create_paper_orders, false);
     assert.equal(effectivenessItem.can_submit_real_orders, false);
     const enterpriseAccuracyItem = payload.schedule.find((item) => item.id === "enterprise_accuracy_plan");
+    const enterpriseReadinessItem = payload.schedule.find((item) => item.id === "enterprise_readiness");
+    assert.equal(enterpriseReadinessItem.command, "npm --silent run hermes:enterprise-readiness");
+    assert.equal(enterpriseReadinessItem.every_minutes, 60);
+    assert.equal(enterpriseReadinessItem.provider_api_call_allowed, false);
+    assert.equal(enterpriseReadinessItem.can_create_paper_orders, false);
+    assert.equal(enterpriseReadinessItem.can_submit_real_orders, false);
     assert.equal(enterpriseAccuracyItem.command, "npm --silent run hermes:enterprise-accuracy-plan");
     assert.equal(enterpriseAccuracyItem.every_minutes, 720);
     assert.equal(enterpriseAccuracyItem.provider_api_call_allowed, false);
@@ -4507,6 +4575,12 @@ test("cron-proposal writes reviewable Hermes cron commands without creating jobs
     assert.equal(effectivenessJob.can_create_paper_orders, false);
     assert.equal(effectivenessJob.provider_api_call_allowed, false);
     const enterpriseAccuracyJob = payload.jobs.find((job) => job.name === "tennis-edge-enterprise-accuracy-plan");
+    const enterpriseReadinessJob = payload.jobs.find((job) => job.name === "tennis-edge-enterprise-readiness");
+    assert.equal(enterpriseReadinessJob.every, "60m");
+    assert.equal(enterpriseReadinessJob.source_command, "npm --silent run hermes:enterprise-readiness");
+    assert.equal(enterpriseReadinessJob.message.includes("Report status, budget_gate, replay_gate"), true);
+    assert.equal(enterpriseReadinessJob.can_create_paper_orders, false);
+    assert.equal(enterpriseReadinessJob.provider_api_call_allowed, false);
     assert.equal(enterpriseAccuracyJob.every, "720m");
     assert.equal(enterpriseAccuracyJob.source_command, "npm --silent run hermes:enterprise-accuracy-plan");
     assert.equal(enterpriseAccuracyJob.message.includes("Report status, budget_gate, top_provider"), true);
@@ -6709,44 +6783,7 @@ test("enterprise-readiness reports shadow contracts without provider calls", asy
         source_summary: { total_matches: 2, persisted_matches: 2, match_freshness: [] },
         replay_lab: {
           status: "ready",
-          enterprise_shadow_providers: [
-            {
-              provider: "sportradar",
-              adapter_contract: "EnterpriseTimelineProviderAdapter",
-              fake_api: "Offline Sportradar live timeline fixture",
-              status: "deferred",
-              scenarios: ["timeline_point", "timeline_delay", "timeline_retirement"],
-              output_contracts: ["ScoreTick", "PointEvent", "ProviderLatency"],
-              notes: ["provider_api_call_allowed=false"],
-            },
-            {
-              provider: "betradar_uof",
-              adapter_contract: "EnterpriseMarketStateProviderAdapter",
-              fake_api: "Offline Betradar UOF market-state fixture",
-              status: "deferred",
-              scenarios: ["market_open", "market_suspended", "market_settled"],
-              output_contracts: ["MarketState", "ProviderLatency"],
-              notes: ["provider_api_call_allowed=false"],
-            },
-            {
-              provider: "txodds",
-              adapter_contract: "EnterpriseInRunningOddsProviderAdapter",
-              fake_api: "Offline TXODDS in-running tennis odds fixture",
-              status: "deferred",
-              scenarios: ["in_running_odds", "price_move", "stale_quote"],
-              output_contracts: ["OddsTick", "ProviderLatency"],
-              notes: ["provider_api_call_allowed=false"],
-            },
-            {
-              provider: "betfair",
-              adapter_contract: "EnterpriseExchangeMarketStreamAdapter",
-              fake_api: "Offline Betfair exchange market stream fixture",
-              status: "deferred",
-              scenarios: ["market_book", "price_ladder", "market_closed"],
-              output_contracts: ["ProviderLatency", "exchange_market_depth"],
-              notes: ["provider_api_call_allowed=false"],
-            },
-          ],
+          enterprise_shadow_providers: enterpriseShadowProviderFixtures(),
         },
         model_lab: {
           status: "collecting",

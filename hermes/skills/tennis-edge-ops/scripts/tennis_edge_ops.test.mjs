@@ -56,6 +56,7 @@ function isolatedLedgerEnv(tempDir, overrides = {}) {
     HERMES_SOURCE_ROUTE_LEDGER_PATH: join(tempDir, "source-route-ledger.jsonl"),
     HERMES_SOURCE_USE_LEDGER_PATH: join(tempDir, "source-use-ledger.jsonl"),
     HERMES_SOURCE_INTAKE_LEDGER_PATH: join(tempDir, "source-intake-ledger.jsonl"),
+    HERMES_PROVIDER_SMOKE_LEDGER_PATH: join(tempDir, "provider-smoke-ledger.jsonl"),
     ...overrides,
   };
 }
@@ -10311,6 +10312,195 @@ test("provider-smoke-ledger-report summarizes repeated dry-runs without quota sp
   assert.equal(payload.top_smoke_command, "npm run api:ingest:archive-odds -- --pretty");
   assert.equal(payload.next_recommendation.requires_operator_confirmation, true);
   assert.equal(payload.next_recommendation.provider_api_call_allowed, false);
+});
+
+test("backlog-plan uses provider-smoke ledger as operator confirmation evidence", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-provider-smoke-"));
+  const providerSmokeLedgerPath = join(tempDir, "provider-smoke-ledger.jsonl");
+  const rows = [
+    {
+      mode: "provider_smoke_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      provider_command_executed: false,
+      provider_api_call_allowed: false,
+      quota_spent: false,
+      status: "blocked",
+      reason: "explicit_provider_call_flag_required",
+      provider: "theoddsapi",
+      capability: "archive_odds",
+      smoke_command: "npm run api:ingest:archive-odds -- --pretty",
+      explicit_flag_required: "--execute-provider-call",
+      requires_operator_confirmation: true,
+      blockers: [],
+    },
+    {
+      mode: "provider_smoke_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      provider_command_executed: false,
+      provider_api_call_allowed: false,
+      quota_spent: false,
+      status: "blocked",
+      reason: "explicit_provider_call_flag_required",
+      provider: "theoddsapi",
+      capability: "archive_odds",
+      smoke_command: "npm run api:ingest:archive-odds -- --pretty",
+      explicit_flag_required: "--execute-provider-call",
+      requires_operator_confirmation: true,
+      blockers: [],
+    },
+  ];
+  writeFileSync(providerSmokeLedgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["backlog-plan"], {
+    env: isolatedLedgerEnv(tempDir, {
+      HERMES_PROVIDER_SMOKE_LEDGER_PATH: providerSmokeLedgerPath,
+    }),
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "backlog_plan");
+  assert.equal(payload.next_item.id, "harden_provider_smoke_confirmation_loop");
+  assert.equal(payload.next_item.source.includes("provider_smoke_ledger"), true);
+  assert.equal(payload.next_item.frequency, 2);
+  assert.equal(payload.next_item.validation_commands.includes("npm --silent run hermes:provider-smoke-ledger-report"), true);
+  assert.equal(payload.next_item.acceptance_evidence.includes("provider_smoke_ledger.top_provider=theoddsapi"), true);
+  assert.equal(payload.next_item.acceptance_evidence.includes("provider_smoke_ledger.top_capability=archive_odds"), true);
+  assert.equal(payload.next_item.acceptance_evidence.includes("provider_smoke_ledger.top_reason=explicit_provider_call_flag_required"), true);
+  assert.equal(payload.next_item.acceptance_evidence.includes("provider_command_executed_count=0"), true);
+  assert.equal(payload.next_item.acceptance_evidence.includes("quota_spent_count=0"), true);
+  assert.equal(payload.evidence.provider_smoke_ledger.total_records, 2);
+  assert.equal(payload.evidence.provider_smoke_ledger.top_smoke_command, "npm run api:ingest:archive-odds -- --pretty");
+  assert.equal(payload.evidence.provider_smoke_ledger.provider_command_executed_count, 0);
+  assert.equal(payload.evidence.provider_smoke_ledger.quota_spent_count, 0);
+});
+
+test("autonomy-effectiveness includes provider-smoke dry-run pressure", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-autonomy-provider-smoke-"));
+  const providerSmokeLedgerPath = join(tempDir, "provider-smoke-ledger.jsonl");
+  const rows = [
+    {
+      mode: "provider_smoke_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      provider_command_executed: false,
+      provider_api_call_allowed: false,
+      quota_spent: false,
+      status: "blocked",
+      reason: "explicit_provider_call_flag_required",
+      provider: "theoddsapi",
+      capability: "archive_odds",
+      smoke_command: "npm run api:ingest:archive-odds -- --pretty",
+      explicit_flag_required: "--execute-provider-call",
+      requires_operator_confirmation: true,
+      blockers: [],
+    },
+    {
+      mode: "provider_smoke_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      provider_command_executed: false,
+      provider_api_call_allowed: false,
+      quota_spent: false,
+      status: "blocked",
+      reason: "explicit_provider_call_flag_required",
+      provider: "theoddsapi",
+      capability: "archive_odds",
+      smoke_command: "npm run api:ingest:archive-odds -- --pretty",
+      explicit_flag_required: "--execute-provider-call",
+      requires_operator_confirmation: true,
+      blockers: [],
+    },
+  ];
+  writeFileSync(providerSmokeLedgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["autonomy-effectiveness"], {
+    env: isolatedLedgerEnv(tempDir, {
+      HERMES_PROVIDER_SMOKE_LEDGER_PATH: providerSmokeLedgerPath,
+    }),
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "autonomy_effectiveness");
+  assert.equal(payload.status, "needs_implementation");
+  assert.equal(payload.evidence_totals.provider_smoke_records, 2);
+  assert.equal(payload.protected_action_claims.provider_commands, 0);
+  assert.equal(payload.protected_action_claims.provider_smoke_quota_spend, 0);
+  assert.equal(payload.repeat_pressure.provider_smoke, 2);
+  assert.equal(payload.effectiveness_matrix.provider_smoke.status, "repeated_blocker");
+  assert.equal(payload.effectiveness_matrix.provider_smoke.top_signal, "theoddsapi:archive_odds");
+  assert.equal(payload.effectiveness_matrix.provider_smoke.command, "npm run api:ingest:archive-odds -- --pretty");
+  assert.equal(payload.next_action.id, "harden_provider_smoke_confirmation_loop");
+  assert.equal(payload.next_action.command, "npm --silent run hermes:implementation-handoff");
+});
+
+test("implementation-handoff turns provider-smoke pressure into a safe work order", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-handoff-provider-smoke-"));
+  const providerSmokeLedgerPath = join(tempDir, "provider-smoke-ledger.jsonl");
+  const rows = [
+    {
+      mode: "provider_smoke_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      provider_command_executed: false,
+      provider_api_call_allowed: false,
+      quota_spent: false,
+      status: "blocked",
+      reason: "explicit_provider_call_flag_required",
+      provider: "theoddsapi",
+      capability: "archive_odds",
+      smoke_command: "npm run api:ingest:archive-odds -- --pretty",
+      explicit_flag_required: "--execute-provider-call",
+      requires_operator_confirmation: true,
+      blockers: [],
+    },
+  ];
+  writeFileSync(providerSmokeLedgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  let result;
+  try {
+    result = await runCli(["implementation-handoff", `--api-base=${apiBase}`], {
+      env: isolatedLedgerEnv(tempDir, {
+        HERMES_PROVIDER_SMOKE_LEDGER_PATH: providerSmokeLedgerPath,
+      }),
+    });
+  } finally {
+    server.close();
+  }
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "implementation_handoff");
+  assert.equal(payload.work_order.id, "harden_provider_smoke_confirmation_loop");
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:provider-smoke-ledger-report"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:budget-chain"), true);
+  assert.equal(
+    payload.work_order.suggested_steps.includes("review_provider_smoke_ledger_report_for_top_provider_capability_and_smoke_command"),
+    true,
+  );
+  assert.equal(
+    payload.work_order.suggested_steps.includes("turn_repeated_dry_runs_into_operator_confirmation_instructions_without_running_provider_calls"),
+    true,
+  );
+  assert.equal(payload.work_order.acceptance_criteria.includes("provider_smoke_ledger.top_provider=theoddsapi"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("quota_spent_count=0"), true);
+  assert.equal(payload.work_order.provider_api_call_allowed, false);
+  assert.equal(payload.implementation_policy.spend_provider_quota, false);
+  assert.equal(payload.safety.provider_api_call_allowed, false);
 });
 
 test("learning-review summarizes model readiness without enabling real execution", async () => {

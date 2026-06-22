@@ -611,7 +611,10 @@ local JSONL with `provider_command_executed=false` and `quota_spent=false`.
 `hermes:provider-smoke-ledger-report` summarizes repeated pending provider
 smokes so the operator can see which paid smoke is ready for explicit local
 confirmation, without spending quota or turning the budget chain into
-automation.
+automation. Repeated dry-runs feed
+`harden_provider_smoke_confirmation_loop` in `hermes:backlog-plan`, so Codex can
+improve instructions, review gates or operator packets while keeping
+`provider_command_executed_count=0` and `quota_spent_count=0`.
 
 ## Evidence Required Before More Autonomy
 

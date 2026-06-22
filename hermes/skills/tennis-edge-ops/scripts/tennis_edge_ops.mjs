@@ -2152,6 +2152,7 @@ async function experimentLabData() {
   const sourceRouteReport = buildSourceRouteLedgerReport(readSourceRouteLedgerRecords());
   const sourceUseReport = buildSourceUseLedgerReport(readSourceUseLedgerRecords());
   const sourceIntakeReport = buildSourceIntakeLedgerReport(readSourceIntakeLedgerRecords());
+  const providerSmokeReport = buildProviderSmokeLedgerReport(readProviderSmokeLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
   const backlogPlan = buildBacklogPlan({
     experimentReport,
@@ -2163,6 +2164,7 @@ async function experimentLabData() {
     sourceRouteReport,
     sourceUseReport,
     sourceIntakeReport,
+    providerSmokeReport,
     runtimePriorities,
   });
   const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
@@ -2231,6 +2233,7 @@ function autonomyEffectivenessData() {
   const sourceRouteReport = buildSourceRouteLedgerReport(readSourceRouteLedgerRecords());
   const sourceUseReport = buildSourceUseLedgerReport(readSourceUseLedgerRecords());
   const sourceIntakeReport = buildSourceIntakeLedgerReport(readSourceIntakeLedgerRecords());
+  const providerSmokeReport = buildProviderSmokeLedgerReport(readProviderSmokeLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
   const backlog = buildBacklogPlan({
     experimentReport,
@@ -2242,6 +2245,7 @@ function autonomyEffectivenessData() {
     sourceRouteReport,
     sourceUseReport,
     sourceIntakeReport,
+    providerSmokeReport,
     runtimePriorities,
   });
   const effectiveness = buildAutonomyEffectiveness({
@@ -2254,6 +2258,7 @@ function autonomyEffectivenessData() {
     sourceRouteReport,
     sourceUseReport,
     sourceIntakeReport,
+    providerSmokeReport,
     runtimePriorities,
     backlog,
   });
@@ -9048,6 +9053,7 @@ function buildBacklogPlan({
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
   sourceIntakeReport = emptySourceIntakeLedgerReport(),
+  providerSmokeReport = emptyProviderSmokeLedgerReport(),
   runtimePriorities,
   sourceDiscoveryCompletion = buildSourceDiscoveryCompletionProof(),
 }) {
@@ -9061,6 +9067,7 @@ function buildBacklogPlan({
     sourceRouteReport,
     sourceUseReport,
     sourceIntakeReport,
+    providerSmokeReport,
     runtimePriorities,
     sourceDiscoveryCompletion,
   })
@@ -9189,6 +9196,16 @@ function buildBacklogPlan({
         provider_command_executed_count: sourceIntakeReport.provider_command_executed_count,
         bypass_attempted_count: sourceIntakeReport.bypass_attempted_count,
       },
+      provider_smoke_ledger: {
+        path: providerSmokeReport.ledger?.path,
+        total_records: providerSmokeReport.total_records,
+        top_provider: providerSmokeReport.top_provider,
+        top_capability: providerSmokeReport.top_capability,
+        top_reason: providerSmokeReport.top_reason,
+        top_smoke_command: providerSmokeReport.top_smoke_command,
+        provider_command_executed_count: providerSmokeReport.provider_command_executed_count,
+        quota_spent_count: providerSmokeReport.quota_spent_count,
+      },
       source_discovery_completion: sourceDiscoveryCompletion,
       runtime_priorities: {
         next_priority: runtimePriorities.next_priority,
@@ -9221,6 +9238,10 @@ function emptySourceUseLedgerReport() {
 
 function emptySourceIntakeLedgerReport() {
   return buildSourceIntakeLedgerReport({ path: sourceIntakeLedgerPath(), records: [], invalid_rows: 0 });
+}
+
+function emptyProviderSmokeLedgerReport() {
+  return buildProviderSmokeLedgerReport({ path: providerSmokeLedgerPath(), records: [], invalid_rows: 0 });
 }
 
 function buildSourceDiscoveryCompletionProof(sourceDossier = buildHistoricalBackfillSourceDossier()) {
@@ -9474,6 +9495,7 @@ function buildAutonomyEffectiveness({
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
   sourceIntakeReport = emptySourceIntakeLedgerReport(),
+  providerSmokeReport = emptyProviderSmokeLedgerReport(),
   runtimePriorities,
   backlog,
 }) {
@@ -9487,6 +9509,7 @@ function buildAutonomyEffectiveness({
     sourceRouteReport,
     sourceUseReport,
     sourceIntakeReport,
+    providerSmokeReport,
   });
   const protectedClaims = autonomyProtectedActionClaims({
     experimentReport,
@@ -9498,6 +9521,7 @@ function buildAutonomyEffectiveness({
     sourceRouteReport,
     sourceUseReport,
     sourceIntakeReport,
+    providerSmokeReport,
   });
   const repeatPressure = autonomyRepeatPressure({
     experimentReport,
@@ -9509,6 +9533,7 @@ function buildAutonomyEffectiveness({
     sourceRouteReport,
     sourceUseReport,
     sourceIntakeReport,
+    providerSmokeReport,
     runtimePriorities,
   });
   const score = autonomyEffectivenessScore({ evidenceTotals, protectedClaims, repeatPressure });
@@ -9573,6 +9598,14 @@ function buildAutonomyEffectiveness({
           ?? sourceIntakeReport.top_forbidden_quarantine
           ?? sourceIntakeReport.top_next_intake,
         command: sourceIntakeReport.top_next_intake_command ?? "npm --silent run hermes:source-intake-ledger-report",
+      }),
+      provider_smoke: effectivenessLane({
+        id: "provider_smoke",
+        repeated_count: repeatPressure.provider_smoke,
+        top_signal: providerSmokeReport.top_provider
+          ? `${providerSmokeReport.top_provider}:${providerSmokeReport.top_capability ?? "unknown"}`
+          : providerSmokeReport.top_reason,
+        command: providerSmokeReport.top_smoke_command ?? "npm --silent run hermes:provider-smoke-ledger-report",
       }),
       grand_slam_prediction: effectivenessLane({
         id: "grand_slam_prediction",
@@ -9641,6 +9674,7 @@ function autonomyEvidenceTotals({
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
   sourceIntakeReport = emptySourceIntakeLedgerReport(),
+  providerSmokeReport = emptyProviderSmokeLedgerReport(),
 }) {
   const total_records = sumNumbers([
     experimentReport.total_records,
@@ -9652,6 +9686,7 @@ function autonomyEvidenceTotals({
     sourceRouteReport.total_records,
     sourceUseReport.total_records,
     sourceIntakeReport.total_records,
+    providerSmokeReport.total_records,
   ]);
   return {
     total_records,
@@ -9664,6 +9699,7 @@ function autonomyEvidenceTotals({
     source_route_records: sourceRouteReport.total_records,
     source_use_records: sourceUseReport.total_records,
     source_intake_records: sourceIntakeReport.total_records,
+    provider_smoke_records: providerSmokeReport.total_records,
     has_multi_lane_evidence: [
       experimentReport.total_records,
       operatorReport.total_records,
@@ -9674,6 +9710,7 @@ function autonomyEvidenceTotals({
       sourceRouteReport.total_records,
       sourceUseReport.total_records,
       sourceIntakeReport.total_records,
+      providerSmokeReport.total_records,
     ].filter((count) => Number(count ?? 0) > 0).length >= 2,
   };
 }
@@ -9688,6 +9725,7 @@ function autonomyProtectedActionClaims({
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
   sourceIntakeReport = emptySourceIntakeLedgerReport(),
+  providerSmokeReport = emptyProviderSmokeLedgerReport(),
 }) {
   return {
     total: sumNumbers([
@@ -9721,6 +9759,9 @@ function autonomyProtectedActionClaims({
       sourceIntakeReport.dataset_fetch_attempted_count,
       sourceIntakeReport.provider_command_executed_count,
       sourceIntakeReport.bypass_attempted_count,
+      providerSmokeReport.action_executed_count,
+      providerSmokeReport.provider_command_executed_count,
+      providerSmokeReport.quota_spent_count,
     ]),
     operator_actions: operatorReport.action_executed_count,
     provider_commands: sumNumbers([
@@ -9730,7 +9771,9 @@ function autonomyProtectedActionClaims({
       sourceRouteReport.provider_command_executed_count,
       sourceUseReport.provider_command_executed_count,
       sourceIntakeReport.provider_command_executed_count,
+      providerSmokeReport.provider_command_executed_count,
     ]),
+    provider_smoke_quota_spend: providerSmokeReport.quota_spent_count,
     route_commands: sourceRouteReport.route_command_executed_count,
     manifest_commands: sourceUseReport.manifest_command_executed_count,
     intake_commands: sourceIntakeReport.intake_command_executed_count,
@@ -9764,6 +9807,7 @@ function autonomyRepeatPressure({
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
   sourceIntakeReport = emptySourceIntakeLedgerReport(),
+  providerSmokeReport = emptyProviderSmokeLedgerReport(),
   runtimePriorities,
 }) {
   const runtime = Math.max(
@@ -9809,6 +9853,12 @@ function autonomyRepeatPressure({
     firstCount(sourceIntakeReport.forbidden_quarantine_counts),
     firstCount(sourceIntakeReport.next_intake_counts),
   );
+  const providerSmoke = Math.max(
+    firstCount(providerSmokeReport.provider_counts),
+    firstCount(providerSmokeReport.capability_counts),
+    firstCount(providerSmokeReport.reason_counts),
+    firstCount(providerSmokeReport.smoke_command_counts),
+  );
   const operator = firstCount(operatorReport.next_action_counts);
   return {
     runtime,
@@ -9817,10 +9867,11 @@ function autonomyRepeatPressure({
     source_routes: sourceRoutes,
     source_use: sourceUse,
     source_intake: sourceIntake,
+    provider_smoke: providerSmoke,
     grand_slam: grandSlam,
     experiment,
     operator,
-    max_repeated_count: Math.max(runtime, liveCollection, liveRepair, sourceRoutes, sourceUse, sourceIntake, grandSlam, experiment, operator),
+    max_repeated_count: Math.max(runtime, liveCollection, liveRepair, sourceRoutes, sourceUse, sourceIntake, providerSmoke, grandSlam, experiment, operator),
   };
 }
 
@@ -10073,6 +10124,12 @@ function implementationStepsFor(item) {
       "prove_intake_dataset_provider_and_bypass_counters_remain_zero",
       ...genericSteps.slice(2),
     ],
+    harden_provider_smoke_confirmation_loop: [
+      "review_provider_smoke_ledger_report_for_top_provider_capability_and_smoke_command",
+      "turn_repeated_dry_runs_into_operator_confirmation_instructions_without_running_provider_calls",
+      "prove_provider_command_and_quota_spend_counters_remain_zero",
+      ...genericSteps.slice(2),
+    ],
     complete_budget_chain_before_enterprise: [
       "prove_budget_chain_completion_requirements_from_operational_truth",
       "keep_enterprise_eligibility_false_until_cursor_and_smoke_evidence_pass",
@@ -10122,6 +10179,7 @@ function buildBacklogItems({
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
   sourceIntakeReport = emptySourceIntakeLedgerReport(),
+  providerSmokeReport = emptyProviderSmokeLedgerReport(),
   runtimePriorities,
   sourceDiscoveryCompletion = buildSourceDiscoveryCompletionProof(),
 }) {
@@ -10165,6 +10223,12 @@ function buildBacklogItems({
     sourceIntakeOperatorFrequency,
     sourceIntakeDeferredFrequency,
     sourceIntakeForbiddenFrequency,
+  );
+  const providerSmokeFrequency = Math.max(
+    firstCount(providerSmokeReport.provider_counts),
+    firstCount(providerSmokeReport.capability_counts),
+    firstCount(providerSmokeReport.reason_counts),
+    firstCount(providerSmokeReport.smoke_command_counts),
   );
   const grandSlamPhaseCounts = grandSlamMissionReport.active_phase_counts ?? {};
   const grandSlamRestoreFrequency = grandSlamPhaseCounts.restore_operational_truth ?? 0;
@@ -10352,6 +10416,36 @@ function buildBacklogItems({
         "bypass_attempted_count=0",
       ],
       blocks: ["source_intake_plan", "offline_import_contract", "license_review", "enterprise_deferred", "safe_jailbreak_policy"],
+    }));
+  }
+
+  if (providerSmokeFrequency > 0) {
+    items.push(backlogItem({
+      id: "harden_provider_smoke_confirmation_loop",
+      title: "Harden provider-smoke confirmation before quota spend",
+      priority: 26,
+      source: ["provider_smoke_ledger"],
+      frequency: providerSmokeFrequency,
+      rationale: "Repeated provider-smoke dry-runs show which paid budget smoke is waiting on local operator confirmation; convert that evidence into reviewable instructions without spending quota automatically.",
+      targetFiles: [
+        "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+        "docs/hermes-operating-model.md",
+        "docs/provider-access-runbook.md",
+      ],
+      validationCommands: [
+        "npm --silent run hermes:provider-smoke-ledger-report",
+        "npm --silent run hermes:budget-chain",
+        "python3 scripts/check_private_runtime.py",
+      ],
+      acceptanceEvidence: [
+        `provider_smoke_ledger.top_provider=${providerSmokeReport.top_provider ?? "none"}`,
+        `provider_smoke_ledger.top_capability=${providerSmokeReport.top_capability ?? "none"}`,
+        `provider_smoke_ledger.top_reason=${providerSmokeReport.top_reason ?? "none"}`,
+        "provider_command_executed_count=0",
+        "quota_spent_count=0",
+        "requires_operator_confirmation=true",
+      ],
+      blocks: ["budget_chain_validation", "provider_quota_review", "enterprise_eligibility"],
     }));
   }
 

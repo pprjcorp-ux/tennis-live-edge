@@ -6338,8 +6338,8 @@ function eventFromBlocker(blocker) {
       type: "provider_health_degraded",
       severity: "high",
       reason: blocker,
-      action: "Inspect provider health, quota, credentials, and last tick before spending more live calls.",
-      allowedCommand: "npm run hermes:preflight",
+      action: providerHealthAction(blocker),
+      allowedCommand: providerHealthAllowedCommand(blocker),
       requiresAdminToken: false,
       canCreateOrders: false,
     });
@@ -6375,6 +6375,18 @@ function eventFromBlocker(blocker) {
     requiresAdminToken: false,
     canCreateOrders: false,
   });
+}
+
+function providerHealthAllowedCommand(reason) {
+  return /provider:fastapi:|backend|unreachable/i.test(String(reason ?? ""))
+    ? "npm run hermes:backend-latency-triage"
+    : "npm run hermes:preflight";
+}
+
+function providerHealthAction(reason) {
+  return providerHealthAllowedCommand(reason) === "npm run hermes:backend-latency-triage"
+    ? "Measure local backend endpoint latency before restarting services or spending provider calls."
+    : "Inspect provider health, quota, credentials, and last tick before spending more live calls.";
 }
 
 function event({
@@ -6485,7 +6497,7 @@ function buildPlaybook(report, eventPlan) {
       id: "provider_health_review",
       phase: "stabilize_data",
       status: eventsByType.has("provider_health_degraded") ? "ready" : "waiting",
-      command: "npm run hermes:preflight",
+      command: eventsByType.get("provider_health_degraded")?.allowed_command ?? "npm run hermes:preflight",
       reason: eventsByType.get("provider_health_degraded")?.reason ?? "Provider health is not currently the highest priority.",
       requiresAdminToken: false,
       writes: false,

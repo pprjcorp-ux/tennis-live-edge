@@ -3447,6 +3447,49 @@ test("playbook prioritizes data stabilization when cursor resync is required", a
   }
 });
 
+test("playbook routes FastAPI provider degradation to backend latency triage", async () => {
+  const fixtures = eventRouterFixtures({
+    "/api/v1/provider-health": [
+      {
+        provider: "fastapi",
+        configured: true,
+        healthy: false,
+        status: "unreachable",
+      },
+      { provider: "api_tennis", status: "healthy" },
+    ],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["playbook", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    const providerStep = payload.steps.find((step) => step.id === "provider_health_review");
+    assert.equal(providerStep.status, "ready");
+    assert.equal(providerStep.command, "npm run hermes:backend-latency-triage");
+    assert.equal(providerStep.reason, "provider:fastapi:unreachable");
+    assert.equal(providerStep.live_api_calls, false);
+    assert.equal(providerStep.can_submit_real_orders, false);
+    assert.equal(payload.event_summary.some((event) => (
+      event.type === "provider_health_degraded"
+        && event.allowed_command === "npm run hermes:backend-latency-triage"
+    )), true);
+  } finally {
+    server.close();
+  }
+});
+
 test("playbook exposes paper autopilot as the only order-creating step when clean", async () => {
   const fixtures = eventRouterFixtures();
   const { server, apiBase } = await startServer((request, response) => {

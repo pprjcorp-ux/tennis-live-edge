@@ -103,6 +103,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes when Hermes needs one autonomous packet: `npm run hermes:safe-loop`.
 - Before any real cron change: `npm run hermes:scheduler-rehearsal`.
 - To generate a reviewable cron manifest: `npm run hermes:cron-proposal`.
+- Final gate before manual cron creation: `npm run hermes:activation-checklist`.
 - Every 1-5 minutes during active windows: `npm run hermes:live-stats`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
@@ -135,6 +136,12 @@ spend provider quota.
 exact `hermes cron add` command previews. It is still non-mutating: it does not
 call `hermes cron add`, and it excludes autopilot, provider-smoke, admin-token,
 quota-consuming, and order-creating jobs.
+
+`hermes:activation-checklist` is the last non-mutating gate before a human
+creates any Hermes cron jobs. It requires clean runtime diagnostics, Telegram
+allowlist, private-access allowlist, local admin secret presence, a safe cron
+manifest, zero executed rehearsal commands, and real-execution hard block. It
+prints manual activation commands only when every gate passes.
 
 `hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
 turns the internal intelligence packet into compact events such as

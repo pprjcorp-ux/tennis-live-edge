@@ -1031,6 +1031,152 @@ test("cron-proposal writes reviewable Hermes cron commands without creating jobs
   }
 });
 
+test("activation-checklist allows only manual cron activation when all gates pass", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-activation-"));
+  const proposalPath = join(tempDir, "cron-proposal.json");
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: running'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('doctor: ok'); process.exit(0); }",
+      "if (process.argv[2] === 'cron') { console.error('cron must not be called'); process.exit(9); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          steps: [],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["activation-checklist", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_CRON_PROPOSAL_PATH: proposalPath,
+        HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
+        PRIVATE_ALLOWED_EMAILS: "operator@example.com",
+        ADMIN_API_TOKEN: "local-admin",
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "activation_checklist");
+    assert.equal(payload.activation_allowed, true);
+    assert.equal(payload.created_jobs, false);
+    assert.equal(payload.executed_commands.length, 0);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.checks.every((check) => check.status === "pass"), true);
+    assert.equal(payload.manual_activation_commands.length, payload.cron_proposal.jobs.length);
+    assert.equal(payload.manual_activation_commands.every((command) => command.startsWith("hermes cron add")), true);
+    assert.equal(payload.manual_activation_commands.every((command) => !command.includes("--execute-provider-call")), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("activation-checklist blocks cron activation when runtime or operator gates are missing", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-activation-blocked-"));
+  const proposalPath = join(tempDir, "cron-proposal.json");
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: stopped'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.error('gateway unreachable'); process.exit(1); }",
+      "if (process.argv[2] === 'cron') { console.error('cron must not be called'); process.exit(9); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const fixtures = eventRouterFixtures({
+    "/api/v1/agent/preflight": {
+      status: "blocked",
+      checks: [
+        { name: "hermes_gateway", status: "fail", summary: "Hermes loopback gateway is not reachable." },
+        { name: "real_execution_hard_block", status: "pass", summary: "blocked" },
+      ],
+      generated_at: "2026-06-21T20:00:00Z",
+    },
+    "/api/v1/signals/live": [],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["activation-checklist", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_CRON_PROPOSAL_PATH: proposalPath,
+        HERMES_TELEGRAM_ALLOWED_USER_IDS: "",
+        PRIVATE_ALLOWED_EMAILS: "",
+        ADMIN_API_TOKEN: "",
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "activation_checklist");
+    assert.equal(payload.activation_allowed, false);
+    assert.equal(payload.created_jobs, false);
+    assert.equal(payload.executed_commands.length, 0);
+    assert.equal(payload.manual_activation_commands.length, 0);
+    assert.equal(payload.checks.some((check) => check.id === "hermes_runtime_ready" && check.status === "fail"), true);
+    assert.equal(payload.checks.some((check) => check.id === "telegram_allowlist_configured" && check.status === "fail"), true);
+    assert.equal(payload.checks.some((check) => check.id === "private_access_allowlist_configured" && check.status === "fail"), true);
+  } finally {
+    server.close();
+  }
+});
+
 test("playbook prioritizes data stabilization when cursor resync is required", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/provider-cursors": [

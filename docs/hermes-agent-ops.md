@@ -29,6 +29,7 @@ npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
+npm run hermes:activation-checklist
 ADMIN_API_TOKEN=... npm run hermes:ops:daily
 ADMIN_API_TOKEN=... npm run hermes:autopilot
 ```
@@ -128,6 +129,12 @@ Use `hermes:cron-proposal` to generate a reviewable cron manifest. It writes
 for safe read-only jobs only. It does not call `hermes cron add` and excludes
 autopilot, provider-smoke, admin-token, quota-consuming, and order-creating
 jobs.
+
+Use `hermes:activation-checklist` as the final non-mutating gate before any
+manual cron creation. It checks Hermes runtime health, Telegram allowlist,
+private-access email allowlist, local admin token presence, cron manifest
+safety, no executed commands, and the real-execution hard block. Manual
+activation commands are empty until every check passes.
 
 ## Audit Trail
 

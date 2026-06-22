@@ -42,6 +42,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs scheduler-rehearsal
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs cron-proposal
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs activation-checklist
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
@@ -112,6 +113,10 @@ or execute scheduled commands.
 The `cron-proposal` command writes a local review manifest with `hermes cron add`
 command previews. It must not call `hermes cron add` and must exclude autopilot,
 provider-smoke, admin-token, quota-consuming, or order-creating jobs.
+The `activation-checklist` command is the final non-mutating gate before a
+human creates cron jobs. It exposes manual commands only when runtime,
+Telegram/private allowlists, local admin secret presence, safe manifest, and
+real-execution hard block all pass.
 The `autopilot` command also runs preflight internally and aborts before calling
 protected backend actions when the preflight status is `blocked`.
 

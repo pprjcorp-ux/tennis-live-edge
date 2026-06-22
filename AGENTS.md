@@ -152,6 +152,11 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   write only a local review manifest under `hermes/runs/`, must not call
   `hermes cron add`, and must exclude provider-smoke, autopilot, admin-token,
   quota-consuming, or order-creating jobs.
+- Hermes cron activation review should consume
+  `npm run hermes:activation-checklist`; it must not create jobs, must not print
+  secrets, and should expose manual activation commands only when runtime,
+  Telegram allowlist, private access allowlist, local admin secret, safe cron
+  manifest, and real-execution hard block all pass.
 - Real execution requires a separate compliance/account/API activation task.
 
 ## Verification
@@ -174,6 +179,7 @@ npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
+npm run hermes:activation-checklist
 ```
 
 `api:check:operational-truth` is the required integrated smoke before API

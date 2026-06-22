@@ -43,6 +43,7 @@ npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
+npm run hermes:activation-checklist
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
@@ -128,6 +129,13 @@ quota, or submit real orders.
 `hermes/runs/cron-proposal.json` with exact `hermes cron add` command previews.
 It does not call `hermes cron add` and excludes provider-smoke, autopilot,
 admin-token, quota-consuming, and order-creating jobs.
+
+`hermes:activation-checklist` is the final non-mutating gate before a human
+creates cron jobs. It checks Hermes runtime health, Telegram allowlist,
+private-access email allowlist, local admin secret presence, cron manifest
+safety, no executed commands, and the real-execution hard block. It prints only
+booleans/counts for secrets and exposes manual activation commands only when
+all checks pass.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

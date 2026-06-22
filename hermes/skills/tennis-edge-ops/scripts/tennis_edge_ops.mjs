@@ -188,6 +188,15 @@ async function cronProposal() {
   printJson(proposal);
 }
 
+async function activationChecklist() {
+  const loop = await safeLoopData();
+  const rehearsal = buildSchedulerRehearsal(loop);
+  writeSchedulerAudit(rehearsal);
+  const proposal = buildCronProposal(rehearsal);
+  writeCronProposal(proposal);
+  printJson(buildActivationChecklist({ loop, rehearsal, proposal }));
+}
+
 async function providerSmoke() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -1431,6 +1440,132 @@ function writeCronProposal(proposal) {
   writeFileSync(path, `${JSON.stringify(proposal, null, 2)}\n`, "utf8");
 }
 
+function buildActivationChecklist({ loop, rehearsal, proposal }) {
+  const checks = activationChecks({ loop, rehearsal, proposal });
+  const activationAllowed = checks.every((item) => item.status === "pass");
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "activation_checklist",
+    status: activationAllowed ? "ready_for_manual_activation" : "blocked",
+    activation_allowed: activationAllowed,
+    created_jobs: false,
+    executed_commands: [],
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    cron_proposal: {
+      proposal_path: proposal.proposal_path,
+      job_count: proposal.jobs.length,
+      jobs: proposal.jobs.map((job) => ({
+        id: job.id,
+        name: job.name,
+        every: job.every,
+        source_command: job.source_command,
+      })),
+    },
+    checks,
+    manual_activation_commands: activationAllowed
+      ? proposal.jobs.map((job) => job.command_preview)
+      : [],
+    operator_steps: activationAllowed
+      ? [
+        "Review each command preview one final time.",
+        "Create Hermes cron jobs manually from a local operator shell only.",
+        "Run npm --silent run hermes:safe-loop after creation and confirm jobs remain read-only.",
+      ]
+      : [
+        "Resolve failed checks before creating any Hermes cron jobs.",
+        "Rerun npm run hermes:activation-checklist after gateway, Telegram allowlist, private access, and local secrets are ready.",
+      ],
+    forbidden_actions: proposal.forbidden_actions,
+    safety: {
+      real_execution_hard_block: proposal.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function activationChecks({ loop, rehearsal, proposal }) {
+  const unsafeJobs = proposal.jobs.filter((job) => (
+    job.can_create_paper_orders
+      || job.can_submit_real_orders
+      || job.provider_api_call_allowed
+      || job.live_api_calls
+      || job.command_preview.includes("--execute-provider-call")
+      || job.command_preview.includes("hermes:autopilot")
+      || job.command_preview.includes("hermes:provider-smoke")
+  ));
+  return [
+    activationCheck({
+      id: "hermes_runtime_ready",
+      status: loop.runtime?.status === "ready" ? "pass" : "fail",
+      summary: loop.runtime?.status === "ready"
+        ? "Hermes CLI status and doctor are clean."
+        : `Hermes runtime is ${loop.runtime?.status ?? "unknown"}.`,
+    }),
+    activationCheck({
+      id: "telegram_allowlist_configured",
+      status: envListCount(["HERMES_TELEGRAM_ALLOWED_USER_IDS", "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS"]) > 0 ? "pass" : "fail",
+      summary: "Telegram allowlist has at least one local user id configured.",
+      evidence: { configured_count: envListCount(["HERMES_TELEGRAM_ALLOWED_USER_IDS", "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS"]) },
+    }),
+    activationCheck({
+      id: "private_access_allowlist_configured",
+      status: envListCount(["PRIVATE_ALLOWED_EMAILS", "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS"]) > 0 ? "pass" : "fail",
+      summary: "Private Access email allowlist has at least one address configured.",
+      evidence: { configured_count: envListCount(["PRIVATE_ALLOWED_EMAILS", "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS"]) },
+    }),
+    activationCheck({
+      id: "local_admin_secret_available",
+      status: envConfigured(["ADMIN_API_TOKEN", "TENNIS_EDGE_ADMIN_API_TOKEN"]) ? "pass" : "fail",
+      summary: "Local admin token exists for future protected operator actions; value is not printed.",
+    }),
+    activationCheck({
+      id: "cron_manifest_safe",
+      status: proposal.jobs.length > 0 && unsafeJobs.length === 0 ? "pass" : "fail",
+      summary: "Cron proposal contains only read-only, non-quota, non-order jobs.",
+      evidence: {
+        jobs: proposal.jobs.length,
+        unsafe_jobs: unsafeJobs.map((job) => job.name),
+      },
+    }),
+    activationCheck({
+      id: "rehearsal_did_not_execute",
+      status: rehearsal.executed_commands.length === 0 && proposal.executed_commands.length === 0 ? "pass" : "fail",
+      summary: "Rehearsal and proposal did not execute scheduled commands.",
+    }),
+    activationCheck({
+      id: "real_execution_hard_block",
+      status: proposal.safety?.real_execution_hard_block === true
+        && proposal.safety?.can_submit_real_orders === false
+        ? "pass"
+        : "fail",
+      summary: "Real execution remains hard-blocked.",
+    }),
+  ];
+}
+
+function activationCheck({ id, status, summary, evidence = {} }) {
+  return { id, status, summary, evidence };
+}
+
+function envConfigured(names) {
+  return names.some((name) => String(process.env[name] ?? "").trim().length > 0);
+}
+
+function envListCount(names) {
+  return names
+    .flatMap((name) => String(process.env[name] ?? "").split(","))
+    .map((item) => item.trim())
+    .filter(Boolean).length;
+}
+
 function localRuntimeLanes(report) {
   const failed = report.degraded_items?.preflight_failed ?? [];
   if (!failed.some((check) => check.name === "hermes_gateway")) return [];
@@ -2291,6 +2426,7 @@ const commands = {
   "safe-loop": safeLoop,
   "scheduler-rehearsal": schedulerRehearsal,
   "cron-proposal": cronProposal,
+  "activation-checklist": activationChecklist,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

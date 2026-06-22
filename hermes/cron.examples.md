@@ -104,6 +104,16 @@ This writes `hermes/runs/cron-proposal.json` with exact command previews for
 safe read-only jobs. It does not create jobs and excludes autopilot,
 provider-smoke, admin-token, quota-consuming, and order-creating routes.
 
+Final non-mutating activation checklist:
+
+```bash
+npm --silent run hermes:activation-checklist
+```
+
+Only when `activation_allowed=true`, review the returned
+`manual_activation_commands` and create jobs manually from a local operator
+shell. The checklist itself does not call `hermes cron add`.
+
 Event router every 5 minutes during active windows:
 
 ```bash

@@ -4874,6 +4874,15 @@ test("backlog-plan uses live-controller ledger as implementation evidence", asyn
   assert.equal(payload.items[0].acceptance_evidence.includes("top_feedback_blocker=feature_contract:blocked"), true);
   assert.equal(payload.items[0].acceptance_evidence.includes("top_feedback_next_action=inspect_quota_throttle"), true);
   assert.equal(payload.items[0].acceptance_evidence.includes("feedback_repair_ready=true"), true);
+  assert.equal(
+    payload.items[0].acceptance_evidence.includes(
+      "live_repair_plan.repair_alignment_status=selected_addresses_top_feedback_blocker",
+    ),
+    true,
+  );
+  assert.equal(payload.items[0].acceptance_evidence.includes("live_repair_plan.recommended_repair_id=inspect_quota_throttle"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("live_repair_plan.selected_repair_id=repair_live_stats_feature_contract"), true);
+  assert.equal(payload.items[0].acceptance_evidence.includes("live_repair_plan.requires_operator_review=false"), true);
   assert.equal(payload.items[0].executes_now, false);
   assert.equal(payload.next_item.id, "harden_live_controller_feedback_loop");
   assert.equal(payload.evidence.live_controller_ledger.total_records, 2);
@@ -4888,6 +4897,12 @@ test("backlog-plan uses live-controller ledger as implementation evidence", asyn
   assert.equal(payload.evidence.live_controller_ledger.top_feedback_next_action, "inspect_quota_throttle");
   assert.equal(payload.evidence.live_controller_ledger.provider_command_executed_count, 0);
   assert.equal(payload.evidence.live_controller_ledger.paper_order_created_count, 0);
+  assert.equal(payload.evidence.live_repair_plan.repair_alignment_status, "selected_addresses_top_feedback_blocker");
+  assert.equal(payload.evidence.live_repair_plan.recommended_repair_id, "inspect_quota_throttle");
+  assert.equal(payload.evidence.live_repair_plan.selected_repair_id, "repair_live_stats_feature_contract");
+  assert.equal(payload.evidence.live_repair_plan.requires_operator_review, false);
+  assert.equal(payload.evidence.live_repair_plan.provider_command_executed_count, 0);
+  assert.equal(payload.evidence.live_repair_plan.paper_order_created_count, 0);
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
@@ -5933,6 +5948,14 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
   assert.equal(payload.work_order.acceptance_criteria.includes("top_feedback_blocker=budget_chain_completed"), true);
   assert.equal(payload.work_order.acceptance_criteria.includes("top_feedback_next_action=inspect_budget_chain"), true);
   assert.equal(payload.work_order.acceptance_criteria.includes("feedback_repair_ready=true"), true);
+  assert.equal(
+    payload.work_order.acceptance_criteria.includes(
+      "live_repair_plan.repair_alignment_status=aligned_with_repeated_feedback",
+    ),
+    true,
+  );
+  assert.equal(payload.work_order.acceptance_criteria.includes("live_repair_plan.recommended_repair_id=inspect_budget_chain"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("live_repair_plan.requires_operator_review=false"), true);
   assert.equal(payload.work_order.acceptance_criteria.includes("provider_api_call_allowed=false"), true);
   assert.equal(payload.work_order.prohibited_changes.includes("do not automate sportsbook browser sessions"), true);
   assert.equal(payload.implementation_policy.spend_provider_quota, false);

@@ -9057,11 +9057,13 @@ function buildBacklogPlan({
   runtimePriorities,
   sourceDiscoveryCompletion = buildSourceDiscoveryCompletionProof(),
 }) {
+  const liveRepairPlanPreview = buildLiveRepairPlanPreview(liveControllerReport);
   const items = buildBacklogItems({
     experimentReport,
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairPlanPreview,
     liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
@@ -9125,6 +9127,21 @@ function buildBacklogPlan({
         provider_command_executed_count: liveControllerReport.provider_command_executed_count,
         paper_order_created_count: liveControllerReport.paper_order_created_count,
       },
+      live_repair_plan: liveRepairPlanPreview
+        ? {
+          status: liveRepairPlanPreview.status,
+          selected_repair_id: liveRepairPlanPreview.selected_repair?.id ?? null,
+          selected_repair_command: liveRepairPlanPreview.selected_repair?.command ?? null,
+          repair_alignment_status: liveRepairPlanPreview.repair_alignment?.status ?? null,
+          recommended_repair_id: liveRepairPlanPreview.repair_alignment?.recommended_repair_id ?? null,
+          recommended_repair_command: liveRepairPlanPreview.repair_alignment?.recommended_repair_command ?? null,
+          selected_matches_top_feedback_action: liveRepairPlanPreview.repair_alignment?.selected_matches_top_feedback_action === true,
+          selected_addresses_top_feedback_blocker: liveRepairPlanPreview.repair_alignment?.selected_addresses_top_feedback_blocker === true,
+          requires_operator_review: liveRepairPlanPreview.repair_alignment?.requires_operator_review === true,
+          provider_command_executed_count: liveControllerReport.provider_command_executed_count,
+          paper_order_created_count: liveControllerReport.paper_order_created_count,
+        }
+        : null,
       live_repair_ledger: {
         path: liveRepairReport.ledger?.path,
         total_records: liveRepairReport.total_records,
@@ -9230,6 +9247,58 @@ function emptySourceRouteLedgerReport() {
 
 function emptyLiveRepairLedgerReport() {
   return buildLiveRepairLedgerReport({ path: liveRepairLedgerPath(), records: [], invalid_rows: 0 });
+}
+
+function buildLiveRepairPlanPreview(liveControllerReport = emptyLiveControllerLedgerReport()) {
+  const latestRecord = liveControllerReport.latest_normalized_record ?? null;
+  if (!latestRecord) return null;
+  const controller = hasControllerFeedbackPlan(latestRecord.controller)
+    ? latestRecord.controller
+    : controllerFromLiveControllerLedgerRecord(latestRecord);
+  if (!controller) return null;
+  return buildLiveRepairPlan(controller, liveControllerReport);
+}
+
+function hasControllerFeedbackPlan(controller) {
+  return controller && typeof controller === "object" && controller.feedback_plan && typeof controller.feedback_plan === "object";
+}
+
+function controllerFromLiveControllerLedgerRecord(record) {
+  const blockerIds = record?.feedback_blocker_ids ?? [];
+  const actionIds = record?.feedback_next_action_ids ?? [];
+  if (!record || (!blockerIds.length && !actionIds.length)) return null;
+  const safeRepairQueue = dedupeFeedbackActions([
+    ...blockerIds.flatMap((id) => liveControllerFeedbackActionsForBlocker(id)),
+    ...actionIds.map(liveControllerFeedbackActionForId).filter(Boolean),
+  ]);
+  return {
+    status: record.status ?? "blocked",
+    provider_mode: "ledger_preview",
+    operator_decision: {
+      action: record.action ?? null,
+    },
+    feedback_plan: {
+      status: blockerIds.length ? "needs_repair" : "clear",
+      controller_status: record.status ?? null,
+      primary_blocker: blockerIds[0] ?? null,
+      blocker_ids: blockerIds,
+      safe_repair_queue: safeRepairQueue,
+      top_match_id: record.top_match_id ?? null,
+      evidence: [
+        `controller_status=${record.status ?? "unknown"}`,
+        "ledger_preview=true",
+        `feature_contract=${record.feature_contract_status ?? "unknown"}`,
+        `throttle=${record.throttle_level ?? "unknown"}`,
+      ],
+      executes_now: false,
+      writes: false,
+      live_api_calls: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      llm_per_tick_allowed: false,
+    },
+  };
 }
 
 function emptySourceUseLedgerReport() {
@@ -10174,6 +10243,7 @@ function buildBacklogItems({
   operatorReport,
   missionReport,
   liveControllerReport,
+  liveRepairPlanPreview = null,
   liveRepairReport = emptyLiveRepairLedgerReport(),
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
@@ -10579,6 +10649,10 @@ function buildBacklogItems({
         `top_feedback_blocker=${liveControllerReport.top_feedback_blocker ?? "none"}`,
         `top_feedback_next_action=${liveControllerReport.top_feedback_next_action ?? "none"}`,
         `feedback_repair_ready=${liveControllerReport.feedback_repair_ready === true}`,
+        `live_repair_plan.repair_alignment_status=${liveRepairPlanPreview?.repair_alignment?.status ?? "none"}`,
+        `live_repair_plan.recommended_repair_id=${liveRepairPlanPreview?.repair_alignment?.recommended_repair_id ?? "none"}`,
+        `live_repair_plan.selected_repair_id=${liveRepairPlanPreview?.selected_repair?.id ?? "none"}`,
+        `live_repair_plan.requires_operator_review=${liveRepairPlanPreview?.repair_alignment?.requires_operator_review === true}`,
       ],
       blocks: ["live_collection_cadence", "paper_ready", "learning_ready"],
     }));
@@ -15456,6 +15530,59 @@ function liveControllerFeedbackActionsForBlocker(blockerId) {
     })];
   }
   return [];
+}
+
+function liveControllerFeedbackActionForId(actionId) {
+  const id = String(actionId);
+  const actionById = {
+    repair_odds_cursor_or_freshness: {
+      command: "npm --silent run hermes:events",
+      reason: "Classify odds cursor/freshness blockers before any live odds spend.",
+    },
+    prove_operational_truth: {
+      command: "npm run api:check:operational-truth -- --pretty",
+      reason: "Confirm persisted score/odds freshness and fail-closed signal gates.",
+    },
+    inspect_data_quality: {
+      command: "npm --silent run hermes:intelligence",
+      reason: "Refresh internal data-quality evidence without provider calls.",
+    },
+    inspect_provider_preflight: {
+      command: "npm run hermes:preflight",
+      reason: "Inspect provider/config blockers from internal health endpoints only.",
+    },
+    inspect_budget_chain: {
+      command: "npm --silent run hermes:budget-chain",
+      reason: "Review budget-chain prerequisites before enterprise or live provider escalation.",
+    },
+    inspect_paper_learning_gate: {
+      command: "npm --silent run hermes:learning-review",
+      reason: "Review paper/autopilot learning gates before any order-creating route.",
+    },
+    repair_live_stats_feature_contract: {
+      command: "npm --silent run hermes:live-stats",
+      reason: "Rebuild the internal live-stats feature contract before collection escalation.",
+    },
+    inspect_quota_throttle: {
+      command: "npm --silent run hermes:quota-plan",
+      reason: "Recompute quota throttle and provider candidate suppression.",
+    },
+    inspect_source_route_matrix: {
+      command: "npm --silent run hermes:source-route-matrix",
+      reason: "Review allowed source routes without fetching data or spending quota.",
+    },
+    route_high_severity_events: {
+      command: "npm --silent run hermes:events",
+      reason: "Route high-severity events before changing collection cadence.",
+    },
+  };
+  const config = actionById[id];
+  if (!config) return null;
+  return feedbackAction({
+    id,
+    command: config.command,
+    reason: config.reason,
+  });
 }
 
 function feedbackAction({ id, command, reason }) {

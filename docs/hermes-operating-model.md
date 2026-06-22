@@ -578,6 +578,10 @@ repair against the ledger's repeated `top_feedback_next_action` and
 feedback, the status becomes
 `controller_priority_differs_from_repeated_feedback` and requires operator or
 Codex review before the backlog treats it as resolved.
+`hermes:backlog-plan` builds the same alignment preview from the latest
+live-controller ledger row and exposes it as `evidence.live_repair_plan`, so
+`hermes:implementation-handoff` carries the recommended repair, selected repair
+and review requirement without writing a live-repair ledger row.
 
 `hermes:live-repair-ledger` persists that selected repair as local JSONL with
 `action_executed=false`, `repair_command_executed=false`,

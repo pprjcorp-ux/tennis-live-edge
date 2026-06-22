@@ -34,6 +34,7 @@ npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
+npm run hermes:source-route-matrix
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit
@@ -181,6 +182,12 @@ Use `hermes:source-discovery` when Hermes needs to improve collection coverage
 without spending quota or scraping. It maps score state, live odds, archive
 odds, closing-line proxy, live statistics, public context, operator notes and
 replay backfill to allowed acquisition paths and blocked routes.
+
+Use `hermes:source-route-matrix` when Hermes needs to decide which allowed
+path should feed live stats next. It ranks replay, internal API, licensed
+provider and manual-note routes by priority, trigger, cost tier, success
+evidence and blocked conditions. Provider routes remain operator-only and
+`provider_api_call_allowed=false`.
 
 Use `hermes:trigger-policy` when cron, Telegram, dashboard, Cloudflare Agent or
 OpenClaw needs to know when Hermes should wake up. It emits debounced triggers

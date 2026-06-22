@@ -47,6 +47,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-brief
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-discovery
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-matrix
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs capability-audit
@@ -153,6 +154,10 @@ is read-only and must not execute the queued actions.
 The `source-discovery` command maps useful data classes to allowed acquisition
 paths and blocked routes. It is read-only and must treat jailbreak as route
 discovery, never bypass.
+The `source-route-matrix` command ranks those allowed paths into prioritized
+replay/internal/provider/manual routes with triggers, cost tiers, success
+evidence and blocked conditions. Provider routes must remain operator-only with
+`provider_api_call_allowed=false`.
 The `trigger-policy` command maps current state to debounced wakeup triggers
 for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
 read-only and must not execute trigger commands.

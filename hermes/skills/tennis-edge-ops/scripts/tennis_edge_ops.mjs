@@ -478,6 +478,13 @@ async function sourceDiscovery() {
   printJson(buildSourceDiscovery({ report, eventPlan }));
 }
 
+async function sourceRouteMatrix() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  printJson(buildSourceRouteMatrix({ report, eventPlan, sourcePlan }));
+}
+
 async function triggerPolicy() {
   const [loop, report] = await Promise.all([
     safeLoopData(),
@@ -2111,6 +2118,234 @@ function buildSourceDiscovery({ report, eventPlan }) {
       browser_sportsbook_automation_allowed: false,
       llm_per_tick_allowed: false,
     },
+  };
+}
+
+function buildSourceRouteMatrix({ report, eventPlan, sourcePlan }) {
+  const routes = buildSourceRouteRows({ report, eventPlan, sourcePlan });
+  const blockedRoutes = routes.filter((route) => route.status === "blocked");
+  const nextRoute = routes.find((route) => route.status === "ready_now")
+    ?? routes.find((route) => route.status === "monitor")
+    ?? routes[0]
+    ?? null;
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "source_route_matrix",
+    status: blockedRoutes.length === routes.length ? "blocked" : "ready",
+    source_mode: report.mode,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    objective: "rank_allowed_data_routes_for_budget_first_live_stats_without_bypass",
+    next_route: nextRoute,
+    routes,
+    event_policy: {
+      wake_on_events_not_ticks: true,
+      allowed_triggers: [
+        "provider_cursor_gap",
+        "new_entry_signal",
+        "stale_score_or_odds",
+        "quota_guardrail",
+        "paper_settlement",
+        "daily_ops_window",
+      ],
+      blocked_triggers: [
+        "browser_sportsbook_scrape",
+        "credential_session_reuse",
+        "provider_quota_spend_without_operator",
+        "llm_per_odds_tick",
+      ],
+    },
+    research_basis: [
+      "Cloudflare scheduled-agent pattern: wake on schedules/events, not every tick.",
+      "OpenAI Agents guardrail pattern: validate tool use before sensitive actions.",
+      "Odds websocket pattern: block live decisions on cursor gaps/resync instead of trusting stale stream state.",
+    ],
+    safe_jailbreak_policy: {
+      meaning: "Use allowed alternate paths around cost/latency gaps: replay, internal APIs, licensed providers, and manual notes.",
+      bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      provider_quota_spend_requires_operator: true,
+    },
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function buildSourceRouteRows({ report, eventPlan, sourcePlan }) {
+  const matrix = sourcePlan.acquisition_matrix ?? {};
+  const providerRoutes = sourcePlan.provider_routes ?? [];
+  const budgetCompleted = Boolean(report.budget_chain_snapshot?.budget_chain_completed);
+  const cursorBlocked = eventPlan.events.some((event) => event.type === "cursor_resync_required")
+    || matrix.odds_live?.blockers?.includes("cursor_resync_required");
+  const archiveRoute = providerRoutes.find((route) => route.provider === "theoddsapi");
+  const oddsRoute = providerRoutes.find((route) => route.provider === "odds_api_io");
+  const scoreRoute = providerRoutes.find((route) => route.provider === "api_tennis");
+  return [
+    sourceRouteRow({
+      id: "replay_backfill",
+      priority: 10,
+      lane: "replay",
+      purpose: "Validate collection, processing, and signal gates from persisted canonical state before spending live quota.",
+      source: matrix.replay_backfill,
+      status: "ready_now",
+      costTier: "free_local",
+      trigger: "daily_ops_window",
+      maxCadence: "operator_or_hourly_read_only",
+      successEvidence: ["replay_contract_ready", "persisted_matches", "signals_fail_closed_in_replay"],
+    }),
+    sourceRouteRow({
+      id: "live_statistics",
+      priority: 20,
+      lane: "internal_api",
+      purpose: "Summarize score/odds freshness, signal readiness, cost, and learning state without LLM per tick.",
+      source: matrix.live_statistics,
+      status: "monitor",
+      costTier: "free_local",
+      trigger: "stale_score_or_odds",
+      maxCadence: "frequent_when_runtime_ready",
+      successEvidence: ["collection_status", "processing_status", "freshness_buckets", "sampling_policy"],
+    }),
+    sourceRouteRow({
+      id: "closing_line_proxy",
+      priority: 30,
+      lane: "replay",
+      purpose: "Use persisted odds ticks and paper settlements to compute CLV proxies before model promotion.",
+      source: matrix.closing_line_proxy,
+      status: "monitor",
+      costTier: "free_local",
+      trigger: "paper_settlement",
+      maxCadence: "daily",
+      successEvidence: ["closing_line_snapshot", "paper_settlement", "training_example"],
+    }),
+    sourceRouteRow({
+      id: "odds_archive_budget_smoke",
+      priority: 40,
+      lane: "licensed_provider",
+      purpose: "Onboard the cheapest historical odds route before live websocket spend.",
+      source: matrix.odds_archive,
+      status: archiveRoute?.status === "ready_next" || String(report.budget_chain_snapshot?.current_step ?? "").includes("theoddsapi")
+        ? "operator_ready"
+        : "monitor",
+      costTier: "budget_paid_or_existing_key",
+      trigger: "budget_chain_next_step",
+      maxCadence: "operator_smoke_only",
+      provider: "theoddsapi",
+      blockedWhen: ["missing_key", "operator_not_ready"],
+      successEvidence: ["archive_odds_smoke_completed", "raw_payload_saved", "odds_ticks_saved"],
+      operatorRequired: true,
+    }),
+    sourceRouteRow({
+      id: "score_state_budget",
+      priority: 50,
+      lane: "licensed_provider",
+      purpose: "Collect fixtures/livescore only through API-Tennis or persisted replay.",
+      source: matrix.score_state,
+      status: budgetCompleted || scoreRoute?.configured ? "monitor" : "operator_ready",
+      costTier: "budget_paid",
+      trigger: "daily_ops_window",
+      maxCadence: "budget_profile_cadence",
+      provider: "api_tennis",
+      blockedWhen: ["missing_key", "coverage_gate_outside_budget"],
+      successEvidence: ["score_ticks_saved", "provider_latency_saved", "canonical_match_id"],
+      operatorRequired: !scoreRoute?.configured,
+    }),
+    sourceRouteRow({
+      id: "odds_live_websocket",
+      priority: 60,
+      lane: "provider_websocket",
+      purpose: "Use websocket odds only after cursor health is clean; freeze signals on gaps/resync.",
+      source: matrix.odds_live,
+      status: cursorBlocked ? "blocked" : oddsRoute?.configured ? "monitor" : "operator_ready",
+      costTier: "budget_paid_live_addon",
+      trigger: "new_entry_signal",
+      maxCadence: "event_driven_watchlist_only",
+      provider: "odds_api_io",
+      blockedWhen: ["cursor_resync_required", "stale_odds", "missing_moneyline", "missing_key"],
+      successEvidence: ["last_seq_monotonic", "resync_required=false", "odds_ticks_saved"],
+      operatorRequired: !oddsRoute?.configured,
+    }),
+    sourceRouteRow({
+      id: "public_context_operator_note",
+      priority: 70,
+      lane: "operator_note",
+      purpose: "Capture injury/news/schedule context only from allowed public access as a local note with source timestamp.",
+      source: matrix.public_context,
+      status: "operator_note_only",
+      costTier: "free_or_manual",
+      trigger: "anomaly_review",
+      maxCadence: "manual_only",
+      blockedWhen: ["paywall", "terms_restricted", "login_required_scraping"],
+      successEvidence: ["operator_note_source", "operator_note_timestamp", "no_secret_content"],
+      operatorRequired: true,
+    }),
+    sourceRouteRow({
+      id: "manual_operator_note",
+      priority: 80,
+      lane: "operator_note",
+      purpose: "Let the operator add verified local context without touching provider quota.",
+      source: matrix.operator_notes,
+      status: "operator_note_only",
+      costTier: "free_local",
+      trigger: "operator_review",
+      maxCadence: "manual_only",
+      successEvidence: ["operator_note_source", "operator_note_timestamp"],
+      operatorRequired: true,
+    }),
+  ].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+}
+
+function sourceRouteRow({
+  id,
+  priority,
+  lane,
+  purpose,
+  source,
+  status,
+  costTier,
+  trigger,
+  maxCadence,
+  provider = null,
+  blockedWhen = [],
+  successEvidence = [],
+  operatorRequired = false,
+}) {
+  const command = source?.command ?? "npm --silent run hermes:source-discovery";
+  return {
+    id,
+    priority,
+    lane,
+    purpose,
+    status,
+    provider,
+    primary_path: source?.primary_path ?? "internal_fastapi_endpoint",
+    command,
+    trigger,
+    max_cadence: maxCadence,
+    cost_tier: costTier,
+    operator_required: Boolean(operatorRequired),
+    blocked_when: blockedWhen,
+    success_evidence: successEvidence,
+    reason: source?.reason ?? purpose,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
   };
 }
 
@@ -6359,6 +6594,7 @@ const commands = {
   "safe-loop": safeLoop,
   "autonomy-brief": autonomyBrief,
   "source-discovery": sourceDiscovery,
+  "source-route-matrix": sourceRouteMatrix,
   "trigger-policy": triggerPolicy,
   "ops-compiler": opsCompiler,
   "capability-audit": capabilityAudit,

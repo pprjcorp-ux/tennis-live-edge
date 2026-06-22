@@ -48,6 +48,7 @@ npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:autonomy-brief
 npm run hermes:source-discovery
+npm run hermes:source-route-matrix
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit
@@ -198,6 +199,13 @@ execution.
 paths: licensed provider APIs, provider websocket, internal FastAPI endpoints,
 persisted replay, public allowed research, or manual operator notes. It is
 read-only and turns "jailbreak" into route discovery, not bypass.
+
+`hermes:source-route-matrix` ranks those allowed paths into budget-first
+operating routes: replay backfill, internal live statistics, closing-line
+proxy, archive odds smoke, score state, live websocket odds, public context
+notes and manual operator notes. It includes event triggers, cost tiers,
+success evidence and blocked conditions while keeping
+`provider_api_call_allowed=false`.
 
 `hermes:trigger-policy` turns runtime, event, source-discovery, quota and
 learning state into safe wakeup triggers for cron, Telegram, dashboard,

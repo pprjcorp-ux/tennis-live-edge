@@ -5963,6 +5963,97 @@ test("implementation-handoff prioritizes enterprise backend evidence blocker", a
   assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
 });
 
+test("implementation-handoff prepares enterprise shadow review without activating feeds", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-implementation-enterprise-shadow-"));
+  const env = {
+    HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
+    HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
+    HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
+    HERMES_LIVE_CONTROLLER_LEDGER_PATH: join(tempDir, "live-controller-ledger.jsonl"),
+    HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: join(tempDir, "grand-slam-mission-ledger.jsonl"),
+    HERMES_SOURCE_ROUTE_LEDGER_PATH: join(tempDir, "source-route-ledger.jsonl"),
+    HERMES_SOURCE_USE_LEDGER_PATH: join(tempDir, "source-use-ledger.jsonl"),
+    HERMES_SOURCE_INTAKE_LEDGER_PATH: join(tempDir, "source-intake-ledger.jsonl"),
+  };
+  Object.values(env).forEach((path) => writeFileSync(path, ""));
+  const fixtures = eventRouterFixtures({
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2, match_freshness: [] },
+        replay_lab: {
+          status: "ready",
+          enterprise_shadow_providers: enterpriseShadowProviderFixtures(),
+        },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "2. api_tennis:score_livescore",
+          warnings: [],
+          steps: [],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["implementation-handoff", `--api-base=${apiBase}`], { env });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "implementation_handoff");
+    assert.equal(payload.status, "ready");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.source_plan.enterprise_readiness_status, "locked_on_budget_chain");
+    assert.equal(payload.source_plan.next_item_id, "prepare_enterprise_shadow_contract_review");
+    assert.equal(payload.work_order.id, "prepare_enterprise_shadow_contract_review");
+    assert.equal(payload.work_order.executes_now, false);
+    assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:enterprise-readiness"), true);
+    assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:enterprise-accuracy-plan"), true);
+    assert.equal(payload.work_order.suggested_steps.includes("review_enterprise_readiness_shadow_provider_matrix"), true);
+    assert.equal(payload.work_order.suggested_steps.includes("map_sportradar_betradar_txodds_and_betfair_sample_payload_requirements"), true);
+    assert.equal(payload.work_order.suggested_steps.includes("prove_no_provider_api_calls_live_api_calls_or_execution_paths_are_enabled"), true);
+    assert.equal(payload.work_order.acceptance_criteria.includes("enterprise_readiness.status=locked_on_budget_chain"), true);
+    assert.equal(payload.work_order.acceptance_criteria.includes("enterprise_readiness.replay_gate.shadow_provider_count=4"), true);
+    assert.equal(payload.work_order.acceptance_criteria.includes("enterprise_readiness.replay_gate.missing_shadow_providers=0"), true);
+    assert.equal(payload.work_order.acceptance_criteria.includes("operator_contract_review_allowed=false_until_budget_chain_passes"), true);
+    assert.equal(payload.work_order.acceptance_criteria.includes("provider_api_call_allowed=false"), true);
+    assert.equal(payload.work_order.acceptance_criteria.includes("live_api_calls=false"), true);
+    assert.equal(payload.work_order.acceptance_criteria.includes("can_submit_real_orders=false"), true);
+    assert.equal(payload.evidence.sources.includes("enterprise_readiness"), true);
+    assert.equal(payload.evidence.enterprise_readiness.replay_gate.shadow_provider_count, 4);
+    assert.equal(payload.safety.provider_api_call_allowed, false);
+    assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
+    assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("implementation-handoff routes stale runtime backlog to channel secret setup when doctor passes", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-implementation-channel-secrets-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

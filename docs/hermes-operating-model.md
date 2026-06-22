@@ -221,6 +221,12 @@ status, replay readiness, learning state and execution safety, then reports
 whether the system is still locked, missing shadow contracts, blocked by replay
 or ready only for human provider-contract review. It never executes provider
 smokes or activates credentials.
+When shadow contracts are visible, `hermes:backlog-plan` and
+`hermes:implementation-handoff` can emit
+`prepare_enterprise_shadow_contract_review`, an offline work order to review
+Sportradar, Betradar, TXODDS and Betfair sample-payload requirements. That
+handoff keeps provider calls, live API calls and execution paths disabled and
+requires budget-chain/operator review before any feed activation.
 
 `hermes:grand-slam-scoreline-forecast` is the preferred packet for the concrete
 Grand Slam match-day output: projected winner plus plausible set scoreline.
@@ -312,6 +318,16 @@ into one read-only work order with target files, suggested steps, validation
 commands, acceptance criteria, prohibited changes and safety flags. It does not
 edit files, spend provider quota, create paper orders, activate cron jobs or
 mutate runtime services.
+For enterprise-shadow readiness, the handoff converts
+`prepare_enterprise_shadow_contract_review` into explicit steps: review the
+enterprise-readiness provider matrix, map the Sportradar/Betradar/TXODDS/Betfair
+sample payload requirements, keep due diligence offline until budget-chain and
+operator review pass, and prove no provider API calls, live API calls or
+execution paths are enabled.
+The concrete step IDs are
+`review_enterprise_readiness_shadow_provider_matrix`,
+`map_sportradar_betradar_txodds_and_betfair_sample_payload_requirements`, and
+`prove_no_provider_api_calls_live_api_calls_or_execution_paths_are_enabled`.
 For source-route pressure, the handoff converts
 `harden_source_route_feedback_loop` into explicit steps: review the ledger
 report, map the top route to replay/internal or licensed adapter contracts,

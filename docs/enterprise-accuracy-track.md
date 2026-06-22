@@ -192,11 +192,16 @@ Hermes should not:
    budget chain readiness. Implemented through
    `operational_state.replay_lab.enterprise_shadow_providers`, which is
    visibility only and does not activate enterprise feeds.
-5. Add model lab reports for accuracy by Grand Slam, gender, surface, round,
+5. Route shadow-contract visibility into Hermes implementation handoff.
+   Implemented as `prepare_enterprise_shadow_contract_review`: review the
+   enterprise provider matrix, map Sportradar/Betradar/TXODDS/Betfair sample
+   payload requirements, and keep due diligence offline until budget-chain and
+   operator review pass.
+6. Add model lab reports for accuracy by Grand Slam, gender, surface, round,
    odds bucket, and provider.
-6. Only after budget chain completion, activate one enterprise feed at a time in
+7. Only after budget chain completion, activate one enterprise feed at a time in
    paper mode.
-7. Keep real execution blocked until a separate compliance and tiny-real task.
+8. Keep real execution blocked until a separate compliance and tiny-real task.
 
 ## Access Checklist
 

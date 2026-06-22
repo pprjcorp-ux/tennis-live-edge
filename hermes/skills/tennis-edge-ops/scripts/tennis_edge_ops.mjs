@@ -8999,7 +8999,22 @@ function buildBacklogPlanWithEnterpriseReadiness(backlogPlan, enterpriseReadines
     enterprise_readiness: enterpriseReadinessSummary(enterpriseReadiness),
   };
   if (enterpriseReadiness.status !== "blocked_by_backend_evidence") {
-    return { ...backlogPlan, evidence, enterprise_readiness: enterpriseReadinessSummary(enterpriseReadiness) };
+    const enterpriseItem = enterpriseShadowContractReviewBacklogItem(enterpriseReadiness);
+    if (!enterpriseItem) {
+      return { ...backlogPlan, evidence, enterprise_readiness: enterpriseReadinessSummary(enterpriseReadiness) };
+    }
+    const items = dedupeBacklogItems([
+      enterpriseItem,
+      ...backlogPlan.items,
+    ]).sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
+    return {
+      ...backlogPlan,
+      status: "ready",
+      next_item: items[0] ?? null,
+      items,
+      evidence,
+      enterprise_readiness: enterpriseReadinessSummary(enterpriseReadiness),
+    };
   }
   const items = dedupeBacklogItems([
     enterpriseBackendEvidenceBacklogItem(enterpriseReadiness),
@@ -9013,6 +9028,66 @@ function buildBacklogPlanWithEnterpriseReadiness(backlogPlan, enterpriseReadines
     evidence,
     enterprise_readiness: enterpriseReadinessSummary(enterpriseReadiness),
   };
+}
+
+function enterpriseShadowContractReviewBacklogItem(enterpriseReadiness) {
+  const replayGate = enterpriseReadiness.replay_gate ?? {};
+  const shadowCount = replayGate.shadow_provider_count ?? 0;
+  const missing = replayGate.missing_shadow_providers ?? [];
+  if (!shadowCount && !missing.length) return null;
+  const status = enterpriseReadiness.status ?? "unknown";
+  const budgetGate = enterpriseReadiness.budget_gate ?? {};
+  const completeShadowContracts = status === "missing_shadow_contracts" || missing.length > 0;
+  const operatorReviewReady = status === "ready_for_operator_contract_review"
+    || enterpriseReadiness.operator_contract_review_allowed === true;
+  const lockedOnBudget = ["locked_on_budget_chain", "blocked_by_enterprise_gate"].includes(status);
+  const priority = completeShadowContracts ? 33 : operatorReviewReady ? 34 : 42;
+  return backlogItem({
+    id: completeShadowContracts
+      ? "complete_enterprise_shadow_contracts"
+      : "prepare_enterprise_shadow_contract_review",
+    title: completeShadowContracts
+      ? "Complete deferred enterprise shadow contracts before provider review"
+      : "Prepare enterprise shadow contract review without activating feeds",
+    priority,
+    source: ["enterprise_readiness"],
+    frequency: Math.max(1, shadowCount + missing.length),
+    rationale: completeShadowContracts
+      ? `Enterprise readiness is missing shadow contracts for: ${missing.join(", ")}.`
+      : operatorReviewReady
+        ? "Enterprise shadow contracts are complete enough for human provider due diligence, while feed activation and execution remain disabled."
+        : "Enterprise shadow contracts are visible, but review must stay behind budget-chain evidence and offline sample-payload due diligence.",
+    targetFiles: [
+      "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+      "docs/enterprise-accuracy-track.md",
+      "docs/hermes-operating-model.md",
+      "services/api/src/tennis_edge/services/provider_adapters.py",
+    ],
+    validationCommands: [
+      "npm --silent run hermes:enterprise-readiness",
+      "npm --silent run hermes:enterprise-accuracy-plan",
+      "python3 scripts/check_private_runtime.py",
+    ],
+    acceptanceEvidence: [
+      `enterprise_readiness.status=${status}`,
+      `enterprise_readiness.replay_gate.shadow_provider_count=${shadowCount}`,
+      `enterprise_readiness.replay_gate.missing_shadow_providers=${missing.length}`,
+      `enterprise_readiness.budget_gate.budget_chain_completed=${Boolean(budgetGate.budget_chain_completed)}`,
+      `enterprise_readiness.budget_gate.enterprise_eligible=${Boolean(budgetGate.enterprise_eligible)}`,
+      "enterprise shadow providers remain deferred/offline",
+      "offline_sample_payload_due_diligence_required_before_provider_activation",
+      "provider_api_call_allowed=false",
+      "live_api_calls=false",
+      "can_submit_real_orders=false",
+      ...(lockedOnBudget ? ["operator_contract_review_allowed=false_until_budget_chain_passes"] : []),
+    ],
+    blocks: [
+      "enterprise_review",
+      "enterprise_shadow_contract_review",
+      "provider_sample_payload_due_diligence",
+      "budget_chain_validation",
+    ],
+  });
 }
 
 function buildBacklogPlanWithChannelReadiness(backlogPlan, channel) {
@@ -9699,6 +9774,19 @@ function implementationStepsFor(item) {
     complete_budget_chain_before_enterprise: [
       "prove_budget_chain_completion_requirements_from_operational_truth",
       "keep_enterprise_eligibility_false_until_cursor_and_smoke_evidence_pass",
+      ...genericSteps.slice(2),
+    ],
+    complete_enterprise_shadow_contracts: [
+      "review_enterprise_readiness_missing_shadow_providers",
+      "add_or_repair_offline_shadow_fixture_without_provider_calls",
+      "prove_enterprise_shadow_contracts_stay_deferred_and_budget_chain_safe",
+      ...genericSteps.slice(2),
+    ],
+    prepare_enterprise_shadow_contract_review: [
+      "review_enterprise_readiness_shadow_provider_matrix",
+      "map_sportradar_betradar_txodds_and_betfair_sample_payload_requirements",
+      "keep_contracting_due_diligence_offline_until_budget_chain_and_operator_review_pass",
+      "prove_no_provider_api_calls_live_api_calls_or_execution_paths_are_enabled",
       ...genericSteps.slice(2),
     ],
     restore_enterprise_backend_evidence: [

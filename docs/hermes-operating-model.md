@@ -214,9 +214,10 @@ ceilings, so the repo can prioritize changes from observed operating evidence
 instead of intuition.
 
 `hermes:backlog-plan` is the evidence-to-backlog compiler. It reads only local
-operator and experiment ledger reports, then emits implementation priorities
-with target files, validation commands, acceptance evidence and blocked gates.
-It does not edit code or run the listed validation commands.
+operator, mission, experiment and live-controller ledger reports, then emits
+implementation priorities with target files, validation commands, acceptance
+evidence and blocked gates. It does not edit code or run the listed validation
+commands.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

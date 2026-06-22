@@ -2769,6 +2769,82 @@ test("backlog-plan uses mission-ledger blockers as implementation evidence", asy
   assert.equal(payload.evidence.mission_ledger.mission_command_executed_count, 0);
 });
 
+test("backlog-plan uses live-controller ledger as implementation evidence", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-controller-plan-"));
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const controllerRows = [
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "blocked",
+      action: "freeze_collection",
+      next_safe_command: "npm --silent run hermes:events",
+      provider_candidate_command: null,
+      protected_backend_command: null,
+      throttle_level: "blocked",
+      source_route_id: "replay_backfill",
+    },
+    {
+      mode: "live_controller_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      collection_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "blocked",
+      action: "freeze_collection",
+      next_safe_command: "npm --silent run hermes:events",
+      provider_candidate_command: null,
+      protected_backend_command: null,
+      throttle_level: "blocked",
+      source_route_id: "replay_backfill",
+    },
+  ];
+  writeFileSync(experimentLedgerPath, "");
+  writeFileSync(operatorLedgerPath, "");
+  writeFileSync(missionLedgerPath, "");
+  writeFileSync(controllerLedgerPath, `${controllerRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["backlog-plan"], {
+    env: {
+      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+      HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+      HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "backlog_plan");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.items[0].id, "harden_live_controller_feedback_loop");
+  assert.equal(payload.items[0].source.includes("live_controller_ledger"), true);
+  assert.equal(payload.items[0].frequency, 2);
+  assert.equal(payload.items[0].validation_commands.includes("npm --silent run hermes:live-controller-ledger-report"), true);
+  assert.equal(payload.items[0].executes_now, false);
+  assert.equal(payload.next_item.id, "harden_live_controller_feedback_loop");
+  assert.equal(payload.evidence.live_controller_ledger.total_records, 2);
+  assert.equal(payload.evidence.live_controller_ledger.top_repeated_action, "freeze_collection");
+  assert.equal(payload.evidence.live_controller_ledger.top_next_safe_command, "npm --silent run hermes:events");
+  assert.equal(payload.evidence.live_controller_ledger.action_counts.freeze_collection, 2);
+  assert.equal(payload.evidence.live_controller_ledger.throttle_counts.blocked, 2);
+  assert.equal(payload.evidence.live_controller_ledger.provider_command_executed_count, 0);
+  assert.equal(payload.evidence.live_controller_ledger.paper_order_created_count, 0);
+  assert.equal(payload.safety.can_submit_real_orders, false);
+});
+
 test("operator-packet emits a compact channel-safe decision summary", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-operator-packet-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

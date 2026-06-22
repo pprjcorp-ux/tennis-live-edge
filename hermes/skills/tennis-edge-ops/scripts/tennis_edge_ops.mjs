@@ -1645,8 +1645,15 @@ async function backlogPlan() {
   const experimentReport = buildExperimentLedgerReport(readExperimentLedgerRecords());
   const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
   const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
+  const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
-  printJson(buildBacklogPlan({ experimentReport, operatorReport, missionReport, runtimePriorities }));
+  printJson(buildBacklogPlan({
+    experimentReport,
+    operatorReport,
+    missionReport,
+    liveControllerReport,
+    runtimePriorities,
+  }));
 }
 
 async function operatorPacket() {
@@ -4091,8 +4098,20 @@ function buildExperimentLedgerReport({ path, records, invalid_rows: invalidRows 
   };
 }
 
-function buildBacklogPlan({ experimentReport, operatorReport, missionReport, runtimePriorities }) {
-  const items = buildBacklogItems({ experimentReport, operatorReport, missionReport, runtimePriorities })
+function buildBacklogPlan({
+  experimentReport,
+  operatorReport,
+  missionReport,
+  liveControllerReport,
+  runtimePriorities,
+}) {
+  const items = buildBacklogItems({
+    experimentReport,
+    operatorReport,
+    missionReport,
+    liveControllerReport,
+    runtimePriorities,
+  })
     .sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
   return {
     generated_at: new Date().toISOString(),
@@ -4131,6 +4150,17 @@ function buildBacklogPlan({ experimentReport, operatorReport, missionReport, run
         blocked_lane_counts: missionReport.blocked_lane_counts,
         mission_command_executed_count: missionReport.mission_command_executed_count,
       },
+      live_controller_ledger: {
+        path: liveControllerReport.ledger?.path,
+        total_records: liveControllerReport.total_records,
+        top_repeated_action: liveControllerReport.top_repeated_action,
+        top_next_safe_command: liveControllerReport.top_next_safe_command,
+        top_provider_candidate: liveControllerReport.top_provider_candidate,
+        action_counts: liveControllerReport.action_counts,
+        throttle_counts: liveControllerReport.throttle_counts,
+        provider_command_executed_count: liveControllerReport.provider_command_executed_count,
+        paper_order_created_count: liveControllerReport.paper_order_created_count,
+      },
       runtime_priorities: {
         next_priority: runtimePriorities.next_priority,
         total_priorities: runtimePriorities.priorities.length,
@@ -4146,7 +4176,13 @@ function buildBacklogPlan({ experimentReport, operatorReport, missionReport, run
   };
 }
 
-function buildBacklogItems({ experimentReport, operatorReport, missionReport, runtimePriorities }) {
+function buildBacklogItems({
+  experimentReport,
+  operatorReport,
+  missionReport,
+  liveControllerReport,
+  runtimePriorities,
+}) {
   const items = [];
   const topExperiment = experimentReport.top_experiment;
   const ready = experimentReport.ready_experiment_counts ?? {};
@@ -4154,6 +4190,12 @@ function buildBacklogItems({ experimentReport, operatorReport, missionReport, ru
   const topMissionAction = missionReport.top_next_action;
   const missionLaneCounts = missionReport.blocked_lane_counts ?? {};
   const missionNextLaneCounts = missionReport.next_lane_counts ?? {};
+  const controllerActionCounts = liveControllerReport.action_counts ?? {};
+  const controllerThrottleCounts = liveControllerReport.throttle_counts ?? {};
+  const controllerFreezeFrequency = controllerActionCounts.freeze_collection ?? 0;
+  const controllerThrottleFrequency = controllerActionCounts.throttle_internal_watch ?? 0;
+  const controllerProviderCandidateFrequency = controllerActionCounts.operator_provider_candidate ?? 0;
+  const controllerPaperCandidateFrequency = controllerActionCounts.paper_autopilot_candidate ?? 0;
   const runtimePriority = runtimePriorities.next_priority;
   const experimentRuntimeFrequency = countFor(experimentReport.next_experiment_counts, "runtime_channel_recovery");
   const operatorRuntimeFrequency = countFor(operatorReport.next_action_counts, "npm run hermes:runtime-check");
@@ -4264,6 +4306,42 @@ function buildBacklogItems({ experimentReport, operatorReport, missionReport, ru
     }));
   }
 
+  if (controllerFreezeFrequency > 0
+    || controllerThrottleFrequency > 0
+    || controllerProviderCandidateFrequency > 0
+    || controllerPaperCandidateFrequency > 0) {
+    items.push(backlogItem({
+      id: "harden_live_controller_feedback_loop",
+      title: "Harden live-controller feedback from repeated collection decisions",
+      priority: 35,
+      source: ["live_controller_ledger"],
+      frequency: Math.max(
+        controllerFreezeFrequency,
+        controllerThrottleFrequency,
+        controllerProviderCandidateFrequency,
+        controllerPaperCandidateFrequency,
+      ),
+      rationale: "Repeated live-controller decisions show where Hermes is losing collection leverage; convert freeze/throttle/provider-candidate evidence into safer cadence and data-quality work.",
+      targetFiles: [
+        "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+        "docs/hermes-operating-model.md",
+        "services/api/src/tennis_edge/services/operational_state.py",
+      ],
+      validationCommands: [
+        "npm --silent run hermes:live-controller-ledger-report",
+        "npm --silent run hermes:live-controller",
+        "npm run api:check:operational-truth -- --pretty",
+      ],
+      acceptanceEvidence: [
+        "live_controller_ledger.action_counts explains repeated freezes/throttles",
+        "provider_command_executed_count=0",
+        "paper_order_created_count=0 unless backend paper route is explicitly run",
+        `blocked_throttle_count=${controllerThrottleCounts.blocked ?? 0}`,
+      ],
+      blocks: ["live_collection_cadence", "paper_ready", "learning_ready"],
+    }));
+  }
+
   if (topExperiment === "enterprise_eligibility_review") {
     items.push(backlogItem({
       id: "complete_budget_chain_before_enterprise",
@@ -4293,18 +4371,20 @@ function buildBacklogItems({ experimentReport, operatorReport, missionReport, ru
       id: "collect_more_hermes_operating_evidence",
       title: "Collect more Hermes operating evidence before changing code",
       priority: 90,
-      source: ["experiment_ledger", "operator_ledger"],
+      source: ["experiment_ledger", "operator_ledger", "live_controller_ledger"],
       frequency: 0,
       rationale: "No repeated pattern is strong enough yet; continue ledger collection instead of guessing.",
       targetFiles: ["hermes/runs/*.jsonl"],
       validationCommands: [
         "npm --silent run hermes:experiment-ledger",
         "npm --silent run hermes:operator-ledger",
+        "npm --silent run hermes:live-controller-ledger",
         "npm --silent run hermes:backlog-plan",
       ],
       acceptanceEvidence: [
         "experiment_ledger.total_records increases",
         "operator_ledger.total_records increases",
+        "live_controller_ledger.total_records increases",
       ],
       blocks: [],
     }));

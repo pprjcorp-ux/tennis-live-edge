@@ -348,6 +348,9 @@ The JSON mode is `source_use_manifest`; evidence rows require
 `provider_quota_spend_without_operator`. `hermes:ops-compiler` includes the
 manifest as `source_use_manifest` plus an execution-graph node, so operator and
 cron packets cannot hide source-use review behind source-route summaries.
+`hermes:scheduler-rehearsal` schedules it every 15 minutes, and
+`hermes:implementation-handoff` includes it in every work-order validation
+bundle before collection/import changes.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam

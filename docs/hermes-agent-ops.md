@@ -328,7 +328,9 @@ forbidden actions. It is read-only and cannot fetch datasets, call providers,
 scrape, bypass, create paper orders or submit real orders.
 `hermes:ops-compiler` embeds this packet as `source_use_manifest` and adds a
 `source_use_manifest` graph node, so channel/cron summaries preserve the source
-contract before implementation handoff.
+contract before implementation handoff. `scheduler-rehearsal` schedules it as a
+recurring read-only check, and `implementation-handoff` adds it to every
+work-order validation command list.
 
 Use `hermes:historical-backfill-plan` when Hermes needs more offline evidence
 for priors, calibration or backtests. It ranks internal replay, public

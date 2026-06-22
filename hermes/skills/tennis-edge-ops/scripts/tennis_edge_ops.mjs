@@ -8562,6 +8562,7 @@ function buildImplementationHandoff(backlogPlan, effectiveness = null) {
 function implementationWorkOrder(item) {
   const validationCommands = dedupeStrings([
     ...(item.validation_commands ?? []),
+    "npm --silent run hermes:source-use-manifest",
     "npm run hermes:test",
     "python3 scripts/check_private_runtime.py",
     "git diff --check",
@@ -10879,6 +10880,12 @@ function schedulerSchedule(loop, grandSlam = null) {
       command: "npm --silent run hermes:source-discovery",
       everyMinutes: 15,
       reason: "Review allowed acquisition paths and blocked source routes without spending provider quota.",
+    }),
+    schedulerItem({
+      id: "source_use_manifest",
+      command: "npm --silent run hermes:source-use-manifest",
+      everyMinutes: 15,
+      reason: "Audit source-use, license, attribution and quota gates before collection/import work.",
     }),
     schedulerItem({
       id: "trigger_policy",

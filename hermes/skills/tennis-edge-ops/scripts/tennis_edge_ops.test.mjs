@@ -4495,6 +4495,7 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
   assert.equal(payload.work_order.can_create_paper_orders, false);
   assert.equal(payload.work_order.target_files.includes("hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs"), true);
   assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:live-controller-ledger-report"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:source-use-manifest"), true);
   assert.equal(payload.work_order.validation_commands.includes("npm run hermes:test"), true);
   assert.equal(payload.work_order.validation_commands.includes("python3 scripts/check_private_runtime.py"), true);
   assert.equal(payload.work_order.acceptance_criteria.includes("provider_api_call_allowed=false"), true);
@@ -4611,6 +4612,7 @@ test("implementation-handoff turns source-route pressure into a safe work order"
   assert.equal(payload.work_order.suggested_steps.includes("prove_route_provider_and_bypass_counters_remain_zero"), true);
   assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:source-route-ledger-report"), true);
   assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:source-route-matrix"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:source-use-manifest"), true);
   assert.equal(payload.work_order.acceptance_criteria.includes("source_route_ledger.top_next_route=replay_backfill"), true);
   assert.equal(payload.work_order.acceptance_criteria.includes("route_command_executed_count=0"), true);
   assert.equal(payload.work_order.acceptance_criteria.includes("provider_command_executed_count=0"), true);
@@ -5151,6 +5153,12 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(payload.next_tick.command, "npm run hermes:runtime-check");
     assert.equal(payload.schedule.some((item) => item.command === "npm --silent run hermes:safe-loop"), true);
     assert.equal(payload.schedule.some((item) => item.command === "npm --silent run hermes:quota-plan"), true);
+    const sourceUseItem = payload.schedule.find((item) => item.id === "source_use_manifest");
+    assert.equal(sourceUseItem.command, "npm --silent run hermes:source-use-manifest");
+    assert.equal(sourceUseItem.every_minutes, 15);
+    assert.equal(sourceUseItem.provider_api_call_allowed, false);
+    assert.equal(sourceUseItem.can_create_paper_orders, false);
+    assert.equal(sourceUseItem.can_submit_real_orders, false);
     const effectivenessItem = payload.schedule.find((item) => item.id === "autonomy_effectiveness");
     assert.equal(effectivenessItem.command, "npm --silent run hermes:autonomy-effectiveness");
     assert.equal(effectivenessItem.every_minutes, 60);

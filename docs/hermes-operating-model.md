@@ -111,6 +111,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 15 minutes to audit experiment recommendations locally: `npm run hermes:experiment-ledger`.
 - Hourly/daily to review experiment recommendation quality: `npm run hermes:experiment-ledger-report`.
 - Hourly/daily to convert ledger evidence into implementation priorities: `npm run hermes:backlog-plan`.
+- Before coding from Hermes evidence: `npm run hermes:implementation-handoff`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
 - Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
@@ -220,6 +221,13 @@ operator, mission, experiment and live-controller ledger reports, then emits
 implementation priorities with target files, validation commands, acceptance
 evidence and blocked gates. It does not edit code or run the listed validation
 commands.
+
+`hermes:implementation-handoff` is the bridge from backlog evidence to actual
+Codex/Hermes engineering work. It turns the current `backlog-plan` priority
+into one read-only work order with target files, suggested steps, validation
+commands, acceptance criteria, prohibited changes and safety flags. It does not
+edit files, spend provider quota, create paper orders, activate cron jobs or
+mutate runtime services.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

@@ -698,6 +698,7 @@ def main() -> int:
         "hermes:experiment-ledger",
         "hermes:experiment-ledger-report",
         "hermes:backlog-plan",
+        "hermes:implementation-handoff",
         "hermes:operator-packet",
         "hermes:operator-ledger",
         "hermes:operator-ledger-report",

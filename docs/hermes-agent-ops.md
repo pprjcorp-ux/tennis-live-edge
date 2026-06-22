@@ -50,6 +50,7 @@ npm run hermes:experiment-lab
 npm run hermes:experiment-ledger
 npm run hermes:experiment-ledger-report
 npm run hermes:backlog-plan
+npm run hermes:implementation-handoff
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report

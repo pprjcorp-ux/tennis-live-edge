@@ -1668,6 +1668,22 @@ async function backlogPlan() {
   }));
 }
 
+async function implementationHandoff() {
+  const experimentReport = buildExperimentLedgerReport(readExperimentLedgerRecords());
+  const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
+  const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
+  const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
+  const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
+  const backlog = buildBacklogPlan({
+    experimentReport,
+    operatorReport,
+    missionReport,
+    liveControllerReport,
+    runtimePriorities,
+  });
+  printJson(buildImplementationHandoff(backlog));
+}
+
 async function operatorPacket() {
   const loop = await safeLoopData();
   printJson(buildOperatorPacket(loop));
@@ -4227,6 +4243,141 @@ function buildBacklogPlan({
   };
 }
 
+function buildImplementationHandoff(backlogPlan) {
+  const nextItem = backlogPlan.next_item;
+  const workOrder = nextItem ? implementationWorkOrder(nextItem) : null;
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "implementation_handoff",
+    status: nextItem ? "ready" : "collecting",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    source_plan: {
+      mode: backlogPlan.mode,
+      status: backlogPlan.status,
+      next_item_id: nextItem?.id ?? null,
+      total_items: backlogPlan.items.length,
+    },
+    work_order: workOrder,
+    implementation_policy: {
+      branch: "budget",
+      commit_style: "small_cohesive_conventional_commit",
+      mutate_runtime_services: false,
+      run_provider_smoke_by_default: false,
+      spend_provider_quota: false,
+      create_orders: false,
+      real_execution_allowed: false,
+    },
+    evidence: {
+      sources: nextItem?.source ?? [],
+      frequency: nextItem?.frequency ?? 0,
+      rationale: nextItem?.rationale ?? "No repeated pattern is strong enough yet.",
+      backlog_evidence: backlogPlan.evidence,
+    },
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      anti_bot_bypass_allowed: false,
+      geolocation_bypass_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function implementationWorkOrder(item) {
+  const validationCommands = dedupeStrings([
+    ...(item.validation_commands ?? []),
+    "npm run hermes:test",
+    "python3 scripts/check_private_runtime.py",
+    "git diff --check",
+  ]);
+  return {
+    id: item.id,
+    title: item.title,
+    priority: item.priority,
+    objective: item.rationale,
+    target_files: item.target_files ?? [],
+    blocked_gates: item.blocks ?? [],
+    suggested_steps: implementationStepsFor(item),
+    validation_commands: validationCommands,
+    acceptance_criteria: dedupeStrings([
+      ...(item.acceptance_evidence ?? []),
+      "provider_api_call_allowed=false",
+      "can_submit_real_orders=false",
+      "can_create_paper_orders=false",
+      "llm_per_tick_allowed=false",
+      "enterprise_eligible stays gated behind budget_chain_completed",
+    ]),
+    prohibited_changes: [
+      "do not enable real execution",
+      "do not run provider calls unless a separate operator command explicitly requests it",
+      "do not automate sportsbook browser sessions",
+      "do not bypass anti-bot, geolocation, paywall or Terms-of-Service controls",
+      "do not read, print or commit secrets",
+      "do not create, change or activate cron/LaunchAgent/runtime services from this handoff",
+    ],
+    output_expectation: "Produce a small code/doc/test change that makes the selected backlog item more true, then run the listed validations.",
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function implementationStepsFor(item) {
+  const genericSteps = [
+    "inspect_target_files_and_existing_tests",
+    "make_the_smallest_code_or_doc_change_that_advances_the_backlog_item",
+    "add_or_update_tests_for_the_new_evidence_contract",
+    "run_validation_commands_and_preserve_budget_first_safety",
+  ];
+  const stepsById = {
+    stabilize_hermes_runtime_channels: [
+      "prove_runtime_findings_are_represented_without_mutating_services",
+      "improve_channel_readiness_or_runtime_fix_plan_output",
+      ...genericSteps.slice(2),
+    ],
+    expand_allowed_source_backfill: [
+      "map_allowed_internal_replay_and_licensed_routes",
+      "keep_forbidden_scraping_and_bypass_routes_explicitly_blocked",
+      ...genericSteps.slice(2),
+    ],
+    harden_paper_autopilot_learning_loop: [
+      "trace_backend_approved_paper_candidates_without_real_orders",
+      "verify_training_evidence_is_recorded_after_settlement_only",
+      ...genericSteps.slice(2),
+    ],
+    harden_live_controller_feedback_loop: [
+      "derive_next_safe_collection_work_from_live_controller_ledger_patterns",
+      "prove_freeze_throttle_provider_candidate_counts_remain_non_executing",
+      ...genericSteps.slice(2),
+    ],
+    complete_budget_chain_before_enterprise: [
+      "prove_budget_chain_completion_requirements_from_operational_truth",
+      "keep_enterprise_eligibility_false_until_cursor_and_smoke_evidence_pass",
+      ...genericSteps.slice(2),
+    ],
+    collect_more_hermes_operating_evidence: [
+      "collect_read_only_ledgers_or_improve_their_quality_without_changing_runtime",
+      "rerun_backlog_plan_after_evidence_increases",
+      ...genericSteps.slice(2),
+    ],
+  };
+  return stepsById[item.id] ?? genericSteps;
+}
+
 function buildBacklogItems({
   experimentReport,
   operatorReport,
@@ -4498,6 +4649,10 @@ function dedupeBacklogItems(items) {
     seen.add(item.id);
     return true;
   });
+}
+
+function dedupeStrings(items) {
+  return [...new Set(items.filter(Boolean))];
 }
 
 function countFor(rows = [], command) {
@@ -8301,6 +8456,7 @@ const commands = {
   "experiment-ledger": experimentLedger,
   "experiment-ledger-report": experimentLedgerReport,
   "backlog-plan": backlogPlan,
+  "implementation-handoff": implementationHandoff,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,

@@ -224,6 +224,11 @@ summarizes repeated experiment recommendations without writing or executing.
 The `backlog-plan` command reads local mission, operator, experiment and
 live-controller ledgers and emits non-executing implementation priorities with
 target files, validation commands, and acceptance evidence.
+The `implementation-handoff` command turns the current `backlog-plan` priority
+into a read-only work order for Codex/Hermes operators. It includes target
+files, suggested steps, validation commands, acceptance criteria, prohibited
+changes and safety flags, but it must not edit files, run provider calls, create
+orders or mutate runtime services.
 Runtime commands should carry `runtime_findings` and non-executed diagnostic
 actions, with `mutates_runtime_if_run=true` for manual gateway/service changes.
 The `operator-packet` command compresses safe-loop into a short channel-safe

@@ -36,6 +36,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs unblock-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs playbook
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-stats
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-window
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
@@ -94,6 +95,9 @@ commands or create orders.
 The `live-stats` command emits deterministic live collection, processing,
 freshness, signal, cost, and learning metrics. It is safe for frequent polling
 and keeps LLM-per-tick disabled.
+The `live-window` command emits a read-only go/no-go decision for live
+operation. It returns `paper_ready`, `monitor`, `blocked`, or `safety_stop`
+with explicit gates and never executes the next action.
 The `learning-review` command emits a weekly readiness packet for ROI, CLV,
 production training examples, model review gates, and real-execution hard
 blocking. It is read-only and does not promote models.

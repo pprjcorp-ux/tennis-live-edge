@@ -106,6 +106,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Final gate before manual cron creation: `npm run hermes:activation-checklist`.
 - When activation is blocked: `npm run hermes:runtime-fix-plan`.
 - Every 1-5 minutes during active windows: `npm run hermes:live-stats`.
+- Every 1-5 minutes during active windows: `npm run hermes:live-window`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
 - Every 5 minutes while blocked: `npm run hermes:unblock-plan`.
@@ -181,6 +182,12 @@ statistics from persisted match state; cost utilization; and a sampling policy
 such as `cold_safe_mode`, `budget_chain_polling`, `paper_signal_watch`, or
 `learning_collection`. It keeps `llm_per_tick_allowed=false` so Hermes can be
 fast and cheap while Python/Postgres keep doing the tick math.
+
+`hermes:live-window` is the preferred go/no-go packet for an active live
+window. It reuses the deterministic event and live-stats gates, returns
+`paper_ready`, `monitor`, `blocked`, or `safety_stop`, and keeps
+`next_action.executes_now=false` so cron or Telegram can report the decision
+without creating orders or spending quota.
 
 `hermes:learning-review` is the preferred weekly packet. It packages the
 learning gates, ROI, CLV, settled paper volume, production training examples,

@@ -37,6 +37,7 @@ npm run hermes:events
 npm run hermes:unblock-plan
 npm run hermes:playbook
 npm run hermes:live-stats
+npm run hermes:live-window
 npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
@@ -98,6 +99,11 @@ collection health, processing health, signal readiness, freshness buckets,
 learning progress, cost efficiency, and the safe sampling policy from internal
 FastAPI state. It is designed for frequent cron/Telegram use without LLM
 analysis on every tick.
+
+`hermes:live-window` is the go/no-go packet for a live operating window. It
+combines event gates, provider mode, freshness, budget-chain state, signal
+readiness, and execution safety into `paper_ready`, `monitor`, `blocked`, or
+`safety_stop`. It is read-only and never executes the returned next action.
 
 `hermes:learning-review` is the weekly readiness packet. It summarizes
 settled paper evidence, production training examples, ROI/CLV readiness and

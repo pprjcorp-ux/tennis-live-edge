@@ -132,6 +132,14 @@ async function liveStats() {
   printJson(buildLiveStats(report, eventPlan, playbookPlan));
 }
 
+async function liveWindow() {
+  const report = await intelligenceData();
+  const eventPlan = buildEventPlan(report);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  printJson(buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan));
+}
+
 async function learningReview() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -2258,6 +2266,177 @@ function buildLiveStats(report, eventPlan, playbookPlan) {
   };
 }
 
+function buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan) {
+  const gates = liveWindowGates(report, eventPlan, liveStatsPlan);
+  const blockers = liveWindowBlockers(gates, eventPlan);
+  const status = liveWindowStatus({ gates, eventPlan });
+  const windowOpen = status === "paper_ready" || status === "monitor";
+  const autopilotCandidate = status === "paper_ready";
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "live_window",
+    status,
+    window_open: windowOpen,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    autopilot_candidate: autopilotCandidate,
+    active_phase: playbookPlan.active_phase,
+    provider_mode: report.data_snapshot?.provider_mode,
+    sampling_policy: liveStatsPlan.sampling_policy,
+    health_scores: liveStatsPlan.health_scores,
+    signal_stats: liveStatsPlan.signal_stats,
+    freshness: liveStatsPlan.freshness,
+    gates,
+    blockers,
+    next_action: liveWindowNextAction({ status, eventPlan, playbookPlan, liveStatsPlan }),
+    forbidden_actions: report.forbidden_collection_paths ?? [],
+    allowed_collection_paths: report.allowed_collection_paths ?? [],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function liveWindowGates(report, eventPlan, liveStatsPlan) {
+  const freshness = liveStatsPlan.freshness ?? {};
+  const signals = liveStatsPlan.signal_stats ?? {};
+  const budget = liveStatsPlan.budget_chain ?? {};
+  const safety = report.safety ?? {};
+  const providerMode = report.data_snapshot?.provider_mode;
+  return [
+    liveWindowGate({
+      id: "real_execution_hard_block",
+      status: safety.real_execution_hard_block === true && safety.can_submit_real_orders !== true ? "pass" : "fail",
+      summary: "Real execution must remain impossible during live-window decisions.",
+    }),
+    liveWindowGate({
+      id: "event_severity_clear",
+      status: ["critical", "high"].includes(eventPlan.severity) ? "fail" : "pass",
+      summary: `Event severity is ${eventPlan.severity}.`,
+    }),
+    liveWindowGate({
+      id: "budget_chain_completed",
+      status: budget.completed ? "pass" : "fail",
+      summary: "Budget provider chain must be complete before live paper readiness.",
+    }),
+    liveWindowGate({
+      id: "provider_mode_live",
+      status: providerMode === "live_with_keys" ? "pass" : "warn",
+      summary: `Provider mode is ${providerMode ?? "unknown"}.`,
+    }),
+    liveWindowGate({
+      id: "fresh_scores",
+      status: Number(freshness.stale_score_matches ?? 0) === 0 ? "pass" : "fail",
+      summary: `${freshness.stale_score_matches ?? 0} sampled matches have stale score state.`,
+    }),
+    liveWindowGate({
+      id: "fresh_odds",
+      status: Number(freshness.stale_odds_matches ?? 0) === 0 ? "pass" : "fail",
+      summary: `${freshness.stale_odds_matches ?? 0} sampled matches have stale odds state.`,
+    }),
+    liveWindowGate({
+      id: "entrada_available",
+      status: Number(signals.entry ?? 0) > 0 ? "pass" : "warn",
+      summary: `${signals.entry ?? 0} Entrada signals are currently visible.`,
+    }),
+    liveWindowGate({
+      id: "paper_autopilot_allowed",
+      status: signals.paper_autopilot_allowed ? "pass" : "fail",
+      summary: "Backend event gates must allow paper autopilot before any paper order route is suggested.",
+    }),
+  ];
+}
+
+function liveWindowGate({ id, status, summary }) {
+  return { id, status, summary };
+}
+
+function liveWindowBlockers(gates, eventPlan) {
+  const blockers = gates
+    .filter((gate) => gate.status === "fail")
+    .map((gate) => gate.id);
+  if (["critical", "high"].includes(eventPlan.severity)) {
+    blockers.push(`event_severity:${eventPlan.severity}`);
+  }
+  return [...new Set(blockers)];
+}
+
+function liveWindowStatus({ gates, eventPlan }) {
+  if (gates.some((gate) => gate.id === "real_execution_hard_block" && gate.status === "fail")) {
+    return "safety_stop";
+  }
+  if (["critical", "high"].includes(eventPlan.severity)) {
+    return "blocked";
+  }
+  if (gates.some((gate) => gate.status === "fail")) {
+    return "blocked";
+  }
+  if (
+    gates.every((gate) => gate.status === "pass")
+    && eventPlan.can_run_paper_autopilot
+  ) {
+    return "paper_ready";
+  }
+  return "monitor";
+}
+
+function liveWindowNextAction({ status, eventPlan, playbookPlan, liveStatsPlan }) {
+  if (status === "safety_stop" || status === "blocked") {
+    return liveWindowAction({
+      id: "route_events",
+      command: "npm --silent run hermes:events",
+      reason: `Resolve blockers before opening live window; current severity is ${eventPlan.severity}.`,
+    });
+  }
+  if (status === "paper_ready") {
+    return liveWindowAction({
+      id: "paper_autopilot",
+      command: "npm run hermes:autopilot",
+      reason: "Backend gates show Entrada signals and paper autopilot eligibility; execution still happens only through protected backend paper route.",
+      requiresAdminToken: true,
+      canCreatePaperOrders: true,
+    });
+  }
+  const readyStep = playbookPlan.steps.find((step) => step.status === "ready" && !step.writes)
+    ?? liveStatsPlan.next_safe_commands.find((step) => !step.writes);
+  return liveWindowAction({
+    id: readyStep?.id ?? "observe_state",
+    command: readyStep?.command ?? "npm --silent run hermes:intelligence",
+    reason: "Live window is open for monitoring only; keep observing internal state.",
+  });
+}
+
+function liveWindowAction({
+  id,
+  command,
+  reason,
+  requiresAdminToken = false,
+  canCreatePaperOrders = false,
+}) {
+  return {
+    id,
+    command,
+    reason,
+    requires_admin_token: requiresAdminToken,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: canCreatePaperOrders,
+    executes_now: false,
+  };
+}
+
 function buildLearningReview(report, eventPlan, playbookPlan) {
   const learning = report.learning_snapshot ?? {};
   const budget = report.budget_chain_snapshot ?? {};
@@ -2613,6 +2792,7 @@ const commands = {
   "unblock-plan": unblockPlan,
   playbook,
   "live-stats": liveStats,
+  "live-window": liveWindow,
   "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,

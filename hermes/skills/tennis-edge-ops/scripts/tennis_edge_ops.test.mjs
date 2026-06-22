@@ -1408,6 +1408,116 @@ test("live-stats emits deterministic collection, processing, and sampling metric
   }
 });
 
+test("live-window emits a go/no-go packet without executing actions", async () => {
+  const cleanFixtures = eventRouterFixtures({
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "live_with_keys",
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 12,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          steps: [],
+        },
+        source_summary: {
+          total_matches: 2,
+          persisted_matches: 2,
+          match_freshness: [
+            {
+              match_id: "match_live_1",
+              source: "live",
+              persisted: true,
+              score_age_ms: 4000,
+              odds_age_ms: 3000,
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server: cleanServer, apiBase: cleanApiBase } = await startServer((request, response) => {
+    const payload = cleanFixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["live-window", `--api-base=${cleanApiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "live_window");
+    assert.equal(payload.status, "paper_ready");
+    assert.equal(payload.window_open, true);
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.autopilot_candidate, true);
+    assert.equal(payload.next_action.command, "npm run hermes:autopilot");
+    assert.equal(payload.next_action.executes_now, false);
+    assert.equal(payload.gates.every((gate) => gate.status === "pass"), true);
+    assert.equal(payload.forbidden_actions.includes("sportsbook_ui_automation"), true);
+  } finally {
+    cleanServer.close();
+  }
+
+  const blockedFixtures = eventRouterFixtures({
+    "/api/v1/provider-cursors": [
+      {
+        provider: "odds_api_io",
+        stream: "tennis.live",
+        status: "gap",
+        resync_required: true,
+        last_seq: 12,
+        expected_next_seq: 13,
+        gap_count: 1,
+      },
+    ],
+    "/api/v1/signals/live": [{ id: "sig_1", status: "Entrada" }],
+  });
+  const { server: blockedServer, apiBase: blockedApiBase } = await startServer((request, response) => {
+    const payload = blockedFixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["live-window", `--api-base=${blockedApiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.window_open, false);
+    assert.equal(payload.autopilot_candidate, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.blockers.includes("event_severity:high"), true);
+    assert.equal(payload.gates.some((gate) => gate.id === "event_severity_clear" && gate.status === "fail"), true);
+    assert.equal(payload.next_action.command, "npm --silent run hermes:events");
+  } finally {
+    blockedServer.close();
+  }
+});
+
 test("budget-chain emits a dry-run provider onboarding plan without spending quota", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/signals/live": [],

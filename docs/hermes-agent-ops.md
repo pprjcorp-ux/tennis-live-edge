@@ -23,6 +23,7 @@ npm run hermes:events
 npm run hermes:unblock-plan
 npm run hermes:playbook
 npm run hermes:live-stats
+npm run hermes:live-window
 npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
@@ -98,6 +99,12 @@ Use `hermes:live-stats` for high-frequency live operations summaries. It emits
 deterministic collection, processing, signal, freshness, cost, learning, and
 sampling-policy metrics from internal APIs only. This is the preferred packet
 for fast monitoring because it avoids per-tick LLM analysis.
+
+Use `hermes:live-window` when Hermes, Telegram, or the dashboard needs one
+go/no-go answer for the current live window. It combines event severity,
+provider mode, score/odds freshness, signal readiness, budget-chain completion,
+and execution safety into `paper_ready`, `monitor`, `blocked`, or
+`safety_stop`. It never executes the returned `next_action`.
 
 Use `hermes:learning-review` for weekly ROI/CLV/calibration/readiness review.
 It is read-only, recommends the `gpt-5.5` route for interpretation, and keeps

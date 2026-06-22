@@ -132,6 +132,11 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes high-frequency monitoring should consume `npm run hermes:live-stats`;
   it provides deterministic live collection/processing metrics and keeps
   `llm_per_tick_allowed=false`.
+- Hermes live-window decisions should consume `npm run hermes:live-window`; it
+  is a read-only go/no-go packet for live collection/paper readiness, must not
+  execute commands, spend provider quota, create orders, or enable real
+  execution, and should return `paper_ready`, `monitor`, `blocked`, or
+  `safety_stop` with explicit gates.
 - Hermes weekly learning/readiness review should consume
   `npm run hermes:learning-review`; it is read-only, routes interpretation to
   the critical model, and must keep real execution blocked.
@@ -180,6 +185,7 @@ npm run api:check:operational-truth -- --pretty
 npm run hermes:events
 npm run hermes:playbook
 npm run hermes:live-stats
+npm run hermes:live-window
 npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal

@@ -557,6 +557,10 @@ that trace. It identifies repeated freeze/throttle/paper-candidate decisions,
 recurring next commands, recurring provider candidates, top feedback blockers,
 and top safe repair actions, so the repo can prioritize improvements from
 observed live-control evidence without granting Hermes execution authority.
+It normalizes legacy rows that only contain the nested `controller` packet, so
+older `freeze_collection` records still produce `blocked_throttle_count`,
+`top_feedback_blocker`, `top_feedback_next_action`, and
+`feedback_repair_ready` before a new controller ledger row is written.
 
 `hermes:live-repair-plan` is the next-step selector for those feedback
 contracts. It reads the current live-controller packet and the ledger report,

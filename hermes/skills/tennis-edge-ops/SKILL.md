@@ -205,7 +205,10 @@ local JSONL audit file with `action_executed=false`,
 `provider_command_executed=false`, and `paper_order_created=false`. The
 `live-controller-ledger-report` command summarizes repeated live-controller
 actions, throttles, source routes, provider candidates, feedback blockers and
-safe repair actions without writing or executing anything.
+safe repair actions without writing or executing anything. It must also
+normalize legacy rows that only contain the nested controller packet, exposing
+`blocked_throttle_count` and `feedback_repair_ready` before new rows are
+collected.
 The `live-repair-plan` command selects one next safe repair from the current
 `feedback_plan` and repeated ledger evidence. Treat its selected repair as a
 work-order recommendation only; it must not execute commands, spend provider

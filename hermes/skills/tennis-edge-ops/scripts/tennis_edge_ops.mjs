@@ -9092,6 +9092,11 @@ function buildBacklogPlan({
         top_provider_candidate: liveControllerReport.top_provider_candidate,
         action_counts: liveControllerReport.action_counts,
         throttle_counts: liveControllerReport.throttle_counts,
+        blocked_throttle_count: liveControllerReport.blocked_throttle_count,
+        freeze_collection_count: liveControllerReport.freeze_collection_count,
+        top_feedback_blocker: liveControllerReport.top_feedback_blocker,
+        top_feedback_next_action: liveControllerReport.top_feedback_next_action,
+        feedback_repair_ready: liveControllerReport.feedback_repair_ready,
         provider_command_executed_count: liveControllerReport.provider_command_executed_count,
         paper_order_created_count: liveControllerReport.paper_order_created_count,
       },
@@ -11726,10 +11731,13 @@ function readLiveControllerLedgerRecords() {
 }
 
 function buildLiveControllerLedgerReport({ path, records, invalid_rows: invalidRows }) {
-  const nextCommandCounts = rankedCounts(records.map((record) => record.next_safe_command).filter(Boolean));
-  const providerCandidateCounts = rankedCounts(records.map((record) => record.provider_candidate_command).filter(Boolean));
-  const feedbackBlockerCounts = rankedCounts(records.flatMap((record) => record.feedback_blocker_ids ?? []));
-  const feedbackActionCounts = rankedCounts(records.flatMap((record) => record.feedback_next_action_ids ?? []));
+  const normalizedRecords = records.map(normalizeLiveControllerLedgerRecord);
+  const nextCommandCounts = rankedCounts(normalizedRecords.map((record) => record.next_safe_command).filter(Boolean));
+  const providerCandidateCounts = rankedCounts(normalizedRecords.map((record) => record.provider_candidate_command).filter(Boolean));
+  const feedbackBlockerCounts = rankedCounts(normalizedRecords.flatMap((record) => record.feedback_blocker_ids ?? []));
+  const feedbackActionCounts = rankedCounts(normalizedRecords.flatMap((record) => record.feedback_next_action_ids ?? []));
+  const actionCounts = countValues(normalizedRecords.map((record) => record.action).filter(Boolean));
+  const throttleCounts = countValues(normalizedRecords.map((record) => record.throttle_level).filter(Boolean));
   return {
     generated_at: new Date().toISOString(),
     mode: "live_controller_ledger_report",
@@ -11746,24 +11754,28 @@ function buildLiveControllerLedgerReport({ path, records, invalid_rows: invalidR
       invalid_rows: invalidRows,
     },
     total_records: records.length,
-    action_executed_count: records.filter((record) => record.action_executed === true).length,
-    collection_command_executed_count: records.filter((record) => record.collection_command_executed === true).length,
-    provider_command_executed_count: records.filter((record) => record.provider_command_executed === true).length,
-    paper_order_created_count: records.filter((record) => record.paper_order_created === true).length,
-    status_counts: countValues(records.map((record) => record.status).filter(Boolean)),
-    action_counts: countValues(records.map((record) => record.action).filter(Boolean)),
-    throttle_counts: countValues(records.map((record) => record.throttle_level).filter(Boolean)),
-    source_route_counts: countValues(records.map((record) => record.source_route_id).filter(Boolean)),
-    feature_contract_status_counts: countValues(records.map((record) => record.feature_contract_status).filter(Boolean)),
+    action_executed_count: normalizedRecords.filter((record) => record.action_executed === true).length,
+    collection_command_executed_count: normalizedRecords.filter((record) => record.collection_command_executed === true).length,
+    provider_command_executed_count: normalizedRecords.filter((record) => record.provider_command_executed === true).length,
+    paper_order_created_count: normalizedRecords.filter((record) => record.paper_order_created === true).length,
+    status_counts: countValues(normalizedRecords.map((record) => record.status).filter(Boolean)),
+    action_counts: actionCounts,
+    throttle_counts: throttleCounts,
+    blocked_throttle_count: throttleCounts.blocked ?? 0,
+    freeze_collection_count: actionCounts.freeze_collection ?? 0,
+    source_route_counts: countValues(normalizedRecords.map((record) => record.source_route_id).filter(Boolean)),
+    feature_contract_status_counts: countValues(normalizedRecords.map((record) => record.feature_contract_status).filter(Boolean)),
     next_safe_command_counts: nextCommandCounts,
     provider_candidate_counts: providerCandidateCounts,
     feedback_blocker_counts: feedbackBlockerCounts,
     feedback_next_action_counts: feedbackActionCounts,
-    top_repeated_action: rankedCounts(records.map((record) => record.action).filter(Boolean))[0]?.command ?? null,
+    top_repeated_action: rankedCounts(normalizedRecords.map((record) => record.action).filter(Boolean))[0]?.command ?? null,
     top_next_safe_command: nextCommandCounts[0]?.command ?? null,
     top_provider_candidate: providerCandidateCounts[0]?.command ?? null,
     top_feedback_blocker: feedbackBlockerCounts[0]?.command ?? null,
     top_feedback_next_action: feedbackActionCounts[0]?.command ?? null,
+    feedback_repair_ready: feedbackActionCounts.length > 0,
+    latest_normalized_record: normalizedRecords[normalizedRecords.length - 1] ?? null,
     latest_record: records[records.length - 1] ?? null,
     safety: {
       can_submit_real_orders: false,
@@ -11774,6 +11786,58 @@ function buildLiveControllerLedgerReport({ path, records, invalid_rows: invalidR
       llm_per_tick_allowed: false,
     },
   };
+}
+
+function normalizeLiveControllerLedgerRecord(record) {
+  const controller = record.controller ?? {};
+  const decision = controller.operator_decision ?? {};
+  const feedback = controller.feedback_plan ?? {};
+  const quota = controller.quota ?? {};
+  const sourceRoute = controller.source_route ?? {};
+  const featureContract = controller.feature_contract ?? {};
+  const derivedBlockerIds = deriveLiveControllerLedgerBlockers({ record, controller, quota, featureContract });
+  const feedbackBlockerIds = firstNonEmptyArray(record.feedback_blocker_ids, feedback.blocker_ids, derivedBlockerIds);
+  return {
+    ...record,
+    status: record.status ?? controller.status ?? null,
+    action: record.action ?? decision.action ?? null,
+    next_safe_command: record.next_safe_command ?? decision.next_safe_command?.command ?? null,
+    provider_candidate_command: record.provider_candidate_command ?? decision.provider_candidate?.command ?? null,
+    protected_backend_command: record.protected_backend_command ?? decision.protected_backend_action?.command ?? null,
+    throttle_level: record.throttle_level ?? quota.throttle?.level ?? null,
+    source_route_id: record.source_route_id ?? decision.source_route_id ?? sourceRoute.next_route?.id ?? null,
+    feature_contract_status: record.feature_contract_status ?? decision.feature_contract_status ?? featureContract.status ?? null,
+    feedback_blocker_ids: feedbackBlockerIds,
+    feedback_next_action_ids: firstNonEmptyArray(
+      record.feedback_next_action_ids,
+      (feedback.safe_repair_queue ?? []).map((action) => action.id),
+      dedupeFeedbackActions(feedbackBlockerIds.flatMap((id) => liveControllerFeedbackActionsForBlocker(id))).map((action) => action.id),
+    ),
+    action_executed: record.action_executed === true,
+    collection_command_executed: record.collection_command_executed === true,
+    provider_command_executed: record.provider_command_executed === true,
+    paper_order_created: record.paper_order_created === true,
+  };
+}
+
+function deriveLiveControllerLedgerBlockers({ record, controller, quota, featureContract }) {
+  const collection = controller.collection ?? {};
+  return [...new Set([
+    ...((controller.live_window?.blockers ?? []).map(String)),
+    ...((controller.events ?? [])
+      .filter((event) => ["critical", "high"].includes(event.severity))
+      .map((event) => `${event.type}:${event.severity}`)),
+    ...(record.throttle_level && record.throttle_level !== "normal" ? [`quota:${record.throttle_level}`] : []),
+    ...(quota.throttle?.level && quota.throttle.level !== "normal" ? [`quota:${quota.throttle.level}`] : []),
+    ...(record.feature_contract_status && record.feature_contract_status !== "ready" ? [`feature_contract:${record.feature_contract_status}`] : []),
+    ...(featureContract.status && featureContract.status !== "ready" ? [`feature_contract:${featureContract.status}`] : []),
+    ...(collection.status && !["live_watch", "monitor", "paper_ready"].includes(collection.status) ? [`collection:${collection.status}`] : []),
+  ])];
+}
+
+function firstNonEmptyArray(...arrays) {
+  const found = arrays.find((items) => Array.isArray(items) && items.length > 0);
+  return found ?? [];
 }
 
 function buildLiveRepairLedger(plan) {

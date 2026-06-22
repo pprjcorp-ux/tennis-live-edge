@@ -4875,6 +4875,11 @@ test("backlog-plan uses live-controller ledger as implementation evidence", asyn
   assert.equal(payload.evidence.live_controller_ledger.top_next_safe_command, "npm --silent run hermes:events");
   assert.equal(payload.evidence.live_controller_ledger.action_counts.freeze_collection, 2);
   assert.equal(payload.evidence.live_controller_ledger.throttle_counts.blocked, 2);
+  assert.equal(payload.evidence.live_controller_ledger.blocked_throttle_count, 2);
+  assert.equal(payload.evidence.live_controller_ledger.freeze_collection_count, 2);
+  assert.equal(payload.evidence.live_controller_ledger.feedback_repair_ready, true);
+  assert.equal(payload.evidence.live_controller_ledger.top_feedback_blocker, "feature_contract:blocked");
+  assert.equal(payload.evidence.live_controller_ledger.top_feedback_next_action, "inspect_quota_throttle");
   assert.equal(payload.evidence.live_controller_ledger.provider_command_executed_count, 0);
   assert.equal(payload.evidence.live_controller_ledger.paper_order_created_count, 0);
   assert.equal(payload.safety.can_submit_real_orders, false);
@@ -9406,6 +9411,70 @@ test("live-controller-ledger-report summarizes repeated control decisions", asyn
   assert.equal(payload.top_provider_candidate, "npm run api:ingest:live-budget");
   assert.equal(payload.top_feedback_blocker, "feature_contract:blocked");
   assert.equal(typeof payload.top_feedback_next_action, "string");
+});
+
+test("live-controller-ledger-report derives feedback from legacy nested controller records", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-live-controller-ledger-legacy-"));
+  const ledgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const row = {
+    mode: "live_controller_ledger_record",
+    outcome: "observed",
+    action_executed: false,
+    collection_command_executed: false,
+    provider_command_executed: false,
+    paper_order_created: false,
+    status: "blocked",
+    action: "freeze_collection",
+    next_safe_command: "npm --silent run hermes:events",
+    throttle_level: "blocked",
+    source_route_id: "replay_backfill",
+    feature_contract_status: "blocked",
+    controller: {
+      status: "blocked",
+      provider_mode: "replay",
+      live_window: {
+        status: "blocked",
+        blockers: ["budget_chain_completed", "fresh_scores", "fresh_odds"],
+      },
+      events: [
+        { type: "event_severity", severity: "high" },
+        { type: "provider_health_degraded", severity: "high" },
+      ],
+      collection: { status: "blocked" },
+      quota: { throttle: { level: "blocked" } },
+      feature_contract: { status: "blocked" },
+      operator_decision: {
+        action: "freeze_collection",
+        next_safe_command: { command: "npm --silent run hermes:events" },
+        source_route_id: "replay_backfill",
+        feature_contract_status: "blocked",
+      },
+    },
+  };
+  writeFileSync(ledgerPath, `${JSON.stringify(row)}\n`);
+
+  const result = await runCli(["live-controller-ledger-report"], {
+    env: { HERMES_LIVE_CONTROLLER_LEDGER_PATH: ledgerPath },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "live_controller_ledger_report");
+  assert.equal(payload.total_records, 1);
+  assert.equal(payload.blocked_throttle_count, 1);
+  assert.equal(payload.freeze_collection_count, 1);
+  assert.equal(payload.feedback_repair_ready, true);
+  assert.equal(payload.top_feedback_blocker, "budget_chain_completed");
+  assert.equal(payload.feedback_blocker_counts.some((item) => item.command === "collection:blocked"), true);
+  assert.equal(payload.feedback_blocker_counts.some((item) => item.command === "feature_contract:blocked"), true);
+  assert.equal(payload.feedback_next_action_counts.some((item) => item.command === "inspect_budget_chain"), true);
+  assert.equal(payload.feedback_next_action_counts.some((item) => item.command === "repair_odds_cursor_or_freshness"), true);
+  assert.equal(payload.feedback_next_action_counts.some((item) => item.command === "route_high_severity_events"), true);
+  assert.equal(payload.latest_normalized_record.feedback_blocker_ids.includes("budget_chain_completed"), true);
+  assert.equal(payload.latest_normalized_record.feedback_next_action_ids.includes("inspect_budget_chain"), true);
+  assert.equal(payload.provider_command_executed_count, 0);
+  assert.equal(payload.paper_order_created_count, 0);
+  assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
 test("live-repair-plan selects one safe repair from controller feedback without executing it", async () => {

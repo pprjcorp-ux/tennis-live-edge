@@ -281,6 +281,10 @@ with normalized blocker IDs and safe repair commands, and the ledger/report
 summarize `feedback_blocker_ids` plus `feedback_next_action_ids` so repeated
 freezes become implementation evidence. The controller still never executes
 provider commands, paper orders or real orders by itself.
+`hermes:live-controller-ledger-report` also normalizes older rows that only
+stored the nested controller packet, exposing `blocked_throttle_count`,
+`top_feedback_blocker`, `top_feedback_next_action`, and
+`feedback_repair_ready` from historical freeze records.
 
 `hermes:live-repair-plan` consumes the current `feedback_plan` plus the local
 live-controller ledger report and selects one next repair. It is an operator

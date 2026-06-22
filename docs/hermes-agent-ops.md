@@ -353,7 +353,9 @@ Use `hermes:autonomy-effectiveness` before implementation handoff or autonomy
 escalation. It reads only local ledgers, measures repeated blockers and
 protected-action claims, scores the current loop, and recommends a
 non-executing next action. It is the proof that Hermes is learning from
-operation rather than just producing more packets.
+operation rather than just producing more packets. The ops compiler,
+implementation handoff and cron proposal now include this measurement so
+repeated blockers become scheduled review evidence, not automatic actions.
 
 Use `hermes:runtime-fix-plan` when activation is blocked and the operator needs
 the next safest remediation step. It derives ordered actions from failed

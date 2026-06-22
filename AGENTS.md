@@ -279,6 +279,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   `npm run hermes:autonomy-effectiveness`; it reads only local ledgers, scores
   repeated blockers and protected-action claims, and recommends the next
   non-executing handoff without provider calls, paper orders, or real execution.
+  The ops compiler, implementation handoff, scheduler rehearsal, and cron
+  proposal must include this evidence so repeated blockers turn into reviewable
+  work orders, never automatic actions.
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
   `next_action` it reports. It should preserve `read_only_route` when Hermes can

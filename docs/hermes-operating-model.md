@@ -284,7 +284,9 @@ local experiment, operator, mission, live-controller and Grand Slam mission
 ledger reports, scores evidence volume and repeated blockers, flags any
 protected-action claim, and recommends either more evidence, safety review or
 `implementation-handoff`. It does not execute the handoff or any reported
-command.
+command. The ops compiler, implementation handoff and scheduler/cron proposal
+consume the same packet so evidence-driven implementation work is visible in
+the operating graph without raising autonomy permissions.
 
 `hermes:runtime-fix-priorities` maps those recurrent blockers into a ranked
 non-mutating remediation queue. It is the bridge from observation to local

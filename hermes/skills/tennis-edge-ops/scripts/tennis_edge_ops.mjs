@@ -1672,6 +1672,7 @@ async function opsCompiler() {
     intelligenceData(),
     grandSlamReadinessData(),
   ]);
+  const { effectiveness } = autonomyEffectivenessData();
   const eventPlan = buildEventPlan(report);
   const sourcePlan = buildSourceDiscovery({ report, eventPlan });
   const triggerPlan = buildTriggerPolicy({ loop, sourcePlan, grandSlam });
@@ -1685,6 +1686,7 @@ async function opsCompiler() {
     grandSlam,
     autonomyPlan,
     operator,
+    effectiveness,
   }));
 }
 
@@ -1834,23 +1836,11 @@ async function experimentLedgerReport() {
 }
 
 async function backlogPlan() {
-  const experimentReport = buildExperimentLedgerReport(readExperimentLedgerRecords());
-  const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
-  const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
-  const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
-  const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
-  const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
-  printJson(buildBacklogPlan({
-    experimentReport,
-    operatorReport,
-    missionReport,
-    liveControllerReport,
-    grandSlamMissionReport,
-    runtimePriorities,
-  }));
+  const { backlog } = autonomyEffectivenessData();
+  printJson(backlog);
 }
 
-async function autonomyEffectiveness() {
+function autonomyEffectivenessData() {
   const experimentReport = buildExperimentLedgerReport(readExperimentLedgerRecords());
   const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
   const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
@@ -1865,7 +1855,7 @@ async function autonomyEffectiveness() {
     grandSlamMissionReport,
     runtimePriorities,
   });
-  printJson(buildAutonomyEffectiveness({
+  const effectiveness = buildAutonomyEffectiveness({
     experimentReport,
     operatorReport,
     missionReport,
@@ -1873,25 +1863,27 @@ async function autonomyEffectiveness() {
     grandSlamMissionReport,
     runtimePriorities,
     backlog,
-  }));
-}
-
-async function implementationHandoff() {
-  const experimentReport = buildExperimentLedgerReport(readExperimentLedgerRecords());
-  const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
-  const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
-  const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
-  const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
-  const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
-  const backlog = buildBacklogPlan({
+  });
+  return {
     experimentReport,
     operatorReport,
     missionReport,
     liveControllerReport,
     grandSlamMissionReport,
     runtimePriorities,
-  });
-  printJson(buildImplementationHandoff(backlog));
+    backlog,
+    effectiveness,
+  };
+}
+
+async function autonomyEffectiveness() {
+  const { effectiveness } = autonomyEffectivenessData();
+  printJson(effectiveness);
+}
+
+async function implementationHandoff() {
+  const { backlog, effectiveness } = autonomyEffectivenessData();
+  printJson(buildImplementationHandoff(backlog, effectiveness));
 }
 
 async function operatorPacket() {
@@ -3878,7 +3870,7 @@ function buildTriggerPolicy({ loop, sourcePlan, grandSlam = null }) {
   };
 }
 
-function buildOpsCompiler({ loop, sourcePlan, triggerPlan, grandSlam, autonomyPlan, operator }) {
+function buildOpsCompiler({ loop, sourcePlan, triggerPlan, grandSlam, autonomyPlan, operator, effectiveness = null }) {
   const compiledAction = compileNextAction({ loop, triggerPlan, autonomyPlan, operator });
   return {
     generated_at: new Date().toISOString(),
@@ -3892,7 +3884,7 @@ function buildOpsCompiler({ loop, sourcePlan, triggerPlan, grandSlam, autonomyPl
     can_create_paper_orders: false,
     llm_per_tick_allowed: false,
     compiled_action: compiledAction,
-    execution_graph: buildExecutionGraph({ triggerPlan, sourcePlan, grandSlam, autonomyPlan, operator }),
+    execution_graph: buildExecutionGraph({ triggerPlan, sourcePlan, grandSlam, autonomyPlan, operator, effectiveness }),
     model_router: buildOpsModelRouter({ loop, triggerPlan }),
     operator_packet: {
       priority: operator.priority,
@@ -3927,6 +3919,7 @@ function buildOpsCompiler({ loop, sourcePlan, triggerPlan, grandSlam, autonomyPl
       recommended_lane: autonomyPlan.recommended_lane,
       autonomy_matrix: autonomyPlan.autonomy_matrix,
     },
+    autonomy_effectiveness: autonomyEffectivenessSummary(effectiveness),
     safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
     forbidden_actions: loop.forbidden_actions ?? sourcePlan.forbidden_actions ?? [],
     safety: {
@@ -3970,8 +3963,8 @@ function compileNextAction({ loop, triggerPlan, autonomyPlan, operator }) {
   };
 }
 
-function buildExecutionGraph({ triggerPlan, sourcePlan, grandSlam, autonomyPlan, operator }) {
-  return [
+function buildExecutionGraph({ triggerPlan, sourcePlan, grandSlam, autonomyPlan, operator, effectiveness = null }) {
+  const nodes = [
     graphNode({
       id: "trigger_policy",
       command: "npm --silent run hermes:trigger-policy",
@@ -4005,6 +3998,15 @@ function buildExecutionGraph({ triggerPlan, sourcePlan, grandSlam, autonomyPlan,
       status: operator.status,
     }),
   ];
+  if (effectiveness) {
+    nodes.push(graphNode({
+      id: "autonomy_effectiveness",
+      command: "npm --silent run hermes:autonomy-effectiveness",
+      reason: `Autonomy effectiveness is ${effectiveness.status}; score=${effectiveness.score}.`,
+      status: effectiveness.status,
+    }));
+  }
+  return nodes;
 }
 
 function graphNode({ id, command, reason, status }) {
@@ -5500,6 +5502,17 @@ function buildAutonomyEffectiveness({
   };
 }
 
+function autonomyEffectivenessSummary(effectiveness) {
+  if (!effectiveness) return null;
+  return {
+    status: effectiveness.status,
+    score: effectiveness.score,
+    next_action: effectiveness.next_action,
+    repeat_pressure: effectiveness.repeat_pressure,
+    protected_action_claims: effectiveness.protected_action_claims,
+  };
+}
+
 function autonomyEvidenceTotals({
   experimentReport,
   operatorReport,
@@ -5698,9 +5711,10 @@ function sumNumbers(values) {
   return values.reduce((total, value) => total + (Number(value ?? 0) || 0), 0);
 }
 
-function buildImplementationHandoff(backlogPlan) {
+function buildImplementationHandoff(backlogPlan, effectiveness = null) {
   const nextItem = backlogPlan.next_item;
   const workOrder = nextItem ? implementationWorkOrder(nextItem) : null;
+  const effectivenessSummary = autonomyEffectivenessSummary(effectiveness);
   return {
     generated_at: new Date().toISOString(),
     mode: "implementation_handoff",
@@ -5722,16 +5736,20 @@ function buildImplementationHandoff(backlogPlan) {
     implementation_policy: {
       branch: "budget",
       commit_style: "small_cohesive_conventional_commit",
+      requires_effectiveness_review: Boolean(effectiveness),
       mutate_runtime_services: false,
       run_provider_smoke_by_default: false,
       spend_provider_quota: false,
       create_orders: false,
       real_execution_allowed: false,
     },
+    autonomy_effectiveness: effectivenessSummary,
     evidence: {
       sources: nextItem?.source ?? [],
       frequency: nextItem?.frequency ?? 0,
       rationale: nextItem?.rationale ?? "No repeated pattern is strong enough yet.",
+      effectiveness_status: effectiveness?.status ?? null,
+      effectiveness_score: effectiveness?.score ?? null,
       backlog_evidence: backlogPlan.evidence,
     },
     safety: {
@@ -8054,6 +8072,12 @@ function schedulerSchedule(loop, grandSlam = null) {
       reason: "Convert local operator and experiment ledger evidence into non-executing implementation priorities.",
     }),
     schedulerItem({
+      id: "autonomy_effectiveness",
+      command: "npm --silent run hermes:autonomy-effectiveness",
+      everyMinutes: 60,
+      reason: "Measure whether local Hermes ledgers justify implementation or more evidence without executing actions.",
+    }),
+    schedulerItem({
       id: "runtime_check",
       command: "npm run hermes:runtime-check",
       everyMinutes: loop.runtime?.status === "ready" ? 30 : 5,
@@ -8294,8 +8318,10 @@ function cronMessageFor(item, rehearsal) {
           ? "Report health_scores, freshness, sampling_policy, budget_chain, and safety only."
           : item.id === "grand_slam_readiness"
             ? "Report status, active_grand_slams, matches, prediction_ready, paper_ready, next_action, and safety only."
-            : item.id === "grand_slam_mission"
+          : item.id === "grand_slam_mission"
               ? "Report active_phase, grand_slam_readiness, live_control, historical_backfill, learning_review, next_action, and safety only."
+              : item.id === "autonomy_effectiveness"
+                ? "Report status, score, next_action, repeat_pressure, protected_action_claims, and safety only."
           : item.id === "budget_chain"
             ? "Report current_step, blockers, smoke_command, and provider_api_call_allowed."
             : "Report review_status, gates, blockers, next_actions, and real_execution_recommendation.";

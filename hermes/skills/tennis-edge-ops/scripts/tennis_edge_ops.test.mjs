@@ -2460,6 +2460,11 @@ test("trigger-policy wakes on Grand Slam prediction readiness without executing 
 test("ops-compiler produces a single non-executing orchestration packet", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-ops-compiler-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const grandSlamMissionLedgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
   writeFileSync(
     fakeHermes,
     [
@@ -2471,6 +2476,27 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
     ].join("\n"),
     { mode: 0o755 }
   );
+  writeFileSync(experimentLedgerPath, "");
+  writeFileSync(operatorLedgerPath, [
+    JSON.stringify({
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    }),
+    JSON.stringify({
+      mode: "operator_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      next_action_command: "npm run hermes:runtime-check",
+      packet: { priority: "high", status: "runtime_degraded", cost_guard: { throttle_level: "blocked" } },
+    }),
+    "",
+  ].join("\n"));
+  writeFileSync(missionLedgerPath, "");
+  writeFileSync(controllerLedgerPath, "");
+  writeFileSync(grandSlamMissionLedgerPath, "");
   const called = [];
   const fixtures = eventRouterFixtures({
     "/api/v1/agent/preflight": {
@@ -2533,7 +2559,14 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
 
   try {
     const result = await runCli(["ops-compiler", `--api-base=${apiBase}`], {
-      env: { HERMES_BIN: fakeHermes },
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+        HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+        HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+        HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+        HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamMissionLedgerPath,
+      },
     });
 
     assert.equal(result.exit, 0);
@@ -2550,8 +2583,13 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
     assert.equal(payload.execution_graph[0].id, "trigger_policy");
     assert.equal(payload.execution_graph.some((node) => node.id === "source_discovery"), true);
     assert.equal(payload.execution_graph.some((node) => node.id === "grand_slam_readiness"), true);
+    assert.equal(payload.execution_graph.some((node) => node.id === "autonomy_effectiveness"), true);
     assert.equal(payload.grand_slam_readiness.prediction_ready, false);
     assert.equal(payload.execution_graph.every((node) => node.executes_now === false), true);
+    assert.equal(payload.autonomy_effectiveness.status, "needs_implementation");
+    assert.equal(Number.isFinite(payload.autonomy_effectiveness.score), true);
+    assert.equal(payload.autonomy_effectiveness.next_action.command, "npm --silent run hermes:implementation-handoff");
+    assert.equal(payload.autonomy_effectiveness.protected_action_claims.total, 0);
     assert.equal(payload.compiled_action.command, "npm run hermes:runtime-check");
     assert.equal(payload.compiled_action.executes_now, false);
     assert.equal(payload.model_router.routine_model, "gpt-5.4-mini");
@@ -3327,6 +3365,7 @@ test("backlog-plan uses live-controller ledger as implementation evidence", asyn
   const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
   const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
   const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const grandSlamMissionLedgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
   const controllerRows = [
     {
       mode: "live_controller_ledger_record",
@@ -3611,6 +3650,7 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
   const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
   const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
   const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const grandSlamMissionLedgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
   const controllerRows = [
     {
       mode: "live_controller_ledger_record",
@@ -3647,6 +3687,7 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
   writeFileSync(operatorLedgerPath, "");
   writeFileSync(missionLedgerPath, "");
   writeFileSync(controllerLedgerPath, `${controllerRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  writeFileSync(grandSlamMissionLedgerPath, "");
 
   const result = await runCli(["implementation-handoff"], {
     env: {
@@ -3654,6 +3695,7 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
       HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
       HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
       HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+      HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamMissionLedgerPath,
     },
   });
 
@@ -3681,7 +3723,13 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
   assert.equal(payload.work_order.prohibited_changes.includes("do not automate sportsbook browser sessions"), true);
   assert.equal(payload.implementation_policy.spend_provider_quota, false);
   assert.equal(payload.implementation_policy.real_execution_allowed, false);
+  assert.equal(payload.implementation_policy.requires_effectiveness_review, true);
+  assert.equal(payload.autonomy_effectiveness.status, "needs_implementation");
+  assert.equal(Number.isFinite(payload.autonomy_effectiveness.score), true);
+  assert.equal(payload.autonomy_effectiveness.next_action.command, "npm --silent run hermes:implementation-handoff");
   assert.equal(payload.evidence.sources.includes("live_controller_ledger"), true);
+  assert.equal(payload.evidence.effectiveness_status, "needs_implementation");
+  assert.equal(Number.isFinite(payload.evidence.effectiveness_score), true);
   assert.equal(payload.evidence.backlog_evidence.live_controller_ledger.provider_command_executed_count, 0);
   assert.equal(payload.safety.anti_bot_bypass_allowed, false);
   assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
@@ -4054,6 +4102,12 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(payload.next_tick.command, "npm run hermes:runtime-check");
     assert.equal(payload.schedule.some((item) => item.command === "npm --silent run hermes:safe-loop"), true);
     assert.equal(payload.schedule.some((item) => item.command === "npm --silent run hermes:quota-plan"), true);
+    const effectivenessItem = payload.schedule.find((item) => item.id === "autonomy_effectiveness");
+    assert.equal(effectivenessItem.command, "npm --silent run hermes:autonomy-effectiveness");
+    assert.equal(effectivenessItem.every_minutes, 60);
+    assert.equal(effectivenessItem.provider_api_call_allowed, false);
+    assert.equal(effectivenessItem.can_create_paper_orders, false);
+    assert.equal(effectivenessItem.can_submit_real_orders, false);
     const grandSlamItem = payload.schedule.find((item) => item.id === "grand_slam_readiness");
     assert.equal(grandSlamItem.command, "npm --silent run hermes:grand-slam-readiness");
     assert.equal(grandSlamItem.every_minutes, 30);
@@ -4335,6 +4389,12 @@ test("cron-proposal writes reviewable Hermes cron commands without creating jobs
     assert.equal(payload.can_create_paper_orders, false);
     assert.equal(payload.proposal_path, proposalPath);
     assert.equal(payload.jobs.some((job) => job.name === "tennis-edge-safe-loop"), true);
+    const effectivenessJob = payload.jobs.find((job) => job.name === "tennis-edge-autonomy-effectiveness");
+    assert.equal(effectivenessJob.every, "60m");
+    assert.equal(effectivenessJob.source_command, "npm --silent run hermes:autonomy-effectiveness");
+    assert.equal(effectivenessJob.message.includes("Report status, score, next_action"), true);
+    assert.equal(effectivenessJob.can_create_paper_orders, false);
+    assert.equal(effectivenessJob.provider_api_call_allowed, false);
     const grandSlamJob = payload.jobs.find((job) => job.name === "tennis-edge-grand-slam-readiness");
     assert.equal(grandSlamJob.every, "30m");
     assert.equal(grandSlamJob.source_command, "npm --silent run hermes:grand-slam-readiness");

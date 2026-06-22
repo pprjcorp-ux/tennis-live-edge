@@ -250,7 +250,10 @@ Hermes autonomy. It reads the local experiment, operator, mission,
 live-controller and Grand Slam mission ledgers, scores repeated blockers,
 flags any protected-action claim, and recommends the next non-executing
 handoff. It measures ledgers, not intent, and keeps provider spend, paper
-orders and real execution blocked.
+orders and real execution blocked. `hermes:ops-compiler`,
+`hermes:implementation-handoff`, `hermes:scheduler-rehearsal` and
+`hermes:cron-proposal` consume this packet so repeated evidence becomes a
+reviewable work route instead of another standalone report.
 
 `hermes:autonomy-brief` consolidates the safe loop, event routing, live-window
 state, quota throttle and local ledger priorities into one operating packet. It
@@ -346,7 +349,8 @@ unblock.
 `hermes:autonomy-effectiveness` should run before handoff work when enough
 ledger evidence exists. It decides whether Hermes is still only collecting
 evidence, has repeated blockers that justify implementation, or needs safety
-review because a ledger claims a protected action ran.
+review because a ledger claims a protected action ran. The implementation
+handoff carries its status and score in the work order evidence.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

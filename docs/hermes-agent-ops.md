@@ -107,6 +107,11 @@ Use only one variable from each pair if preferred:
 `ADMIN_API_TOKEN` or `TENNIS_EDGE_ADMIN_API_TOKEN`. Values belong in `.env` or
 the local shell only. Do not commit them, print them, or paste them into
 operator summaries.
+Placeholders and wildcard allowlists do not satisfy the gate. Values such as
+`replace-with-*`, `<random-32-byte-local-token>`, `<operator-email>`, `*`,
+`all`, and `any` are ignored. The readiness evidence includes
+`placeholder_values_ignored=true` and `minimum_length_enforced=true` for the
+local admin token, so copying `.env.example` as-is cannot unlock autonomy.
 
 Verification is read-only:
 

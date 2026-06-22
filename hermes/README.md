@@ -48,6 +48,11 @@ one admin token variable must be configured; the aliases exist so Hermes,
 legacy OpenClaw naming, and Tennis Edge backend wrappers agree on the same
 gate. Do not paste real values into chat, docs, commits, issue comments, or
 terminal output snippets.
+Hermes rejects placeholder values and wildcard allowlists: `replace-with-*`,
+`<random-32-byte-local-token>`, `<operator-email>`, `*`, `all`, `any`, and
+similar template values are ignored. The local admin token gate reports
+`placeholder_values_ignored=true` and `minimum_length_enforced=true`; use a
+random local token with at least 16 characters and keep it out of Git.
 
 After local values are present, verify the gate without printing values:
 

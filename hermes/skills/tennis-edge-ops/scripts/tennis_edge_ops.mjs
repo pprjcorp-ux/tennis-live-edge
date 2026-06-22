@@ -348,6 +348,7 @@ function buildChannelReadiness(runtime) {
       can_submit_real_orders: false,
       can_create_paper_orders: false,
       provider_api_call_allowed: false,
+      secret_value_printed: false,
       sportsbook_bypass_allowed: false,
       browser_sportsbook_automation_allowed: false,
       llm_per_tick_allowed: false,
@@ -357,6 +358,9 @@ function buildChannelReadiness(runtime) {
 
 function channelReadinessChecks(runtime) {
   const findings = runtime.runtime_findings ?? {};
+  const telegramAllowlistCount = envListCount(["HERMES_TELEGRAM_ALLOWED_USER_IDS", "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS"]);
+  const privateAllowlistCount = envListCount(["PRIVATE_ALLOWED_EMAILS", "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS"]);
+  const localAdminSecretConfigured = envConfigured(["ADMIN_API_TOKEN", "TENNIS_EDGE_ADMIN_API_TOKEN"]);
   return [
     channelReadinessCheck({
       id: "hermes_cli_available",
@@ -390,24 +394,33 @@ function channelReadinessChecks(runtime) {
     }),
     channelReadinessCheck({
       id: "telegram_allowlist_configured",
-      status: envListCount(["HERMES_TELEGRAM_ALLOWED_USER_IDS", "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS"]) > 0 ? "pass" : "fail",
+      status: telegramAllowlistCount > 0 ? "pass" : "fail",
       summary: "Telegram routing has an explicit local allowlist.",
       evidence: {
-        configured_count: envListCount(["HERMES_TELEGRAM_ALLOWED_USER_IDS", "OPENCLAW_TELEGRAM_ALLOWED_USER_IDS"]),
+        configured_count: telegramAllowlistCount,
+        placeholder_values_ignored: true,
       },
     }),
     channelReadinessCheck({
       id: "private_access_allowlist_configured",
-      status: envListCount(["PRIVATE_ALLOWED_EMAILS", "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS"]) > 0 ? "pass" : "fail",
+      status: privateAllowlistCount > 0 ? "pass" : "fail",
       summary: "Private Access has an explicit local email allowlist.",
       evidence: {
-        configured_count: envListCount(["PRIVATE_ALLOWED_EMAILS", "TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS"]),
+        configured_count: privateAllowlistCount,
+        placeholder_values_ignored: true,
       },
     }),
     channelReadinessCheck({
       id: "local_admin_secret_available",
-      status: envConfigured(["ADMIN_API_TOKEN", "TENNIS_EDGE_ADMIN_API_TOKEN"]) ? "pass" : "fail",
-      summary: "Local admin token is available for protected backend-only actions; value is not printed.",
+      status: localAdminSecretConfigured ? "pass" : "fail",
+      summary: localAdminSecretConfigured
+        ? "Local admin token is available for protected backend-only actions; value is not printed."
+        : "Local admin token is missing or still set to a placeholder; value is not printed.",
+      evidence: {
+        configured_count: localAdminSecretConfigured ? 1 : 0,
+        placeholder_values_ignored: true,
+        minimum_length_enforced: true,
+      },
     }),
   ];
 }
@@ -12605,14 +12618,48 @@ function activationCheck({ id, status, summary, evidence = {} }) {
 }
 
 function envConfigured(names) {
-  return names.some((name) => String(process.env[name] ?? "").trim().length > 0);
+  return names.some((name) => validSecretEnvValue(process.env[name]));
 }
 
 function envListCount(names) {
   return names
     .flatMap((name) => String(process.env[name] ?? "").split(","))
     .map((item) => item.trim())
-    .filter(Boolean).length;
+    .filter(validAllowlistEnvValue).length;
+}
+
+function validSecretEnvValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!validConfiguredEnvValue(raw)) return false;
+  return raw.length >= 16;
+}
+
+function validAllowlistEnvValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!validConfiguredEnvValue(raw)) return false;
+  return !["*", "all", "any", "everyone"].includes(raw.toLowerCase());
+}
+
+function validConfiguredEnvValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return false;
+  const normalized = raw.toLowerCase();
+  if (raw.startsWith("<") && raw.endsWith(">")) return false;
+  if (normalized.includes("replace-with")) return false;
+  return ![
+    "changeme",
+    "change-me",
+    "todo",
+    "none",
+    "null",
+    "undefined",
+    "your-token",
+    "your-secret",
+    "secret",
+    "password",
+    "token",
+    "local-admin",
+  ].includes(normalized);
 }
 
 function buildRuntimeFixPlan({ loop, rehearsal, proposal, activation }) {

@@ -770,6 +770,8 @@ def main() -> int:
         "telegram_allowlist_configured=pass",
         "private_access_allowlist_configured=pass",
         "local_admin_secret_available=pass",
+        "placeholder_values_ignored=true",
+        "minimum_length_enforced=true",
         "can_run_paper_autopilot",
         "active_ceiling",
         "next_required_gate",

@@ -303,7 +303,7 @@ test("autopilot aborts before protected action when preflight is blocked", async
 
   try {
     const result = await runCli(["autopilot", `--api-base=${apiBase}`, "--token-stdin"], {
-      stdin: "local-admin",
+      stdin: "test-admin-token-1234567890",
     });
 
     assert.equal(result.exit, 1);
@@ -347,7 +347,7 @@ test("autopilot proceeds when preflight is degraded but not blocked", async () =
 
   try {
     const result = await runCli(["autopilot", `--api-base=${apiBase}`, "--token-stdin"], {
-      stdin: "local-admin",
+      stdin: "test-admin-token-1234567890",
     });
 
     assert.equal(result.exit, 0);
@@ -486,11 +486,11 @@ test("ops-daily calls the protected operational endpoint and prints a compact re
         "--scenario=healthy",
         "--max-orders=2",
       ],
-      { stdin: "local-admin" }
+      { stdin: "test-admin-token-1234567890" }
     );
 
     assert.equal(result.exit, 0);
-    assert.equal(receivedToken, "local-admin");
+    assert.equal(receivedToken, "test-admin-token-1234567890");
     assert.deepEqual(receivedBody, {
       match_id: "match_atp_002",
       max_orders: 2,
@@ -1209,7 +1209,7 @@ test("channel-readiness proves channel_ready only when runtime and local allowli
       HERMES_BIN: fakeHermes,
       HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
       PRIVATE_ALLOWED_EMAILS: "operator@example.com",
-      ADMIN_API_TOKEN: "local-admin",
+      ADMIN_API_TOKEN: "test-admin-token-1234567890",
     },
   });
 
@@ -1224,6 +1224,51 @@ test("channel-readiness proves channel_ready only when runtime and local allowli
   assert.equal(payload.safety.real_execution_hard_block, true);
   assert.equal(payload.safety.can_submit_real_orders, false);
   assert.equal(payload.safety.provider_api_call_allowed, false);
+});
+
+test("channel-readiness rejects placeholders and wildcard channel secrets", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-channel-readiness-placeholder-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✓ running\\nMessaging Platforms\\n  Telegram      ✓ configured'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.log('doctor ok'); process.exit(0); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+
+  const result = await runCli(["channel-readiness"], {
+    env: {
+      HERMES_BIN: fakeHermes,
+      HERMES_TELEGRAM_ALLOWED_USER_IDS: "*",
+      PRIVATE_ALLOWED_EMAILS: "<operator-email>",
+      ADMIN_API_TOKEN: "replace-with-random-32-byte-token",
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "channel_readiness");
+  assert.equal(payload.status, "blocked");
+  assert.equal(payload.readiness_ceiling, "observe");
+  const checks = Object.fromEntries(payload.checks.map((check) => [check.id, check]));
+  assert.equal(checks.hermes_cli_available.status, "pass");
+  assert.equal(checks.gateway_service_running.status, "pass");
+  assert.equal(checks.doctor_passed.status, "pass");
+  assert.equal(checks.telegram_allowlist_configured.status, "fail");
+  assert.equal(checks.private_access_allowlist_configured.status, "fail");
+  assert.equal(checks.local_admin_secret_available.status, "fail");
+  assert.equal(checks.telegram_allowlist_configured.evidence.placeholder_values_ignored, true);
+  assert.equal(checks.private_access_allowlist_configured.evidence.placeholder_values_ignored, true);
+  assert.equal(checks.local_admin_secret_available.evidence.placeholder_values_ignored, true);
+  assert.equal(checks.local_admin_secret_available.evidence.minimum_length_enforced, true);
+  assert.equal(payload.next_action.id, "configure_telegram_allowlist");
+  assert.equal(payload.safety.secret_value_printed, false);
+  assert.equal(JSON.stringify(payload).includes("replace-with-random-32-byte-token"), false);
 });
 
 test("channel-recovery-plan summarizes local-only recovery gates without exposing secrets", async () => {
@@ -1280,7 +1325,7 @@ test("channel-recovery-plan summarizes local-only recovery gates without exposin
   ]);
   assert.equal(envById.telegram_allowlist.configured, false);
   assert.equal(envById.local_admin_token.secret_value_printed, false);
-  assert.equal(JSON.stringify(payload).includes("local-admin"), false);
+  assert.equal(JSON.stringify(payload).includes("test-admin-token-1234567890"), false);
   assert.equal(payload.operator_channel_bootstrap.mode, "operator_channel_bootstrap");
   assert.equal(payload.operator_channel_bootstrap.status, "needs_local_env");
   assert.equal(payload.operator_channel_bootstrap.writes, false);
@@ -1549,7 +1594,7 @@ test("mission-control prioritizes backend restore when internal API hangs", asyn
         HERMES_HTTP_TIMEOUT_MS: "100",
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
-        ADMIN_API_TOKEN: "local-admin",
+        ADMIN_API_TOKEN: "test-admin-token-1234567890",
       },
       timeoutMs: 8_000,
     });
@@ -3650,7 +3695,7 @@ test("autonomy-gates proves the highest safe autonomy level without executing ac
         HERMES_BIN: fakeHermes,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
-        ADMIN_API_TOKEN: "local-admin",
+        ADMIN_API_TOKEN: "test-admin-token-1234567890",
         HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
         HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
         HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
@@ -3716,7 +3761,7 @@ test("autonomy-gates does not skip blocked earlier gates when paper is otherwise
       env: {
         HERMES_BIN: fakeHermes,
         HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
-        ADMIN_API_TOKEN: "local-admin",
+        ADMIN_API_TOKEN: "test-admin-token-1234567890",
       },
     });
 
@@ -3763,7 +3808,7 @@ test("autonomy-gates routes running-gateway doctor timeouts to doctor-triage", a
       env: {
         HERMES_BIN: fakeHermes,
         HERMES_RUNTIME_DOCTOR_TIMEOUT_MS: "1000",
-        ADMIN_API_TOKEN: "local-admin",
+        ADMIN_API_TOKEN: "test-admin-token-1234567890",
       },
       timeoutMs: 12_000,
     });
@@ -3817,7 +3862,7 @@ test("experiment-lab ranks safe Hermes experiments without executing actions", a
         HERMES_BIN: fakeHermes,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
-        ADMIN_API_TOKEN: "local-admin",
+        ADMIN_API_TOKEN: "test-admin-token-1234567890",
       },
     });
 
@@ -3915,7 +3960,7 @@ test("experiment-lab prioritizes live-controller backlog evidence", async () => 
         HERMES_BIN: fakeHermes,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
-        ADMIN_API_TOKEN: "local-admin",
+        ADMIN_API_TOKEN: "test-admin-token-1234567890",
         HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
         HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
         HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
@@ -4008,7 +4053,7 @@ test("experiment-lab surfaces source-route backlog evidence", async () => {
         HERMES_BIN: fakeHermes,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
-        ADMIN_API_TOKEN: "local-admin",
+        ADMIN_API_TOKEN: "test-admin-token-1234567890",
         HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
         HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
         HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
@@ -4110,7 +4155,7 @@ test("experiment-lab surfaces source-use backlog evidence", async () => {
         HERMES_BIN: fakeHermes,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
-        ADMIN_API_TOKEN: "local-admin",
+        ADMIN_API_TOKEN: "test-admin-token-1234567890",
         HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
         HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
         HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
@@ -4215,7 +4260,7 @@ test("experiment-lab surfaces source-intake backlog evidence", async () => {
         HERMES_BIN: fakeHermes,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
-        ADMIN_API_TOKEN: "local-admin",
+        ADMIN_API_TOKEN: "test-admin-token-1234567890",
         HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
         HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
         HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
@@ -6971,7 +7016,7 @@ test("activation-checklist allows only manual cron activation when all gates pas
         HERMES_CRON_PROPOSAL_PATH: proposalPath,
         HERMES_TELEGRAM_ALLOWED_USER_IDS: "123456789",
         PRIVATE_ALLOWED_EMAILS: "operator@example.com",
-        ADMIN_API_TOKEN: "local-admin",
+        ADMIN_API_TOKEN: "test-admin-token-1234567890",
       },
     });
 

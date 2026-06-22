@@ -27,6 +27,7 @@
     "hermes:channel-readiness": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-readiness",
     "hermes:channel-recovery-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-recovery-plan",
     "hermes:backend-readiness": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backend-readiness",
+    "hermes:backend-latency-triage": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backend-latency-triage",
     "hermes:mission-control": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-control",
     "hermes:mission-ledger": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-ledger",
     "hermes:mission-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-ledger-report",

@@ -1094,6 +1094,110 @@ test("backend-readiness fails closed when FastAPI hangs", async () => {
   }
 });
 
+test("backend-readiness routes partial endpoint timeouts to latency triage", async () => {
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": [
+      { match_id: "match_1", status: "live" },
+    ],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    if (request.url === "/api/v1/dashboard/live-state") {
+      return;
+    }
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["backend-readiness", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_HTTP_TIMEOUT_MS: "100",
+      },
+      timeoutMs: 5_000,
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.some((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "backend_readiness");
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.request_errors.some((error) => error.label === "dashboard_state"), true);
+    assert.equal(payload.next_action.command, "npm run hermes:backend-latency-triage");
+    assert.equal(payload.next_action.mutates_runtime_if_run, false);
+    assert.equal(payload.next_action.requires_operator_confirmation, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+  }
+});
+
+test("backend-latency-triage measures partial endpoint latency without payload bodies", async () => {
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": [
+      { match_id: "match_1", status: "live", secret_field: "do-not-print" },
+    ],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    if (request.url === "/api/v1/dashboard/live-state") {
+      return;
+    }
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["backend-latency-triage", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BACKEND_TRIAGE_TIMEOUT_MS: "100",
+      },
+      timeoutMs: 5_000,
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.some((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "backend_latency_triage");
+    assert.equal(payload.status, "degraded");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.timeout_ms, 100);
+    assert.equal(payload.likely_cause, "partial_endpoint_latency_or_contention");
+    assert.equal(payload.failed_count >= 1, true);
+    assert.equal(payload.passed_count >= 1, true);
+    assert.equal(payload.probes.some((probe) => probe.label === "dashboard_state" && probe.timed_out), true);
+    assert.equal(payload.next_safe_actions[0].command, "HERMES_BACKEND_TRIAGE_TIMEOUT_MS=10000 npm run hermes:backend-latency-triage");
+    assert.equal(payload.safety.payload_body_printed, false);
+    assert.equal(JSON.stringify(payload).includes("do-not-print"), false);
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+  }
+});
+
 test("mission-control prioritizes backend restore when internal API hangs", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-mission-control-backend-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

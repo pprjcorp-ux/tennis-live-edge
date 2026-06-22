@@ -35,6 +35,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs doctor-triage
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-readiness
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs channel-recovery-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backend-readiness
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs backend-latency-triage
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-control
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs mission-ledger-report
@@ -116,6 +117,9 @@ The `backend-readiness` command proves local FastAPI readiness with bounded
 internal GETs against preflight, dashboard live-state, live matches, provider
 health, cost profile and execution status. It must fail closed, preserve the
 real-execution hard block, and never start services itself.
+The `backend-latency-triage` command measures bounded local FastAPI endpoint
+timings when readiness has partial timeouts. It must not print payload bodies,
+start services, call providers, or create orders.
 The `mission-control` command is the one-packet entrypoint for external agents:
 it merges backend readiness, channel readiness, source-route matrix and
 live-window into ordered lanes and one next action. It must not execute that

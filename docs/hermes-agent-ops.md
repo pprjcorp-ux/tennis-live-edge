@@ -22,6 +22,7 @@ npm run hermes:doctor-triage
 npm run hermes:channel-readiness
 npm run hermes:channel-recovery-plan
 npm run hermes:backend-readiness
+npm run hermes:backend-latency-triage
 npm run hermes:mission-control
 npm run hermes:mission-ledger
 npm run hermes:mission-ledger-report
@@ -111,6 +112,11 @@ live-window, match-pulse, source-route or paper-autopilot packets. It checks
 preflight, dashboard live-state, live matches, provider health, cost profile and
 execution status with bounded internal GETs, then fails closed into manual
 actions if the backend is unavailable.
+
+Use `hermes:backend-latency-triage` when backend readiness shows partial
+timeouts. It measures each local endpoint with bounded GETs, emits only compact
+shape summaries, and avoids provider calls, service starts, orders, and payload
+body printing.
 
 Use `hermes:mission-control` as the preferred one-packet entrypoint for Hermes,
 Telegram, dashboard, Cloudflare Agent or any external orchestrator. It merges

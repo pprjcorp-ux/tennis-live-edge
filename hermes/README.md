@@ -36,6 +36,7 @@ npm run hermes:doctor-triage
 npm run hermes:channel-readiness
 npm run hermes:channel-recovery-plan
 npm run hermes:backend-readiness
+npm run hermes:backend-latency-triage
 npm run hermes:mission-control
 npm run hermes:mission-ledger
 npm run hermes:mission-ledger-report
@@ -115,6 +116,11 @@ starting services: preflight, dashboard live-state, live matches, provider
 health, cost profile and execution status. It confirms real execution remains
 hard-blocked and emits manual actions such as `npm run api:dev` only when the
 API is unavailable.
+
+`hermes:backend-latency-triage` is the bounded follow-up when only some FastAPI
+endpoints timeout. It measures local endpoint duration, prints compact shape
+summaries only, and never starts services, calls providers, creates orders, or
+prints payload bodies.
 
 `hermes:mission-control` is the single safest entrypoint for external agents or
 operator channels. It merges backend readiness, channel readiness, source-route

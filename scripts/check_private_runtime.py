@@ -673,6 +673,7 @@ def main() -> int:
         "hermes:channel-readiness",
         "hermes:channel-recovery-plan",
         "hermes:backend-readiness",
+        "hermes:backend-latency-triage",
         "hermes:mission-control",
         "hermes:mission-ledger",
         "hermes:mission-ledger-report",

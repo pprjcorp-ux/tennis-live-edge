@@ -141,6 +141,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   it should verify internal FastAPI endpoints, dashboard state, live matches,
   provider health, cost profile, and execution hard-block before live-window or
   paper routing.
+- Hermes backend latency triage should consume `npm run hermes:backend-latency-triage`;
+  it is read-only and should measure bounded local FastAPI endpoint timings
+  when some endpoints answer but others timeout, without printing payload
+  bodies or starting services.
 - Hermes mission control should consume `npm run hermes:mission-control`; it
   should merge backend readiness, channel readiness, source routes and
   live-window into one ordered next action without executing anything.
@@ -288,6 +292,7 @@ npm run hermes:channel-readiness
 npm run hermes:doctor-triage
 npm run hermes:channel-recovery-plan
 npm run hermes:backend-readiness
+npm run hermes:backend-latency-triage
 npm run hermes:mission-control
 npm run hermes:mission-ledger
 npm run hermes:mission-ledger-report

@@ -8,6 +8,14 @@ const command = process.argv[2] ?? "briefing";
 const apiBaseArg = process.argv.find((arg) => arg.startsWith("--api-base="));
 const API_BASE = apiBaseArg ? apiBaseArg.slice("--api-base=".length) : "http://127.0.0.1:8000";
 const TOKEN_STDIN_FLAG = "--token-stdin";
+const BACKEND_READINESS_REQUESTS = [
+  { label: "preflight", path: "/api/v1/agent/preflight", fallback: backendUnavailablePreflight },
+  { label: "dashboard_state", path: "/api/v1/dashboard/live-state", fallback: backendUnavailableDashboardState },
+  { label: "live_matches", path: "/api/v1/live/matches", fallback: [] },
+  { label: "provider_health", path: "/api/v1/provider-health", fallback: backendUnavailableProviderHealth },
+  { label: "cost_profile", path: "/api/v1/cost-profile", fallback: backendUnavailableCostProfile },
+  { label: "execution_status", path: "/api/v1/execution/status", fallback: backendUnavailableExecutionStatus },
+];
 
 async function request(path, options = {}) {
   const { timeoutMs, ...fetchOptions } = options;
@@ -48,6 +56,14 @@ function boundedDoctorTriageTimeoutMs(value = process.env.HERMES_DOCTOR_TRIAGE_T
     return 1_500;
   }
   return Math.min(Math.max(Math.trunc(parsed), 100), 5_000);
+}
+
+function boundedBackendTriageTimeoutMs(value = process.env.HERMES_BACKEND_TRIAGE_TIMEOUT_MS) {
+  const parsed = Number(value ?? 2_000);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 2_000;
+  }
+  return Math.min(Math.max(Math.trunc(parsed), 100), 10_000);
 }
 
 async function safeRequest(path, fallback, label = path) {
@@ -148,6 +164,10 @@ async function backendReadiness() {
   printJson(await backendReadinessData());
 }
 
+async function backendLatencyTriage() {
+  printJson(await backendLatencyTriageData());
+}
+
 async function missionControl() {
   printJson(await missionControlData());
 }
@@ -185,14 +205,9 @@ async function missionControlData() {
 }
 
 async function backendReadinessData() {
-  const responses = await Promise.all([
-    safeRequest("/api/v1/agent/preflight", backendUnavailablePreflight, "preflight"),
-    safeRequest("/api/v1/dashboard/live-state", backendUnavailableDashboardState, "dashboard_state"),
-    safeRequest("/api/v1/live/matches", [], "live_matches"),
-    safeRequest("/api/v1/provider-health", backendUnavailableProviderHealth, "provider_health"),
-    safeRequest("/api/v1/cost-profile", backendUnavailableCostProfile, "cost_profile"),
-    safeRequest("/api/v1/execution/status", backendUnavailableExecutionStatus, "execution_status"),
-  ]);
+  const responses = await Promise.all(BACKEND_READINESS_REQUESTS.map((item) => (
+    safeRequest(item.path, item.fallback, item.label)
+  )));
   return buildBackendReadiness({
     preflightData: responses[0].data,
     dashboardState: responses[1].data,
@@ -202,6 +217,15 @@ async function backendReadinessData() {
     executionStatus: responses[5].data,
     requestErrors: responses.map((response) => response.error).filter(Boolean),
   });
+}
+
+async function backendLatencyTriageData() {
+  const timeoutMs = boundedBackendTriageTimeoutMs();
+  const probes = [];
+  for (const item of BACKEND_READINESS_REQUESTS) {
+    probes.push(await backendProbe(item, timeoutMs));
+  }
+  return buildBackendLatencyTriage({ probes, timeoutMs });
 }
 
 async function runtimeCheckData() {
@@ -628,18 +652,164 @@ function backendReadinessCheck({ id, status, summary, evidence = {} }) {
   return { id, status, summary, evidence };
 }
 
-function backendReadinessActions({ checks, requestErrors }) {
-  const byId = Object.fromEntries(checks.map((check) => [check.id, check]));
-  const actions = [];
-  if (requestErrors.length || byId.internal_api_reachable?.status !== "pass") {
-    actions.push(backendReadinessAction({
+async function backendProbe(item, timeoutMs) {
+  const startedAt = new Date();
+  const started = Date.now();
+  try {
+    const data = await request(item.path, { timeoutMs });
+    return {
+      label: item.label,
+      path: item.path,
+      status: "pass",
+      duration_ms: Date.now() - started,
+      timeout_ms: timeoutMs,
+      timed_out: false,
+      started_at: startedAt.toISOString(),
+      completed_at: new Date().toISOString(),
+      summary: backendProbeSummary(data),
+    };
+  } catch (error) {
+    const message = String(error.message ?? error);
+    return {
+      label: item.label,
+      path: item.path,
+      status: message.includes("timed out") ? "timeout" : "fail",
+      duration_ms: Date.now() - started,
+      timeout_ms: timeoutMs,
+      timed_out: message.includes("timed out"),
+      started_at: startedAt.toISOString(),
+      completed_at: new Date().toISOString(),
+      error: message,
+      summary: null,
+    };
+  }
+}
+
+function buildBackendLatencyTriage({ probes, timeoutMs }) {
+  const failed = probes.filter((probe) => probe.status !== "pass");
+  const passed = probes.filter((probe) => probe.status === "pass");
+  const likelyCause = backendLatencyLikelyCause({ probes, failed, passed });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "backend_latency_triage",
+    status: failed.length ? passed.length ? "degraded" : "blocked" : "ready",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    api_base: API_BASE,
+    timeout_ms: timeoutMs,
+    likely_cause: likelyCause,
+    passed_count: passed.length,
+    failed_count: failed.length,
+    timeout_count: probes.filter((probe) => probe.timed_out).length,
+    slowest_pass_ms: passed.length ? Math.max(...passed.map((probe) => probe.duration_ms)) : null,
+    probes,
+    next_safe_actions: backendLatencyActions({ likelyCause, failed, passed }),
+    operator_note: "This triage only probes local FastAPI endpoints with bounded GET requests; it does not start servers, mutate state, call providers, or print payload bodies.",
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+      payload_body_printed: false,
+    },
+  };
+}
+
+function backendProbeSummary(data) {
+  if (Array.isArray(data)) {
+    return { type: "array", count: data.length };
+  }
+  if (data && typeof data === "object") {
+    return {
+      type: "object",
+      keys: Object.keys(data).slice(0, 8),
+      status: data.status ?? data.readiness_status ?? null,
+    };
+  }
+  return { type: typeof data };
+}
+
+function backendLatencyLikelyCause({ probes, failed, passed }) {
+  if (!passed.length && failed.every((probe) => probe.timed_out)) {
+    return "backend_unreachable_or_event_loop_blocked";
+  }
+  if (failed.length && passed.length) {
+    return failed.some((probe) => probe.timed_out)
+      ? "partial_endpoint_latency_or_contention"
+      : "partial_endpoint_failure";
+  }
+  if (!failed.length) {
+    const slow = probes.some((probe) => probe.duration_ms > Math.min(probe.timeout_ms * 0.8, 2_000));
+    return slow ? "backend_responsive_but_slow" : "backend_responsive";
+  }
+  return "backend_unavailable";
+}
+
+function backendLatencyActions({ likelyCause, failed, passed }) {
+  if (likelyCause === "backend_responsive" || likelyCause === "backend_responsive_but_slow") {
+    return [
+      backendReadinessAction({
+        id: "rerun_backend_readiness",
+        priority: 10,
+        lane: "local_backend",
+        command: "npm run hermes:backend-readiness",
+        reason: "Backend endpoints responded to bounded probes; rerun readiness before live-window routing.",
+      }),
+    ];
+  }
+  if (passed.length && failed.length) {
+    return [
+      backendReadinessAction({
+        id: "rerun_longer_backend_latency_probe",
+        priority: 10,
+        lane: "local_backend",
+        command: "HERMES_BACKEND_TRIAGE_TIMEOUT_MS=10000 npm run hermes:backend-latency-triage",
+        reason: "Some local endpoints responded while others timed out; run a longer bounded probe before restarting services.",
+      }),
+      backendReadinessAction({
+        id: "verify_operational_truth_after_probe",
+        priority: 20,
+        lane: "local_backend",
+        command: "npm run api:check:operational-truth -- --pretty",
+        reason: "Confirm persisted replay, fail-closed signals, and execution hard block after endpoint latency stabilizes.",
+      }),
+    ];
+  }
+  return [
+    backendReadinessAction({
       id: "start_or_inspect_fastapi_manual_review",
       priority: 10,
       lane: "local_backend",
       command: "npm run api:dev",
-      reason: "Hermes cannot use live-window or backend-gated paper routes until the local FastAPI service is reachable.",
+      reason: "No sampled backend endpoint responded; inspect or start FastAPI manually.",
       mutatesRuntimeIfRun: true,
       requiresOperatorConfirmation: true,
+    }),
+  ];
+}
+
+function backendReadinessActions({ checks, requestErrors }) {
+  const byId = Object.fromEntries(checks.map((check) => [check.id, check]));
+  const actions = [];
+  if (requestErrors.length || byId.internal_api_reachable?.status !== "pass") {
+    const partialFailure = requestErrors.length > 0 && requestErrors.length < BACKEND_READINESS_REQUESTS.length;
+    actions.push(backendReadinessAction({
+      id: partialFailure ? "triage_backend_latency" : "start_or_inspect_fastapi_manual_review",
+      priority: 10,
+      lane: "local_backend",
+      command: partialFailure ? "npm run hermes:backend-latency-triage" : "npm run api:dev",
+      reason: partialFailure
+        ? "Some internal FastAPI endpoints answered while others timed out; measure endpoint latency before restarting services."
+        : "Hermes cannot use live-window or backend-gated paper routes until the local FastAPI service is reachable.",
+      mutatesRuntimeIfRun: !partialFailure,
+      requiresOperatorConfirmation: !partialFailure,
     }));
     actions.push(backendReadinessAction({
       id: "check_operational_truth_after_backend_start",
@@ -7572,6 +7742,7 @@ const commands = {
   "channel-readiness": channelReadiness,
   "channel-recovery-plan": channelRecoveryPlan,
   "backend-readiness": backendReadiness,
+  "backend-latency-triage": backendLatencyTriage,
   "mission-control": missionControl,
   "mission-ledger": missionLedger,
   "mission-ledger-report": missionLedgerReport,

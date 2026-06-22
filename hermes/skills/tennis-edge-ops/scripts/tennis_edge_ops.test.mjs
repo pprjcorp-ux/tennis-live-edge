@@ -9566,6 +9566,15 @@ test("live-repair-plan selects one safe repair from controller feedback without 
     assert.equal(payload.repair_queue.every((action) => action.executes_now === false), true);
     assert.equal(payload.repair_queue.every((action) => action.provider_api_call_allowed === false), true);
     assert.equal(payload.repeated_feedback.top_next_action, "inspect_data_quality");
+    assert.equal(payload.repair_alignment.status, "controller_priority_differs_from_repeated_feedback");
+    assert.equal(payload.repair_alignment.top_feedback_action_id, "inspect_data_quality");
+    assert.equal(payload.repair_alignment.recommended_repair_id, "inspect_data_quality");
+    assert.equal(payload.repair_alignment.selected_matches_top_feedback_action, false);
+    assert.equal(payload.repair_alignment.provider_api_call_allowed, false);
+    assert.equal(payload.repair_alignment.requires_operator_review, true);
+    assert.equal(payload.evidence.includes("repair_alignment_status=controller_priority_differs_from_repeated_feedback"), true);
+    assert.equal(payload.evidence.includes("recommended_repair_id=inspect_data_quality"), true);
+    assert.equal(payload.evidence.includes("selected_matches_top_feedback_action=false"), true);
     assert.equal(payload.evidence.includes("provider_command_executed_count=0"), true);
     assert.equal(payload.evidence.includes("paper_order_created_count=0"), true);
     assert.equal(payload.safety.can_submit_real_orders, false);
@@ -9630,6 +9639,9 @@ test("live-repair-ledger records selected repair without executing it", async ()
     assert.equal(payload.record.provider_command_executed, false);
     assert.equal(payload.record.paper_order_created, false);
     assert.equal(typeof payload.record.selected_repair_id, "string");
+    assert.equal(typeof payload.record.repair_alignment_status, "string");
+    assert.equal(payload.record.selected_repair_matches_top_feedback_action, false);
+    assert.equal(payload.record.selected_repair_addresses_top_feedback_blocker, false);
     assert.equal(payload.record.safety.can_submit_real_orders, false);
     const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
     assert.equal(lines.length, 1);
@@ -9639,6 +9651,7 @@ test("live-repair-ledger records selected repair without executing it", async ()
     assert.equal(audit.repair_command_executed, false);
     assert.equal(audit.provider_command_executed, false);
     assert.equal(audit.paper_order_created, false);
+    assert.equal(typeof audit.repair_alignment_status, "string");
   } finally {
     server.close();
   }
@@ -9660,6 +9673,10 @@ test("live-repair-ledger-report summarizes repeated repair choices", async () =>
       primary_blocker: "data_quality_degraded:high",
       selected_repair_id: "inspect_data_quality",
       selected_repair_command: "npm --silent run hermes:intelligence",
+      repair_alignment_status: "aligned_with_repeated_feedback",
+      recommended_repair_id: "inspect_data_quality",
+      selected_repair_matches_top_feedback_action: true,
+      selected_repair_addresses_top_feedback_blocker: true,
       blocker_ids: ["data_quality_degraded:high", "fresh_odds"],
       repair_queue_ids: ["inspect_data_quality", "repair_odds_cursor_or_freshness"],
     },
@@ -9675,6 +9692,10 @@ test("live-repair-ledger-report summarizes repeated repair choices", async () =>
       primary_blocker: "data_quality_degraded:high",
       selected_repair_id: "inspect_data_quality",
       selected_repair_command: "npm --silent run hermes:intelligence",
+      repair_alignment_status: "aligned_with_repeated_feedback",
+      recommended_repair_id: "inspect_data_quality",
+      selected_repair_matches_top_feedback_action: true,
+      selected_repair_addresses_top_feedback_blocker: true,
       blocker_ids: ["data_quality_degraded:high", "fresh_odds"],
       repair_queue_ids: ["inspect_data_quality", "repair_odds_cursor_or_freshness"],
     },
@@ -9690,6 +9711,10 @@ test("live-repair-ledger-report summarizes repeated repair choices", async () =>
       primary_blocker: "budget_chain",
       selected_repair_id: "inspect_budget_chain",
       selected_repair_command: "npm --silent run hermes:budget-chain",
+      repair_alignment_status: "selected_addresses_top_feedback_blocker",
+      recommended_repair_id: "inspect_budget_chain",
+      selected_repair_matches_top_feedback_action: false,
+      selected_repair_addresses_top_feedback_blocker: true,
       blocker_ids: ["budget_chain"],
       repair_queue_ids: ["inspect_budget_chain"],
     },
@@ -9721,9 +9746,16 @@ test("live-repair-ledger-report summarizes repeated repair choices", async () =>
   assert.equal(payload.selected_repair_counts[0].command, "inspect_data_quality");
   assert.equal(payload.selected_repair_counts[0].count, 2);
   assert.equal(payload.selected_repair_command_counts[0].command, "npm --silent run hermes:intelligence");
+  assert.equal(payload.alignment_status_counts.aligned_with_repeated_feedback, 2);
+  assert.equal(payload.alignment_status_counts.selected_addresses_top_feedback_blocker, 1);
+  assert.equal(payload.recommended_repair_counts[0].command, "inspect_data_quality");
+  assert.equal(payload.selected_matches_top_feedback_action_count, 2);
+  assert.equal(payload.selected_addresses_top_feedback_blocker_count, 3);
   assert.equal(payload.blocker_counts[0].command, "data_quality_degraded:high");
   assert.equal(payload.top_selected_repair, "inspect_data_quality");
   assert.equal(payload.top_selected_repair_command, "npm --silent run hermes:intelligence");
+  assert.equal(payload.top_alignment_status, "aligned_with_repeated_feedback");
+  assert.equal(payload.top_recommended_repair, "inspect_data_quality");
   assert.equal(payload.top_blocker, "data_quality_degraded:high");
   assert.equal(payload.safety.can_submit_real_orders, false);
 });

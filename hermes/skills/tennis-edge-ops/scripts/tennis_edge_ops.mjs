@@ -11961,6 +11961,7 @@ function firstNonEmptyArray(...arrays) {
 function buildLiveRepairLedger(plan) {
   const path = liveRepairLedgerPath();
   const selected = plan.selected_repair ?? null;
+  const alignment = plan.repair_alignment ?? {};
   const record = {
     generated_at: new Date().toISOString(),
     mode: "live_repair_ledger_record",
@@ -11976,6 +11977,10 @@ function buildLiveRepairLedger(plan) {
     selected_repair_id: selected?.id ?? null,
     selected_repair_command: selected?.command ?? null,
     selected_repair_priority: selected?.priority ?? null,
+    repair_alignment_status: alignment.status ?? null,
+    recommended_repair_id: alignment.recommended_repair_id ?? null,
+    selected_repair_matches_top_feedback_action: alignment.selected_matches_top_feedback_action === true,
+    selected_repair_addresses_top_feedback_blocker: alignment.selected_addresses_top_feedback_blocker === true,
     blocker_ids: plan.blocker_ids ?? [],
     repair_queue_ids: (plan.repair_queue ?? []).map((action) => action.id),
     safety: plan.safety,
@@ -12046,6 +12051,8 @@ function buildLiveRepairLedgerReport({ path, records, invalid_rows: invalidRows 
   const selectedRepairCounts = rankedCounts(records.map((record) => record.selected_repair_id).filter(Boolean));
   const selectedCommandCounts = rankedCounts(records.map((record) => record.selected_repair_command).filter(Boolean));
   const blockerCounts = rankedCounts(records.flatMap((record) => record.blocker_ids ?? []));
+  const alignmentStatusCounts = countValues(records.map((record) => record.repair_alignment_status).filter(Boolean));
+  const recommendedRepairCounts = rankedCounts(records.map((record) => record.recommended_repair_id).filter(Boolean));
   return {
     generated_at: new Date().toISOString(),
     mode: "live_repair_ledger_report",
@@ -12071,9 +12078,15 @@ function buildLiveRepairLedgerReport({ path, records, invalid_rows: invalidRows 
     primary_blocker_counts: rankedCounts(records.map((record) => record.primary_blocker).filter(Boolean)),
     selected_repair_counts: selectedRepairCounts,
     selected_repair_command_counts: selectedCommandCounts,
+    alignment_status_counts: alignmentStatusCounts,
+    recommended_repair_counts: recommendedRepairCounts,
+    selected_matches_top_feedback_action_count: records.filter((record) => record.selected_repair_matches_top_feedback_action === true).length,
+    selected_addresses_top_feedback_blocker_count: records.filter((record) => record.selected_repair_addresses_top_feedback_blocker === true).length,
     blocker_counts: blockerCounts,
     top_selected_repair: selectedRepairCounts[0]?.command ?? null,
     top_selected_repair_command: selectedCommandCounts[0]?.command ?? null,
+    top_alignment_status: rankedCounts(records.map((record) => record.repair_alignment_status).filter(Boolean))[0]?.command ?? null,
+    top_recommended_repair: recommendedRepairCounts[0]?.command ?? null,
     top_blocker: blockerCounts[0]?.command ?? null,
     latest_record: records[records.length - 1] ?? null,
     safety: {
@@ -15489,6 +15502,7 @@ function buildLiveRepairPlan(controller, ledgerReport) {
     }))
     .sort((a, b) => a.priority - b.priority || b.repeated_count - a.repeated_count || a.id.localeCompare(b.id));
   const selected = repairQueue[0] ?? null;
+  const repairAlignment = buildLiveRepairAlignment({ selected, repairQueue, ledgerReport });
   return {
     generated_at: new Date().toISOString(),
     mode: "live_repair_plan",
@@ -15513,11 +15527,17 @@ function buildLiveRepairPlan(controller, ledgerReport) {
     },
     selected_repair: selected,
     repair_queue: repairQueue,
+    repair_alignment: repairAlignment,
     evidence: [
       ...(feedback.evidence ?? []),
       `ledger_total_records=${ledgerReport.total_records ?? 0}`,
       `top_feedback_blocker=${ledgerReport.top_feedback_blocker ?? "none"}`,
       `top_feedback_next_action=${ledgerReport.top_feedback_next_action ?? "none"}`,
+      `repair_alignment_status=${repairAlignment.status}`,
+      `recommended_repair_id=${repairAlignment.recommended_repair_id ?? "none"}`,
+      `selected_repair_id=${selected?.id ?? "none"}`,
+      `selected_matches_top_feedback_action=${repairAlignment.selected_matches_top_feedback_action === true}`,
+      `selected_addresses_top_feedback_blocker=${repairAlignment.selected_addresses_top_feedback_blocker === true}`,
       `provider_command_executed_count=${ledgerReport.provider_command_executed_count ?? 0}`,
       `paper_order_created_count=${ledgerReport.paper_order_created_count ?? 0}`,
       ...Object.entries(repeatedBlockers).slice(0, 3).map(([id, count]) => `repeated_blocker:${id}=${count}`),
@@ -15530,6 +15550,49 @@ function buildLiveRepairPlan(controller, ledgerReport) {
       browser_sportsbook_automation_allowed: false,
       llm_per_tick_allowed: false,
     },
+  };
+}
+
+function buildLiveRepairAlignment({ selected, repairQueue, ledgerReport }) {
+  const topFeedbackAction = ledgerReport.top_feedback_next_action ?? null;
+  const topFeedbackBlocker = ledgerReport.top_feedback_blocker ?? null;
+  const blockerRepairIds = topFeedbackBlocker
+    ? liveControllerFeedbackActionsForBlocker(topFeedbackBlocker).map((action) => action.id)
+    : [];
+  const recommendedId = topFeedbackAction ?? blockerRepairIds[0] ?? null;
+  const recommendedRepair = recommendedId
+    ? repairQueue.find((action) => action.id === recommendedId) ?? null
+    : null;
+  const selectedMatchesTopFeedbackAction = Boolean(selected?.id && topFeedbackAction && selected.id === topFeedbackAction);
+  const selectedAddressesTopFeedbackBlocker = Boolean(selected?.id && blockerRepairIds.includes(selected.id));
+  let status = "no_repeated_feedback";
+  if (!selected) {
+    status = "no_selected_repair";
+  } else if (selectedMatchesTopFeedbackAction) {
+    status = "aligned_with_repeated_feedback";
+  } else if (selectedAddressesTopFeedbackBlocker) {
+    status = "selected_addresses_top_feedback_blocker";
+  } else if (recommendedId) {
+    status = "controller_priority_differs_from_repeated_feedback";
+  }
+  return {
+    status,
+    selected_repair_id: selected?.id ?? null,
+    top_feedback_action_id: topFeedbackAction,
+    top_feedback_blocker: topFeedbackBlocker,
+    blocker_repair_ids: blockerRepairIds,
+    recommended_repair_id: recommendedId,
+    recommended_repair_command: recommendedRepair?.command ?? null,
+    selected_matches_top_feedback_action: selectedMatchesTopFeedbackAction,
+    selected_addresses_top_feedback_blocker: selectedAddressesTopFeedbackBlocker,
+    requires_operator_review: status === "controller_priority_differs_from_repeated_feedback",
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
   };
 }
 

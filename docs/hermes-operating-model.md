@@ -572,14 +572,21 @@ then sorts safe repair actions by deterministic priority and repeated ledger
 evidence. The selected repair is still non-executing; it is meant for Codex,
 Hermes, Telegram or an operator to decide the next implementation task without
 spending provider quota, creating paper orders, or enabling real execution.
+The plan also exposes `repair_alignment`, which compares the selected safe
+repair against the ledger's repeated `top_feedback_next_action` and
+`top_feedback_blocker`. When current controller priority differs from repeated
+feedback, the status becomes
+`controller_priority_differs_from_repeated_feedback` and requires operator or
+Codex review before the backlog treats it as resolved.
 
 `hermes:live-repair-ledger` persists that selected repair as local JSONL with
 `action_executed=false`, `repair_command_executed=false`,
 `provider_command_executed=false`, and `paper_order_created=false`. The
 matching `hermes:live-repair-ledger-report` summarizes repeated selected
-repairs, commands and blockers so `hermes:backlog-plan` can emit
-`harden_live_repair_feedback_loop` when the same safe internal repair keeps
-blocking live collection. This gives Hermes a feedback loop without granting it
+repairs, commands, blockers and alignment statuses so `hermes:backlog-plan` can
+emit `harden_live_repair_feedback_loop` when the same safe internal repair keeps
+blocking live collection or the selected repair repeatedly diverges from the
+historical feedback. This gives Hermes a feedback loop without granting it
 permission to run the repair command, call providers, create paper orders or
 touch real execution. The autonomy packet exposes this lane as
 `live_repair_records` and the backlog acceptance evidence must keep

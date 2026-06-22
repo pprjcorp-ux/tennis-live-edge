@@ -1,8 +1,8 @@
 # Tennis Live Edge
 
-Private local-first tennis trading analytics system. It ingests scores/odds,
-estimates fair probabilities, records paper outcomes, and recommends only
-positive-EV signals with abstention and risk gates.
+Public source repository for a private, local-first tennis analytics system.
+It ingests scores/odds, estimates fair probabilities, records paper outcomes,
+and recommends only positive-EV signals with abstention and risk gates.
 
 ## Canonical Branches
 
@@ -13,9 +13,21 @@ positive-EV signals with abstention and risk gates.
   Betfair execution architecture hard-blocked by default, Hermes Autopilot,
   provider health, replay/backtest lab, and private runtime docs.
 
-This branch is the `budget` profile. It keeps the complete core architecture,
-but defaults to ATP main-tour plus men's/women's Grand Slam singles coverage,
-cheaper feeds, strict abstention, and enterprise feeds disabled.
+Both canonical branches share the same core. Branch differences are expressed
+through defaults, provider gates, documentation, and risk settings, not through
+separate product architectures.
+
+## Start Here For Developers
+
+1. Read [Developer onboarding](docs/developer-onboarding.md) for the product
+   objective, architecture map, local setup, safe workflow, and validation
+   commands.
+2. Read [API access purchasing guide](docs/api-access-purchasing-guide.md) for
+   direct vendor links, what to buy now, what stays deferred, and which `.env`
+   variables each provider unlocks.
+3. Use [Provider access runbook](docs/provider-access-runbook.md) only when
+   configuring accounts locally. Never commit `.env`, certificates, database
+   dumps, provider payload exports with licensed data, or account credentials.
 
 ## Quick Start
 
@@ -77,6 +89,8 @@ example without any live API calls.
 
 ## Documentation
 
+- [Developer onboarding](docs/developer-onboarding.md)
+- [API access purchasing guide](docs/api-access-purchasing-guide.md)
 - [Common architecture](docs/architecture.md)
 - [Strategic refactor plan](docs/strategic-refactor-plan.md)
 - [Budget profile](docs/budget-profile.md)

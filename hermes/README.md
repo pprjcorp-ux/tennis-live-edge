@@ -420,6 +420,10 @@ ledger evidence exists. It decides whether Hermes is still only collecting
 evidence, has repeated blockers that justify implementation, or needs safety
 review because a ledger claims a protected action ran. The implementation
 handoff carries its status and score in the work order evidence.
+When that work order is `harden_source_route_feedback_loop`, the suggested
+steps must map the top source route to replay/internal or licensed adapter
+contracts without executing it, keep browser scraping/sportsbook automation and
+bypass routes blocked, and prove route/provider/bypass counters remain zero.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

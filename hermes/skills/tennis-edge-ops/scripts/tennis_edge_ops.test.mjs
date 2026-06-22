@@ -4356,6 +4356,7 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
         HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
         HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
         HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamMissionLedgerPath,
+        HERMES_SOURCE_ROUTE_LEDGER_PATH: join(tempDir, "source-route-ledger.jsonl"),
       },
     });
   } finally {
@@ -4396,6 +4397,120 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
   assert.equal(Number.isFinite(payload.evidence.effectiveness_score), true);
   assert.equal(payload.evidence.backlog_evidence.live_controller_ledger.provider_command_executed_count, 0);
   assert.equal(payload.evidence.enterprise_readiness.status, "blocked_by_enterprise_gate");
+  assert.equal(payload.safety.anti_bot_bypass_allowed, false);
+  assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
+});
+
+test("implementation-handoff turns source-route pressure into a safe work order", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-implementation-source-route-"));
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const grandSlamMissionLedgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
+  const sourceRouteLedgerPath = join(tempDir, "source-route-ledger.jsonl");
+  const sourceRouteRows = [
+    {
+      mode: "source_route_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      route_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "ready",
+      next_route_id: "replay_backfill",
+      next_route_status: "ready_now",
+      next_route_command: "npm run api:check:operational-truth -- --pretty",
+      next_route_cost_tier: "free_internal",
+      blocked_route_ids: ["browser_sportsbook_scrape", "live_websocket_odds"],
+      operator_required_route_ids: ["archive_odds_smoke"],
+      safe_jailbreak_bypass_allowed: false,
+    },
+    {
+      mode: "source_route_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      route_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "ready",
+      next_route_id: "replay_backfill",
+      next_route_status: "ready_now",
+      next_route_command: "npm run api:check:operational-truth -- --pretty",
+      next_route_cost_tier: "free_internal",
+      blocked_route_ids: ["browser_sportsbook_scrape", "live_websocket_odds"],
+      operator_required_route_ids: ["archive_odds_smoke"],
+      safe_jailbreak_bypass_allowed: false,
+    },
+  ];
+  writeFileSync(experimentLedgerPath, "");
+  writeFileSync(operatorLedgerPath, "");
+  writeFileSync(missionLedgerPath, "");
+  writeFileSync(controllerLedgerPath, "");
+  writeFileSync(grandSlamMissionLedgerPath, "");
+  writeFileSync(sourceRouteLedgerPath, `${sourceRouteRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  let result;
+  try {
+    result = await runCli(["implementation-handoff", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+        HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+        HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+        HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+        HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamMissionLedgerPath,
+        HERMES_SOURCE_ROUTE_LEDGER_PATH: sourceRouteLedgerPath,
+      },
+    });
+  } finally {
+    server.close();
+  }
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "implementation_handoff");
+  assert.equal(payload.status, "ready");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.source_plan.next_item_id, "harden_source_route_feedback_loop");
+  assert.equal(payload.work_order.id, "harden_source_route_feedback_loop");
+  assert.equal(payload.work_order.executes_now, false);
+  assert.equal(payload.work_order.provider_api_call_allowed, false);
+  assert.equal(payload.work_order.can_submit_real_orders, false);
+  assert.equal(payload.work_order.can_create_paper_orders, false);
+  assert.equal(payload.work_order.suggested_steps.includes("review_source_route_ledger_report_for_top_route_blocked_routes_and_operator_required_routes"), true);
+  assert.equal(payload.work_order.suggested_steps.includes("map_the_top_route_to_internal_replay_or_licensed_adapter_contract_without_executing_it"), true);
+  assert.equal(payload.work_order.suggested_steps.includes("keep_browser_scraping_sportsbook_automation_and_bypass_routes_explicitly_blocked"), true);
+  assert.equal(payload.work_order.suggested_steps.includes("prove_route_provider_and_bypass_counters_remain_zero"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:source-route-ledger-report"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:source-route-matrix"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("source_route_ledger.top_next_route=replay_backfill"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("route_command_executed_count=0"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("provider_command_executed_count=0"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("bypass_attempted_count=0"), true);
+  assert.equal(payload.work_order.prohibited_changes.includes("do not automate sportsbook browser sessions"), true);
+  assert.equal(payload.work_order.prohibited_changes.includes("do not bypass anti-bot, geolocation, paywall or Terms-of-Service controls"), true);
+  assert.equal(payload.implementation_policy.spend_provider_quota, false);
+  assert.equal(payload.implementation_policy.real_execution_allowed, false);
+  assert.equal(payload.evidence.sources.includes("source_route_ledger"), true);
+  assert.equal(payload.evidence.backlog_evidence.source_route_ledger.top_next_route, "replay_backfill");
+  assert.equal(payload.evidence.backlog_evidence.source_route_ledger.bypass_attempted_count, 0);
+  assert.equal(payload.safety.sportsbook_bypass_allowed, false);
+  assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
   assert.equal(payload.safety.anti_bot_bypass_allowed, false);
   assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
 });

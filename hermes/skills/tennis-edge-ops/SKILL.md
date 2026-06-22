@@ -260,6 +260,11 @@ into a read-only work order for Codex/Hermes operators. It includes target
 files, suggested steps, validation commands, acceptance criteria, prohibited
 changes and safety flags, but it must not edit files, run provider calls, create
 orders or mutate runtime services.
+For `harden_source_route_feedback_loop`, the handoff should review the
+source-route ledger report, map the top route to replay/internal or licensed
+adapter contracts without executing it, keep browser scraping/sportsbook
+automation/bypass routes blocked, and prove route/provider/bypass counters
+remain zero.
 Runtime commands should carry `runtime_findings` and non-executed diagnostic
 actions, with `mutates_runtime_if_run=true` for manual gateway/service changes.
 When `runtime_findings` already include a specific diagnostic action, the

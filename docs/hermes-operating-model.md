@@ -291,6 +291,11 @@ into one read-only work order with target files, suggested steps, validation
 commands, acceptance criteria, prohibited changes and safety flags. It does not
 edit files, spend provider quota, create paper orders, activate cron jobs or
 mutate runtime services.
+For source-route pressure, the handoff converts
+`harden_source_route_feedback_loop` into explicit steps: review the ledger
+report, map the top route to replay/internal or licensed adapter contracts,
+keep scraping/sportsbook automation/bypass routes blocked, and prove
+route/provider/bypass counters remain zero.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

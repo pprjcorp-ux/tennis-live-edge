@@ -7885,6 +7885,13 @@ function implementationStepsFor(item) {
       "prove_freeze_throttle_provider_candidate_counts_remain_non_executing",
       ...genericSteps.slice(2),
     ],
+    harden_source_route_feedback_loop: [
+      "review_source_route_ledger_report_for_top_route_blocked_routes_and_operator_required_routes",
+      "map_the_top_route_to_internal_replay_or_licensed_adapter_contract_without_executing_it",
+      "keep_browser_scraping_sportsbook_automation_and_bypass_routes_explicitly_blocked",
+      "prove_route_provider_and_bypass_counters_remain_zero",
+      ...genericSteps.slice(2),
+    ],
     complete_budget_chain_before_enterprise: [
       "prove_budget_chain_completion_requirements_from_operational_truth",
       "keep_enterprise_eligibility_false_until_cursor_and_smoke_evidence_pass",

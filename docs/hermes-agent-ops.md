@@ -304,6 +304,13 @@ automatic provider call.
 The backlog item is `harden_source_route_feedback_loop`, the experiment row is
 `source_route_feedback_loop`, and autonomy evidence exposes
 `source_route_records` plus the `source_routes` effectiveness lane.
+When `implementation-handoff` receives this backlog item, it must map the top
+route to replay/internal or licensed adapter contracts without executing it,
+keep browser scraping/sportsbook automation/bypass routes blocked, and prove
+route/provider/bypass counters remain zero.
+Required step ids: `review_source_route_ledger_report_for_top_route_blocked_routes_and_operator_required_routes`,
+`map_the_top_route_to_internal_replay_or_licensed_adapter_contract_without_executing_it`,
+and `prove_route_provider_and_bypass_counters_remain_zero`.
 
 Use `hermes:historical-backfill-plan` when Hermes needs more offline evidence
 for priors, calibration or backtests. It ranks internal replay, public

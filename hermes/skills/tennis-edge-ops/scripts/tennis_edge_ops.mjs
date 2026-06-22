@@ -66,9 +66,17 @@ function boundedBackendTriageTimeoutMs(value = process.env.HERMES_BACKEND_TRIAGE
   return Math.min(Math.max(Math.trunc(parsed), 100), 10_000);
 }
 
-async function safeRequest(path, fallback, label = path) {
+function enterpriseReadinessTimeoutMs(value = process.env.HERMES_ENTERPRISE_READINESS_TIMEOUT_MS) {
+  const parsed = Number(value ?? 15_000);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 15_000;
+  }
+  return Math.min(Math.max(Math.trunc(parsed), 1_000), 30_000);
+}
+
+async function safeRequest(path, fallback, label = path, options = {}) {
   try {
-    return { data: await request(path), error: null };
+    return { data: await request(path, options), error: null };
   } catch (error) {
     return {
       data: fallbackFor(path, fallback, error),
@@ -1734,9 +1742,19 @@ async function enterpriseReadiness() {
 }
 
 async function enterpriseReadinessPacketData() {
-  const report = await intelligenceData();
+  const report = await enterpriseReadinessReportData();
   const eventPlan = buildEventPlan(report);
   return buildEnterpriseReadinessPacket({ report, eventPlan });
+}
+
+async function enterpriseReadinessReportData() {
+  const response = await safeRequest(
+    "/api/v1/dashboard/live-state",
+    backendUnavailableDashboardState,
+    "dashboard_state",
+    { timeoutMs: enterpriseReadinessTimeoutMs() },
+  );
+  return buildEnterpriseReadinessReport(response.data, response.error);
 }
 
 async function triggerPolicy() {
@@ -1751,6 +1769,7 @@ async function triggerPolicy() {
 }
 
 async function opsCompiler() {
+  const enterpriseReadinessPacket = await enterpriseReadinessPacketData();
   const [loop, report, grandSlam, scorelineForecast] = await Promise.all([
     safeLoopData(),
     intelligenceData(),
@@ -1777,7 +1796,6 @@ async function opsCompiler() {
     historicalBackfill,
     grandSlam,
   });
-  const enterpriseReadinessPacket = buildEnterpriseReadinessPacket({ report, eventPlan });
   const triggerPlan = buildTriggerPolicy({ loop, sourcePlan, grandSlam });
   const runtimePriorities = buildRuntimeFixPriorities(buildOperatorLedgerReport(readOperatorLedgerRecords()));
   const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
@@ -3094,6 +3112,147 @@ function buildIntelligenceReport({
       data_quality: staleQuality.map(compactDataQuality),
       ingestion_runs: recentIngestionFailures.map(compactIngestionRun),
       api_request_errors: requestErrors.slice(0, 10),
+    },
+    allowed_collection_paths: [
+      "licensed_provider_api",
+      "provider_websocket",
+      "internal_fastapi_endpoint",
+      "persisted_postgres_replay",
+      "manual_operator_note",
+    ],
+    forbidden_collection_paths: [
+      "sportsbook_ui_automation",
+      "anti_bot_bypass",
+      "geolocation_bypass",
+      "credential_or_session_extraction",
+      "paywall_or_tos_circumvention",
+    ],
+  };
+}
+
+function buildEnterpriseReadinessReport(dashboardState, requestError = null) {
+  const operationalState = dashboardState.operational_state ?? {};
+  const sourceSummary = operationalState.source_summary ?? {};
+  const replayLab = operationalState.replay_lab ?? {};
+  const modelLab = operationalState.model_lab ?? {};
+  const apiOnboarding = operationalState.api_onboarding ?? {};
+  const executionStatus = operationalState.execution_status ?? {};
+  const dataQuality = operationalState.data_quality ?? [];
+  const providerHealth = operationalState.provider_health ?? [];
+  const providerCursors = operationalState.provider_cursors ?? [];
+  const ingestionRuns = operationalState.ingestion_runs ?? [];
+  const costProfile = operationalState.cost_profile ?? {};
+  const costReport = operationalState.daily_cost_report ?? {};
+  const enterpriseShadowProviders = replayLab.enterprise_shadow_providers ?? [];
+  const unhealthyProviders = providerHealth.filter(
+    (health) => health.status !== "healthy" && !String(health.status ?? "").includes("disabled by")
+  );
+  const cursorsRequiringResync = providerCursors.filter((cursor) => cursor.resync_required);
+  const activeCursorsRequiringResync = cursorsRequiringResync.filter((cursor) => (
+    !isDeferredEnterpriseProvider(cursor.provider, apiOnboarding)
+  ));
+  const deferredEnterpriseCursors = cursorsRequiringResync.filter((cursor) => (
+    isDeferredEnterpriseProvider(cursor.provider, apiOnboarding)
+  ));
+  const staleQuality = dataQuality.filter((snapshot) => {
+    const sequenceHealth = Number(snapshot.sequence_health ?? 1);
+    const staleTicks = Number(snapshot.stale_ticks ?? 0);
+    const blockedSignals = Number(snapshot.blocked_signals ?? 0);
+    return sequenceHealth < 1 || staleTicks > 0 || blockedSignals > 0;
+  });
+  const recentIngestionFailures = ingestionRuns
+    .filter((run) => ["failed", "degraded"].includes(run.status))
+    .slice(0, 5);
+  const requestErrors = requestError ? [requestError] : [];
+  const blockers = [
+    ...requestErrors.map((error) => `backend_api:${error.label}`),
+    ...unhealthyProviders.map((health) => `provider:${health.provider}:${health.status}`),
+    ...activeCursorsRequiringResync.map((cursor) => `cursor:${cursor.provider}:${cursor.stream}`),
+    ...staleQuality.map((snapshot) => (
+      `data_quality:${snapshot.provider ?? "unknown"}:${snapshot.feed ?? snapshot.id ?? "unknown"}`
+    )),
+    ...(executionStatus.can_submit_real_orders ? ["execution:real_orders_enabled"] : []),
+  ];
+  return {
+    generated_at: new Date().toISOString(),
+    mode: requestError ? "investigate" : "enterprise_readiness_probe",
+    severity: requestError ? "high" : "low",
+    summary: requestError
+      ? "Enterprise readiness could not read dashboard operational evidence."
+      : "Enterprise readiness used focused dashboard operational evidence.",
+    recommended_actions: requestError
+      ? ["Restore FastAPI dashboard live-state evidence before enterprise review."]
+      : ["Keep enterprise feeds deferred until budget chain and paper evidence pass."],
+    safety: {
+      real_execution_hard_block: requestError ? true : executionStatus.real_execution_hard_block === true,
+      can_submit_real_orders: executionStatus.can_submit_real_orders === true,
+      execution_stage: executionStatus.stage ?? "paper",
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+    signal_snapshot: {
+      entry_signals: 0,
+      blocked_signals: 0,
+      total_signals: 0,
+      briefing_entry_signals: 0,
+    },
+    data_snapshot: {
+      provider_mode: operationalState.provider_mode,
+      source_total_matches: sourceSummary.total_matches ?? 0,
+      persisted_matches: sourceSummary.persisted_matches ?? 0,
+      match_freshness: compactMatchFreshness(sourceSummary.match_freshness ?? []),
+      replay_contract_ready: replayLab.status ?? "unknown",
+      enterprise_shadow_providers: enterpriseShadowProviders.map(compactReplayContractProvider),
+      enterprise_shadow_provider_count: enterpriseShadowProviders.length,
+      data_quality_non_pass: staleQuality.length,
+      unhealthy_providers: unhealthyProviders.length,
+      cursors_requiring_resync: activeCursorsRequiringResync.length,
+      deferred_enterprise_cursors: deferredEnterpriseCursors.length,
+      recent_ingestion_failures: recentIngestionFailures.length,
+    },
+    learning_snapshot: {
+      readiness_status: modelLab.readiness_status ?? modelLab.status ?? "unknown",
+      roi: null,
+      clv: null,
+      settled_orders: 0,
+      model_lab_status: modelLab.status,
+      production_training_examples: modelLab.production_training_examples,
+      can_run_live_backtest: modelLab.can_run_live_backtest,
+    },
+    cost_snapshot: {
+      active_plan: costProfile.active_plan,
+      estimated_monthly_spend_usd: costProfile.estimated_monthly_spend_usd,
+      monthly_budget_usd: costProfile.monthly_budget_usd,
+      coverage_scope: costProfile.coverage_scope ?? [],
+      daily_live_api_calls: costReport.live_api_calls,
+      cost_per_signal_usd: costReport.cost_per_signal_usd,
+    },
+    budget_chain_snapshot: {
+      budget_chain_completed: Boolean(apiOnboarding.budget_chain_completed),
+      enterprise_eligible: Boolean(apiOnboarding.enterprise_eligible),
+      current_step: apiOnboarding.current_step,
+      next_action: apiOnboarding.next_action,
+      core_ready: Boolean(apiOnboarding.core_ready),
+      steps: compactApiOnboardingSteps(apiOnboarding.steps ?? []),
+      warnings: (apiOnboarding.warnings ?? []).slice(0, 5),
+    },
+    bankroll_snapshot: {
+      balance: null,
+      currency: null,
+      open_exposure: 0,
+      daily_pnl: 0,
+      weekly_pnl: 0,
+    },
+    blockers,
+    degraded_items: {
+      preflight_failed: [],
+      preflight_warnings: [],
+      provider_health: unhealthyProviders.map(compactProviderHealth),
+      provider_cursors: activeCursorsRequiringResync.map(compactProviderCursor),
+      deferred_enterprise_cursors: deferredEnterpriseCursors.map(compactProviderCursor),
+      data_quality: staleQuality.map(compactDataQuality),
+      ingestion_runs: recentIngestionFailures.map(compactIngestionRun),
+      api_request_errors: requestErrors,
     },
     allowed_collection_paths: [
       "licensed_provider_api",

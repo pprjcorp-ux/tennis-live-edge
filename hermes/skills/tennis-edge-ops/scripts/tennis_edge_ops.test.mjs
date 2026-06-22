@@ -8,6 +8,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const SCRIPT = new URL("./tennis_edge_ops.mjs", import.meta.url).pathname;
+const BACKEND_READINESS_EXPECTED_PATHS = [
+  "/api/v1/agent/preflight",
+  "/api/v1/dashboard/live-state",
+  "/api/v1/live/matches",
+  "/api/v1/provider-health",
+  "/api/v1/cost-profile",
+  "/api/v1/execution/status",
+];
 
 function startServer(handler) {
   const server = http.createServer(handler);
@@ -110,6 +118,11 @@ function eventRouterFixtures(overrides = {}) {
           status: "collecting",
           production_training_examples: 0,
           can_run_live_backtest: false,
+        },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
         },
         api_onboarding: {
           budget_chain_completed: true,
@@ -672,6 +685,11 @@ test("events ignore deferred enterprise cursor while budget chain is not enterpr
           production_training_examples: 0,
           can_run_live_backtest: false,
         },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
+        },
         api_onboarding: {
           core_ready: true,
           budget_chain_completed: false,
@@ -774,6 +792,11 @@ test("unblock-plan classifies blockers into safe prioritized operator lanes", as
           status: "collecting",
           production_training_examples: 0,
           can_run_live_backtest: false,
+        },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
         },
         api_onboarding: {
           core_ready: true,
@@ -1214,6 +1237,11 @@ test("backend-readiness proves internal API endpoints without protected actions"
           production_training_examples: 0,
           can_run_live_backtest: false,
         },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
+        },
         api_onboarding: {
           core_ready: true,
           budget_chain_completed: false,
@@ -1247,6 +1275,7 @@ test("backend-readiness proves internal API endpoints without protected actions"
     assert.equal(result.exit, 0);
     assert.equal(called.every((call) => call.method === "GET"), true);
     assert.equal(called.some((call) => call.method === "POST"), false);
+    assert.deepEqual(called.map((call) => call.url), BACKEND_READINESS_EXPECTED_PATHS);
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.mode, "backend_readiness");
     assert.equal(payload.status, "ready");
@@ -1708,6 +1737,11 @@ test("safe-loop aggregates runtime and budget signals without protected actions"
           production_training_examples: 0,
           can_run_live_backtest: false,
         },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
+        },
         api_onboarding: {
           core_ready: true,
           budget_chain_completed: false,
@@ -1875,6 +1909,11 @@ test("autonomy-brief consolidates safe Hermes operating decisions without execut
           production_training_examples: 0,
           can_run_live_backtest: false,
         },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
+        },
         api_onboarding: {
           core_ready: true,
           budget_chain_completed: false,
@@ -2021,6 +2060,11 @@ test("source-discovery maps safe data acquisition paths without bypasses or live
           status: "collecting",
           production_training_examples: 0,
           can_run_live_backtest: false,
+        },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
         },
         api_onboarding: {
           core_ready: true,
@@ -2383,6 +2427,11 @@ test("trigger-policy emits event wakeups without executing commands or live call
           production_training_examples: 0,
           can_run_live_backtest: false,
         },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
+        },
         api_onboarding: {
           core_ready: true,
           budget_chain_completed: false,
@@ -2666,6 +2715,11 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
           status: "collecting",
           production_training_examples: 0,
           can_run_live_backtest: false,
+        },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
         },
         api_onboarding: {
           core_ready: true,
@@ -6850,6 +6904,11 @@ test("enterprise-readiness reports shadow contracts without provider calls", asy
           production_training_examples: 0,
           can_run_live_backtest: false,
         },
+        execution_status: {
+          real_execution_hard_block: true,
+          can_submit_real_orders: false,
+          stage: "paper",
+        },
         api_onboarding: {
           core_ready: true,
           budget_chain_completed: false,
@@ -6901,6 +6960,41 @@ test("enterprise-readiness reports shadow contracts without provider calls", asy
     assert.equal(payload.safe_jailbreak_policy.anti_bot_bypass_allowed, false);
     assert.equal(payload.safe_jailbreak_policy.provider_quota_spend_allowed_from_this_command, false);
     assert.equal(payload.safety.real_execution_hard_block, true);
+  } finally {
+    server.close();
+  }
+});
+
+test("enterprise-readiness blocks on dashboard evidence timeout without probing heavy endpoints", async () => {
+  const called = [];
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    if (request.url === "/api/v1/dashboard/live-state") {
+      setTimeout(() => {
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ operational_state: {} }));
+      }, 1200);
+      return;
+    }
+    response.statusCode = 500;
+    response.end("unexpected heavy endpoint");
+  });
+
+  try {
+    const result = await runCli(["enterprise-readiness", `--api-base=${apiBase}`], {
+      env: { HERMES_ENTERPRISE_READINESS_TIMEOUT_MS: "50" },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.deepEqual(called.map((call) => call.url), ["/api/v1/dashboard/live-state"]);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "enterprise_readiness_packet");
+    assert.equal(payload.status, "blocked_by_backend_evidence");
+    assert.equal(payload.activation_blockers.includes("backend_evidence_unavailable"), true);
+    assert.equal(payload.next_action.command, "npm --silent run hermes:backend-latency-triage");
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.safe_jailbreak_policy.provider_quota_spend_allowed_from_this_command, false);
   } finally {
     server.close();
   }

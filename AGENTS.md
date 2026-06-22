@@ -186,6 +186,14 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   historical backfill, collection, quota, live-controller and learning phases
   without fetching/importing historical data, spending provider quota, creating
   paper orders, scraping, or enabling real execution.
+- Hermes Grand Slam mission evidence should consume
+  `npm run hermes:grand-slam-mission-ledger`; it may write only compact local
+  JSONL rows under `hermes/runs/`, with `mission_command_executed=false`,
+  `provider_command_executed=false` and `paper_order_created=false`.
+- Hermes Grand Slam mission blocker review should consume
+  `npm run hermes:grand-slam-mission-ledger-report`; it is read-only and should
+  feed `hermes:backlog-plan` when repeated visibility, model-input,
+  prediction-watch or paper-learning phases appear.
 - Hermes collection cadence planning should consume
   `npm run hermes:collection-plan`; it converts match-pulse priorities into
   desired score/odds polling lanes, but must remain read-only, must not execute
@@ -311,6 +319,8 @@ npm run hermes:live-window
 npm run hermes:match-pulse
 npm run hermes:grand-slam-readiness
 npm run hermes:grand-slam-mission
+npm run hermes:grand-slam-mission-ledger
+npm run hermes:grand-slam-mission-ledger-report
 npm run hermes:collection-plan
 npm run hermes:quota-plan
 npm run hermes:budget-chain

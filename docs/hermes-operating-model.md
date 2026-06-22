@@ -187,6 +187,16 @@ review into phases. It may point to protected paper autopilot when all backend
 gates are paper-ready, but the mission packet itself is read-only and cannot
 create orders, call providers, scrape, or run LLM-per-tick reasoning.
 
+`hermes:grand-slam-mission-ledger` is the local trace for that product mission.
+It appends compact JSONL rows with active phase, Grand Slam status, visible
+matches, prediction rows, next safe command, live-controller status, quota level
+and learning status while marking all execution counters false.
+
+`hermes:grand-slam-mission-ledger-report` is the read-only summary over that
+trace. It identifies repeated Grand Slam mission phases and recommends the next
+non-executing review command so backlog work follows observed match-day
+readiness gaps instead of ad hoc operator memory.
+
 `hermes:trigger-policy` is the preferred packet for deciding when Hermes should
 wake up. It turns runtime, events, source-discovery, Grand Slam readiness, quota
 and learning state into debounced triggers for cron, Telegram, dashboard,
@@ -389,6 +399,11 @@ that trace. It identifies repeated freeze/throttle/paper-candidate decisions,
 recurring next commands and recurring provider candidates, so the repo can
 prioritize improvements from observed live-control evidence without granting
 Hermes execution authority.
+
+`hermes:backlog-plan` also consumes the Grand Slam mission ledger report. When
+Grand Slam visibility, model-input or paper-learning phases repeat, it emits a
+non-executing `harden_grand_slam_prediction_loop` priority before enterprise
+work is considered.
 
 `hermes:learning-review` is the preferred weekly packet. It packages the
 learning gates, ROI, CLV, settled paper volume, production training examples,

@@ -34,6 +34,8 @@ npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
 npm run hermes:grand-slam-mission
+npm run hermes:grand-slam-mission-ledger
+npm run hermes:grand-slam-mission-ledger-report
 npm run hermes:collection-plan
 npm run hermes:quota-plan
 npm run hermes:learning-review
@@ -245,6 +247,16 @@ match-day prediction. It compiles readiness, historical priors, collection,
 quota, live-controller and learning state into mission phases. It never creates
 paper orders itself and cannot spend provider quota or submit real orders.
 
+Use `hermes:grand-slam-mission-ledger` when Grand Slam mission decisions should
+become local evidence. It appends a compact JSONL row with active phase,
+Grand Slam readiness, next safe command, live-controller status, quota level and
+learning status while keeping all execution counters false.
+
+Use `hermes:grand-slam-mission-ledger-report` to review repeated Grand Slam
+mission blockers. It is read-only and feeds `hermes:backlog-plan` so repeated
+visibility, model-input, prediction-watch or paper-learning phases become
+implementation priorities without provider calls or paper orders.
+
 Use `hermes:trigger-policy` when cron, Telegram, dashboard, Cloudflare Agent or
 OpenClaw needs to know when Hermes should wake up. It emits debounced triggers
 and commands, including Grand Slam readiness triggers, but never executes them,
@@ -284,8 +296,8 @@ recommendations. It reports top experiments, repeated active ceilings, ready
 experiment counts, and any rows claiming an experiment command was executed.
 
 Use `hermes:backlog-plan` to turn ledger evidence into implementation
-priorities. It reads only local mission, operator and experiment ledgers, then
-emits non-executing backlog items with target files, validation commands,
+priorities. It reads only local mission, operator, experiment, live-controller
+and Grand Slam mission ledgers, then emits non-executing backlog items with target files, validation commands,
 acceptance evidence, and the gates each item blocks.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the

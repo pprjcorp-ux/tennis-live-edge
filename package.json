@@ -40,6 +40,8 @@
     "hermes:match-pulse": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs match-pulse",
     "hermes:grand-slam-readiness": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs grand-slam-readiness",
     "hermes:grand-slam-mission": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs grand-slam-mission",
+    "hermes:grand-slam-mission-ledger": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs grand-slam-mission-ledger",
+    "hermes:grand-slam-mission-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs grand-slam-mission-ledger-report",
     "hermes:collection-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs collection-plan",
     "hermes:quota-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs quota-plan",
     "hermes:live-controller": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-controller",

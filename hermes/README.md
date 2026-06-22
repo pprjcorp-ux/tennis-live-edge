@@ -48,6 +48,8 @@ npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
 npm run hermes:grand-slam-mission
+npm run hermes:grand-slam-mission-ledger
+npm run hermes:grand-slam-mission-ledger-report
 npm run hermes:collection-plan
 npm run hermes:quota-plan
 npm run hermes:learning-review
@@ -268,6 +270,18 @@ review into explicit mission phases. It reports when paper learning would be
 available, but it does not create paper orders, spend provider quota, scrape, or
 submit real orders.
 
+`hermes:grand-slam-mission-ledger` appends that mission packet as compact local
+JSONL evidence at `hermes/runs/grand-slam-mission-ledger.jsonl` by default. It
+records active phase, Grand Slam readiness, next safe command, live-controller
+status, quota level and learning status while marking
+`mission_command_executed=false`, `provider_command_executed=false` and
+`paper_order_created=false`.
+
+`hermes:grand-slam-mission-ledger-report` summarizes repeated Grand Slam mission
+phases without writing or executing commands. `hermes:backlog-plan` consumes
+this report so recurring visibility/model-input/paper-learning blockers become
+implementation priorities instead of manual guesswork.
+
 `hermes:trigger-policy` turns runtime, event, source-discovery, Grand Slam
 readiness, quota and learning state into safe wakeup triggers for cron,
 Telegram, dashboard, Cloudflare Agent and OpenClaw gateway. It never executes
@@ -306,8 +320,8 @@ it never runs the experiment command it records.
 recommendations and active ceilings from the local ledger without writing or
 executing commands.
 
-`hermes:backlog-plan` compiles local mission/operator/experiment ledger
-evidence into non-executing implementation priorities. Each item includes
+`hermes:backlog-plan` compiles local mission/operator/experiment/live-control
+and Grand Slam mission ledger evidence into non-executing implementation priorities. Each item includes
 target files, validation commands, acceptance evidence and the gates it would
 unblock.
 

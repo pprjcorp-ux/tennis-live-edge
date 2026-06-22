@@ -1468,6 +1468,17 @@ async function grandSlamMission() {
   printJson(await grandSlamMissionData());
 }
 
+async function grandSlamMissionLedger() {
+  const mission = await grandSlamMissionData();
+  const ledger = buildGrandSlamMissionLedger(mission);
+  writeGrandSlamMissionLedger(ledger.record);
+  printJson(ledger);
+}
+
+async function grandSlamMissionLedgerReport() {
+  printJson(buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords()));
+}
+
 async function grandSlamReadinessData() {
   const [backend, report, matches] = await Promise.all([
     backendReadinessData(),
@@ -1756,12 +1767,14 @@ async function experimentLabData() {
   const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
   const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
   const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
+  const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
   const backlogPlan = buildBacklogPlan({
     experimentReport,
     operatorReport,
     missionReport,
     liveControllerReport,
+    grandSlamMissionReport,
     runtimePriorities,
   });
   const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
@@ -1820,12 +1833,14 @@ async function backlogPlan() {
   const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
   const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
   const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
+  const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
   printJson(buildBacklogPlan({
     experimentReport,
     operatorReport,
     missionReport,
     liveControllerReport,
+    grandSlamMissionReport,
     runtimePriorities,
   }));
 }
@@ -1835,12 +1850,14 @@ async function implementationHandoff() {
   const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
   const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
   const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
+  const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
   const runtimePriorities = buildRuntimeFixPriorities(operatorReport);
   const backlog = buildBacklogPlan({
     experimentReport,
     operatorReport,
     missionReport,
     liveControllerReport,
+    grandSlamMissionReport,
     runtimePriorities,
   });
   printJson(buildImplementationHandoff(backlog));
@@ -5111,6 +5128,7 @@ function buildBacklogPlan({
   operatorReport,
   missionReport,
   liveControllerReport,
+  grandSlamMissionReport,
   runtimePriorities,
 }) {
   const items = buildBacklogItems({
@@ -5118,6 +5136,7 @@ function buildBacklogPlan({
     operatorReport,
     missionReport,
     liveControllerReport,
+    grandSlamMissionReport,
     runtimePriorities,
   })
     .sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
@@ -5168,6 +5187,17 @@ function buildBacklogPlan({
         throttle_counts: liveControllerReport.throttle_counts,
         provider_command_executed_count: liveControllerReport.provider_command_executed_count,
         paper_order_created_count: liveControllerReport.paper_order_created_count,
+      },
+      grand_slam_mission_ledger: {
+        path: grandSlamMissionReport.ledger?.path,
+        total_records: grandSlamMissionReport.total_records,
+        top_active_phase: grandSlamMissionReport.top_active_phase,
+        top_next_action: grandSlamMissionReport.top_next_action,
+        active_phase_counts: grandSlamMissionReport.active_phase_counts,
+        grand_slam_status_counts: grandSlamMissionReport.grand_slam_status_counts,
+        mission_command_executed_count: grandSlamMissionReport.mission_command_executed_count,
+        provider_command_executed_count: grandSlamMissionReport.provider_command_executed_count,
+        paper_order_created_count: grandSlamMissionReport.paper_order_created_count,
       },
       runtime_priorities: {
         next_priority: runtimePriorities.next_priority,
@@ -5324,6 +5354,7 @@ function buildBacklogItems({
   operatorReport,
   missionReport,
   liveControllerReport,
+  grandSlamMissionReport,
   runtimePriorities,
 }) {
   const items = [];
@@ -5339,6 +5370,13 @@ function buildBacklogItems({
   const controllerThrottleFrequency = controllerActionCounts.throttle_internal_watch ?? 0;
   const controllerProviderCandidateFrequency = controllerActionCounts.operator_provider_candidate ?? 0;
   const controllerPaperCandidateFrequency = controllerActionCounts.paper_autopilot_candidate ?? 0;
+  const grandSlamPhaseCounts = grandSlamMissionReport.active_phase_counts ?? {};
+  const grandSlamRestoreFrequency = grandSlamPhaseCounts.restore_operational_truth ?? 0;
+  const grandSlamBackfillFrequency = grandSlamPhaseCounts.offline_backfill ?? 0;
+  const grandSlamVisibilityFrequency = grandSlamPhaseCounts.feed_visibility ?? 0;
+  const grandSlamModelGapFrequency = grandSlamPhaseCounts.model_input_gap ?? 0;
+  const grandSlamPredictionFrequency = grandSlamPhaseCounts.prediction_watch ?? 0;
+  const grandSlamPaperFrequency = grandSlamPhaseCounts.paper_learning ?? 0;
   const runtimePriority = runtimePriorities.next_priority;
   const experimentRuntimeFrequency = countFor(experimentReport.next_experiment_counts, "runtime_channel_recovery");
   const operatorRuntimeFrequency = countFor(operatorReport.next_action_counts, "npm run hermes:runtime-check");
@@ -5349,6 +5387,7 @@ function buildBacklogItems({
     missionLaneCounts.channel ?? 0,
     missionNextLaneCounts.backend ?? 0,
     missionNextLaneCounts.channel ?? 0,
+    grandSlamRestoreFrequency,
   );
   const runtimePriorityFrequency = runtimePriority?.id === "stabilize_hermes_runtime"
     ? runtimePriority.frequency ?? 1
@@ -5419,6 +5458,42 @@ function buildBacklogItems({
         "allowed_collection_paths include internal/replay/licensed routes",
       ],
       blocks: ["live_collection_cadence"],
+    }));
+  }
+
+  if (grandSlamVisibilityFrequency > 0
+    || grandSlamModelGapFrequency > 0
+    || grandSlamPredictionFrequency > 0
+    || grandSlamPaperFrequency > 0) {
+    items.push(backlogItem({
+      id: "harden_grand_slam_prediction_loop",
+      title: "Harden the Grand Slam match-day prediction loop",
+      priority: 25,
+      source: ["grand_slam_mission_ledger"],
+      frequency: Math.max(
+        grandSlamVisibilityFrequency,
+        grandSlamModelGapFrequency,
+        grandSlamPredictionFrequency,
+        grandSlamPaperFrequency,
+      ),
+      rationale: "Repeated Grand Slam mission phases show where match-day score prediction loses readiness; convert visibility, model-input and paper-learning evidence into safer product work.",
+      targetFiles: [
+        "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+        "services/api/src/tennis_edge/services/operational_state.py",
+        "docs/hermes-operating-model.md",
+      ],
+      validationCommands: [
+        "npm --silent run hermes:grand-slam-mission-ledger-report",
+        "npm --silent run hermes:grand-slam-readiness",
+        "npm run api:check:operational-truth -- --pretty",
+      ],
+      acceptanceEvidence: [
+        "grand_slam_mission_ledger.active_phase_counts explains repeated mission phases",
+        "provider_command_executed_count=0",
+        "paper_order_created_count=0 unless protected backend autopilot is explicitly run",
+        "can_submit_real_orders=false",
+      ],
+      blocks: ["grand_slam_prediction_ready", "paper_ready", "learning_ready"],
     }));
   }
 
@@ -5509,12 +5584,38 @@ function buildBacklogItems({
     }));
   }
 
+  if (grandSlamBackfillFrequency > 0 && !(ready.source_discovery_backfill ?? 0) && topExperiment !== "source_discovery_backfill") {
+    items.push(backlogItem({
+      id: "expand_allowed_source_backfill",
+      title: "Expand allowed source/backfill routes without scraping or provider spend",
+      priority: 45,
+      source: ["grand_slam_mission_ledger"],
+      frequency: grandSlamBackfillFrequency,
+      rationale: "Off-calendar Grand Slam mission evidence repeatedly points to historical priors and backtests as the highest-value accuracy work.",
+      targetFiles: [
+        "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+        "docs/hermes-operating-model.md",
+      ],
+      validationCommands: [
+        "npm --silent run hermes:historical-backfill-plan",
+        "npm --silent run hermes:grand-slam-mission-ledger-report",
+        "python3 scripts/check_private_runtime.py",
+      ],
+      acceptanceEvidence: [
+        "historical sources are ranked without fetching/importing",
+        "license review gates stay visible before any importer exists",
+        "safe_jailbreak_policy.bypass_allowed=false",
+      ],
+      blocks: ["offline_accuracy", "backtest_depth"],
+    }));
+  }
+
   if (!items.length) {
     items.push(backlogItem({
       id: "collect_more_hermes_operating_evidence",
       title: "Collect more Hermes operating evidence before changing code",
       priority: 90,
-      source: ["experiment_ledger", "operator_ledger", "live_controller_ledger"],
+      source: ["experiment_ledger", "operator_ledger", "live_controller_ledger", "grand_slam_mission_ledger"],
       frequency: 0,
       rationale: "No repeated pattern is strong enough yet; continue ledger collection instead of guessing.",
       targetFiles: ["hermes/runs/*.jsonl"],
@@ -5522,12 +5623,14 @@ function buildBacklogItems({
         "npm --silent run hermes:experiment-ledger",
         "npm --silent run hermes:operator-ledger",
         "npm --silent run hermes:live-controller-ledger",
+        "npm --silent run hermes:grand-slam-mission-ledger",
         "npm --silent run hermes:backlog-plan",
       ],
       acceptanceEvidence: [
         "experiment_ledger.total_records increases",
         "operator_ledger.total_records increases",
         "live_controller_ledger.total_records increases",
+        "grand_slam_mission_ledger.total_records increases",
       ],
       blocks: [],
     }));
@@ -6656,6 +6759,280 @@ function buildLiveControllerLedgerReport({ path, records, invalid_rows: invalidR
       browser_sportsbook_automation_allowed: false,
       llm_per_tick_allowed: false,
     },
+  };
+}
+
+function buildGrandSlamMissionLedger(mission) {
+  const path = grandSlamMissionLedgerPath();
+  const record = {
+    generated_at: new Date().toISOString(),
+    mode: "grand_slam_mission_ledger_record",
+    outcome: "observed",
+    action_executed: false,
+    mission_command_executed: false,
+    provider_command_executed: false,
+    paper_order_created: false,
+    status: mission.status,
+    active_phase: mission.active_phase ?? null,
+    next_action_command: mission.next_action?.command ?? null,
+    next_action_id: mission.next_action?.id ?? null,
+    grand_slam_status: mission.grand_slam_readiness?.status ?? null,
+    paper_ready: Boolean(mission.grand_slam_readiness?.paper_ready),
+    prediction_ready: Boolean(mission.grand_slam_readiness?.prediction_ready),
+    visible_matches: mission.grand_slam_readiness?.matches?.grand_slam_visible ?? 0,
+    prediction_rows: mission.grand_slam_readiness?.matches?.prediction_rows ?? 0,
+    paper_candidates: mission.grand_slam_readiness?.matches?.paper_candidates ?? 0,
+    active_grand_slams: (mission.grand_slam_readiness?.active_grand_slams ?? []).map((slam) => slam.id ?? slam.name).filter(Boolean),
+    historical_next_source: mission.historical_backfill?.next_source?.id ?? null,
+    historical_license_review_required: mission.historical_backfill?.review_summary?.license_review_required ?? 0,
+    live_controller_status: mission.live_control?.status ?? null,
+    quota_level: mission.live_control?.quota_throttle?.level ?? null,
+    learning_review_status: mission.learning_review?.status ?? null,
+    safe_jailbreak_bypass_allowed: mission.safe_jailbreak_policy?.bypass_allowed === true,
+    packet: compactGrandSlamMissionPacket(mission),
+    safety: mission.safety,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "grand_slam_mission_ledger",
+    status: mission.status,
+    active_phase: mission.active_phase ?? null,
+    read_only: false,
+    writes: true,
+    write_scope: "local_grand_slam_mission_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    ledger: {
+      path,
+      format: "jsonl",
+      retention_note: "Local Hermes Grand Slam mission trace; do not commit runtime logs.",
+    },
+    record,
+    safety: {
+      real_execution_hard_block: mission.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function compactGrandSlamMissionPacket(mission) {
+  return {
+    mode: mission.mode,
+    status: mission.status,
+    active_phase: mission.active_phase,
+    mission_summary: mission.mission_summary,
+    next_action: {
+      id: mission.next_action?.id ?? null,
+      command: mission.next_action?.command ?? null,
+      executes_now: false,
+      provider_api_call_allowed: false,
+      can_create_paper_orders: Boolean(mission.next_action?.can_create_paper_orders),
+      can_submit_real_orders: false,
+    },
+    phases: (mission.phases ?? []).map((phase) => ({
+      id: phase.id,
+      status: phase.status,
+      active: Boolean(phase.active),
+      command: phase.command,
+      blocker_count: (phase.blockers ?? []).length,
+      can_create_paper_orders: Boolean(phase.can_create_paper_orders),
+      executes_now: false,
+    })),
+    grand_slam_readiness: {
+      status: mission.grand_slam_readiness?.status,
+      prediction_ready: Boolean(mission.grand_slam_readiness?.prediction_ready),
+      paper_ready: Boolean(mission.grand_slam_readiness?.paper_ready),
+      visible_matches: mission.grand_slam_readiness?.matches?.grand_slam_visible ?? 0,
+      prediction_rows: mission.grand_slam_readiness?.matches?.prediction_rows ?? 0,
+      paper_candidates: mission.grand_slam_readiness?.matches?.paper_candidates ?? 0,
+    },
+    historical_backfill: {
+      status: mission.historical_backfill?.status,
+      next_source_id: mission.historical_backfill?.next_source?.id ?? null,
+      license_review_required: mission.historical_backfill?.review_summary?.license_review_required ?? 0,
+    },
+    live_control: {
+      status: mission.live_control?.status,
+      collection_status: mission.live_control?.collection_status,
+      quota_level: mission.live_control?.quota_throttle?.level ?? null,
+      provider_command_count: mission.live_control?.provider_command_count ?? 0,
+      provider_commands_allowed: false,
+    },
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function grandSlamMissionLedgerPath() {
+  return process.env.HERMES_GRAND_SLAM_MISSION_LEDGER_PATH || "hermes/runs/grand-slam-mission-ledger.jsonl";
+}
+
+function writeGrandSlamMissionLedger(record) {
+  const path = grandSlamMissionLedgerPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function readGrandSlamMissionLedgerRecords() {
+  const path = grandSlamMissionLedgerPath();
+  if (!existsSync(path)) {
+    return { path, records: [], invalid_rows: 0 };
+  }
+  const content = readFileSync(path, "utf8");
+  let invalidRows = 0;
+  const records = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalidRows += 1;
+        return [];
+      }
+    });
+  return { path, records, invalid_rows: invalidRows };
+}
+
+function buildGrandSlamMissionLedgerReport({ path, records, invalid_rows: invalidRows }) {
+  const nextActionCounts = rankedCounts(records.map((record) => record.next_action_command).filter(Boolean));
+  const activePhaseCounts = countValues(records.map((record) => record.active_phase).filter(Boolean));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "grand_slam_mission_ledger_report",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger: {
+      path,
+      format: "jsonl",
+      invalid_rows: invalidRows,
+    },
+    total_records: records.length,
+    action_executed_count: records.filter((record) => record.action_executed === true).length,
+    mission_command_executed_count: records.filter((record) => record.mission_command_executed === true).length,
+    provider_command_executed_count: records.filter((record) => record.provider_command_executed === true).length,
+    paper_order_created_count: records.filter((record) => record.paper_order_created === true).length,
+    status_counts: countValues(records.map((record) => record.status).filter(Boolean)),
+    active_phase_counts: activePhaseCounts,
+    grand_slam_status_counts: countValues(records.map((record) => record.grand_slam_status).filter(Boolean)),
+    historical_source_counts: countValues(records.map((record) => record.historical_next_source).filter(Boolean)),
+    live_controller_status_counts: countValues(records.map((record) => record.live_controller_status).filter(Boolean)),
+    quota_level_counts: countValues(records.map((record) => record.quota_level).filter(Boolean)),
+    learning_review_status_counts: countValues(records.map((record) => record.learning_review_status).filter(Boolean)),
+    next_action_counts: nextActionCounts,
+    top_active_phase: rankedCounts(records.map((record) => record.active_phase).filter(Boolean))[0]?.command ?? null,
+    top_next_action: nextActionCounts[0]?.command ?? null,
+    repeated_blockers: grandSlamMissionRepeatedBlockers(records),
+    next_recommendation: grandSlamMissionLedgerRecommendation(records, activePhaseCounts, nextActionCounts),
+    latest_record: records[records.length - 1] ?? null,
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function grandSlamMissionRepeatedBlockers(records) {
+  return rankedCounts(records
+    .filter((record) => ["blocked", "monitor"].includes(record.status))
+    .map((record) => record.active_phase)
+    .filter(Boolean))
+    .map((row) => ({
+      phase: row.command,
+      count: row.count,
+      example_next_action: records.find((record) => record.active_phase === row.command)?.next_action_command ?? null,
+    }));
+}
+
+function grandSlamMissionLedgerRecommendation(records, activePhaseCounts, nextActionCounts) {
+  const topPhase = rankedCounts(records.map((record) => record.active_phase).filter(Boolean))[0]?.command ?? null;
+  const command = nextActionCounts[0]?.command ?? "npm --silent run hermes:grand-slam-mission";
+  if (!records.length) {
+    return grandSlamMissionRecommendation({
+      id: "collect_grand_slam_mission_evidence",
+      reason: "No Grand Slam mission rows exist yet; collect local evidence before changing code.",
+      command: "npm --silent run hermes:grand-slam-mission-ledger",
+      phase: null,
+    });
+  }
+  if ((activePhaseCounts.restore_operational_truth ?? 0) > 0) {
+    return grandSlamMissionRecommendation({
+      id: "restore_operational_truth",
+      reason: "Grand Slam prediction readiness is repeatedly blocked before model work; restore backend/Postgres operational truth first.",
+      command: "npm --silent run hermes:backend-readiness",
+      phase: "restore_operational_truth",
+    });
+  }
+  if ((activePhaseCounts.offline_backfill ?? 0) > 0) {
+    return grandSlamMissionRecommendation({
+      id: "expand_offline_priors",
+      reason: "The Grand Slam mission is off-calendar; historical priors and backtest depth are the best allowed accuracy work.",
+      command: "npm --silent run hermes:historical-backfill-plan",
+      phase: "offline_backfill",
+    });
+  }
+  if (["feed_visibility", "model_input_gap", "prediction_watch"].includes(topPhase)) {
+    return grandSlamMissionRecommendation({
+      id: "harden_prediction_visibility",
+      reason: "Grand Slam rows or probability rows are repeatedly incomplete; harden match visibility and prediction readiness before autonomy changes.",
+      command: "npm --silent run hermes:grand-slam-readiness",
+      phase: topPhase,
+    });
+  }
+  if ((activePhaseCounts.paper_learning ?? 0) > 0) {
+    return grandSlamMissionRecommendation({
+      id: "review_paper_learning",
+      reason: "Grand Slam paper-ready windows are appearing; review protected paper learning evidence without creating orders from the ledger.",
+      command: "npm --silent run hermes:learning-review",
+      phase: "paper_learning",
+    });
+  }
+  return grandSlamMissionRecommendation({
+    id: "observe_grand_slam_mission",
+    reason: "No repeated Grand Slam blocker is dominant yet; keep observing the mission packet.",
+    command,
+    phase: topPhase,
+  });
+}
+
+function grandSlamMissionRecommendation({ id, reason, command, phase }) {
+  return {
+    id,
+    reason,
+    command,
+    phase,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    operator_note: "No report action executes automatically.",
   };
 }
 
@@ -9845,6 +10222,8 @@ const commands = {
   "match-pulse": matchPulse,
   "grand-slam-readiness": grandSlamReadiness,
   "grand-slam-mission": grandSlamMission,
+  "grand-slam-mission-ledger": grandSlamMissionLedger,
+  "grand-slam-mission-ledger-report": grandSlamMissionLedgerReport,
   "collection-plan": collectionPlan,
   "quota-plan": quotaPlan,
   "live-controller": liveController,

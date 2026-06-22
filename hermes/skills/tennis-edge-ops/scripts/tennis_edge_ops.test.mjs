@@ -3166,6 +3166,94 @@ test("backlog-plan uses live-controller ledger as implementation evidence", asyn
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
+test("backlog-plan uses grand-slam mission ledger as product prediction evidence", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-grand-slam-mission-plan-"));
+  const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
+  const operatorLedgerPath = join(tempDir, "operator-ledger.jsonl");
+  const missionLedgerPath = join(tempDir, "mission-ledger.jsonl");
+  const controllerLedgerPath = join(tempDir, "live-controller-ledger.jsonl");
+  const grandSlamMissionLedgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
+  const grandSlamRows = [
+    {
+      mode: "grand_slam_mission_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      mission_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "monitor",
+      active_phase: "model_input_gap",
+      next_action_command: "npm --silent run hermes:match-pulse",
+      grand_slam_status: "monitor",
+      paper_ready: false,
+      prediction_ready: false,
+      visible_matches: 4,
+      prediction_rows: 0,
+      historical_next_source: "jeff_sackmann_match_stats",
+      live_controller_status: "live_watch",
+      quota_level: "normal",
+      learning_review_status: "collecting",
+    },
+    {
+      mode: "grand_slam_mission_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      mission_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "monitor",
+      active_phase: "model_input_gap",
+      next_action_command: "npm --silent run hermes:match-pulse",
+      grand_slam_status: "monitor",
+      paper_ready: false,
+      prediction_ready: false,
+      visible_matches: 5,
+      prediction_rows: 0,
+      historical_next_source: "jeff_sackmann_match_stats",
+      live_controller_status: "live_watch",
+      quota_level: "normal",
+      learning_review_status: "collecting",
+    },
+  ];
+  writeFileSync(experimentLedgerPath, "");
+  writeFileSync(operatorLedgerPath, "");
+  writeFileSync(missionLedgerPath, "");
+  writeFileSync(controllerLedgerPath, "");
+  writeFileSync(grandSlamMissionLedgerPath, `${grandSlamRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["backlog-plan"], {
+    env: {
+      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+      HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+      HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+      HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamMissionLedgerPath,
+    },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "backlog_plan");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.items[0].id, "harden_grand_slam_prediction_loop");
+  assert.equal(payload.items[0].source.includes("grand_slam_mission_ledger"), true);
+  assert.equal(payload.items[0].frequency, 2);
+  assert.equal(payload.items[0].validation_commands.includes("npm --silent run hermes:grand-slam-mission-ledger-report"), true);
+  assert.equal(payload.next_item.id, "harden_grand_slam_prediction_loop");
+  assert.equal(payload.evidence.grand_slam_mission_ledger.total_records, 2);
+  assert.equal(payload.evidence.grand_slam_mission_ledger.top_active_phase, "model_input_gap");
+  assert.equal(payload.evidence.grand_slam_mission_ledger.top_next_action, "npm --silent run hermes:match-pulse");
+  assert.equal(payload.evidence.grand_slam_mission_ledger.active_phase_counts.model_input_gap, 2);
+  assert.equal(payload.evidence.grand_slam_mission_ledger.grand_slam_status_counts.monitor, 2);
+  assert.equal(payload.evidence.grand_slam_mission_ledger.provider_command_executed_count, 0);
+  assert.equal(payload.evidence.grand_slam_mission_ledger.paper_order_created_count, 0);
+  assert.equal(payload.safety.can_submit_real_orders, false);
+});
+
 test("implementation-handoff turns backlog priority into a safe work order", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-implementation-handoff-"));
   const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
@@ -4951,6 +5039,177 @@ test("grand-slam-readiness and mission expose paper-ready Slam predictions witho
     assert.equal(mission.safe_jailbreak_policy.live_scraping_allowed, false);
     assert.equal(mission.forbidden_actions.includes("grand_slam_live_scoreboard_scraping"), true);
     assert.equal(mission.evidence_contract.some((item) => item.id === "match_day_prediction"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("grand-slam-mission-ledger preserves match-day mission evidence locally", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-grand-slam-mission-ledger-"));
+  const ledgerPath = join(tempDir, "grand-slam-mission-ledger.jsonl");
+  const match = {
+    match: {
+      id: "wimbledon_live_edge",
+      tournament: "Wimbledon",
+      round: "R64",
+      tour: "WTA",
+      competition_level: "GRAND_SLAM",
+      surface: "grass",
+      player1: { id: "p1", name: "Player One" },
+      player2: { id: "p2", name: "Player Two" },
+      state: {
+        status: "live",
+        p1_sets: 0,
+        p2_sets: 0,
+        p1_games: 3,
+        p2_games: 2,
+        point_score: "30-15",
+        server_player_id: "p1",
+        is_tiebreak: false,
+        is_break_point: false,
+      },
+    },
+    prediction: {
+      p1_win_prob: 0.64,
+      p2_win_prob: 0.36,
+      confidence: "Alta",
+      model_version: "baseline_v0",
+    },
+    signals: [
+      {
+        id: "sig_wimbledon_edge",
+        match_id: "wimbledon_live_edge",
+        player_id: "p1",
+        player_name: "Player One",
+        status: "Entrada",
+        edge: 0.075,
+        threshold: 0.03,
+        confidence: "Alta",
+        best_odds: 2.02,
+        reason: "fresh Grand Slam edge",
+      },
+    ],
+    freshness: {
+      source: "live",
+      persisted: true,
+      score_age_ms: 3000,
+      odds_age_ms: 2500,
+      provider_lineage: ["api_tennis", "odds_api_io"],
+    },
+  };
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": [match],
+    "/api/v1/signals/live": [match.signals[0]],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "live_with_keys",
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 12,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          steps: [],
+        },
+        source_summary: {
+          total_matches: 1,
+          persisted_matches: 1,
+          match_freshness: [
+            {
+              match_id: "wimbledon_live_edge",
+              source: "live",
+              persisted: true,
+              score_age_ms: 3000,
+              odds_age_ms: 2500,
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli([
+      "grand-slam-mission-ledger",
+      `--api-base=${apiBase}`,
+      "--date=2026-07-01",
+    ], {
+      env: { HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: ledgerPath },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "grand_slam_mission_ledger");
+    assert.equal(payload.status, "ready");
+    assert.equal(payload.active_phase, "paper_learning");
+    assert.equal(payload.writes, true);
+    assert.equal(payload.write_scope, "local_grand_slam_mission_jsonl_only");
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.executed_commands.length, 0);
+    assert.equal(payload.ledger.path, ledgerPath);
+    assert.equal(payload.record.mode, "grand_slam_mission_ledger_record");
+    assert.equal(payload.record.action_executed, false);
+    assert.equal(payload.record.mission_command_executed, false);
+    assert.equal(payload.record.provider_command_executed, false);
+    assert.equal(payload.record.paper_order_created, false);
+    assert.equal(payload.record.active_phase, "paper_learning");
+    assert.equal(payload.record.grand_slam_status, "paper_ready");
+    assert.equal(payload.record.paper_ready, true);
+    assert.equal(payload.record.prediction_ready, true);
+    assert.equal(payload.record.visible_matches, 1);
+    assert.equal(payload.record.prediction_rows, 1);
+    assert.equal(payload.record.next_action_command, "npm run hermes:autopilot");
+    assert.equal(payload.record.safe_jailbreak_bypass_allowed, false);
+    assert.equal(payload.record.packet.provider_api_call_allowed, undefined);
+    assert.equal(payload.record.packet.safety.can_submit_real_orders, false);
+
+    const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const audit = JSON.parse(lines[0]);
+    assert.equal(audit.mode, "grand_slam_mission_ledger_record");
+    assert.equal(audit.active_phase, "paper_learning");
+    assert.equal(audit.paper_order_created, false);
+    assert.equal(audit.provider_command_executed, false);
+
+    const reportResult = await runCli(["grand-slam-mission-ledger-report"], {
+      env: { HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: ledgerPath },
+    });
+    assert.equal(reportResult.exit, 0);
+    const report = JSON.parse(reportResult.stdout);
+    assert.equal(report.mode, "grand_slam_mission_ledger_report");
+    assert.equal(report.read_only, true);
+    assert.equal(report.writes, false);
+    assert.equal(report.total_records, 1);
+    assert.equal(report.active_phase_counts.paper_learning, 1);
+    assert.equal(report.grand_slam_status_counts.paper_ready, 1);
+    assert.equal(report.mission_command_executed_count, 0);
+    assert.equal(report.provider_command_executed_count, 0);
+    assert.equal(report.paper_order_created_count, 0);
+    assert.equal(report.next_recommendation.id, "review_paper_learning");
+    assert.equal(report.next_recommendation.executes_now, false);
+    assert.equal(report.next_recommendation.can_create_paper_orders, false);
+    assert.equal(report.safety.can_submit_real_orders, false);
   } finally {
     server.close();
   }

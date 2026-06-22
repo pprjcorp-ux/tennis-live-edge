@@ -39,6 +39,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-stats
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-window
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs match-pulse
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs collection-plan
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs quota-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
@@ -106,6 +107,9 @@ read-only and never creates orders itself.
 The `collection-plan` command converts the watchlist into desired polling
 lanes. It is read-only and keeps provider ingestion as operator-candidate
 commands with `executes_now=false`.
+The `quota-plan` command applies cost/budget throttles to collection cadence.
+It is read-only and suppresses provider candidates when budget guardrails are
+active.
 The `learning-review` command emits a weekly readiness packet for ROI, CLV,
 production training examples, model review gates, and real-execution hard
 blocking. It is read-only and does not promote models.

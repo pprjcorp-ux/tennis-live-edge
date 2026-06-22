@@ -165,6 +165,20 @@ async function collectionPlan() {
   printJson(buildCollectionPlan({ report, eventPlan, liveWindowPlan, pulse }));
 }
 
+async function quotaPlan() {
+  const [report, matches] = await Promise.all([
+    intelligenceData(),
+    request("/api/v1/live/matches"),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  const liveWindowPlan = buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan);
+  const pulse = buildMatchPulse({ report, eventPlan, liveWindowPlan, matches });
+  const collection = buildCollectionPlan({ report, eventPlan, liveWindowPlan, pulse });
+  printJson(buildQuotaPlan({ report, collection }));
+}
+
 async function learningReview() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -2840,6 +2854,161 @@ function collectionCommand({ id, command, reason }) {
   };
 }
 
+function buildQuotaPlan({ report, collection }) {
+  const throttle = quotaThrottle(report, collection);
+  const effectiveTargets = collection.targets.map((target) => applyQuotaThrottle(target, throttle));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "quota_plan",
+    status: quotaPlanStatus(collection, throttle),
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    live_window_status: collection.live_window_status,
+    collection_status: collection.status,
+    cost_snapshot: report.cost_snapshot,
+    throttle,
+    effective_targets: effectiveTargets,
+    safe_commands: quotaSafeCommands(collection, throttle),
+    provider_commands: quotaProviderCommands(collection, throttle),
+    blockers: collection.blockers,
+    forbidden_actions: collection.forbidden_actions,
+    safety: collection.safety,
+  };
+}
+
+function quotaThrottle(report, collection) {
+  const cost = report.cost_snapshot ?? {};
+  const utilization = ratio(cost.estimated_monthly_spend_usd, cost.monthly_budget_usd);
+  const hasSafetyStop = collection.status === "safety_stop"
+    || collection.safety?.real_execution_hard_block !== true
+    || collection.safety?.can_submit_real_orders === true;
+  if (hasSafetyStop) {
+    return quotaThrottleState({
+      level: "safety_stop",
+      budgetUtilization: utilization,
+      scoreMultiplier: 0,
+      oddsMultiplier: 0,
+      providerCommandsAllowed: false,
+      reason: "Safety stop: real execution is not proven hard-blocked.",
+    });
+  }
+  if (collection.status === "blocked") {
+    return quotaThrottleState({
+      level: "blocked",
+      budgetUtilization: utilization,
+      scoreMultiplier: 0,
+      oddsMultiplier: 0,
+      providerCommandsAllowed: false,
+      reason: "Collection plan is blocked; keep provider traffic frozen.",
+    });
+  }
+  if (utilization >= 1) {
+    return quotaThrottleState({
+      level: "budget_exhausted",
+      budgetUtilization: utilization,
+      scoreMultiplier: 0,
+      oddsMultiplier: 0,
+      providerCommandsAllowed: false,
+      reason: "Projected monthly spend is at or above budget.",
+    });
+  }
+  if (utilization >= 0.9) {
+    return quotaThrottleState({
+      level: "budget_guard",
+      budgetUtilization: utilization,
+      scoreMultiplier: 4,
+      oddsMultiplier: 12,
+      providerCommandsAllowed: false,
+      reason: "Projected monthly spend is near the budget; slow down hot polling and suppress provider candidates.",
+    });
+  }
+  if (utilization >= 0.75) {
+    return quotaThrottleState({
+      level: "cost_watch",
+      budgetUtilization: utilization,
+      scoreMultiplier: 2,
+      oddsMultiplier: 3,
+      providerCommandsAllowed: false,
+      reason: "Projected monthly spend is elevated; keep cadence selective.",
+    });
+  }
+  return quotaThrottleState({
+    level: "normal",
+    budgetUtilization: utilization,
+    scoreMultiplier: 1,
+    oddsMultiplier: 1,
+    providerCommandsAllowed: false,
+    reason: "Budget utilization is inside normal operating range.",
+  });
+}
+
+function quotaThrottleState({
+  level,
+  budgetUtilization,
+  scoreMultiplier,
+  oddsMultiplier,
+  providerCommandsAllowed,
+  reason,
+}) {
+  return {
+    level,
+    budget_utilization: budgetUtilization,
+    score_multiplier: scoreMultiplier,
+    odds_multiplier: oddsMultiplier,
+    provider_commands_allowed: providerCommandsAllowed,
+    reason,
+  };
+}
+
+function applyQuotaThrottle(target, throttle) {
+  const frozen = ["safety_stop", "blocked", "budget_exhausted"].includes(throttle.level);
+  return {
+    ...target,
+    lane: frozen ? "frozen" : target.lane,
+    score_poll_seconds: frozen ? 0 : Math.max(target.score_poll_seconds, target.score_poll_seconds * throttle.score_multiplier),
+    odds_poll_seconds: frozen ? 0 : Math.max(target.odds_poll_seconds, target.odds_poll_seconds * throttle.odds_multiplier),
+    provider_api_call_allowed: false,
+    executes_now: false,
+    quota_throttle_level: throttle.level,
+  };
+}
+
+function quotaPlanStatus(collection, throttle) {
+  if (throttle.level === "safety_stop") return "safety_stop";
+  if (["blocked", "budget_exhausted"].includes(throttle.level)) return "blocked";
+  if (["budget_guard", "cost_watch"].includes(throttle.level)) return "throttled";
+  return collection.status === "live_watch" ? "normal" : collection.status;
+}
+
+function quotaSafeCommands(collection, throttle) {
+  if (["safety_stop", "blocked", "budget_exhausted"].includes(throttle.level)) {
+    return [collectionCommand({
+      id: "route_events",
+      command: "npm --silent run hermes:events",
+      reason: "Resolve blockers or budget exhaustion before live provider traffic.",
+    })];
+  }
+  return [collectionCommand({
+    id: "collection_plan",
+    command: "npm --silent run hermes:collection-plan",
+    reason: "Refresh desired cadence from internal state before any operator-triggered provider cycle.",
+  })];
+}
+
+function quotaProviderCommands(collection, throttle) {
+  if (!throttle.provider_commands_allowed) return [];
+  return collection.provider_commands.map((command) => ({
+    ...command,
+    executes_now: false,
+    provider_api_call_allowed: false,
+  }));
+}
+
 function buildLearningReview(report, eventPlan, playbookPlan) {
   const learning = report.learning_snapshot ?? {};
   const budget = report.budget_chain_snapshot ?? {};
@@ -3198,6 +3367,7 @@ const commands = {
   "live-window": liveWindow,
   "match-pulse": matchPulse,
   "collection-plan": collectionPlan,
+  "quota-plan": quotaPlan,
   "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,

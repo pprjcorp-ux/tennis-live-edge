@@ -1882,6 +1882,155 @@ test("collection-plan converts match pulse into safe polling cadence", async () 
   }
 });
 
+test("quota-plan throttles collection cadence near budget limits", async () => {
+  const matches = [
+    {
+      match: {
+        id: "match_live_quota",
+        tournament: "Australian Open",
+        round: "R16",
+        tour: "ATP",
+        competition_level: "GRAND_SLAM",
+        surface: "hard",
+        player1: { id: "p1", name: "Player One" },
+        player2: { id: "p2", name: "Player Two" },
+        state: {
+          status: "live",
+          p1_sets: 1,
+          p2_sets: 1,
+          p1_games: 4,
+          p2_games: 4,
+          point_score: "30-30",
+          server_player_id: "p1",
+          is_tiebreak: false,
+          is_break_point: false,
+        },
+      },
+      prediction: { p1_win_prob: 0.6, p2_win_prob: 0.4, confidence: "Alta", model_version: "baseline_v0" },
+      signals: [
+        {
+          id: "sig_quota",
+          match_id: "match_live_quota",
+          player_id: "p1",
+          player_name: "Player One",
+          status: "Entrada",
+          edge: 0.08,
+          threshold: 0.03,
+          confidence: "Alta",
+          best_odds: 2.05,
+          reason: "fresh edge",
+        },
+      ],
+      freshness: {
+        source: "live",
+        persisted: true,
+        score_age_ms: 5000,
+        odds_age_ms: 4000,
+        provider_lineage: ["api_tennis", "odds_api_io"],
+      },
+    },
+  ];
+  const baseDashboard = {
+    operational_state: {
+      provider_mode: "live_with_keys",
+      replay_lab: { status: "ready" },
+      model_lab: { status: "collecting", production_training_examples: 12, can_run_live_backtest: false },
+      api_onboarding: {
+        core_ready: true,
+        budget_chain_completed: true,
+        enterprise_eligible: false,
+        current_step: null,
+        steps: [],
+      },
+      source_summary: {
+        total_matches: 1,
+        persisted_matches: 1,
+        match_freshness: [
+          { match_id: "match_live_quota", source: "live", persisted: true, score_age_ms: 5000, odds_age_ms: 4000 },
+        ],
+      },
+    },
+  };
+  const normalFixtures = eventRouterFixtures({
+    "/api/v1/live/matches": matches,
+    "/api/v1/signals/live": [matches[0].signals[0]],
+    "/api/v1/dashboard/live-state": baseDashboard,
+    "/api/v1/cost-profile": {
+      active_plan: "lean_atp",
+      estimated_monthly_spend_usd: 350,
+      monthly_budget_usd: 500,
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = normalFixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["quota-plan", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "quota_plan");
+    assert.equal(payload.status, "normal");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.throttle.level, "normal");
+    assert.equal(payload.effective_targets[0].match_id, "match_live_quota");
+    assert.equal(payload.effective_targets[0].score_poll_seconds, 15);
+    assert.equal(payload.effective_targets[0].odds_poll_seconds, 5);
+    assert.equal(payload.provider_commands.every((command) => command.executes_now === false), true);
+  } finally {
+    server.close();
+  }
+
+  const guardedFixtures = eventRouterFixtures({
+    "/api/v1/live/matches": matches,
+    "/api/v1/signals/live": [matches[0].signals[0]],
+    "/api/v1/dashboard/live-state": baseDashboard,
+    "/api/v1/cost-profile": {
+      active_plan: "lean_atp",
+      estimated_monthly_spend_usd: 485,
+      monthly_budget_usd: 500,
+    },
+  });
+  const { server: guardedServer, apiBase: guardedApiBase } = await startServer((request, response) => {
+    const payload = guardedFixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["quota-plan", `--api-base=${guardedApiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, "throttled");
+    assert.equal(payload.throttle.level, "budget_guard");
+    assert.equal(payload.throttle.budget_utilization, 0.97);
+    assert.equal(payload.effective_targets[0].score_poll_seconds, 60);
+    assert.equal(payload.effective_targets[0].odds_poll_seconds, 60);
+    assert.equal(payload.provider_commands.length, 0);
+    assert.equal(payload.safe_commands[0].command, "npm --silent run hermes:collection-plan");
+  } finally {
+    guardedServer.close();
+  }
+});
+
 test("budget-chain emits a dry-run provider onboarding plan without spending quota", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/signals/live": [],

@@ -109,6 +109,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 1-5 minutes during active windows: `npm run hermes:live-window`.
 - Every 1-5 minutes during active windows: `npm run hermes:match-pulse`.
 - Every 1-5 minutes during active windows: `npm run hermes:collection-plan`.
+- Every 1-5 minutes during active windows: `npm run hermes:quota-plan`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
 - Every 5 minutes while blocked: `npm run hermes:unblock-plan`.
@@ -201,6 +202,11 @@ creating orders directly.
 watchlist into desired polling lanes such as `hot_watch`, `warm_watch`,
 `repair_watch`, and `frozen`, while keeping provider ingestion as an explicit
 operator candidate rather than an executed action.
+
+`hermes:quota-plan` is the preferred budget throttle packet. It applies monthly
+spend utilization guardrails to the collection plan, slows or freezes desired
+cadence when needed, and suppresses provider command candidates while the guard
+is active.
 
 `hermes:learning-review` is the preferred weekly packet. It packages the
 learning gates, ROI, CLV, settled paper volume, production training examples,

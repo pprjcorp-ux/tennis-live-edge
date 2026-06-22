@@ -145,6 +145,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   `npm run hermes:collection-plan`; it converts match-pulse priorities into
   desired score/odds polling lanes, but must remain read-only, must not execute
   provider ingestion, and must keep `provider_api_call_allowed=false`.
+- Hermes quota/cost throttling should consume `npm run hermes:quota-plan`; it
+  wraps collection-plan with budget utilization guards, may slow or freeze
+  desired polling cadence, and must never execute provider commands.
 - Hermes weekly learning/readiness review should consume
   `npm run hermes:learning-review`; it is read-only, routes interpretation to
   the critical model, and must keep real execution blocked.
@@ -196,6 +199,7 @@ npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
 npm run hermes:collection-plan
+npm run hermes:quota-plan
 npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal

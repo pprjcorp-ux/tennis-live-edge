@@ -40,6 +40,7 @@ npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
 npm run hermes:collection-plan
+npm run hermes:quota-plan
 npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
@@ -116,6 +117,11 @@ paper autopilot route when the live window is `paper_ready`.
 odds polling lanes such as `hot_watch`, `warm_watch`, `repair_watch`, and
 `frozen`. It is read-only: provider ingestion commands are shown only as
 operator candidates with `executes_now=false` and `provider_api_call_allowed=false`.
+
+`hermes:quota-plan` wraps the collection plan with cost/budget throttles. It
+keeps the plan read-only, can slow or freeze desired cadence near monthly
+budget limits, and suppresses provider command candidates when the budget guard
+is active.
 
 `hermes:learning-review` is the weekly readiness packet. It summarizes
 settled paper evidence, production training examples, ROI/CLV readiness and

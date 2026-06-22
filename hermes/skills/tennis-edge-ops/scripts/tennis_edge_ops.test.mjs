@@ -4586,7 +4586,7 @@ test("backlog-plan turns repeated ledgers into non-executing implementation prio
   assert.equal(payload.can_submit_real_orders, false);
   assert.equal(payload.can_create_paper_orders, false);
   assert.equal(payload.llm_per_tick_allowed, false);
-  assert.equal(payload.items.length >= 2, true);
+  assert.equal(payload.items.length >= 1, true);
   assert.equal(payload.items[0].id, "stabilize_hermes_runtime_channels");
   assert.equal(payload.items[0].source.includes("experiment_ledger"), true);
   assert.equal(payload.items[0].source.includes("mission_ledger"), false);
@@ -4596,6 +4596,8 @@ test("backlog-plan turns repeated ledgers into non-executing implementation prio
   assert.equal(payload.next_item.id, "stabilize_hermes_runtime_channels");
   assert.equal(payload.evidence.experiment_ledger.total_records, 2);
   assert.equal(payload.evidence.operator_ledger.total_records, 2);
+  assert.equal(payload.evidence.source_discovery_completion.status, "complete");
+  assert.equal(payload.items.some((item) => item.id === "expand_allowed_source_backfill"), false);
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
@@ -4657,7 +4659,13 @@ test("backlog-plan skips stale runtime blockers after latest operator packet cle
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.mode, "backlog_plan");
   assert.equal(payload.items.some((item) => item.id === "stabilize_hermes_runtime_channels"), false);
-  assert.equal(payload.next_item.id, "expand_allowed_source_backfill");
+  assert.equal(payload.items.some((item) => item.id === "expand_allowed_source_backfill"), false);
+  assert.equal(payload.evidence.source_discovery_completion.status, "complete");
+  assert.equal(payload.evidence.source_discovery_completion.total_sources >= 7, true);
+  assert.equal(payload.evidence.source_discovery_completion.cc0_candidates >= 1, true);
+  assert.equal(payload.evidence.source_discovery_completion.licensed_api_candidates >= 1, true);
+  assert.equal(payload.evidence.source_discovery_completion.provider_api_call_allowed, false);
+  assert.equal(payload.evidence.source_discovery_completion.bypass_allowed, false);
   assert.equal(payload.evidence.runtime_priorities.runtime_cleared, true);
   assert.equal(payload.evidence.runtime_priorities.latest_runtime_status, "ready");
   assert.equal(payload.evidence.operator_ledger.top_blocker, "npm --silent run hermes:events");

@@ -314,10 +314,13 @@ instead of intuition.
 
 `hermes:backlog-plan` is the evidence-to-backlog compiler. It reads only local
 operator, mission, experiment, live-controller, source-route and Grand Slam
-mission ledger reports, then emits
-implementation priorities with target files, validation commands, acceptance
-evidence and blocked gates. It does not edit code or run the listed validation
-commands.
+mission ledger reports, then emits implementation priorities with target files,
+validation commands, acceptance evidence and blocked gates. It also includes
+`source_discovery_completion`, a deterministic proof that the offline backfill
+dossier has enough source classes, license-review gates and forbidden-use
+markers. When that proof is complete, stale ledger entries cannot keep
+reopening `expand_allowed_source_backfill`. It does not edit code or run the
+listed validation commands.
 
 `hermes:implementation-handoff` is the bridge from backlog evidence to actual
 Codex/Hermes engineering work. It turns the current `backlog-plan` priority

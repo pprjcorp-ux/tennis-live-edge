@@ -803,6 +803,7 @@ def main() -> int:
         "source-intake-plan",
         "source-intake-ledger",
         "source-intake-ledger-report",
+        "source_discovery_completion",
         "backfill_source_dossier",
         "backfill_source_summary",
         "cc_by_nc_sa_operator_review",

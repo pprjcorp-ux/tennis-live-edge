@@ -535,9 +535,11 @@ recommendations and active ceilings from the local ledger without writing or
 executing commands.
 
 `hermes:backlog-plan` compiles local mission/operator/experiment/live-control,
-source-route and Grand Slam mission ledger evidence into non-executing implementation priorities. Each item includes
-target files, validation commands, acceptance evidence and the gates it would
-unblock.
+source-route and Grand Slam mission ledger evidence into non-executing implementation priorities. It also emits
+`source_discovery_completion` so completed offline source dossiers do not keep
+reopening `expand_allowed_source_backfill` after the safe routes are already
+mapped. Each item includes target files, validation commands, acceptance
+evidence and the gates it would unblock.
 
 `hermes:autonomy-effectiveness` should run before handoff work when enough
 ledger evidence exists. It decides whether Hermes is still only collecting

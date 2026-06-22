@@ -8991,6 +8991,7 @@ function buildBacklogPlan({
   sourceUseReport = emptySourceUseLedgerReport(),
   sourceIntakeReport = emptySourceIntakeLedgerReport(),
   runtimePriorities,
+  sourceDiscoveryCompletion = buildSourceDiscoveryCompletionProof(),
 }) {
   const items = buildBacklogItems({
     experimentReport,
@@ -9002,6 +9003,7 @@ function buildBacklogPlan({
     sourceUseReport,
     sourceIntakeReport,
     runtimePriorities,
+    sourceDiscoveryCompletion,
   })
     .sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
   return {
@@ -9112,6 +9114,7 @@ function buildBacklogPlan({
         provider_command_executed_count: sourceIntakeReport.provider_command_executed_count,
         bypass_attempted_count: sourceIntakeReport.bypass_attempted_count,
       },
+      source_discovery_completion: sourceDiscoveryCompletion,
       runtime_priorities: {
         next_priority: runtimePriorities.next_priority,
         total_priorities: runtimePriorities.priorities.length,
@@ -9139,6 +9142,41 @@ function emptySourceUseLedgerReport() {
 
 function emptySourceIntakeLedgerReport() {
   return buildSourceIntakeLedgerReport({ path: sourceIntakeLedgerPath(), records: [], invalid_rows: 0 });
+}
+
+function buildSourceDiscoveryCompletionProof(sourceDossier = buildHistoricalBackfillSourceDossier()) {
+  const totalSources = sourceDossier.length;
+  const operatorReviewRequired = sourceDossier.filter((source) => source.decision === "operator_review").length;
+  const cc0Candidates = sourceDossier.filter((source) => source.license_class === "cc0_candidate_verify").length;
+  const licensedApiCandidates = sourceDossier.filter((source) => source.license_class === "paid_api_terms").length;
+  const pointBackfillSources = sourceDossier.filter((source) => (
+    source.source_type === "public_git_point_data"
+    || source.source_type === "public_git_charted_points"
+  )).length;
+  const everySourceGated = sourceDossier.every((source) => (
+    source.decision === "operator_review"
+    && (source.required_operator_evidence ?? []).length > 0
+    && (source.prohibited_use ?? []).length > 0
+  ));
+  const complete = totalSources >= 7
+    && operatorReviewRequired === totalSources
+    && cc0Candidates >= 1
+    && licensedApiCandidates >= 1
+    && pointBackfillSources >= 2
+    && everySourceGated;
+
+  return {
+    status: complete ? "complete" : "incomplete",
+    total_sources: totalSources,
+    operator_review_required: operatorReviewRequired,
+    cc0_candidates: cc0Candidates,
+    licensed_api_candidates: licensedApiCandidates,
+    point_or_shot_backfill_sources: pointBackfillSources,
+    every_source_operator_gated: everySourceGated,
+    provider_api_call_allowed: false,
+    dataset_fetch_allowed: false,
+    bypass_allowed: false,
+  };
 }
 
 function buildBacklogPlanWithEnterpriseReadiness(backlogPlan, enterpriseReadiness) {
@@ -9969,6 +10007,7 @@ function buildBacklogItems({
   sourceUseReport = emptySourceUseLedgerReport(),
   sourceIntakeReport = emptySourceIntakeLedgerReport(),
   runtimePriorities,
+  sourceDiscoveryCompletion = buildSourceDiscoveryCompletionProof(),
 }) {
   const items = [];
   const topExperiment = experimentReport.top_experiment;
@@ -10033,6 +10072,7 @@ function buildBacklogItems({
   const runtimePriorityFrequency = runtimePriority?.id === "stabilize_hermes_runtime"
     ? runtimePriority.frequency ?? 1
     : 0;
+  const sourceBackfillComplete = sourceDiscoveryCompletion.status === "complete";
 
   if (!runtimeCleared && (topExperiment === "runtime_channel_recovery"
     || topBlocker === "npm run hermes:runtime-check"
@@ -10077,7 +10117,7 @@ function buildBacklogItems({
     }));
   }
 
-  if ((ready.source_discovery_backfill ?? 0) > 0 || topExperiment === "source_discovery_backfill") {
+  if (!sourceBackfillComplete && ((ready.source_discovery_backfill ?? 0) > 0 || topExperiment === "source_discovery_backfill")) {
     items.push(backlogItem({
       id: "expand_allowed_source_backfill",
       title: "Expand allowed source/backfill routes without scraping or provider spend",
@@ -10321,7 +10361,10 @@ function buildBacklogItems({
     }));
   }
 
-  if (grandSlamBackfillFrequency > 0 && !(ready.source_discovery_backfill ?? 0) && topExperiment !== "source_discovery_backfill") {
+  if (grandSlamBackfillFrequency > 0
+    && !sourceBackfillComplete
+    && !(ready.source_discovery_backfill ?? 0)
+    && topExperiment !== "source_discovery_backfill") {
     items.push(backlogItem({
       id: "expand_allowed_source_backfill",
       title: "Expand allowed source/backfill routes without scraping or provider spend",

@@ -1730,9 +1730,13 @@ async function enterpriseAccuracyPlan() {
 }
 
 async function enterpriseReadiness() {
+  printJson(await enterpriseReadinessPacketData());
+}
+
+async function enterpriseReadinessPacketData() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
-  printJson(buildEnterpriseReadinessPacket({ report, eventPlan }));
+  return buildEnterpriseReadinessPacket({ report, eventPlan });
 }
 
 async function triggerPolicy() {
@@ -1985,7 +1989,9 @@ async function autonomyEffectiveness() {
 
 async function implementationHandoff() {
   const { backlog, effectiveness } = autonomyEffectivenessData();
-  printJson(buildImplementationHandoff(backlog, effectiveness));
+  const enterpriseReadinessPacket = await enterpriseReadinessPacketData();
+  const routedBacklog = buildBacklogPlanWithEnterpriseReadiness(backlog, enterpriseReadinessPacket);
+  printJson(buildImplementationHandoff(routedBacklog, effectiveness));
 }
 
 async function operatorPacket() {
@@ -6818,6 +6824,62 @@ function buildBacklogPlan({
   };
 }
 
+function buildBacklogPlanWithEnterpriseReadiness(backlogPlan, enterpriseReadiness) {
+  if (!enterpriseReadiness) return backlogPlan;
+  const evidence = {
+    ...backlogPlan.evidence,
+    enterprise_readiness: enterpriseReadinessSummary(enterpriseReadiness),
+  };
+  if (enterpriseReadiness.status !== "blocked_by_backend_evidence") {
+    return { ...backlogPlan, evidence, enterprise_readiness: enterpriseReadinessSummary(enterpriseReadiness) };
+  }
+  const items = dedupeBacklogItems([
+    enterpriseBackendEvidenceBacklogItem(enterpriseReadiness),
+    ...backlogPlan.items,
+  ]).sort((a, b) => a.priority - b.priority || b.frequency - a.frequency || a.id.localeCompare(b.id));
+  return {
+    ...backlogPlan,
+    status: "ready",
+    next_item: items[0] ?? null,
+    items,
+    evidence,
+    enterprise_readiness: enterpriseReadinessSummary(enterpriseReadiness),
+  };
+}
+
+function enterpriseBackendEvidenceBacklogItem(enterpriseReadiness) {
+  const blockers = enterpriseReadiness.activation_blockers ?? [];
+  return backlogItem({
+    id: "restore_enterprise_backend_evidence",
+    title: "Restore backend evidence before enterprise readiness work",
+    priority: 5,
+    source: ["enterprise_readiness"],
+    frequency: Math.max(1, blockers.filter((blocker) => blocker === "backend_evidence_unavailable").length),
+    rationale: enterpriseReadiness.next_action?.reason
+      ?? "FastAPI evidence is unavailable; restore backend read models before enterprise readiness review.",
+    targetFiles: [
+      "services/api/src/tennis_edge/main.py",
+      "services/api/src/tennis_edge/services/operational_state.py",
+      "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+      "scripts/check_private_runtime.py",
+    ],
+    validationCommands: [
+      "npm --silent run hermes:backend-latency-triage",
+      "npm --silent run hermes:enterprise-readiness",
+      "npm --silent run hermes:ops-compiler",
+      "npm run api:test",
+    ],
+    acceptanceEvidence: [
+      "enterprise_readiness.status is not blocked_by_backend_evidence",
+      "FastAPI read models answer before enterprise contract review",
+      "enterprise shadow providers remain deferred/offline",
+      "provider_api_call_allowed=false",
+      "can_submit_real_orders=false",
+    ],
+    blocks: ["enterprise_review", "enterprise_shadow_contract_review", "budget_chain_validation"],
+  });
+}
+
 function buildAutonomyEffectiveness({
   experimentReport,
   operatorReport,
@@ -7156,6 +7218,7 @@ function buildImplementationHandoff(backlogPlan, effectiveness = null) {
       status: backlogPlan.status,
       next_item_id: nextItem?.id ?? null,
       total_items: backlogPlan.items.length,
+      enterprise_readiness_status: backlogPlan.enterprise_readiness?.status ?? null,
     },
     work_order: workOrder,
     implementation_policy: {
@@ -7176,6 +7239,7 @@ function buildImplementationHandoff(backlogPlan, effectiveness = null) {
       effectiveness_status: effectiveness?.status ?? null,
       effectiveness_score: effectiveness?.score ?? null,
       backlog_evidence: backlogPlan.evidence,
+      enterprise_readiness: backlogPlan.enterprise_readiness ?? null,
     },
     safety: {
       can_submit_real_orders: false,
@@ -7265,6 +7329,12 @@ function implementationStepsFor(item) {
     complete_budget_chain_before_enterprise: [
       "prove_budget_chain_completion_requirements_from_operational_truth",
       "keep_enterprise_eligibility_false_until_cursor_and_smoke_evidence_pass",
+      ...genericSteps.slice(2),
+    ],
+    restore_enterprise_backend_evidence: [
+      "inspect_fastapi_read_models_and_backend_latency_triage_output",
+      "restore_read_only_backend_evidence_without_enabling_provider_feeds",
+      "prove_enterprise_readiness_no_longer_depends_on_backend_unavailable_fallbacks",
       ...genericSteps.slice(2),
     ],
     collect_more_hermes_operating_evidence: [

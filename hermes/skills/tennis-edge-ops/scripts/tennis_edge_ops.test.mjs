@@ -3850,16 +3850,32 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
   writeFileSync(missionLedgerPath, "");
   writeFileSync(controllerLedgerPath, `${controllerRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
   writeFileSync(grandSlamMissionLedgerPath, "");
-
-  const result = await runCli(["implementation-handoff"], {
-    env: {
-      HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
-      HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
-      HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
-      HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
-      HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamMissionLedgerPath,
-    },
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
   });
+
+  let result;
+  try {
+    result = await runCli(["implementation-handoff", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_EXPERIMENT_LEDGER_PATH: experimentLedgerPath,
+        HERMES_OPERATOR_LEDGER_PATH: operatorLedgerPath,
+        HERMES_MISSION_LEDGER_PATH: missionLedgerPath,
+        HERMES_LIVE_CONTROLLER_LEDGER_PATH: controllerLedgerPath,
+        HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: grandSlamMissionLedgerPath,
+      },
+    });
+  } finally {
+    server.close();
+  }
 
   assert.equal(result.exit, 0);
   const payload = JSON.parse(result.stdout);
@@ -3872,6 +3888,7 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
   assert.equal(payload.can_create_paper_orders, false);
   assert.equal(payload.llm_per_tick_allowed, false);
   assert.equal(payload.source_plan.next_item_id, "harden_live_controller_feedback_loop");
+  assert.equal(payload.source_plan.enterprise_readiness_status, "blocked_by_enterprise_gate");
   assert.equal(payload.work_order.id, "harden_live_controller_feedback_loop");
   assert.equal(payload.work_order.executes_now, false);
   assert.equal(payload.work_order.provider_api_call_allowed, false);
@@ -3893,7 +3910,50 @@ test("implementation-handoff turns backlog priority into a safe work order", asy
   assert.equal(payload.evidence.effectiveness_status, "needs_implementation");
   assert.equal(Number.isFinite(payload.evidence.effectiveness_score), true);
   assert.equal(payload.evidence.backlog_evidence.live_controller_ledger.provider_command_executed_count, 0);
+  assert.equal(payload.evidence.enterprise_readiness.status, "blocked_by_enterprise_gate");
   assert.equal(payload.safety.anti_bot_bypass_allowed, false);
+  assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
+});
+
+test("implementation-handoff prioritizes enterprise backend evidence blocker", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-implementation-backend-evidence-"));
+  const env = {
+    HERMES_EXPERIMENT_LEDGER_PATH: join(tempDir, "experiment-ledger.jsonl"),
+    HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
+    HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
+    HERMES_LIVE_CONTROLLER_LEDGER_PATH: join(tempDir, "live-controller-ledger.jsonl"),
+    HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: join(tempDir, "grand-slam-mission-ledger.jsonl"),
+  };
+  Object.values(env).forEach((path) => writeFileSync(path, ""));
+
+  const result = await runCli(["implementation-handoff", "--api-base=http://127.0.0.1:1"], { env });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "implementation_handoff");
+  assert.equal(payload.status, "ready");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.source_plan.next_item_id, "restore_enterprise_backend_evidence");
+  assert.equal(payload.source_plan.enterprise_readiness_status, "blocked_by_backend_evidence");
+  assert.equal(payload.work_order.id, "restore_enterprise_backend_evidence");
+  assert.equal(payload.work_order.priority, 5);
+  assert.equal(payload.work_order.executes_now, false);
+  assert.equal(payload.work_order.provider_api_call_allowed, false);
+  assert.equal(payload.work_order.can_submit_real_orders, false);
+  assert.equal(payload.work_order.can_create_paper_orders, false);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:backend-latency-triage"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:enterprise-readiness"), true);
+  assert.equal(payload.work_order.validation_commands.includes("npm --silent run hermes:ops-compiler"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("enterprise_readiness.status is not blocked_by_backend_evidence"), true);
+  assert.equal(payload.work_order.acceptance_criteria.includes("enterprise shadow providers remain deferred/offline"), true);
+  assert.equal(payload.work_order.prohibited_changes.includes("do not run provider calls unless a separate operator command explicitly requests it"), true);
+  assert.equal(payload.evidence.sources.includes("enterprise_readiness"), true);
+  assert.equal(payload.evidence.enterprise_readiness.status, "blocked_by_backend_evidence");
+  assert.equal(payload.evidence.enterprise_readiness.next_action.command, "npm --silent run hermes:backend-latency-triage");
+  assert.equal(payload.safety.provider_api_call_allowed, false);
   assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
 });
 

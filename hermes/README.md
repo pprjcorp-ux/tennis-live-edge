@@ -345,7 +345,9 @@ public dataset fetch, no browser scraping, no sportsbook automation, no bypass,
 no paper order creation and no real execution.
 The JSON mode is `source_use_manifest`; evidence rows require
 `license_terms_reviewed` where applicable and block
-`provider_quota_spend_without_operator`.
+`provider_quota_spend_without_operator`. `hermes:ops-compiler` includes the
+manifest as `source_use_manifest` plus an execution-graph node, so operator and
+cron packets cannot hide source-use review behind source-route summaries.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam

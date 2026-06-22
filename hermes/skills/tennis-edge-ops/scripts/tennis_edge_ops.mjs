@@ -1915,6 +1915,14 @@ async function opsCompiler() {
     sourceRoutes,
     grandSlam,
   });
+  const sourceUseManifest = buildSourceUseManifest({
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    historicalBackfill,
+    enterpriseReadiness: enterpriseReadinessPacket,
+  });
   const enterpriseAccuracy = buildEnterpriseAccuracyPlan({
     loop,
     report,
@@ -1938,6 +1946,7 @@ async function opsCompiler() {
     effectiveness,
     enterpriseReadiness: enterpriseReadinessPacket,
     enterpriseAccuracy,
+    sourceUseManifest,
     scorelineForecast,
   }));
 }
@@ -5120,6 +5129,7 @@ function buildOpsCompiler({
   effectiveness = null,
   enterpriseReadiness = null,
   enterpriseAccuracy = null,
+  sourceUseManifest = null,
   scorelineForecast = null,
 }) {
   const compiledAction = compileNextAction({ loop, triggerPlan, autonomyPlan, operator });
@@ -5144,6 +5154,7 @@ function buildOpsCompiler({
       effectiveness,
       enterpriseReadiness,
       enterpriseAccuracy,
+      sourceUseManifest,
       scorelineForecast,
     }),
     model_router: buildOpsModelRouter({ loop, triggerPlan }),
@@ -5183,6 +5194,7 @@ function buildOpsCompiler({
     autonomy_effectiveness: autonomyEffectivenessSummary(effectiveness),
     enterprise_readiness: enterpriseReadinessSummary(enterpriseReadiness),
     enterprise_accuracy: enterpriseAccuracySummary(enterpriseAccuracy),
+    source_use_manifest: sourceUseManifestSummary(sourceUseManifest),
     grand_slam_scoreline_forecast: scorelineForecast ? grandSlamScorelineForecastSummary(scorelineForecast) : null,
     safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
     forbidden_actions: loop.forbidden_actions ?? sourcePlan.forbidden_actions ?? [],
@@ -5236,6 +5248,7 @@ function buildExecutionGraph({
   effectiveness = null,
   enterpriseReadiness = null,
   enterpriseAccuracy = null,
+  sourceUseManifest = null,
   scorelineForecast = null,
 }) {
   const nodes = [
@@ -5294,6 +5307,14 @@ function buildExecutionGraph({
       command: "npm --silent run hermes:enterprise-accuracy-plan",
       reason: `Enterprise accuracy plan is ${enterpriseAccuracy.status}; providers=${enterpriseAccuracy.no_budget_provider_stack?.length ?? 0}.`,
       status: enterpriseAccuracy.status,
+    }));
+  }
+  if (sourceUseManifest) {
+    nodes.push(graphNode({
+      id: "source_use_manifest",
+      command: "npm --silent run hermes:source-use-manifest",
+      reason: `Source-use manifest is ${sourceUseManifest.status}; operator_required=${sourceUseManifest.summary?.operator_required ?? 0}; deferred=${sourceUseManifest.summary?.deferred ?? 0}.`,
+      status: sourceUseManifest.status,
     }));
   }
   if (scorelineForecast) {
@@ -6672,6 +6693,30 @@ function enterpriseReadinessSummary(packet) {
     },
     activation_blockers: packet.activation_blockers ?? [],
     next_action: packet.next_action,
+    safe_jailbreak_policy: packet.safe_jailbreak_policy,
+  };
+}
+
+function sourceUseManifestSummary(packet) {
+  if (!packet) return null;
+  return {
+    status: packet.status,
+    objective: packet.objective,
+    summary: packet.summary,
+    next_action: packet.next_action,
+    gate_status_counts: countValues((packet.gates ?? []).map((gate) => gate.status)),
+    allowed_source_ids: (packet.manifest ?? [])
+      .filter((row) => row.decision === "allowed")
+      .map((row) => row.id),
+    operator_required_source_ids: (packet.manifest ?? [])
+      .filter((row) => row.decision === "operator_required")
+      .map((row) => row.id),
+    deferred_source_ids: (packet.manifest ?? [])
+      .filter((row) => row.decision === "deferred")
+      .map((row) => row.id),
+    forbidden_source_ids: (packet.manifest ?? [])
+      .filter((row) => row.decision === "forbidden")
+      .map((row) => row.id),
     safe_jailbreak_policy: packet.safe_jailbreak_policy,
   };
 }

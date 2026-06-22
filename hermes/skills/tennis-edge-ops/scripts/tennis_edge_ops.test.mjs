@@ -3045,6 +3045,7 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
     assert.equal(payload.execution_graph.some((node) => node.id === "autonomy_effectiveness"), true);
     assert.equal(payload.execution_graph.some((node) => node.id === "enterprise_readiness"), true);
     assert.equal(payload.execution_graph.some((node) => node.id === "enterprise_accuracy_plan"), true);
+    assert.equal(payload.execution_graph.some((node) => node.id === "source_use_manifest"), true);
     assert.equal(payload.grand_slam_readiness.prediction_ready, false);
     assert.equal(payload.execution_graph.every((node) => node.executes_now === false), true);
     assert.equal(payload.autonomy_effectiveness.status, "needs_implementation");
@@ -3062,6 +3063,13 @@ test("ops-compiler produces a single non-executing orchestration packet", async 
     assert.equal(payload.enterprise_accuracy.due_diligence_area_count, 5);
     assert.equal(payload.enterprise_accuracy.next_action.command, "npm run api:check:operational-truth -- --pretty");
     assert.equal(payload.enterprise_accuracy.safe_jailbreak_policy.bypass_allowed, false);
+    assert.equal(payload.source_use_manifest.status, "review_required");
+    assert.equal(payload.source_use_manifest.summary.missing_required_ids.length, 0);
+    assert.equal(payload.source_use_manifest.allowed_source_ids.includes("route:replay_backfill"), true);
+    assert.equal(payload.source_use_manifest.operator_required_source_ids.includes("historical:jeff_sackmann_atp"), true);
+    assert.equal(payload.source_use_manifest.deferred_source_ids.includes("enterprise:sportradar"), true);
+    assert.equal(payload.source_use_manifest.next_action.command, "npm --silent run hermes:replay-backfill-contract");
+    assert.equal(payload.source_use_manifest.safe_jailbreak_policy.forbidden_paths.includes("provider_quota_spend_without_operator"), true);
     assert.equal(payload.compiled_action.command, "npm run hermes:runtime-check");
     assert.equal(payload.compiled_action.executes_now, false);
     assert.equal(payload.model_router.routine_model, "gpt-5.4-mini");

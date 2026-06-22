@@ -187,6 +187,10 @@ requirements, quota permissions, required evidence and blocked conditions. This
 is the safe interpretation of "jailbreak": Hermes may find permitted alternate
 routes, but every route must be source-manifested before code imports data or
 spends provider quota.
+The all-in-one `hermes:ops-compiler` packet embeds the manifest as
+`source_use_manifest` and adds a graph node for it, so external agent channels
+receive source-use status alongside source discovery, enterprise readiness and
+Grand Slam readiness.
 
 `hermes:historical-backfill-plan` is the preferred packet for offline priors and
 backtest depth. It ranks internal persisted replay, Jeff Sackmann ATP/WTA/Slam

@@ -326,6 +326,9 @@ sources and enterprise shadow providers into allowed/deferred/operator-required
 rows with license/attribution gates, quota permissions, required evidence and
 forbidden actions. It is read-only and cannot fetch datasets, call providers,
 scrape, bypass, create paper orders or submit real orders.
+`hermes:ops-compiler` embeds this packet as `source_use_manifest` and adds a
+`source_use_manifest` graph node, so channel/cron summaries preserve the source
+contract before implementation handoff.
 
 Use `hermes:historical-backfill-plan` when Hermes needs more offline evidence
 for priors, calibration or backtests. It ranks internal replay, public

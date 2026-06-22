@@ -76,6 +76,45 @@ entrypoint.
 The skill lives in `hermes/skills/tennis-edge-ops`. Copy it into
 `~/.hermes/skills/tennis-edge-ops` for the Hermes runtime to discover it.
 
+## Operator Channel Secret Gate
+
+`hermes:implementation-handoff` can choose
+`configure_hermes_operator_channel_secrets` when the runtime is healthy but the
+operator channel still cannot progress beyond `observe`. Treat that as a local
+secret/allowlist setup task, not as a provider, model, execution, or runtime
+repair task.
+
+The accepted local-only variables are:
+
+```bash
+HERMES_TELEGRAM_ALLOWED_USER_IDS=123456789
+OPENCLAW_TELEGRAM_ALLOWED_USER_IDS=123456789
+PRIVATE_ALLOWED_EMAILS=operator@example.com
+TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS=operator@example.com
+ADMIN_API_TOKEN=replace-with-random-32-byte-token
+TENNIS_EDGE_ADMIN_API_TOKEN=replace-with-random-32-byte-token
+```
+
+Use only one variable from each pair if preferred:
+`HERMES_TELEGRAM_ALLOWED_USER_IDS` or `OPENCLAW_TELEGRAM_ALLOWED_USER_IDS`,
+`PRIVATE_ALLOWED_EMAILS` or `TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS`, and
+`ADMIN_API_TOKEN` or `TENNIS_EDGE_ADMIN_API_TOKEN`. Values belong in `.env` or
+the local shell only. Do not commit them, print them, or paste them into
+operator summaries.
+
+Verification is read-only:
+
+```bash
+npm --silent run hermes:channel-readiness
+npm --silent run hermes:activation-checklist
+npm --silent run hermes:implementation-handoff
+```
+
+The channel gate is proven only when `doctor_passed=pass`,
+`telegram_allowlist_configured=pass`, `private_access_allowlist_configured=pass`,
+`local_admin_secret_available=pass`, `secret_value_printed=false`, and
+`configure_hermes_operator_channel_secrets` is no longer the handoff work order.
+
 For scheduled budget operation, prefer `api:ingest:live-budget`. It runs the
 API-Tennis snapshot and the Odds-API.io websocket consumer in one process, then
 prints a single JSON summary with safety state.

@@ -24,6 +24,44 @@ export ADMIN_API_TOKEN=replace-with-local-admin-token
 export HERMES_TELEGRAM_ALLOWED_USER_IDS=123456789
 ```
 
+## Operator Channel Secret Gate
+
+`hermes:implementation-handoff` can route the next work item to
+`configure_hermes_operator_channel_secrets` after the local Hermes runtime is
+healthy. That is not a runtime repair task. It means the operator channel is
+still limited to `observe` until local-only secrets and allowlists exist.
+
+Configure these values only in the repo-local `.env` or your local shell, never
+in Git:
+
+```bash
+HERMES_TELEGRAM_ALLOWED_USER_IDS=123456789
+OPENCLAW_TELEGRAM_ALLOWED_USER_IDS=123456789
+PRIVATE_ALLOWED_EMAILS=operator@example.com
+TENNIS_EDGE_PRIVATE_ALLOWED_EMAILS=operator@example.com
+ADMIN_API_TOKEN=replace-with-random-32-byte-token
+TENNIS_EDGE_ADMIN_API_TOKEN=replace-with-random-32-byte-token
+```
+
+Only one Telegram allowlist variable, one private email allowlist variable, and
+one admin token variable must be configured; the aliases exist so Hermes,
+legacy OpenClaw naming, and Tennis Edge backend wrappers agree on the same
+gate. Do not paste real values into chat, docs, commits, issue comments, or
+terminal output snippets.
+
+After local values are present, verify the gate without printing values:
+
+```bash
+npm --silent run hermes:channel-readiness
+npm --silent run hermes:activation-checklist
+npm --silent run hermes:implementation-handoff
+```
+
+The expected proof is: `doctor_passed=pass`,
+`telegram_allowlist_configured=pass`, `private_access_allowlist_configured=pass`,
+`local_admin_secret_available=pass`, `secret_value_printed=false`, and the
+handoff no longer choosing `configure_hermes_operator_channel_secrets`.
+
 ## Local Skill Commands
 
 ```bash

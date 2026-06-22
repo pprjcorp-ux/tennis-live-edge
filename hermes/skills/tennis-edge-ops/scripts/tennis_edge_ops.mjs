@@ -1760,6 +1760,19 @@ async function liveRepairPlan() {
   printJson(buildLiveRepairPlan(controller, ledgerReport));
 }
 
+async function liveRepairLedger() {
+  const controller = await liveControllerData();
+  const controllerLedgerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
+  const plan = buildLiveRepairPlan(controller, controllerLedgerReport);
+  const ledger = buildLiveRepairLedger(plan);
+  writeLiveRepairLedger(ledger.record);
+  printJson(ledger);
+}
+
+async function liveRepairLedgerReport() {
+  printJson(buildLiveRepairLedgerReport(readLiveRepairLedgerRecords()));
+}
+
 async function learningReview() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -2134,6 +2147,7 @@ async function experimentLabData() {
   const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
   const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
   const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
+  const liveRepairReport = buildLiveRepairLedgerReport(readLiveRepairLedgerRecords());
   const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
   const sourceRouteReport = buildSourceRouteLedgerReport(readSourceRouteLedgerRecords());
   const sourceUseReport = buildSourceUseLedgerReport(readSourceUseLedgerRecords());
@@ -2144,6 +2158,7 @@ async function experimentLabData() {
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
@@ -2211,6 +2226,7 @@ function autonomyEffectivenessData() {
   const operatorReport = buildOperatorLedgerReport(readOperatorLedgerRecords());
   const missionReport = buildMissionLedgerReport(readMissionLedgerRecords());
   const liveControllerReport = buildLiveControllerLedgerReport(readLiveControllerLedgerRecords());
+  const liveRepairReport = buildLiveRepairLedgerReport(readLiveRepairLedgerRecords());
   const grandSlamMissionReport = buildGrandSlamMissionLedgerReport(readGrandSlamMissionLedgerRecords());
   const sourceRouteReport = buildSourceRouteLedgerReport(readSourceRouteLedgerRecords());
   const sourceUseReport = buildSourceUseLedgerReport(readSourceUseLedgerRecords());
@@ -2221,6 +2237,7 @@ function autonomyEffectivenessData() {
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
@@ -2232,6 +2249,7 @@ function autonomyEffectivenessData() {
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
@@ -2244,6 +2262,7 @@ function autonomyEffectivenessData() {
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
@@ -9006,6 +9025,7 @@ function buildBacklogPlan({
   operatorReport,
   missionReport,
   liveControllerReport,
+  liveRepairReport = emptyLiveRepairLedgerReport(),
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
@@ -9018,6 +9038,7 @@ function buildBacklogPlan({
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
@@ -9073,6 +9094,17 @@ function buildBacklogPlan({
         throttle_counts: liveControllerReport.throttle_counts,
         provider_command_executed_count: liveControllerReport.provider_command_executed_count,
         paper_order_created_count: liveControllerReport.paper_order_created_count,
+      },
+      live_repair_ledger: {
+        path: liveRepairReport.ledger?.path,
+        total_records: liveRepairReport.total_records,
+        top_selected_repair: liveRepairReport.top_selected_repair,
+        top_selected_repair_command: liveRepairReport.top_selected_repair_command,
+        top_blocker: liveRepairReport.top_blocker,
+        selected_repair_counts: liveRepairReport.selected_repair_counts,
+        repair_command_executed_count: liveRepairReport.repair_command_executed_count,
+        provider_command_executed_count: liveRepairReport.provider_command_executed_count,
+        paper_order_created_count: liveRepairReport.paper_order_created_count,
       },
       grand_slam_mission_ledger: {
         path: grandSlamMissionReport.ledger?.path,
@@ -9154,6 +9186,10 @@ function buildBacklogPlan({
 
 function emptySourceRouteLedgerReport() {
   return buildSourceRouteLedgerReport({ path: sourceRouteLedgerPath(), records: [], invalid_rows: 0 });
+}
+
+function emptyLiveRepairLedgerReport() {
+  return buildLiveRepairLedgerReport({ path: liveRepairLedgerPath(), records: [], invalid_rows: 0 });
 }
 
 function emptySourceUseLedgerReport() {
@@ -9410,6 +9446,7 @@ function buildAutonomyEffectiveness({
   operatorReport,
   missionReport,
   liveControllerReport,
+  liveRepairReport = emptyLiveRepairLedgerReport(),
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
@@ -9422,6 +9459,7 @@ function buildAutonomyEffectiveness({
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
@@ -9432,6 +9470,7 @@ function buildAutonomyEffectiveness({
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
@@ -9442,6 +9481,7 @@ function buildAutonomyEffectiveness({
     operatorReport,
     missionReport,
     liveControllerReport,
+    liveRepairReport,
     grandSlamMissionReport,
     sourceRouteReport,
     sourceUseReport,
@@ -9479,6 +9519,12 @@ function buildAutonomyEffectiveness({
         repeated_count: repeatPressure.live_collection,
         top_signal: liveControllerReport.top_repeated_action,
         command: liveControllerReport.top_next_safe_command ?? "npm --silent run hermes:live-controller",
+      }),
+      live_repair: effectivenessLane({
+        id: "live_repair",
+        repeated_count: repeatPressure.live_repair,
+        top_signal: liveRepairReport.top_selected_repair ?? liveRepairReport.top_blocker,
+        command: liveRepairReport.top_selected_repair_command ?? "npm --silent run hermes:live-repair-plan",
       }),
       source_routes: effectivenessLane({
         id: "source_routes",
@@ -9567,6 +9613,7 @@ function autonomyEvidenceTotals({
   operatorReport,
   missionReport,
   liveControllerReport,
+  liveRepairReport = emptyLiveRepairLedgerReport(),
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
@@ -9577,6 +9624,7 @@ function autonomyEvidenceTotals({
     operatorReport.total_records,
     missionReport.total_records,
     liveControllerReport.total_records,
+    liveRepairReport.total_records,
     grandSlamMissionReport.total_records,
     sourceRouteReport.total_records,
     sourceUseReport.total_records,
@@ -9588,6 +9636,7 @@ function autonomyEvidenceTotals({
     operator_records: operatorReport.total_records,
     mission_records: missionReport.total_records,
     live_controller_records: liveControllerReport.total_records,
+    live_repair_records: liveRepairReport.total_records,
     grand_slam_mission_records: grandSlamMissionReport.total_records,
     source_route_records: sourceRouteReport.total_records,
     source_use_records: sourceUseReport.total_records,
@@ -9597,6 +9646,7 @@ function autonomyEvidenceTotals({
       operatorReport.total_records,
       missionReport.total_records,
       liveControllerReport.total_records,
+      liveRepairReport.total_records,
       grandSlamMissionReport.total_records,
       sourceRouteReport.total_records,
       sourceUseReport.total_records,
@@ -9610,6 +9660,7 @@ function autonomyProtectedActionClaims({
   operatorReport,
   missionReport,
   liveControllerReport,
+  liveRepairReport = emptyLiveRepairLedgerReport(),
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
@@ -9626,6 +9677,10 @@ function autonomyProtectedActionClaims({
       liveControllerReport.collection_command_executed_count,
       liveControllerReport.provider_command_executed_count,
       liveControllerReport.paper_order_created_count,
+      liveRepairReport.action_executed_count,
+      liveRepairReport.repair_command_executed_count,
+      liveRepairReport.provider_command_executed_count,
+      liveRepairReport.paper_order_created_count,
       grandSlamMissionReport.action_executed_count,
       grandSlamMissionReport.mission_command_executed_count,
       grandSlamMissionReport.provider_command_executed_count,
@@ -9647,6 +9702,7 @@ function autonomyProtectedActionClaims({
     operator_actions: operatorReport.action_executed_count,
     provider_commands: sumNumbers([
       liveControllerReport.provider_command_executed_count,
+      liveRepairReport.provider_command_executed_count,
       grandSlamMissionReport.provider_command_executed_count,
       sourceRouteReport.provider_command_executed_count,
       sourceUseReport.provider_command_executed_count,
@@ -9655,6 +9711,7 @@ function autonomyProtectedActionClaims({
     route_commands: sourceRouteReport.route_command_executed_count,
     manifest_commands: sourceUseReport.manifest_command_executed_count,
     intake_commands: sourceIntakeReport.intake_command_executed_count,
+    repair_commands: liveRepairReport.repair_command_executed_count,
     dataset_fetches: sourceIntakeReport.dataset_fetch_attempted_count,
     bypass_attempts: sumNumbers([
       sourceRouteReport.bypass_attempted_count,
@@ -9663,6 +9720,7 @@ function autonomyProtectedActionClaims({
     ]),
     paper_orders: sumNumbers([
       liveControllerReport.paper_order_created_count,
+      liveRepairReport.paper_order_created_count,
       grandSlamMissionReport.paper_order_created_count,
     ]),
     experiment_commands: experimentReport.experiment_command_executed_count,
@@ -9678,6 +9736,7 @@ function autonomyRepeatPressure({
   operatorReport,
   missionReport,
   liveControllerReport,
+  liveRepairReport = emptyLiveRepairLedgerReport(),
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
@@ -9694,6 +9753,11 @@ function autonomyRepeatPressure({
     maxObjectValue(liveControllerReport.action_counts),
     firstCount(liveControllerReport.next_safe_command_counts),
     liveControllerReport.throttle_counts?.blocked ?? 0,
+  );
+  const liveRepair = Math.max(
+    firstCount(liveRepairReport.selected_repair_counts),
+    firstCount(liveRepairReport.primary_blocker_counts),
+    firstCount(liveRepairReport.blocker_counts),
   );
   const grandSlam = Math.max(
     maxObjectValue(grandSlamMissionReport.active_phase_counts),
@@ -9726,13 +9790,14 @@ function autonomyRepeatPressure({
   return {
     runtime,
     live_collection: liveCollection,
+    live_repair: liveRepair,
     source_routes: sourceRoutes,
     source_use: sourceUse,
     source_intake: sourceIntake,
     grand_slam: grandSlam,
     experiment,
     operator,
-    max_repeated_count: Math.max(runtime, liveCollection, sourceRoutes, sourceUse, sourceIntake, grandSlam, experiment, operator),
+    max_repeated_count: Math.max(runtime, liveCollection, liveRepair, sourceRoutes, sourceUse, sourceIntake, grandSlam, experiment, operator),
   };
 }
 
@@ -9957,6 +10022,12 @@ function implementationStepsFor(item) {
       "prove_freeze_throttle_provider_candidate_counts_remain_non_executing",
       ...genericSteps.slice(2),
     ],
+    harden_live_repair_feedback_loop: [
+      "review_live_repair_ledger_report_for_top_selected_repair_and_blocker",
+      "map_the_repeated_repair_to_internal_fastapi_or_hermes_read_model_work",
+      "prove_repair_provider_paper_and_real_execution_counters_remain_zero",
+      ...genericSteps.slice(2),
+    ],
     harden_source_route_feedback_loop: [
       "review_source_route_ledger_report_for_top_route_blocked_routes_and_operator_required_routes",
       "map_the_top_route_to_internal_replay_or_licensed_adapter_contract_without_executing_it",
@@ -10022,6 +10093,7 @@ function buildBacklogItems({
   operatorReport,
   missionReport,
   liveControllerReport,
+  liveRepairReport = emptyLiveRepairLedgerReport(),
   grandSlamMissionReport,
   sourceRouteReport = emptySourceRouteLedgerReport(),
   sourceUseReport = emptySourceUseLedgerReport(),
@@ -10042,6 +10114,7 @@ function buildBacklogItems({
   const controllerThrottleFrequency = controllerActionCounts.throttle_internal_watch ?? 0;
   const controllerProviderCandidateFrequency = controllerActionCounts.operator_provider_candidate ?? 0;
   const controllerPaperCandidateFrequency = controllerActionCounts.paper_autopilot_candidate ?? 0;
+  const liveRepairFrequency = firstCount(liveRepairReport.selected_repair_counts);
   const sourceRouteCounts = sourceRouteReport.next_route_counts ?? [];
   const sourceRouteTopRoute = sourceRouteReport.top_next_route;
   const sourceRouteFrequency = firstCount(sourceRouteCounts);
@@ -10318,6 +10391,37 @@ function buildBacklogItems({
         "REAL_EXECUTION_HARD_BLOCK remains true",
       ],
       blocks: ["learning_ready", "real_execution_readiness_report"],
+    }));
+  }
+
+  if (liveRepairFrequency > 0) {
+    items.push(backlogItem({
+      id: "harden_live_repair_feedback_loop",
+      title: "Harden repeated live-repair selections before more autonomy",
+      priority: 32,
+      source: ["live_repair_ledger"],
+      frequency: liveRepairFrequency,
+      rationale: "Repeated live-repair selections show which safe internal repair path is blocking live collection; convert that evidence into implementation work without running provider calls or orders.",
+      targetFiles: [
+        "hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs",
+        "docs/hermes-operating-model.md",
+        "hermes/README.md",
+      ],
+      validationCommands: [
+        "npm --silent run hermes:live-repair-ledger-report",
+        "npm --silent run hermes:live-repair-plan",
+        "npm --silent run hermes:live-controller",
+        "python3 scripts/check_private_runtime.py",
+      ],
+      acceptanceEvidence: [
+        `live_repair_ledger.top_selected_repair=${liveRepairReport.top_selected_repair ?? "none"}`,
+        `live_repair_ledger.top_blocker=${liveRepairReport.top_blocker ?? "none"}`,
+        "repair_command_executed_count=0",
+        "provider_command_executed_count=0",
+        "paper_order_created_count=0",
+        "can_submit_real_orders=false",
+      ],
+      blocks: ["live_collection_cadence", "paper_ready", "learning_ready"],
     }));
   }
 
@@ -11660,6 +11764,135 @@ function buildLiveControllerLedgerReport({ path, records, invalid_rows: invalidR
     top_provider_candidate: providerCandidateCounts[0]?.command ?? null,
     top_feedback_blocker: feedbackBlockerCounts[0]?.command ?? null,
     top_feedback_next_action: feedbackActionCounts[0]?.command ?? null,
+    latest_record: records[records.length - 1] ?? null,
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function buildLiveRepairLedger(plan) {
+  const path = liveRepairLedgerPath();
+  const selected = plan.selected_repair ?? null;
+  const record = {
+    generated_at: new Date().toISOString(),
+    mode: "live_repair_ledger_record",
+    plan,
+    outcome: "observed",
+    action_executed: false,
+    repair_command_executed: false,
+    provider_command_executed: false,
+    paper_order_created: false,
+    status: plan.status,
+    controller_status: plan.controller_status,
+    primary_blocker: plan.primary_blocker,
+    selected_repair_id: selected?.id ?? null,
+    selected_repair_command: selected?.command ?? null,
+    selected_repair_priority: selected?.priority ?? null,
+    blocker_ids: plan.blocker_ids ?? [],
+    repair_queue_ids: (plan.repair_queue ?? []).map((action) => action.id),
+    safety: plan.safety,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "live_repair_ledger",
+    status: plan.status,
+    selected_repair_id: selected?.id ?? null,
+    read_only: false,
+    writes: true,
+    write_scope: "local_live_repair_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    ledger: {
+      path,
+      format: "jsonl",
+      retention_note: "Local Hermes live-repair trace; do not commit runtime logs.",
+    },
+    record,
+    safety: {
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function liveRepairLedgerPath() {
+  return process.env.HERMES_LIVE_REPAIR_LEDGER_PATH || "hermes/runs/live-repair-ledger.jsonl";
+}
+
+function writeLiveRepairLedger(record) {
+  const path = liveRepairLedgerPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function readLiveRepairLedgerRecords() {
+  const path = liveRepairLedgerPath();
+  if (!existsSync(path)) {
+    return { path, records: [], invalid_rows: 0 };
+  }
+  const content = readFileSync(path, "utf8");
+  let invalidRows = 0;
+  const records = content
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalidRows += 1;
+        return [];
+      }
+    });
+  return { path, records, invalid_rows: invalidRows };
+}
+
+function buildLiveRepairLedgerReport({ path, records, invalid_rows: invalidRows }) {
+  const selectedRepairCounts = rankedCounts(records.map((record) => record.selected_repair_id).filter(Boolean));
+  const selectedCommandCounts = rankedCounts(records.map((record) => record.selected_repair_command).filter(Boolean));
+  const blockerCounts = rankedCounts(records.flatMap((record) => record.blocker_ids ?? []));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "live_repair_ledger_report",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    ledger: {
+      path,
+      format: "jsonl",
+      invalid_rows: invalidRows,
+    },
+    total_records: records.length,
+    action_executed_count: records.filter((record) => record.action_executed === true).length,
+    repair_command_executed_count: records.filter((record) => record.repair_command_executed === true).length,
+    provider_command_executed_count: records.filter((record) => record.provider_command_executed === true).length,
+    paper_order_created_count: records.filter((record) => record.paper_order_created === true).length,
+    status_counts: countValues(records.map((record) => record.status).filter(Boolean)),
+    controller_status_counts: countValues(records.map((record) => record.controller_status).filter(Boolean)),
+    primary_blocker_counts: rankedCounts(records.map((record) => record.primary_blocker).filter(Boolean)),
+    selected_repair_counts: selectedRepairCounts,
+    selected_repair_command_counts: selectedCommandCounts,
+    blocker_counts: blockerCounts,
+    top_selected_repair: selectedRepairCounts[0]?.command ?? null,
+    top_selected_repair_command: selectedCommandCounts[0]?.command ?? null,
+    top_blocker: blockerCounts[0]?.command ?? null,
     latest_record: records[records.length - 1] ?? null,
     safety: {
       can_submit_real_orders: false,
@@ -15672,6 +15905,8 @@ const commands = {
   "live-controller-ledger": liveControllerLedger,
   "live-controller-ledger-report": liveControllerLedgerReport,
   "live-repair-plan": liveRepairPlan,
+  "live-repair-ledger": liveRepairLedger,
+  "live-repair-ledger-report": liveRepairLedgerReport,
   "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,

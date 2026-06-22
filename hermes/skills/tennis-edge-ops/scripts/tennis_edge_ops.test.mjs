@@ -51,6 +51,7 @@ function isolatedLedgerEnv(tempDir, overrides = {}) {
     HERMES_OPERATOR_LEDGER_PATH: join(tempDir, "operator-ledger.jsonl"),
     HERMES_MISSION_LEDGER_PATH: join(tempDir, "mission-ledger.jsonl"),
     HERMES_LIVE_CONTROLLER_LEDGER_PATH: join(tempDir, "live-controller-ledger.jsonl"),
+    HERMES_LIVE_REPAIR_LEDGER_PATH: join(tempDir, "live-repair-ledger.jsonl"),
     HERMES_GRAND_SLAM_MISSION_LEDGER_PATH: join(tempDir, "grand-slam-mission-ledger.jsonl"),
     HERMES_SOURCE_ROUTE_LEDGER_PATH: join(tempDir, "source-route-ledger.jsonl"),
     HERMES_SOURCE_USE_LEDGER_PATH: join(tempDir, "source-use-ledger.jsonl"),
@@ -4879,6 +4880,74 @@ test("backlog-plan uses live-controller ledger as implementation evidence", asyn
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
+test("backlog-plan uses live-repair ledger as implementation evidence", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-live-repair-plan-"));
+  const liveRepairLedgerPath = join(tempDir, "live-repair-ledger.jsonl");
+  const rows = [
+    {
+      mode: "live_repair_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      repair_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "repair_required",
+      controller_status: "blocked",
+      primary_blocker: "data_quality_degraded:high",
+      selected_repair_id: "inspect_data_quality",
+      selected_repair_command: "npm --silent run hermes:intelligence",
+      blocker_ids: ["data_quality_degraded:high", "fresh_odds"],
+      repair_queue_ids: ["inspect_data_quality", "repair_odds_cursor_or_freshness"],
+    },
+    {
+      mode: "live_repair_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      repair_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "repair_required",
+      controller_status: "blocked",
+      primary_blocker: "data_quality_degraded:high",
+      selected_repair_id: "inspect_data_quality",
+      selected_repair_command: "npm --silent run hermes:intelligence",
+      blocker_ids: ["data_quality_degraded:high", "fresh_odds"],
+      repair_queue_ids: ["inspect_data_quality", "repair_odds_cursor_or_freshness"],
+    },
+  ];
+  writeFileSync(liveRepairLedgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["backlog-plan"], {
+    env: isolatedLedgerEnv(tempDir, {
+      HERMES_LIVE_REPAIR_LEDGER_PATH: liveRepairLedgerPath,
+    }),
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "backlog_plan");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.items[0].id, "harden_live_repair_feedback_loop");
+  assert.equal(payload.items[0].source.includes("live_repair_ledger"), true);
+  assert.equal(payload.items[0].frequency, 2);
+  assert.equal(payload.items[0].validation_commands.includes("npm --silent run hermes:live-repair-ledger-report"), true);
+  assert.equal(payload.items[0].validation_commands.includes("npm --silent run hermes:live-repair-plan"), true);
+  assert.equal(payload.items[0].executes_now, false);
+  assert.equal(payload.next_item.id, "harden_live_repair_feedback_loop");
+  assert.equal(payload.evidence.live_repair_ledger.total_records, 2);
+  assert.equal(payload.evidence.live_repair_ledger.top_selected_repair, "inspect_data_quality");
+  assert.equal(payload.evidence.live_repair_ledger.top_selected_repair_command, "npm --silent run hermes:intelligence");
+  assert.equal(payload.evidence.live_repair_ledger.top_blocker, "data_quality_degraded:high");
+  assert.equal(payload.evidence.live_repair_ledger.repair_command_executed_count, 0);
+  assert.equal(payload.evidence.live_repair_ledger.provider_command_executed_count, 0);
+  assert.equal(payload.evidence.live_repair_ledger.paper_order_created_count, 0);
+  assert.equal(payload.safety.can_submit_real_orders, false);
+});
+
 test("backlog-plan uses source-route ledger as implementation evidence", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-backlog-source-route-plan-"));
   const experimentLedgerPath = join(tempDir, "experiment-ledger.jsonl");
@@ -5394,6 +5463,75 @@ test("autonomy-effectiveness turns repeated ledgers into implementation feedback
   assert.equal(payload.next_action.command, "npm --silent run hermes:implementation-handoff");
   assert.equal(payload.next_action.executes_now, false);
   assert.equal(payload.evaluation_policy.count_ledgers_not_intent, true);
+  assert.equal(payload.safety.can_submit_real_orders, false);
+});
+
+test("autonomy-effectiveness includes repeated live-repair pressure", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-autonomy-effectiveness-live-repair-"));
+  const liveRepairLedgerPath = join(tempDir, "live-repair-ledger.jsonl");
+  const rows = [
+    {
+      mode: "live_repair_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      repair_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "repair_required",
+      controller_status: "blocked",
+      primary_blocker: "data_quality_degraded:high",
+      selected_repair_id: "inspect_data_quality",
+      selected_repair_command: "npm --silent run hermes:intelligence",
+      blocker_ids: ["data_quality_degraded:high", "fresh_odds"],
+      repair_queue_ids: ["inspect_data_quality", "repair_odds_cursor_or_freshness"],
+    },
+    {
+      mode: "live_repair_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      repair_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "repair_required",
+      controller_status: "blocked",
+      primary_blocker: "data_quality_degraded:high",
+      selected_repair_id: "inspect_data_quality",
+      selected_repair_command: "npm --silent run hermes:intelligence",
+      blocker_ids: ["data_quality_degraded:high", "fresh_odds"],
+      repair_queue_ids: ["inspect_data_quality", "repair_odds_cursor_or_freshness"],
+    },
+  ];
+  writeFileSync(liveRepairLedgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["autonomy-effectiveness"], {
+    env: isolatedLedgerEnv(tempDir, {
+      HERMES_LIVE_REPAIR_LEDGER_PATH: liveRepairLedgerPath,
+    }),
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "autonomy_effectiveness");
+  assert.equal(payload.status, "needs_implementation");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.evidence_totals.total_records, 2);
+  assert.equal(payload.evidence_totals.live_repair_records, 2);
+  assert.equal(payload.protected_action_claims.total, 0);
+  assert.equal(payload.protected_action_claims.repair_commands, 0);
+  assert.equal(payload.protected_action_claims.provider_commands, 0);
+  assert.equal(payload.protected_action_claims.paper_orders, 0);
+  assert.equal(payload.repeat_pressure.live_repair, 2);
+  assert.equal(payload.effectiveness_matrix.live_repair.status, "repeated_blocker");
+  assert.equal(payload.effectiveness_matrix.live_repair.top_signal, "inspect_data_quality");
+  assert.equal(payload.effectiveness_matrix.live_repair.command, "npm --silent run hermes:intelligence");
+  assert.equal(payload.backlog_feedback.next_item.id, "harden_live_repair_feedback_loop");
+  assert.equal(payload.next_action.id, "harden_live_repair_feedback_loop");
+  assert.equal(payload.next_action.command, "npm --silent run hermes:implementation-handoff");
+  assert.equal(payload.next_action.executes_now, false);
   assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
@@ -9342,6 +9480,160 @@ test("live-repair-plan selects one safe repair from controller feedback without 
   } finally {
     server.close();
   }
+});
+
+test("live-repair-ledger records selected repair without executing it", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-live-repair-ledger-"));
+  const ledgerPath = join(tempDir, "live-repair-ledger.jsonl");
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/provider-cursors": [
+      {
+        provider: "odds_api_io",
+        stream: "tennis.live",
+        status: "gap",
+        resync_required: true,
+        last_seq: 30,
+        expected_next_seq: 31,
+        gap_count: 1,
+      },
+    ],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["live-repair-ledger", `--api-base=${apiBase}`], {
+      env: {
+        ...isolatedLedgerEnv(tempDir, {
+          HERMES_LIVE_REPAIR_LEDGER_PATH: ledgerPath,
+        }),
+      },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "live_repair_ledger");
+    assert.equal(payload.writes, true);
+    assert.equal(payload.write_scope, "local_live_repair_jsonl_only");
+    assert.equal(payload.executed_commands.length, 0);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.ledger.path, ledgerPath);
+    assert.equal(payload.record.mode, "live_repair_ledger_record");
+    assert.equal(payload.record.action_executed, false);
+    assert.equal(payload.record.repair_command_executed, false);
+    assert.equal(payload.record.provider_command_executed, false);
+    assert.equal(payload.record.paper_order_created, false);
+    assert.equal(typeof payload.record.selected_repair_id, "string");
+    assert.equal(payload.record.safety.can_submit_real_orders, false);
+    const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const audit = JSON.parse(lines[0]);
+    assert.equal(audit.mode, "live_repair_ledger_record");
+    assert.equal(audit.action_executed, false);
+    assert.equal(audit.repair_command_executed, false);
+    assert.equal(audit.provider_command_executed, false);
+    assert.equal(audit.paper_order_created, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("live-repair-ledger-report summarizes repeated repair choices", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-live-repair-ledger-report-"));
+  const ledgerPath = join(tempDir, "live-repair-ledger.jsonl");
+  const rows = [
+    {
+      mode: "live_repair_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      repair_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "repair_required",
+      controller_status: "blocked",
+      primary_blocker: "data_quality_degraded:high",
+      selected_repair_id: "inspect_data_quality",
+      selected_repair_command: "npm --silent run hermes:intelligence",
+      blocker_ids: ["data_quality_degraded:high", "fresh_odds"],
+      repair_queue_ids: ["inspect_data_quality", "repair_odds_cursor_or_freshness"],
+    },
+    {
+      mode: "live_repair_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      repair_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "repair_required",
+      controller_status: "blocked",
+      primary_blocker: "data_quality_degraded:high",
+      selected_repair_id: "inspect_data_quality",
+      selected_repair_command: "npm --silent run hermes:intelligence",
+      blocker_ids: ["data_quality_degraded:high", "fresh_odds"],
+      repair_queue_ids: ["inspect_data_quality", "repair_odds_cursor_or_freshness"],
+    },
+    {
+      mode: "live_repair_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      repair_command_executed: false,
+      provider_command_executed: false,
+      paper_order_created: false,
+      status: "repair_required",
+      controller_status: "blocked",
+      primary_blocker: "budget_chain",
+      selected_repair_id: "inspect_budget_chain",
+      selected_repair_command: "npm --silent run hermes:budget-chain",
+      blocker_ids: ["budget_chain"],
+      repair_queue_ids: ["inspect_budget_chain"],
+    },
+  ];
+  writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+  const result = await runCli(["live-repair-ledger-report"], {
+    env: { HERMES_LIVE_REPAIR_LEDGER_PATH: ledgerPath },
+  });
+
+  assert.equal(result.exit, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.mode, "live_repair_ledger_report");
+  assert.equal(payload.read_only, true);
+  assert.equal(payload.writes, false);
+  assert.equal(payload.provider_api_call_allowed, false);
+  assert.equal(payload.can_submit_real_orders, false);
+  assert.equal(payload.can_create_paper_orders, false);
+  assert.equal(payload.ledger.path, ledgerPath);
+  assert.equal(payload.total_records, 3);
+  assert.equal(payload.action_executed_count, 0);
+  assert.equal(payload.repair_command_executed_count, 0);
+  assert.equal(payload.provider_command_executed_count, 0);
+  assert.equal(payload.paper_order_created_count, 0);
+  assert.equal(payload.status_counts.repair_required, 3);
+  assert.equal(payload.controller_status_counts.blocked, 3);
+  assert.equal(payload.primary_blocker_counts[0].command, "data_quality_degraded:high");
+  assert.equal(payload.primary_blocker_counts[0].count, 2);
+  assert.equal(payload.selected_repair_counts[0].command, "inspect_data_quality");
+  assert.equal(payload.selected_repair_counts[0].count, 2);
+  assert.equal(payload.selected_repair_command_counts[0].command, "npm --silent run hermes:intelligence");
+  assert.equal(payload.blocker_counts[0].command, "data_quality_degraded:high");
+  assert.equal(payload.top_selected_repair, "inspect_data_quality");
+  assert.equal(payload.top_selected_repair_command, "npm --silent run hermes:intelligence");
+  assert.equal(payload.top_blocker, "data_quality_degraded:high");
+  assert.equal(payload.safety.can_submit_real_orders, false);
 });
 
 test("budget-chain emits a dry-run provider onboarding plan without spending quota", async () => {

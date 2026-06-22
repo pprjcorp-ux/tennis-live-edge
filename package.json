@@ -49,6 +49,8 @@
     "hermes:live-controller-ledger": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-controller-ledger",
     "hermes:live-controller-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-controller-ledger-report",
     "hermes:live-repair-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-repair-plan",
+    "hermes:live-repair-ledger": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-repair-ledger",
+    "hermes:live-repair-ledger-report": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-repair-ledger-report",
     "hermes:learning-review": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review",
     "hermes:budget-chain": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain",
     "hermes:provider-smoke": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke",

@@ -288,6 +288,15 @@ selector, not an executor: the selected repair and full queue keep
 `executes_now=false`, `provider_api_call_allowed=false`, and
 `can_submit_real_orders=false`.
 
+`hermes:live-repair-ledger` appends that selected repair to
+`hermes/runs/live-repair-ledger.jsonl` by default with
+`action_executed=false`, `repair_command_executed=false`,
+`provider_command_executed=false`, and `paper_order_created=false`.
+`hermes:live-repair-ledger-report` reads the JSONL trace and exposes repeated
+selected repairs, commands and blockers. `hermes:backlog-plan` can then turn
+that evidence into `harden_live_repair_feedback_loop` without spending provider
+quota or expanding Hermes execution authority.
+
 `hermes:learning-review` is the weekly readiness packet. It summarizes
 settled paper evidence, production training examples, ROI/CLV readiness and
 high-severity blockers, routes interpretation to `gpt-5.5`, and still returns

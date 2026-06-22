@@ -565,6 +565,18 @@ evidence. The selected repair is still non-executing; it is meant for Codex,
 Hermes, Telegram or an operator to decide the next implementation task without
 spending provider quota, creating paper orders, or enabling real execution.
 
+`hermes:live-repair-ledger` persists that selected repair as local JSONL with
+`action_executed=false`, `repair_command_executed=false`,
+`provider_command_executed=false`, and `paper_order_created=false`. The
+matching `hermes:live-repair-ledger-report` summarizes repeated selected
+repairs, commands and blockers so `hermes:backlog-plan` can emit
+`harden_live_repair_feedback_loop` when the same safe internal repair keeps
+blocking live collection. This gives Hermes a feedback loop without granting it
+permission to run the repair command, call providers, create paper orders or
+touch real execution. The autonomy packet exposes this lane as
+`live_repair_records` and the backlog acceptance evidence must keep
+`repair_command_executed_count=0`.
+
 `hermes:backlog-plan` also consumes the Grand Slam mission ledger report. When
 Grand Slam visibility, model-input or paper-learning phases repeat, it emits a
 non-executing `harden_grand_slam_prediction_loop` priority before enterprise

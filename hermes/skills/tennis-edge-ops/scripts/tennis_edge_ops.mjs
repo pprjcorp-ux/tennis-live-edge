@@ -152,6 +152,19 @@ async function matchPulse() {
   printJson(buildMatchPulse({ report, eventPlan, liveWindowPlan, matches }));
 }
 
+async function collectionPlan() {
+  const [report, matches] = await Promise.all([
+    intelligenceData(),
+    request("/api/v1/live/matches"),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  const liveWindowPlan = buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan);
+  const pulse = buildMatchPulse({ report, eventPlan, liveWindowPlan, matches });
+  printJson(buildCollectionPlan({ report, eventPlan, liveWindowPlan, pulse }));
+}
+
 async function learningReview() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
@@ -2665,6 +2678,168 @@ function matchPulseAction({ attention, eventPlan, liveWindowPlan }) {
   };
 }
 
+function buildCollectionPlan({ report, eventPlan, liveWindowPlan, pulse }) {
+  const targets = pulse.watchlist.map((row) => collectionTarget(row, liveWindowPlan));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "collection_plan",
+    status: collectionPlanStatus(liveWindowPlan, targets),
+    live_window_status: liveWindowPlan.status,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    provider_mode: liveWindowPlan.provider_mode,
+    cost_snapshot: report.cost_snapshot,
+    sampling_policy: liveWindowPlan.sampling_policy,
+    targets,
+    safe_commands: collectionSafeCommands({ eventPlan, liveWindowPlan, targets }),
+    provider_commands: collectionProviderCommands({ liveWindowPlan, targets }),
+    blockers: liveWindowPlan.blockers,
+    forbidden_actions: report.forbidden_collection_paths ?? [],
+    safety: liveWindowPlan.safety,
+  };
+}
+
+function collectionPlanStatus(liveWindowPlan, targets) {
+  if (liveWindowPlan.status === "safety_stop") return "safety_stop";
+  if (liveWindowPlan.status === "blocked") return "blocked";
+  if (targets.some((target) => target.lane === "hot_watch")) return "live_watch";
+  if (targets.some((target) => target.lane === "warm_watch")) return "monitor";
+  return "cold";
+}
+
+function collectionTarget(row, liveWindowPlan) {
+  const lane = collectionLane(row, liveWindowPlan);
+  const cadence = collectionCadence(lane);
+  return {
+    match_id: row.match_id,
+    label: row.label,
+    attention: row.attention,
+    lane,
+    priority_score: row.priority_score,
+    score_poll_seconds: cadence.score,
+    odds_poll_seconds: cadence.odds,
+    provider_lineage: row.freshness?.provider_lineage ?? [],
+    source_preference: collectionSourcePreference(lane),
+    provider_api_call_allowed: false,
+    executes_now: false,
+    reason: collectionTargetReason(row, lane, liveWindowPlan),
+  };
+}
+
+function collectionLane(row, liveWindowPlan) {
+  if (["blocked", "safety_stop"].includes(liveWindowPlan.status)) {
+    return "frozen";
+  }
+  if (row.attention === "paper_candidate") return "hot_watch";
+  if (row.attention === "live_monitor") return "warm_watch";
+  if (row.attention === "stale_monitor") return "repair_watch";
+  return "cold_watch";
+}
+
+function collectionCadence(lane) {
+  return {
+    hot_watch: { score: 15, odds: 5 },
+    warm_watch: { score: 30, odds: 15 },
+    repair_watch: { score: 60, odds: 60 },
+    cold_watch: { score: 300, odds: 300 },
+    frozen: { score: 0, odds: 0 },
+  }[lane] ?? { score: 300, odds: 300 };
+}
+
+function collectionSourcePreference(lane) {
+  if (lane === "frozen") return "internal_status_only";
+  if (lane === "repair_watch") return "persisted_replay_then_resync_review";
+  if (lane === "hot_watch") return "licensed_live_score_and_odds_stream";
+  if (lane === "warm_watch") return "licensed_live_score_then_odds_snapshot";
+  return "persisted_canonical_state";
+}
+
+function collectionTargetReason(row, lane, liveWindowPlan) {
+  if (lane === "frozen") {
+    return `Collection frozen because live window is ${liveWindowPlan.status}.`;
+  }
+  if (lane === "hot_watch") {
+    return "Fresh Entrada match; shortest cadence is desired but execution remains outside this plan.";
+  }
+  if (lane === "repair_watch") {
+    return "Match is stale; review replay/cursor state before increasing provider traffic.";
+  }
+  return `Match attention is ${row.attention}.`;
+}
+
+function collectionSafeCommands({ eventPlan, liveWindowPlan, targets }) {
+  if (["blocked", "safety_stop"].includes(liveWindowPlan.status)) {
+    return [collectionCommand({
+      id: "route_events",
+      command: "npm --silent run hermes:events",
+      reason: `Resolve live-window blockers before changing provider cadence; severity=${eventPlan.severity}.`,
+    })];
+  }
+  const commands = [
+    collectionCommand({
+      id: "match_pulse",
+      command: "npm --silent run hermes:match-pulse",
+      reason: "Refresh per-match priorities from internal APIs only.",
+    }),
+    collectionCommand({
+      id: "live_window",
+      command: "npm --silent run hermes:live-window",
+      reason: "Reconfirm global gate before any operator-triggered provider collection.",
+    }),
+  ];
+  if (targets.some((target) => target.lane === "repair_watch")) {
+    commands.push(collectionCommand({
+      id: "route_events",
+      command: "npm --silent run hermes:events",
+      reason: "Inspect stale/cursor conditions before spending live provider quota.",
+    }));
+  }
+  return commands;
+}
+
+function collectionProviderCommands({ liveWindowPlan, targets }) {
+  if (["blocked", "safety_stop"].includes(liveWindowPlan.status)) {
+    return [];
+  }
+  if (!targets.some((target) => ["hot_watch", "warm_watch"].includes(target.lane))) {
+    return [];
+  }
+  return [
+    {
+      id: "live_budget_ingest_candidate",
+      command: "npm run api:ingest:live-budget",
+      reason: "Operator may run the licensed budget ingestion cycle if provider keys/quota are intentionally available.",
+      executes_now: false,
+      writes: false,
+      live_api_calls: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      requires_admin_token: false,
+    },
+  ];
+}
+
+function collectionCommand({ id, command, reason }) {
+  return {
+    id,
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    requires_admin_token: false,
+  };
+}
+
 function buildLearningReview(report, eventPlan, playbookPlan) {
   const learning = report.learning_snapshot ?? {};
   const budget = report.budget_chain_snapshot ?? {};
@@ -3022,6 +3197,7 @@ const commands = {
   "live-stats": liveStats,
   "live-window": liveWindow,
   "match-pulse": matchPulse,
+  "collection-plan": collectionPlan,
   "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,

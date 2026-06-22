@@ -25,6 +25,7 @@ npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
+npm run hermes:collection-plan
 npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
@@ -112,6 +113,11 @@ of a global status. It reads current matches and produces a priority watchlist
 using freshness, pressure state, edge, signal status, and the global
 live-window gate. It may recommend protected paper autopilot only when that
 global gate is `paper_ready`, and it never creates orders itself.
+
+Use `hermes:collection-plan` when Hermes needs to translate the watchlist into
+collection cadence. It reports desired score/odds polling lanes and source
+preferences, but remains read-only: provider ingestion is only an operator
+candidate with `executes_now=false` and `provider_api_call_allowed=false`.
 
 Use `hermes:learning-review` for weekly ROI/CLV/calibration/readiness review.
 It is read-only, recommends the `gpt-5.5` route for interpretation, and keeps

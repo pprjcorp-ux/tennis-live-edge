@@ -1731,6 +1731,157 @@ test("match-pulse ranks match attention without creating orders", async () => {
   }
 });
 
+test("collection-plan converts match pulse into safe polling cadence", async () => {
+  const matches = [
+    {
+      match: {
+        id: "match_live_hot",
+        tournament: "US Open",
+        round: "R32",
+        tour: "ATP",
+        competition_level: "GRAND_SLAM",
+        surface: "hard",
+        player1: { id: "p1", name: "Player One" },
+        player2: { id: "p2", name: "Player Two" },
+        state: {
+          status: "live",
+          p1_sets: 2,
+          p2_sets: 2,
+          p1_games: 5,
+          p2_games: 5,
+          point_score: "40-40",
+          server_player_id: "p1",
+          is_tiebreak: false,
+          is_break_point: true,
+        },
+      },
+      prediction: { p1_win_prob: 0.58, p2_win_prob: 0.42, confidence: "Alta", model_version: "baseline_v0" },
+      signals: [
+        {
+          id: "sig_hot",
+          match_id: "match_live_hot",
+          player_id: "p1",
+          player_name: "Player One",
+          status: "Entrada",
+          edge: 0.092,
+          threshold: 0.03,
+          confidence: "Alta",
+          best_odds: 2.15,
+          reason: "fresh high edge",
+        },
+      ],
+      freshness: {
+        source: "live",
+        persisted: true,
+        score_age_ms: 3000,
+        odds_age_ms: 2500,
+        provider_lineage: ["api_tennis", "odds_api_io"],
+      },
+    },
+  ];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": matches,
+    "/api/v1/signals/live": [matches[0].signals[0]],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "live_with_keys",
+        replay_lab: { status: "ready" },
+        model_lab: { status: "collecting", production_training_examples: 12, can_run_live_backtest: false },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          steps: [],
+        },
+        source_summary: {
+          total_matches: 1,
+          persisted_matches: 1,
+          match_freshness: [
+            { match_id: "match_live_hot", source: "live", persisted: true, score_age_ms: 3000, odds_age_ms: 2500 },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["collection-plan", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "collection_plan");
+    assert.equal(payload.status, "live_watch");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.targets[0].match_id, "match_live_hot");
+    assert.equal(payload.targets[0].lane, "hot_watch");
+    assert.equal(payload.targets[0].score_poll_seconds, 15);
+    assert.equal(payload.targets[0].odds_poll_seconds, 5);
+    assert.equal(payload.targets[0].provider_api_call_allowed, false);
+    assert.equal(payload.safe_commands.some((command) => command.command === "npm --silent run hermes:match-pulse"), true);
+    assert.equal(payload.provider_commands.every((command) => command.executes_now === false), true);
+  } finally {
+    server.close();
+  }
+
+  const blockedFixtures = eventRouterFixtures({
+    "/api/v1/live/matches": matches,
+    "/api/v1/provider-cursors": [
+      {
+        provider: "odds_api_io",
+        stream: "tennis.live",
+        status: "gap",
+        resync_required: true,
+        last_seq: 2,
+        expected_next_seq: 3,
+        gap_count: 1,
+      },
+    ],
+    "/api/v1/signals/live": [matches[0].signals[0]],
+  });
+  const { server: blockedServer, apiBase: blockedApiBase } = await startServer((request, response) => {
+    const payload = blockedFixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["collection-plan", `--api-base=${blockedApiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.targets[0].lane, "frozen");
+    assert.equal(payload.targets[0].score_poll_seconds, 0);
+    assert.equal(payload.targets[0].odds_poll_seconds, 0);
+    assert.equal(payload.provider_commands.length, 0);
+    assert.equal(payload.safe_commands[0].command, "npm --silent run hermes:events");
+  } finally {
+    blockedServer.close();
+  }
+});
+
 test("budget-chain emits a dry-run provider onboarding plan without spending quota", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/signals/live": [],

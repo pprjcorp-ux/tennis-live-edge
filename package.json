@@ -30,6 +30,7 @@
     "hermes:live-stats": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-stats",
     "hermes:live-window": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-window",
     "hermes:match-pulse": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs match-pulse",
+    "hermes:collection-plan": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs collection-plan",
     "hermes:learning-review": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review",
     "hermes:budget-chain": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain",
     "hermes:provider-smoke": "node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke",

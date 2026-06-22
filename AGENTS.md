@@ -141,6 +141,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   is a read-only watchlist/ranking packet over `/api/v1/live/matches`, must not
   create paper orders itself, and should only point to protected backend paper
   autopilot when the global live-window gate is `paper_ready`.
+- Hermes collection cadence planning should consume
+  `npm run hermes:collection-plan`; it converts match-pulse priorities into
+  desired score/odds polling lanes, but must remain read-only, must not execute
+  provider ingestion, and must keep `provider_api_call_allowed=false`.
 - Hermes weekly learning/readiness review should consume
   `npm run hermes:learning-review`; it is read-only, routes interpretation to
   the critical model, and must keep real execution blocked.
@@ -191,6 +195,7 @@ npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
+npm run hermes:collection-plan
 npm run hermes:budget-chain
 npm run hermes:safe-loop
 npm run hermes:scheduler-rehearsal

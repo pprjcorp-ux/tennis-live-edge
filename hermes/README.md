@@ -39,6 +39,7 @@ npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
+npm run hermes:collection-plan
 npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
@@ -110,6 +111,11 @@ readiness, and execution safety into `paper_ready`, `monitor`, `blocked`, or
 status, score/odds freshness, pressure state, edge, signal status, and the
 global live-window gate. It is read-only and can only recommend the protected
 paper autopilot route when the live window is `paper_ready`.
+
+`hermes:collection-plan` converts match-pulse priorities into desired score and
+odds polling lanes such as `hot_watch`, `warm_watch`, `repair_watch`, and
+`frozen`. It is read-only: provider ingestion commands are shown only as
+operator candidates with `executes_now=false` and `provider_api_call_allowed=false`.
 
 `hermes:learning-review` is the weekly readiness packet. It summarizes
 settled paper evidence, production training examples, ROI/CLV readiness and

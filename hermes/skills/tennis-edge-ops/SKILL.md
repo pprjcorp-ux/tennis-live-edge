@@ -193,13 +193,16 @@ combines live-window, match-pulse, collection-plan, quota-plan and
 source-route-matrix into one operator decision for observation, throttling,
 provider-candidate review, or protected paper autopilot. It is read-only,
 never spends provider quota, never executes provider commands, never creates
-paper orders by itself, and keeps real execution impossible.
+paper orders by itself, and keeps real execution impossible. Its
+`feedback_plan` is the canonical non-executing repair queue for live-control
+blockers: use the normalized blocker IDs and safe repair commands to decide the
+next implementation task, not to run provider calls automatically.
 The `live-controller-ledger` command appends the live-controller decision to a
 local JSONL audit file with `action_executed=false`,
 `provider_command_executed=false`, and `paper_order_created=false`. The
 `live-controller-ledger-report` command summarizes repeated live-controller
-actions, throttles, source routes and provider candidates without writing or
-executing anything.
+actions, throttles, source routes, provider candidates, feedback blockers and
+safe repair actions without writing or executing anything.
 The `learning-review` command emits a weekly readiness packet for ROI, CLV,
 production training examples, model review gates, and real-execution hard
 blocking. It is read-only and does not promote models.

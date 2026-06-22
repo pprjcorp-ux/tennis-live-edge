@@ -276,8 +276,11 @@ turning match-pulse, collection-plan and quota-plan into an operator decision.
 A blocked feature contract freezes feature ingestion, a degraded contract routes
 to repair, and a ready contract can feed the next internal watch/paper-learning
 step. The explicit actions are `freeze_feature_ingestion` and
-`repair_live_feature_contract`. The controller still never executes provider
-commands, paper orders or real orders by itself.
+`repair_live_feature_contract`. The controller also returns a `feedback_plan`
+with normalized blocker IDs and safe repair commands, and the ledger/report
+summarize `feedback_blocker_ids` plus `feedback_next_action_ids` so repeated
+freezes become implementation evidence. The controller still never executes
+provider commands, paper orders or real orders by itself.
 
 `hermes:learning-review` is the weekly readiness packet. It summarizes
 settled paper evidence, production training examples, ROI/CLV readiness and

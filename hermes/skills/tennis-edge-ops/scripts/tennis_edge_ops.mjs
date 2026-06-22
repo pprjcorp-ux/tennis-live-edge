@@ -11547,6 +11547,8 @@ function buildLiveControllerLedger(controller) {
     throttle_level: controller.quota?.throttle?.level ?? null,
     source_route_id: decision.source_route_id ?? null,
     feature_contract_status: controller.feature_contract?.status ?? decision.feature_contract_status ?? null,
+    feedback_blocker_ids: controller.feedback_plan?.blocker_ids ?? [],
+    feedback_next_action_ids: (controller.feedback_plan?.safe_repair_queue ?? []).map((action) => action.id),
     top_match_id: decision.top_match_id ?? null,
     safety: controller.safety,
   };
@@ -11616,6 +11618,8 @@ function readLiveControllerLedgerRecords() {
 function buildLiveControllerLedgerReport({ path, records, invalid_rows: invalidRows }) {
   const nextCommandCounts = rankedCounts(records.map((record) => record.next_safe_command).filter(Boolean));
   const providerCandidateCounts = rankedCounts(records.map((record) => record.provider_candidate_command).filter(Boolean));
+  const feedbackBlockerCounts = rankedCounts(records.flatMap((record) => record.feedback_blocker_ids ?? []));
+  const feedbackActionCounts = rankedCounts(records.flatMap((record) => record.feedback_next_action_ids ?? []));
   return {
     generated_at: new Date().toISOString(),
     mode: "live_controller_ledger_report",
@@ -11643,9 +11647,13 @@ function buildLiveControllerLedgerReport({ path, records, invalid_rows: invalidR
     feature_contract_status_counts: countValues(records.map((record) => record.feature_contract_status).filter(Boolean)),
     next_safe_command_counts: nextCommandCounts,
     provider_candidate_counts: providerCandidateCounts,
+    feedback_blocker_counts: feedbackBlockerCounts,
+    feedback_next_action_counts: feedbackActionCounts,
     top_repeated_action: rankedCounts(records.map((record) => record.action).filter(Boolean))[0]?.command ?? null,
     top_next_safe_command: nextCommandCounts[0]?.command ?? null,
     top_provider_candidate: providerCandidateCounts[0]?.command ?? null,
+    top_feedback_blocker: feedbackBlockerCounts[0]?.command ?? null,
+    top_feedback_next_action: feedbackActionCounts[0]?.command ?? null,
     latest_record: records[records.length - 1] ?? null,
     safety: {
       can_submit_real_orders: false,
@@ -14765,6 +14773,7 @@ function buildLiveController({
   sourceRoutes,
 }) {
   const featureContract = liveStatsPlan?.feature_contract ?? null;
+  const status = liveControllerStatus({ liveWindowPlan, quota });
   const decision = chooseLiveControllerDecision({
     eventPlan,
     featureContract,
@@ -14774,10 +14783,21 @@ function buildLiveController({
     quota,
     sourceRoutes,
   });
+  const feedbackPlan = buildLiveControllerFeedbackPlan({
+    status,
+    eventPlan,
+    featureContract,
+    liveWindowPlan,
+    pulse,
+    collection,
+    quota,
+    sourceRoutes,
+    decision,
+  });
   return {
     generated_at: new Date().toISOString(),
     mode: "live_controller",
-    status: liveControllerStatus({ liveWindowPlan, quota }),
+    status,
     summary: `Hermes live controller: action=${decision.action}, live_window=${liveWindowPlan.status}, quota=${quota.throttle?.level}, feature_contract=${featureContract?.status ?? "unknown"}`,
     read_only: true,
     writes: false,
@@ -14788,6 +14808,7 @@ function buildLiveController({
     llm_per_tick_allowed: false,
     provider_mode: liveWindowPlan.provider_mode,
     operator_decision: decision,
+    feedback_plan: feedbackPlan,
     feature_contract: featureContract ? {
       id: featureContract.id,
       status: featureContract.status,
@@ -14861,6 +14882,171 @@ function liveControllerStatus({ liveWindowPlan, quota }) {
   if (liveWindowPlan.status === "paper_ready") return "paper_ready";
   if (quota.status === "normal") return "live_watch";
   return "monitor";
+}
+
+function buildLiveControllerFeedbackPlan({
+  status,
+  eventPlan,
+  featureContract,
+  liveWindowPlan,
+  pulse,
+  collection,
+  quota,
+  sourceRoutes,
+  decision,
+}) {
+  const blockerIds = [...new Set([
+    ...((liveWindowPlan.blockers ?? []).map(String)),
+    ...((eventPlan.events ?? [])
+      .filter((event) => ["critical", "high"].includes(event.severity))
+      .map((event) => `${event.type}:${event.severity}`)),
+    ...(quota.throttle?.level && quota.throttle.level !== "normal" ? [`quota:${quota.throttle.level}`] : []),
+    ...(featureContract?.status && featureContract.status !== "ready" ? [`feature_contract:${featureContract.status}`] : []),
+    ...(collection.status && !["live_watch", "monitor", "paper_ready"].includes(collection.status) ? [`collection:${collection.status}`] : []),
+  ])];
+  const actions = dedupeFeedbackActions([
+    ...blockerIds.flatMap((id) => liveControllerFeedbackActionsForBlocker(id)),
+    ...(sourceRoutes.next_route?.command ? [feedbackAction({
+      id: `source_route_${sourceRoutes.next_route.id}`,
+      command: sourceRoutes.next_route.command,
+      reason: sourceRoutes.next_route.reason ?? "Validate the safest allowed source route before provider spend.",
+    })] : []),
+    ...(decision.next_safe_command?.command ? [feedbackAction({
+      id: `decision_${decision.next_safe_command.id ?? "next_safe_command"}`,
+      command: decision.next_safe_command.command,
+      reason: decision.next_safe_command.reason ?? "Follow the controller next safe command without executing it automatically.",
+    })] : []),
+  ]);
+  return {
+    status: blockerIds.length ? "needs_repair" : "clear",
+    controller_status: status,
+    primary_blocker: blockerIds[0] ?? null,
+    blocker_ids: blockerIds,
+    safe_repair_queue: actions,
+    top_match_id: pulse.top_match?.match_id ?? decision.top_match_id ?? null,
+    evidence: [
+      `controller_status=${status}`,
+      `live_window=${liveWindowPlan.status}`,
+      `quota=${quota.throttle?.level ?? quota.status}`,
+      `feature_contract=${featureContract?.status ?? "unknown"}`,
+      `provider_candidates=${collection.provider_commands.length}`,
+      `safe_commands=${collection.safe_commands.length}`,
+    ],
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function liveControllerFeedbackActionsForBlocker(blockerId) {
+  const id = String(blockerId);
+  if (id.includes("cursor_resync_required") || id.includes("fresh_odds")) {
+    return [
+      feedbackAction({
+        id: "repair_odds_cursor_or_freshness",
+        command: "npm --silent run hermes:events",
+        reason: "Classify odds cursor/freshness blockers before any live odds spend.",
+      }),
+      feedbackAction({
+        id: "prove_operational_truth",
+        command: "npm run api:check:operational-truth -- --pretty",
+        reason: "Use persisted state to verify signals fail closed while odds are stale or resync is required.",
+      }),
+    ];
+  }
+  if (id.includes("fresh_scores") || id.includes("data_quality_degraded")) {
+    return [
+      feedbackAction({
+        id: "inspect_data_quality",
+        command: "npm --silent run hermes:intelligence",
+        reason: "Refresh internal data-quality evidence without provider calls.",
+      }),
+      feedbackAction({
+        id: "prove_operational_truth",
+        command: "npm run api:check:operational-truth -- --pretty",
+        reason: "Confirm persisted score/odds freshness and fail-closed signal gates.",
+      }),
+    ];
+  }
+  if (id.includes("provider_health_degraded") || id.includes("preflight_blocked")) {
+    return [feedbackAction({
+      id: "inspect_provider_preflight",
+      command: "npm run hermes:preflight",
+      reason: "Inspect provider/config blockers from internal health endpoints only.",
+    })];
+  }
+  if (id.includes("budget_chain_completed")) {
+    return [feedbackAction({
+      id: "inspect_budget_chain",
+      command: "npm --silent run hermes:budget-chain",
+      reason: "Review budget-chain prerequisites before enterprise or live provider escalation.",
+    })];
+  }
+  if (id.includes("paper_autopilot_allowed")) {
+    return [feedbackAction({
+      id: "inspect_paper_learning_gate",
+      command: "npm --silent run hermes:learning-review",
+      reason: "Review paper/autopilot learning gates before any order-creating route.",
+    })];
+  }
+  if (id.includes("feature_contract")) {
+    return [feedbackAction({
+      id: "repair_live_stats_feature_contract",
+      command: "npm --silent run hermes:live-stats",
+      reason: "Rebuild the internal live-stats feature contract before collection escalation.",
+    })];
+  }
+  if (id.includes("quota:")) {
+    return [feedbackAction({
+      id: "inspect_quota_throttle",
+      command: "npm --silent run hermes:quota-plan",
+      reason: "Recompute quota throttle and provider candidate suppression.",
+    })];
+  }
+  if (id.includes("source_route:")) {
+    return [feedbackAction({
+      id: "inspect_source_route_matrix",
+      command: "npm --silent run hermes:source-route-matrix",
+      reason: "Review allowed source routes without fetching data or spending quota.",
+    })];
+  }
+  if (id.includes("event_severity")) {
+    return [feedbackAction({
+      id: "route_high_severity_events",
+      command: "npm --silent run hermes:events",
+      reason: "Route high-severity events before changing collection cadence.",
+    })];
+  }
+  return [];
+}
+
+function feedbackAction({ id, command, reason }) {
+  return {
+    id,
+    command,
+    reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function dedupeFeedbackActions(actions) {
+  const seen = new Set();
+  return actions.filter((action) => {
+    const key = `${action.id}:${action.command}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function chooseLiveControllerDecision({

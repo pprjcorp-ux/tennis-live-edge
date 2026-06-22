@@ -9049,6 +9049,10 @@ test("live-controller compiles live data decisions without executing collection"
     assert.equal(payload.operator_decision.protected_backend_action.executes_now, false);
     assert.equal(payload.operator_decision.protected_backend_action.provider_api_call_allowed, false);
     assert.equal(payload.operator_decision.top_match_id, "match_controller_hot");
+    assert.equal(payload.feedback_plan.status, "clear");
+    assert.equal(payload.feedback_plan.blocker_ids.length, 0);
+    assert.equal(payload.feedback_plan.executes_now, false);
+    assert.equal(payload.feedback_plan.provider_api_call_allowed, false);
     assert.equal(payload.collection.provider_candidates.every((command) => command.provider_api_call_allowed === false), true);
     assert.equal(payload.collection.provider_candidates.every((command) => command.executes_now === false), true);
     assert.equal(payload.control_policy.event_driven_not_tick_driven, true);
@@ -9096,6 +9100,13 @@ test("live-controller compiles live data decisions without executing collection"
     assert.equal(payload.operator_decision.feature_contract_status, "blocked");
     assert.equal(payload.operator_decision.next_safe_command.command, "npm --silent run hermes:events");
     assert.equal(payload.operator_decision.next_safe_command.executes_now, false);
+    assert.equal(payload.feedback_plan.status, "needs_repair");
+    assert.equal(payload.feedback_plan.blocker_ids.some((id) => id.startsWith("cursor_resync_required")), true);
+    assert.equal(payload.feedback_plan.blocker_ids.includes("feature_contract:blocked"), true);
+    assert.equal(payload.feedback_plan.safe_repair_queue.some((action) => action.id === "repair_odds_cursor_or_freshness"), true);
+    assert.equal(payload.feedback_plan.safe_repair_queue.some((action) => action.id === "repair_live_stats_feature_contract"), true);
+    assert.equal(payload.feedback_plan.safe_repair_queue.every((action) => action.executes_now === false), true);
+    assert.equal(payload.feedback_plan.safe_repair_queue.every((action) => action.provider_api_call_allowed === false), true);
     assert.equal(payload.match_pulse.target_summary.lanes.frozen, 1);
     assert.equal(payload.quota.throttle.level, "blocked");
     assert.equal(payload.collection.provider_candidates.length, 0);
@@ -9147,6 +9158,8 @@ test("live-controller-ledger appends controller decisions without executing acti
     assert.equal(payload.record.provider_command_executed, false);
     assert.equal(payload.record.paper_order_created, false);
     assert.equal(typeof payload.record.feature_contract_status, "string");
+    assert.equal(Array.isArray(payload.record.feedback_blocker_ids), true);
+    assert.equal(Array.isArray(payload.record.feedback_next_action_ids), true);
     const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
     assert.equal(lines.length, 1);
     const audit = JSON.parse(lines[0]);
@@ -9178,6 +9191,8 @@ test("live-controller-ledger-report summarizes repeated control decisions", asyn
       throttle_level: "blocked",
       source_route_id: "replay_backfill",
       feature_contract_status: "blocked",
+      feedback_blocker_ids: ["fresh_odds", "feature_contract:blocked"],
+      feedback_next_action_ids: ["repair_odds_cursor_or_freshness", "repair_live_stats_feature_contract"],
     },
     {
       mode: "live_controller_ledger_record",
@@ -9194,6 +9209,8 @@ test("live-controller-ledger-report summarizes repeated control decisions", asyn
       throttle_level: "blocked",
       source_route_id: "replay_backfill",
       feature_contract_status: "blocked",
+      feedback_blocker_ids: ["fresh_odds", "feature_contract:blocked"],
+      feedback_next_action_ids: ["repair_odds_cursor_or_freshness", "repair_live_stats_feature_contract"],
     },
     {
       mode: "live_controller_ledger_record",
@@ -9210,6 +9227,8 @@ test("live-controller-ledger-report summarizes repeated control decisions", asyn
       throttle_level: "normal",
       source_route_id: "live_statistics",
       feature_contract_status: "ready",
+      feedback_blocker_ids: [],
+      feedback_next_action_ids: [],
     },
   ];
   writeFileSync(ledgerPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
@@ -9241,9 +9260,14 @@ test("live-controller-ledger-report summarizes repeated control decisions", asyn
   assert.equal(payload.next_safe_command_counts[0].command, "npm --silent run hermes:events");
   assert.equal(payload.next_safe_command_counts[0].count, 2);
   assert.equal(payload.provider_candidate_counts[0].command, "npm run api:ingest:live-budget");
+  assert.equal(payload.feedback_blocker_counts[0].command, "feature_contract:blocked");
+  assert.equal(payload.feedback_blocker_counts[0].count, 2);
+  assert.equal(payload.feedback_next_action_counts[0].command, "repair_live_stats_feature_contract");
   assert.equal(payload.top_repeated_action, "freeze_collection");
   assert.equal(payload.top_next_safe_command, "npm --silent run hermes:events");
   assert.equal(payload.top_provider_candidate, "npm run api:ingest:live-budget");
+  assert.equal(payload.top_feedback_blocker, "feature_contract:blocked");
+  assert.equal(typeof payload.top_feedback_next_action, "string");
 });
 
 test("budget-chain emits a dry-run provider onboarding plan without spending quota", async () => {

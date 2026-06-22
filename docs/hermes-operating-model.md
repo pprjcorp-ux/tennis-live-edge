@@ -107,6 +107,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes for an all-in-one agent-channel payload: `npm run hermes:ops-compiler`.
 - Every 15 minutes or before autonomy escalation: `npm run hermes:capability-audit`.
 - Every 5 minutes before channel/cron/paper escalation: `npm run hermes:autonomy-gates`.
+- Every 15 minutes to rank safe operational experiments: `npm run hermes:experiment-lab`.
 - Every 5 minutes for short channel summaries: `npm run hermes:operator-packet`.
 - Every 5 minutes to audit channel recommendations locally: `npm run hermes:operator-ledger`.
 - Hourly/daily to review recommendation quality: `npm run hermes:operator-ledger-report`.
@@ -184,6 +185,13 @@ ordered gates: `observe`, `channel_ready`, `cron_ready`, `paper_ready`,
 `learning_ready`, and `enterprise_review`. Channels should use `active_ceiling`
 and `next_required_gate` instead of inferring autonomy from scattered command
 outputs. The command is read-only and cannot create paper orders by itself.
+
+`hermes:experiment-lab` is the research-to-action packet. It asks which safe
+Hermes experiment has the best expected operational value right now, then ranks
+runtime recovery, source discovery, live collection cadence, paper autopilot
+rehearsal, learning review, and enterprise eligibility. The packet includes
+hypotheses, prerequisites, `success_metrics`, evidence and command previews,
+but it does not run experiments, spend provider quota or create orders.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

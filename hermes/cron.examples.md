@@ -151,6 +151,17 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Experiment lab every 15 minutes to rank safe research/test paths:
+
+```bash
+hermes cron add \
+  --name tennis-edge-experiment-lab \
+  --every 15m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:experiment-lab from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report research_question, active_ceiling, next_experiment, experiments, success_metrics, and safety. Do not execute experiment commands, create paper orders, spend provider quota, or submit real orders from this cron." \
+  --timeout-seconds 90
+```
+
 Compact operator packet every 5 minutes for Telegram/OpenClaw:
 
 ```bash

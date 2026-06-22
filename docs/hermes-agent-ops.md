@@ -37,6 +37,7 @@ npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit
 npm run hermes:autonomy-gates
+npm run hermes:experiment-lab
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -187,6 +188,13 @@ turns capability audit, cron activation checks, event routing, and budget-chain
 state into ordered `observe`, `channel_ready`, `cron_ready`, `paper_ready`,
 `learning_ready`, and `enterprise_review` gates. It reports `active_ceiling`
 and `next_required_gate`, stays read-only, and cannot create paper orders.
+
+Use `hermes:experiment-lab` when Hermes needs to decide which research/test
+path creates the most value next. It ranks safe experiments for runtime
+recovery, source discovery, live collection cadence, paper autopilot rehearsal,
+learning review, and enterprise eligibility. Each experiment carries a
+hypothesis, prerequisites, `success_metrics`, and a command preview, but the
+lab never executes commands or creates paper orders.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard

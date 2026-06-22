@@ -51,6 +51,7 @@ npm run hermes:trigger-policy
 npm run hermes:ops-compiler
 npm run hermes:capability-audit
 npm run hermes:autonomy-gates
+npm run hermes:experiment-lab
 npm run hermes:operator-packet
 npm run hermes:operator-ledger
 npm run hermes:operator-ledger-report
@@ -204,6 +205,12 @@ It reports ordered gates, `active_ceiling`, and `next_required_gate` across
 observe, channel, cron, paper, learning, and enterprise review. It is read-only,
 does not create paper orders, and keeps enterprise locked until the budget chain
 is eligible.
+
+`hermes:experiment-lab` ranks the next safe research/test path for Hermes. It
+returns experiments with hypotheses, prerequisites, `success_metrics`, evidence
+and command previews for runtime, source discovery, live collection, paper
+learning and enterprise readiness. It is read-only and does not execute the
+reported experiments.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

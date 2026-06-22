@@ -308,6 +308,53 @@ async function autonomyGates() {
   }));
 }
 
+async function experimentLab() {
+  const [loop, report] = await Promise.all([
+    safeLoopData(),
+    intelligenceData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const triggerPlan = buildTriggerPolicy({ loop, sourcePlan });
+  const runtimePriorities = buildRuntimeFixPriorities(buildOperatorLedgerReport(readOperatorLedgerRecords()));
+  const autonomyPlan = buildAutonomyBrief({ loop, runtimePriorities });
+  const operator = buildOperatorPacket(loop);
+  const opsPacket = buildOpsCompiler({
+    loop,
+    sourcePlan,
+    triggerPlan,
+    autonomyPlan,
+    operator,
+  });
+  const capabilityAuditPlan = buildCapabilityAudit({
+    loop,
+    report,
+    eventPlan,
+    sourcePlan,
+    autonomyPlan,
+    opsPacket,
+  });
+  const rehearsal = buildSchedulerRehearsal(loop);
+  const proposal = buildCronProposal(rehearsal);
+  const activation = buildActivationChecklist({ loop, rehearsal, proposal });
+  const gates = buildAutonomyGates({
+    loop,
+    report,
+    eventPlan,
+    sourcePlan,
+    capabilityAuditPlan,
+    activation,
+  });
+  printJson(buildExperimentLab({
+    loop,
+    report,
+    eventPlan,
+    sourcePlan,
+    capabilityAuditPlan,
+    gates,
+  }));
+}
+
 async function operatorPacket() {
   const loop = await safeLoopData();
   printJson(buildOperatorPacket(loop));
@@ -2029,6 +2076,174 @@ function autonomyGateCeiling(gate) {
   };
 }
 
+function buildExperimentLab({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, gates }) {
+  const experiments = buildExperimentRows({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, gates })
+    .sort((a, b) => b.priority_score - a.priority_score || a.id.localeCompare(b.id));
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "experiment_lab",
+    research_question: "What is the maximum safe Hermes ROI/CLV leverage under budget-first constraints?",
+    status: experiments.some((experiment) => experiment.status === "ready") ? "ready" : "blocked",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    active_ceiling: gates.active_ceiling,
+    next_required_gate: gates.next_required_gate,
+    next_experiment: experiments.find((experiment) => experiment.status === "ready") ?? experiments[0] ?? null,
+    experiments,
+    blocked_routes: gates.blocked_routes,
+    safe_jailbreak_policy: sourcePlan.safe_jailbreak_policy,
+    safety: {
+      real_execution_hard_block: loop.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      can_create_paper_orders: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function buildExperimentRows({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, gates }) {
+  const gateById = Object.fromEntries((gates.gates ?? []).map((gate) => [gate.id, gate]));
+  const runtimeReady = gateById.channel_ready?.status === "pass";
+  const cronReady = gateById.cron_ready?.status === "pass";
+  const paperReady = gateById.paper_ready?.status === "pass";
+  const learningReady = gateById.learning_ready?.status === "pass";
+  const enterpriseEligible = gateById.enterprise_review?.status === "pass";
+  const replayOrPersisted = Number(report.data_snapshot?.persisted_matches ?? 0) > 0
+    || report.data_snapshot?.provider_mode === "replay";
+  return [
+    experimentRow({
+      id: "runtime_channel_recovery",
+      title: "Recover local Hermes runtime and channel confidence",
+      status: runtimeReady ? "complete" : "ready",
+      priorityScore: runtimeReady ? 20 : 95,
+      command: "npm run hermes:runtime-fix-plan",
+      hypothesis: "Fixing gateway/doctor/channel prerequisites increases safe autonomy faster than model changes.",
+      prerequisites: ["real_execution_hard_block", "safe_jailbreak_policy"],
+      successMetrics: ["gateway_service_status", "doctor_status", "activation_allowed"],
+      evidence: [
+        `runtime_status=${loop.runtime?.status ?? "unknown"}`,
+        `gateway=${loop.runtime?.runtime_findings?.gateway_service_status ?? "unknown"}`,
+        `doctor=${loop.runtime?.runtime_findings?.doctor_status ?? "unknown"}`,
+      ],
+    }),
+    experimentRow({
+      id: "source_discovery_backfill",
+      title: "Find allowed low-cost data backfill routes",
+      status: sourcePlan.safe_jailbreak_policy?.bypass_allowed === false ? "ready" : "blocked",
+      priorityScore: replayOrPersisted ? 65 : 90,
+      command: "npm --silent run hermes:source-discovery",
+      hypothesis: "Allowed API/replay/operator-note routes can improve data density without scraping, bypass, or paid quota spend.",
+      prerequisites: ["licensed_or_internal_sources_only"],
+      successMetrics: ["allowed_collection_paths", "blocked_routes_count", "persisted_matches"],
+      evidence: [
+        `discovery_scope=${(sourcePlan.discovery_scope ?? []).join(",")}`,
+        `persisted_matches=${report.data_snapshot?.persisted_matches ?? 0}`,
+      ],
+    }),
+    experimentRow({
+      id: "live_collection_cadence",
+      title: "Tune live collection cadence from match pulse and quota",
+      status: runtimeReady && replayOrPersisted ? "ready" : "blocked",
+      priorityScore: runtimeReady ? 82 : 55,
+      command: "npm --silent run hermes:collection-plan",
+      hypothesis: "Event-driven collection around high-attention matches improves freshness while reducing unnecessary calls.",
+      prerequisites: ["runtime_ready", "persisted_or_replay_state"],
+      successMetrics: ["effective_target_count", "odds_age_ms", "score_age_ms", "quota_budget_utilization"],
+      evidence: [
+        `collection_status=${loop.live_stats?.collection_status ?? "unknown"}`,
+        `throttle_level=${loop.quota_plan?.throttle_level ?? "unknown"}`,
+        `provider_commands=${loop.quota_plan?.provider_command_count ?? 0}`,
+      ],
+    }),
+    experimentRow({
+      id: "paper_autopilot_rehearsal",
+      title: "Run protected paper-autopilot rehearsal when backend gates allow it",
+      status: paperReady ? "ready" : "blocked",
+      priorityScore: paperReady ? 100 : 45,
+      command: "npm run hermes:autopilot",
+      hypothesis: "Creating only backend-approved paper orders is the highest-value learning loop once runtime and signal gates are clean.",
+      prerequisites: ["paper_ready", "admin_token", "backend_signal_gates"],
+      successMetrics: ["paper_orders_created", "paper_orders_skipped", "clv", "pnl", "training_examples_ready"],
+      evidence: [
+        `event_can_run_paper_autopilot=${eventPlan.can_run_paper_autopilot}`,
+        `entry_signals=${report.signal_snapshot?.entry_signals ?? 0}`,
+        `active_ceiling=${gates.active_ceiling?.id ?? "unknown"}`,
+      ],
+      requiresAdminToken: true,
+    }),
+    experimentRow({
+      id: "learning_review_readiness",
+      title: "Measure whether paper evidence is ready for learning review",
+      status: learningReady ? "ready" : "blocked",
+      priorityScore: learningReady ? 88 : 50,
+      command: "npm --silent run hermes:learning-review",
+      hypothesis: "Model/staking changes should be reviewed only after enough settled paper examples prove ROI, CLV, calibration and drawdown.",
+      prerequisites: ["settled_paper_examples", "training_examples"],
+      successMetrics: ["roi", "clv", "brier", "log_loss", "max_drawdown"],
+      evidence: [
+        `review_status=${loop.learning_review?.review_status ?? "unknown"}`,
+        `capability_status=${capabilityAuditPlan.status}`,
+      ],
+    }),
+    experimentRow({
+      id: "enterprise_eligibility_review",
+      title: "Keep enterprise review behind complete budget evidence",
+      status: enterpriseEligible ? "ready" : "locked",
+      priorityScore: enterpriseEligible ? 70 : 15,
+      command: "npm run api:check:operational-truth -- --pretty",
+      hypothesis: "Enterprise spend should start only after budget replay, smokes and healthy cursor evidence are complete.",
+      prerequisites: ["budget_chain_completed", "healthy_odds_cursor", "provider_smokes"],
+      successMetrics: ["budget_chain_completed", "enterprise_eligible", "resync_required"],
+      evidence: [
+        `budget_chain_completed=${loop.budget_chain?.completed}`,
+        `enterprise_eligible=${loop.budget_chain?.enterprise_eligible}`,
+        `current_step=${loop.budget_chain?.current_step_label ?? "none"}`,
+      ],
+    }),
+  ];
+}
+
+function experimentRow({
+  id,
+  title,
+  status,
+  priorityScore,
+  command,
+  hypothesis,
+  prerequisites,
+  successMetrics,
+  evidence,
+  requiresAdminToken = false,
+}) {
+  return {
+    id,
+    title,
+    status,
+    priority_score: clampScore(priorityScore),
+    command,
+    hypothesis,
+    prerequisites,
+    success_metrics: successMetrics,
+    evidence,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    requires_admin_token: Boolean(requiresAdminToken),
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
 function buildCapabilityRows({ loop, report, eventPlan, sourcePlan, autonomyPlan, opsPacket }) {
   const matrix = autonomyPlan.autonomy_matrix ?? {};
   const liveStats = loop.live_stats ?? {};
@@ -3210,6 +3425,12 @@ function schedulerSchedule(loop) {
       command: "npm --silent run hermes:autonomy-gates",
       everyMinutes: 5,
       reason: "Prove the current safe autonomy ceiling before channel, cron, paper or enterprise escalation.",
+    }),
+    schedulerItem({
+      id: "experiment_lab",
+      command: "npm --silent run hermes:experiment-lab",
+      everyMinutes: 15,
+      reason: "Rank safe Hermes experiments for collection, processing, paper learning and enterprise readiness without executing them.",
     }),
     schedulerItem({
       id: "runtime_check",
@@ -5310,6 +5531,7 @@ const commands = {
   "ops-compiler": opsCompiler,
   "capability-audit": capabilityAudit,
   "autonomy-gates": autonomyGates,
+  "experiment-lab": experimentLab,
   "operator-packet": operatorPacket,
   "operator-ledger": operatorLedger,
   "operator-ledger-report": operatorLedgerReport,

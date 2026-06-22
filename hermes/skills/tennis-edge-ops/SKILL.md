@@ -50,6 +50,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs capability-audit
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autonomy-gates
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs experiment-lab
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-packet
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs operator-ledger-report
@@ -152,6 +153,10 @@ The `autonomy-gates` command proves the highest current safe autonomy level with
 ordered gates, `active_ceiling`, and `next_required_gate`. It is read-only, must
 not create paper orders, and keeps enterprise review locked until the budget
 chain is eligible.
+The `experiment-lab` command ranks safe research/test paths with hypotheses,
+prerequisites, `success_metrics`, evidence, and command previews. It is
+read-only and must not execute experiments, spend provider quota, or create
+orders.
 Runtime commands should carry `runtime_findings` and non-executed diagnostic
 actions, with `mutates_runtime_if_run=true` for manual gateway/service changes.
 The `operator-packet` command compresses safe-loop into a short channel-safe

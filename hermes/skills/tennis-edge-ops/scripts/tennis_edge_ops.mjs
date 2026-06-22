@@ -920,7 +920,13 @@ function buildDoctorTriage({ hermesBin, doctorTimeoutMs, commands, runtimeFindin
   const versionCommand = commands.find((item) => item.name === "hermes version");
   const statusCommand = commands.find((item) => item.name === "hermes status");
   const doctorCommand = commands.find((item) => item.name === "hermes doctor short");
-  const likelyCause = doctorTriageLikelyCause({ versionCommand, statusCommand, doctorCommand, runtimeFindings });
+  const likelyCause = doctorTriageLikelyCause({
+    versionCommand,
+    statusCommand,
+    doctorCommand,
+    runtimeFindings,
+    doctorTimeoutMs,
+  });
   return {
     generated_at: new Date().toISOString(),
     mode: "doctor_triage",
@@ -945,7 +951,7 @@ function buildDoctorTriage({ hermesBin, doctorTimeoutMs, commands, runtimeFindin
       stdout_preview: doctorTriagePreview(item.stdout),
       stderr_preview: doctorTriagePreview(item.stderr),
     })),
-    next_safe_actions: doctorTriageActions({ likelyCause, runtimeFindings }),
+    next_safe_actions: doctorTriageActions({ likelyCause, runtimeFindings, doctorTimeoutMs }),
     verification_commands: [
       "npm run hermes:doctor-triage",
       "npm run hermes:runtime-check",
@@ -964,7 +970,7 @@ function buildDoctorTriage({ hermesBin, doctorTimeoutMs, commands, runtimeFindin
   };
 }
 
-function doctorTriageLikelyCause({ versionCommand, statusCommand, doctorCommand, runtimeFindings }) {
+function doctorTriageLikelyCause({ versionCommand, statusCommand, doctorCommand, runtimeFindings, doctorTimeoutMs }) {
   if ([versionCommand, statusCommand, doctorCommand].some((item) => item?.error_code === "command_not_found")) {
     return "hermes_cli_not_found";
   }
@@ -975,6 +981,9 @@ function doctorTriageLikelyCause({ versionCommand, statusCommand, doctorCommand,
     return "gateway_status_unavailable";
   }
   if (doctorCommand?.timed_out) {
+    if (Number(doctorTimeoutMs) >= 5_000 && runtimeFindings.gateway_service_status === "running") {
+      return "persistent_doctor_timeout_with_gateway_running";
+    }
     return runtimeFindings.gateway_service_status === "running"
       ? "doctor_timeout_with_gateway_running"
       : "doctor_timeout";
@@ -988,7 +997,7 @@ function doctorTriageLikelyCause({ versionCommand, statusCommand, doctorCommand,
   return "unknown";
 }
 
-function doctorTriageActions({ likelyCause, runtimeFindings }) {
+function doctorTriageActions({ likelyCause, runtimeFindings, doctorTimeoutMs }) {
   const base = [
     doctorTriageAction({
       id: "keep_channel_observe_only",
@@ -1034,6 +1043,25 @@ function doctorTriageActions({ likelyCause, runtimeFindings }) {
         priority: 20,
         command: "npm run hermes:runtime-check",
         reason: `Current gateway=${runtimeFindings.gateway_service_status}; use sanitized repo diagnostics instead of unbounded doctor calls.`,
+      }),
+      ...base,
+    ];
+  }
+  if (likelyCause === "persistent_doctor_timeout_with_gateway_running") {
+    return [
+      doctorTriageAction({
+        id: "persistent_doctor_timeout_review",
+        priority: 10,
+        command: "npm run hermes:runtime-check",
+        reason: `Doctor still timed out after ${doctorTimeoutMs}ms while gateway is running; stop repeating doctor probes and review runtime status/update path manually.`,
+      }),
+      doctorTriageAction({
+        id: "manual_hermes_update_review",
+        priority: 20,
+        command: "hermes update",
+        reason: "Hermes version output may report an available update; update only from an operator shell after reviewing release risk.",
+        mutatesRuntimeIfRun: true,
+        requiresOperatorConfirmation: true,
       }),
       ...base,
     ];

@@ -235,6 +235,10 @@ When `runtime_findings` already include a specific diagnostic action, the
 `runtime-fix-plan` command should prioritize that action over the generic
 `npm run hermes:runtime-check` fallback. For example, `doctor_timed_out` should
 route to bounded `npm run hermes:doctor-triage` before another runtime check.
+If `doctor-triage` still times out with `HERMES_DOCTOR_TRIAGE_TIMEOUT_MS=5000`
+and the gateway is running, classify it as persistent timeout and stop
+recommending the same bounded recheck. Report `hermes update` only as a manual
+operator review with `mutates_runtime_if_run=true`.
 The `operator-packet` command compresses safe-loop into a short channel-safe
 decision for Telegram/OpenClaw. It is read-only and never executes the next
 safe action it reports.

@@ -275,6 +275,11 @@ Specific runtime diagnostics outrank the generic runtime recheck. If the
 gateway is running but `hermes doctor` times out, the next action becomes
 `npm run hermes:doctor-triage`; if the gateway is stopped, manual gateway review
 outranks another broad runtime check. The packet still does not start services.
+When `doctor-triage` also times out with
+`HERMES_DOCTOR_TRIAGE_TIMEOUT_MS=5000`, it classifies the issue as persistent
+instead of recommending the same bounded recheck again. Any `hermes update`
+route is emitted only as a manual operator review with
+`mutates_runtime_if_run=true`.
 
 `hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
 turns the internal intelligence packet into compact events such as

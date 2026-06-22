@@ -47,6 +47,7 @@ npm run hermes:source-discovery
 npm run hermes:source-route-matrix
 npm run hermes:source-route-ledger
 npm run hermes:source-route-ledger-report
+npm run hermes:replay-backfill-contract
 npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
@@ -311,6 +312,12 @@ route/provider/bypass counters remain zero.
 Required step ids: `review_source_route_ledger_report_for_top_route_blocked_routes_and_operator_required_routes`,
 `map_the_top_route_to_internal_replay_or_licensed_adapter_contract_without_executing_it`,
 and `prove_route_provider_and_bypass_counters_remain_zero`.
+Use `hermes:replay-backfill-contract` when the top route is `replay_backfill`.
+It emits the offline `replay_backfill_to_operational_truth` contract with
+persisted match/score/odds/signal/paper-order inputs, `ReplayBackfillEvidence`,
+replay lab gates,
+implementation steps and validation commands. It stays read-only and cannot run
+provider APIs, browser scraping, sportsbook automation, bypasses or orders.
 
 Use `hermes:historical-backfill-plan` when Hermes needs more offline evidence
 for priors, calibration or backtests. It ranks internal replay, public

@@ -296,6 +296,11 @@ For source-route pressure, the handoff converts
 report, map the top route to replay/internal or licensed adapter contracts,
 keep scraping/sportsbook automation/bypass routes blocked, and prove
 route/provider/bypass counters remain zero.
+`hermes:replay-backfill-contract` is the first concrete adapter contract for
+that path: it maps `replay_backfill` to
+`replay_backfill_to_operational_truth` using persisted matches, score/odds
+ticks, signals, paper orders and replay lab gates. It is read-only and reports
+implementation evidence only.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

@@ -2397,6 +2397,111 @@ test("source-route-ledger-report summarizes repeated safe route recommendations"
   assert.equal(payload.next_recommendation.provider_api_call_allowed, false);
 });
 
+test("replay-backfill-contract turns replay route into offline evidence contract", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-replay-backfill-contract-"));
+  const sourceRouteLedgerPath = join(tempDir, "source-route-ledger.jsonl");
+  const sourceRouteRows = [
+    {
+      mode: "source_route_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      route_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "ready",
+      next_route_id: "replay_backfill",
+      next_route_status: "ready_now",
+      next_route_command: "npm run api:check:operational-truth -- --pretty",
+      next_route_cost_tier: "free_internal",
+      blocked_route_ids: ["odds_live_websocket"],
+      operator_required_route_ids: ["odds_archive_budget_smoke"],
+      safe_jailbreak_bypass_allowed: false,
+    },
+    {
+      mode: "source_route_ledger_record",
+      outcome: "observed",
+      action_executed: false,
+      route_command_executed: false,
+      provider_command_executed: false,
+      bypass_attempted: false,
+      status: "ready",
+      next_route_id: "replay_backfill",
+      next_route_status: "ready_now",
+      next_route_command: "npm run api:check:operational-truth -- --pretty",
+      next_route_cost_tier: "free_internal",
+      blocked_route_ids: ["odds_live_websocket"],
+      operator_required_route_ids: ["odds_archive_budget_smoke"],
+      safe_jailbreak_bypass_allowed: false,
+    },
+  ];
+  writeFileSync(sourceRouteLedgerPath, `${sourceRouteRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["replay-backfill-contract", `--api-base=${apiBase}`], {
+      env: { HERMES_SOURCE_ROUTE_LEDGER_PATH: sourceRouteLedgerPath },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "replay_backfill_contract");
+    assert.equal(payload.status, "ready");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.source_route.id, "replay_backfill");
+    assert.equal(payload.source_route.status, "ready_now");
+    assert.equal(payload.source_route_pressure, "observed");
+    assert.equal(payload.offline_contract.id, "replay_backfill_to_operational_truth");
+    assert.equal(payload.offline_contract.adapter_boundary, "internal_fastapi_read_models");
+    assert.equal(payload.offline_contract.input_contracts.includes("ReplayLabSnapshot"), true);
+    assert.equal(payload.offline_contract.output_contracts.includes("ReplayBackfillEvidence"), true);
+    assert.equal(payload.offline_contract.output_contracts.includes("ClosingLineProxySeed"), true);
+    assert.equal(payload.offline_contract.validation_command, "npm run api:check:operational-truth -- --pretty");
+    assert.equal(payload.offline_contract.provider_api_call_allowed, false);
+    assert.equal(payload.evidence.persisted_matches, 2);
+    assert.equal(payload.evidence.replay_contract_ready, "ready");
+    assert.equal(payload.evidence.source_route_top_next_route, "replay_backfill");
+    assert.equal(payload.evidence.route_command_executed_count, 0);
+    assert.equal(payload.evidence.provider_command_executed_count, 0);
+    assert.equal(payload.evidence.bypass_attempted_count, 0);
+    assert.equal(payload.implementation_steps.includes("map_persisted_matches_score_ticks_odds_ticks_and_signals_into_replay_backfill_evidence"), true);
+    assert.equal(payload.implementation_steps.includes("prove_no_provider_api_calls_no_browser_scraping_and_no_bypass"), true);
+    assert.equal(payload.acceptance_criteria.includes("offline_contract.id=replay_backfill_to_operational_truth"), true);
+    assert.equal(payload.acceptance_criteria.includes("provider_api_call_allowed=false"), true);
+    assert.equal(payload.validation_commands.includes("npm --silent run hermes:replay-backfill-contract"), true);
+    assert.equal(payload.validation_commands.includes("npm run api:check:operational-truth -- --pretty"), true);
+    assert.equal(payload.gates.every((gate) => gate.status === "pass"), true);
+    assert.equal(payload.next_action.id, "implement_replay_backfill_evidence");
+    assert.equal(payload.next_action.provider_api_call_allowed, false);
+    assert.equal(payload.allowed_inputs.includes("persisted_postgres_replay"), true);
+    assert.equal(payload.forbidden_actions.includes("sportsbook_ui_automation"), true);
+    assert.equal(payload.forbidden_actions.includes("credential_or_session_extraction"), true);
+    assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
+    assert.equal(payload.safety.anti_bot_bypass_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("historical-backfill-plan ranks allowed historical sources without fetching them", async () => {
   const called = [];
   const fixtures = eventRouterFixtures();

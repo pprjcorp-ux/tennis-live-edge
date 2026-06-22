@@ -64,6 +64,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-discovery
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-matrix
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-ledger
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs source-route-ledger-report
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs replay-backfill-contract
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs historical-backfill-plan
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs trigger-policy
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-compiler
@@ -226,6 +227,11 @@ bypass. The `source-route-ledger-report` command summarizes repeated route
 recommendations and accidental execution/bypass claims. Backlog, experiment
 and autonomy-effectiveness packets must consume that report before adding
 provider spend or collection importers.
+The `replay-backfill-contract` command turns the `replay_backfill` route into
+the offline `replay_backfill_to_operational_truth` contract. It maps persisted
+matches, score ticks, odds ticks, signals, paper orders and replay lab evidence
+into implementation inputs without provider calls, browser scraping,
+sportsbook automation or bypass.
 The `trigger-policy` command maps current state to debounced wakeup triggers
 for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
 read-only and must not execute trigger commands. Partial runtime should emit a

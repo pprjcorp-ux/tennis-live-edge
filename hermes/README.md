@@ -99,6 +99,7 @@ npm run hermes:source-discovery
 npm run hermes:source-route-matrix
 npm run hermes:source-route-ledger
 npm run hermes:source-route-ledger-report
+npm run hermes:replay-backfill-contract
 npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
@@ -326,6 +327,13 @@ recommendations, blocked routes, operator-required routes, and any accidental
 execution/bypass claims. `hermes:backlog-plan`, `hermes:experiment-lab`, and
 `hermes:autonomy-effectiveness` consume this report so repeated allowed-route
 decisions become implementation work before provider spend or importer code.
+
+`hermes:replay-backfill-contract` turns the `replay_backfill` source route into
+an offline contract named `replay_backfill_to_operational_truth`. It maps
+persisted matches, score ticks, odds ticks, signals, paper orders and replay
+lab evidence into implementation inputs and acceptance criteria. It is
+read-only: no provider calls, no browser scraping, no sportsbook automation, no
+bypass, no paper order creation and no real execution.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam

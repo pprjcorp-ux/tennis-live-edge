@@ -91,6 +91,14 @@ def test_coverage_gate_recognizes_all_grand_slam_names_for_atp_and_wta(tournamen
     assert coverage_decision(_grand_slam_match(tournament, Tour.WTA), settings).eligible
 
 
+def test_lean_atp_empty_coverage_uses_default_tour_scope() -> None:
+    settings = Settings(data_mode="sample", runtime_profile="lean_atp", coverage="")
+
+    assert settings.coverage_set == {"atp_main", "grand_slam_men", "grand_slam_women"}
+    assert coverage_decision(_grand_slam_match("Wimbledon", Tour.ATP), settings).eligible
+    assert coverage_decision(_grand_slam_match("Wimbledon", Tour.WTA), settings).eligible
+
+
 def test_coverage_gate_allows_atp_and_grand_slam_wta_but_blocks_wta_tour_and_itf_entries() -> None:
     settings = Settings(data_mode="sample", runtime_profile="lean_atp")
     repo = AnalysisRepository(settings)
@@ -120,6 +128,31 @@ def test_coverage_gate_allows_atp_and_grand_slam_wta_but_blocks_wta_tour_and_itf
         for analysis in non_covered
         for signal in analysis.signals
     )
+
+
+def test_enterprise_cost_report_only_adds_enterprise_usage_when_feeds_are_enabled() -> None:
+    disabled_settings = Settings(
+        data_mode="sample",
+        runtime_profile="enterprise_roi_clv",
+        enterprise_feeds_enabled=False,
+    )
+    enabled_settings = Settings(
+        data_mode="sample",
+        runtime_profile="enterprise_roi_clv",
+        enterprise_feeds_enabled=True,
+    )
+
+    disabled_report = asyncio.run(
+        AnalysisRepository(disabled_settings).daily_cost_report(date.today())
+    )
+    enabled_report = asyncio.run(
+        AnalysisRepository(enabled_settings).daily_cost_report(date.today())
+    )
+
+    assert "sportradar" not in {
+        usage.provider for usage in disabled_report.api_calls_by_provider
+    }
+    assert "sportradar" in {usage.provider for usage in enabled_report.api_calls_by_provider}
 
 
 def test_daily_cost_report_counts_skipped_matches_and_signal_cost() -> None:

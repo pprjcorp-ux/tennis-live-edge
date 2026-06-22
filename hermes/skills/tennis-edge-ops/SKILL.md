@@ -207,6 +207,9 @@ orders or spends provider quota.
 The `autonomy-brief` command converts safe-loop, live-window, quota, research
 principles, and ledger priorities into one autonomy matrix and action queue. It
 is read-only and must not execute the queued actions.
+When safe-loop reports `runtime_partial`, it should recommend
+`partial_runtime_read_only`, keep the bounded runtime diagnostic first, and add
+the operator-packet route as a summary-only action.
 The `source-discovery` command maps useful data classes to allowed acquisition
 paths and blocked routes. It is read-only and must treat jailbreak as route
 discovery, never bypass.
@@ -216,7 +219,8 @@ evidence and blocked conditions. Provider routes must remain operator-only with
 `provider_api_call_allowed=false`.
 The `trigger-policy` command maps current state to debounced wakeup triggers
 for cron, Telegram, dashboard, Cloudflare Agent, and OpenClaw gateway. It is
-read-only and must not execute trigger commands.
+read-only and must not execute trigger commands. Partial runtime should emit a
+diagnostic trigger and a separate read-only operator-summary trigger.
 The `ops-compiler` command compiles trigger policy, source discovery, autonomy
 brief, operator packet, and model routing into one channel payload. It is
 read-only and must not execute compiled actions.
@@ -263,7 +267,8 @@ runtime probe, it should emit `runtime_api_connectivity_timeout_review` or
 shorter generic doctor triage.
 The `operator-packet` command compresses safe-loop into a short channel-safe
 decision for Telegram/OpenClaw. It is read-only and never executes the next
-safe action it reports.
+safe action it reports. It should include `read_only_route` when Hermes can
+summarize but cannot pass doctor/channel/paper gates.
 The `operator-ledger` command appends the channel packet to local JSONL with
 `action_executed=false`. It writes only the local audit row.
 The `operator-ledger-report` command summarizes that local JSONL without
@@ -272,7 +277,8 @@ The `runtime-fix-priorities` command converts repeated ledger blockers into
 non-mutating local remediation priorities.
 The `scheduler-rehearsal` command turns safe-loop output into a proposed local
 schedule and writes only a local JSONL audit row. It must not create cron jobs
-or execute scheduled commands.
+or execute scheduled commands. Partial runtime schedules the diagnostic command
+and the read-only operator-packet route separately.
 The `cron-proposal` command writes a local review manifest with `hermes cron add`
 command previews. It must not call `hermes cron add` and must exclude autopilot,
 provider-smoke, admin-token, quota-consuming, or order-creating jobs.

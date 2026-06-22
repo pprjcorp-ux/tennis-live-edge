@@ -232,6 +232,9 @@ It turns safe-loop state, live-window gates, quota throttles and ledger
 priorities into an autonomy matrix and action queue. It is the recommended
 packet for "jailbreak" requests because it explicitly lists allowed collection
 paths and forbidden bypasses while keeping every action non-executing.
+When runtime is partial, it recommends `partial_runtime_read_only`, keeps
+`doctor-triage` or the runtime diagnostic as the first action, and adds the
+operator-packet route as a summary-only action.
 
 Use `hermes:source-discovery` when Hermes needs to improve collection coverage
 without spending quota or scraping. It maps score state, live odds, archive
@@ -268,7 +271,8 @@ implementation priorities without provider calls or paper orders.
 Use `hermes:trigger-policy` when cron, Telegram, dashboard, Cloudflare Agent or
 OpenClaw needs to know when Hermes should wake up. It emits debounced triggers
 and commands, including Grand Slam readiness triggers, but never executes them,
-keeping LLM calls away from every odds tick.
+keeping LLM calls away from every odds tick. Partial runtime produces separate
+diagnostic and read-only summary triggers.
 
 Use `hermes:ops-compiler` when an external agent channel needs one packet
 instead of several commands. It compiles trigger policy, source discovery,
@@ -310,7 +314,7 @@ acceptance evidence, and the gates each item blocks.
 
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard
-and safety flags while staying read-only.
+read-only runtime route and safety flags while staying read-only.
 
 Use `hermes:operator-ledger` when an operator-channel decision should be
 audited locally. It appends one JSONL row with the packet, `outcome=observed`

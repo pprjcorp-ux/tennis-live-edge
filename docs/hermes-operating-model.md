@@ -107,6 +107,8 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Manual/weekly review for offline priors: `npm run hermes:historical-backfill-plan`.
 - Every 5 minutes for cron/webhook wakeup policy: `npm run hermes:trigger-policy`.
 - Every 5 minutes for an all-in-one agent-channel payload: `npm run hermes:ops-compiler`.
+- Every 5 minutes while Hermes is `runtime_partial`: keep the diagnostic
+  command as the next tick and also schedule the read-only operator-packet route.
 - Every 15 minutes or before autonomy escalation: `npm run hermes:capability-audit`.
 - Every 5 minutes before channel/cron/paper escalation: `npm run hermes:autonomy-gates`.
 - Every 15 minutes to rank safe operational experiments: `npm run hermes:experiment-lab`.
@@ -158,7 +160,10 @@ state, and learning review into one JSON decision. It is read-only and keeps
 Hermes can safely use right now. It combines the safe-loop, live-window gates,
 quota throttles and operator-ledger priorities into an autonomy matrix across
 collection, processing, live statistics, paper autopilot, learning and
-enterprise eligibility. It encodes the safe interpretation of "jailbreak":
+enterprise eligibility. When runtime is `runtime_partial`, the recommended lane
+is `partial_runtime_read_only`; the action queue keeps the bounded runtime
+diagnostic first and adds the operator-packet route as a non-executing summary
+path. It encodes the safe interpretation of "jailbreak":
 licensed APIs, websockets, internal endpoints, persisted replay, manual notes
 and public research are allowed; sportsbook UI automation, anti-bot bypass,
 geolocation bypass, credential/session extraction and real-money execution are
@@ -202,7 +207,8 @@ wake up. It turns runtime, events, source-discovery, Grand Slam readiness, quota
 and learning state into debounced triggers for cron, Telegram, dashboard,
 Cloudflare Agent and the OpenClaw gateway. It reports commands but does not run
 them, so every channel gets the same event-driven policy without asking an LLM
-to watch every tick.
+to watch every tick. A partial Hermes runtime emits two separate wakeups:
+bounded runtime diagnostics first, then the read-only operator summary route.
 
 `hermes:ops-compiler` is the preferred all-in-one payload for external agent
 channels. It compiles trigger policy, source discovery, Grand Slam readiness,
@@ -260,7 +266,8 @@ mutate runtime services.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,
-cost guard and safety flags for Telegram/OpenClaw without executing anything.
+cost guard, read-only runtime route and safety flags for Telegram/OpenClaw
+without executing anything.
 
 `hermes:operator-ledger` is the local trace for those channel decisions. It
 appends JSONL rows under `hermes/runs/` with `outcome=observed` and

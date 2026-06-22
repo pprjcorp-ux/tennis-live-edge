@@ -5863,13 +5863,16 @@ function buildCapabilityRows({ loop, report, eventPlan, sourcePlan, autonomyPlan
     capabilityRow({
       id: "runtime_and_channels",
       label: "Hermes local runtime and channel health",
-      status: loop.runtime?.status === "ready" ? "ready" : "degraded",
-      score: loop.runtime?.status === "ready" ? 100 : 35,
+      status: loop.status === "runtime_partial"
+        ? "partial_read_only"
+        : loop.runtime?.status === "ready" ? "ready" : "degraded",
+      score: loop.runtime?.status === "ready" ? 100 : loop.status === "runtime_partial" ? 60 : 35,
       command: runtimeReviewCommand(loop.runtime?.runtime_findings),
       reason: "Runtime diagnostics determine whether cron, Telegram and gateway packets can be trusted.",
       evidence: [
         `runtime.status=${loop.runtime?.status ?? "unknown"}`,
         `safe_loop.status=${loop.status}`,
+        `read_only_route=${loop.read_only_runtime_route?.command ?? "none"}`,
       ],
     }),
     capabilityRow({
@@ -6036,7 +6039,7 @@ function liveCollectionCapabilityScore({ loop, report, eventPlan }) {
 function capabilityAuditStatus({ loop, capabilities }) {
   if (loop.status === "safety_stop") return "safety_stop";
   if (capabilities.some((capability) => capability.status === "blocked")) return "blocked";
-  if (capabilities.some((capability) => ["degraded", "pending", "collecting", "monitor"].includes(capability.status))) {
+  if (capabilities.some((capability) => ["degraded", "partial_read_only", "pending", "collecting", "monitor"].includes(capability.status))) {
     return "partial";
   }
   return "ready";
@@ -6046,6 +6049,9 @@ function capabilityAutonomyCeiling({ loop, capabilities }) {
   const byId = Object.fromEntries(capabilities.map((capability) => [capability.id, capability]));
   if (loop.status === "safety_stop") {
     return ceiling("observe_only", "safety", "Real-execution or forbidden-route safety must be inspected first.");
+  }
+  if (loop.status === "runtime_partial" && loop.read_only_runtime_route) {
+    return ceiling("read_only_operator_packets", "local_runtime", "Hermes may produce summaries and ledgers while runtime doctor/channel gates stay blocked.");
   }
   if (byId.runtime_and_channels?.status !== "ready") {
     return ceiling("runtime_diagnostics", "local_runtime", "Hermes runtime must be healthy before more autonomy.");
@@ -6124,6 +6130,16 @@ function buildWakeTriggers({ loop, sourcePlan, grandSlam = null }) {
       command: runtimeReviewCommand(loop.runtime?.runtime_findings),
       condition: `runtime.status=${loop.runtime?.status ?? "unknown"}`,
       reason: runtimeReviewReason(loop.runtime?.runtime_findings),
+    }));
+  }
+  if (loop.read_only_runtime_route) {
+    triggers.push(wakeTrigger({
+      id: "partial_runtime_read_only_route",
+      priority: 11,
+      severity: "medium",
+      command: loop.read_only_runtime_route.command,
+      condition: `runtime_autonomy_impact=${loop.runtime_autonomy_impact?.status ?? "partial_runtime_available"}`,
+      reason: "Use the partial Hermes runtime for compact read-only summaries while diagnostics remain blocked.",
     }));
   }
   for (const event of loop.event_summary?.events ?? []) {
@@ -6389,6 +6405,14 @@ function chooseAutonomyLane(loop, runtimePriorities) {
   if (loop.status === "safety_stop") {
     return autonomyLane("safety_stop", 0, "safety", "Stop all automation and inspect real-execution safety.");
   }
+  if (loop.status === "runtime_partial" && loop.read_only_runtime_route) {
+    return autonomyLane(
+      "partial_runtime_read_only",
+      10,
+      "local_runtime",
+      "Use Hermes for read-only operator summaries while doctor/channel/paper gates remain blocked."
+    );
+  }
   if (loop.runtime?.status !== "ready") {
     return autonomyLane("stabilize_runtime", 10, "local_runtime", "Fix Hermes local runtime diagnostics before protected automation.");
   }
@@ -6432,6 +6456,15 @@ function buildAutonomyMatrix(loop) {
   const providerFrozen = loop.provider_api_call_allowed === false || loop.quota_plan?.throttle_level === "blocked";
   const liveStats = loop.live_stats ?? {};
   return {
+    runtime: {
+      status: loop.status === "runtime_partial" ? "partial_read_only" : loop.runtime?.status ?? "unknown",
+      capability: loop.runtime_capability ?? loop.runtime?.capability_summary ?? null,
+      autonomy_impact: loop.runtime_autonomy_impact ?? loop.runtime?.autonomy_impact ?? null,
+      read_only_runtime_route: loop.read_only_runtime_route ?? null,
+      reason: loop.read_only_runtime_route
+        ? "Hermes can produce read-only operator packets while protected autonomy gates stay blocked."
+        : "Hermes runtime capability is summarized from local diagnostics.",
+    },
     collect: {
       status: providerFrozen ? "frozen" : "candidate",
       source: providerFrozen ? "persisted_replay_and_internal_status" : "licensed_provider_api",
@@ -6483,6 +6516,18 @@ function buildAutonomyActionQueue(loop, runtimePriorities) {
       source: "safe_loop",
       requiresAdminToken: loop.next_best_command.requires_admin_token,
       writes: loop.next_best_command.writes,
+    }));
+  }
+  if (loop.read_only_runtime_route
+    && !actions.some((item) => item.command === loop.read_only_runtime_route.command)) {
+    actions.push(autonomyAction({
+      id: loop.read_only_runtime_route.id,
+      command: loop.read_only_runtime_route.command,
+      reason: loop.read_only_runtime_route.reason,
+      priority: 12,
+      source: "runtime_capability",
+      requiresAdminToken: loop.read_only_runtime_route.requires_admin_token,
+      writes: loop.read_only_runtime_route.writes,
     }));
   }
   for (const priority of runtimePriorities.priorities.slice(0, 3)) {
@@ -7577,6 +7622,7 @@ function buildSchedulerRehearsal(loop, grandSlam = null) {
       status: loop.status,
       active_phase: loop.active_phase,
       next_best_command: loop.next_best_command,
+      read_only_runtime_route: loop.read_only_runtime_route ?? null,
       sampling_policy: loop.live_stats?.sampling_policy,
       safety: loop.safety,
     },
@@ -7715,6 +7761,24 @@ function schedulerSchedule(loop, grandSlam = null) {
       reason: "Review ROI/CLV readiness periodically; deterministic gates still decide promotion.",
     }));
   }
+  if (loop.next_best_command?.command
+    && loop.runtime?.status !== "ready"
+    && loop.next_best_command.command !== "npm run hermes:runtime-check") {
+    rows.push(schedulerItem({
+      id: "runtime_diagnostic",
+      command: loop.next_best_command.command,
+      everyMinutes: 5,
+      reason: loop.next_best_command.reason ?? "Run the specific bounded runtime diagnostic without mutating Hermes.",
+    }));
+  }
+  if (loop.read_only_runtime_route) {
+    rows.push(schedulerItem({
+      id: "runtime_read_only_route",
+      command: loop.read_only_runtime_route.command,
+      everyMinutes: 5,
+      reason: loop.read_only_runtime_route.reason,
+    }));
+  }
   return dedupeSchedule(rows);
 }
 
@@ -7801,7 +7865,7 @@ function chooseSchedulerNextTick(loop, schedule) {
   const preferredCommand = loop.next_best_command?.command;
   const fromLoop = schedule.find((item) => item.command === preferredCommand);
   if (fromLoop) return fromLoop;
-  if (loop.status === "runtime_degraded") {
+  if (["runtime_degraded", "runtime_partial"].includes(loop.status)) {
     return schedule.find((item) => item.id === "runtime_check") ?? schedule[0] ?? null;
   }
   return schedule[0] ?? null;

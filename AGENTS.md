@@ -223,7 +223,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   real orders itself.
 - Hermes maximum-autonomy planning should consume `npm run hermes:autonomy-brief`;
   it is read-only, event-driven, no LLM per tick, and must treat "jailbreak" as
-  allowed-path discovery only, never bypass or sportsbook automation.
+  allowed-path discovery only, never bypass or sportsbook automation. When
+  runtime is `runtime_partial`, it should keep diagnostics first and expose the
+  read-only operator-packet route as a summary-only action.
 - Hermes data-source discovery should consume `npm run hermes:source-discovery`;
   it maps score, odds, archive, public context, operator notes, replay, and
   historical public backfill to allowed acquisition paths without live provider
@@ -241,7 +243,8 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes wakeup policy should consume `npm run hermes:trigger-policy`; it maps
   runtime, events, source discovery, Grand Slam readiness, quota, and learning
   state into debounced triggers for cron/webhook/Telegram/dashboard/Cloudflare/
-  OpenClaw without executing trigger commands.
+  OpenClaw without executing trigger commands. Partial runtime should produce a
+  diagnostic wakeup and a separate read-only summary wakeup.
 - Hermes external-agent orchestration should consume `npm run hermes:ops-compiler`;
   it compiles trigger policy, source discovery, Grand Slam readiness, autonomy
   brief, operator packet, and model routing into one non-executing payload.
@@ -274,7 +277,8 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   validation commands, and acceptance evidence.
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
-  `next_action` it reports.
+  `next_action` it reports. It should preserve `read_only_route` when Hermes can
+  summarize but cannot pass doctor/channel/paper gates.
 - Hermes operator decision auditing should consume `npm run hermes:operator-ledger`;
   it may write only local JSONL rows under `hermes/runs/` and must record
   `action_executed=false`.

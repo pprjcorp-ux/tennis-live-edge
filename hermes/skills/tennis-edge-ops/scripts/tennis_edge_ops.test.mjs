@@ -1894,6 +1894,50 @@ test("autonomy-brief consolidates safe Hermes operating decisions without execut
   }
 });
 
+test("autonomy-brief routes partial Hermes runtime to read-only summaries", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-autonomy-brief-partial-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(fakeHermes, partialHermesScript(), { mode: 0o755 });
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["autonomy-brief", `--api-base=${apiBase}`], {
+      env: { HERMES_BIN: fakeHermes },
+      timeoutMs: 8_000,
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "autonomy_brief");
+    assert.equal(payload.status, "runtime_partial");
+    assert.equal(payload.recommended_lane.id, "partial_runtime_read_only");
+    assert.equal(payload.recommended_lane.executes_now, false);
+    assert.equal(payload.autonomy_matrix.runtime.status, "partial_read_only");
+    assert.equal(payload.autonomy_matrix.runtime.read_only_runtime_route.command, "npm --silent run hermes:operator-packet");
+    assert.equal(payload.action_queue[0].command, "npm run hermes:doctor-triage");
+    assert.equal(payload.action_queue.some((item) => item.source === "runtime_capability"
+      && item.command === "npm --silent run hermes:operator-packet"), true);
+    assert.equal(payload.action_queue.every((item) => item.executes_now === false), true);
+    assert.equal(payload.action_queue.every((item) => item.provider_api_call_allowed === false), true);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("source-discovery maps safe data acquisition paths without bypasses or live calls", async () => {
   const called = [];
   const fixtures = eventRouterFixtures({
@@ -2258,6 +2302,46 @@ test("trigger-policy emits event wakeups without executing commands or live call
     assert.equal(payload.next_wakeup.command, "npm run hermes:runtime-check");
     assert.equal(payload.debounce_policy.llm_per_tick_allowed, false);
     assert.equal(payload.forbidden_actions.includes("anti_bot_bypass"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("trigger-policy exposes partial runtime read-only wakeup after diagnostics", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-trigger-policy-partial-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(fakeHermes, partialHermesScript(), { mode: 0o755 });
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["trigger-policy", `--api-base=${apiBase}`], {
+      env: { HERMES_BIN: fakeHermes },
+      timeoutMs: 8_000,
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "trigger_policy");
+    assert.equal(payload.status, "runtime_partial");
+    assert.equal(payload.next_wakeup.command, "npm run hermes:doctor-triage");
+    const routeTrigger = payload.triggers.find((item) => item.id === "partial_runtime_read_only_route");
+    assert.equal(routeTrigger.command, "npm --silent run hermes:operator-packet");
+    assert.equal(routeTrigger.executes_now, false);
+    assert.equal(routeTrigger.provider_api_call_allowed, false);
+    assert.equal(routeTrigger.can_create_paper_orders, false);
+    assert.equal(routeTrigger.can_submit_real_orders, false);
   } finally {
     server.close();
   }
@@ -3869,6 +3953,61 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(audit.mode, "scheduler_rehearsal");
     assert.equal(audit.next_tick.command, "npm run hermes:runtime-check");
     assert.equal(audit.executed_commands.length, 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("scheduler-rehearsal schedules partial runtime summaries without replacing diagnostics", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-scheduler-partial-"));
+  const runLog = join(tempDir, "scheduler-runs.jsonl");
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(fakeHermes, partialHermesScript(), { mode: 0o755 });
+  const fixtures = eventRouterFixtures({
+    "/api/v1/signals/live": [],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["scheduler-rehearsal", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        HERMES_SCHEDULER_RUN_LOG: runLog,
+      },
+      timeoutMs: 8_000,
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "scheduler_rehearsal");
+    assert.equal(payload.status, "runtime_partial");
+    assert.equal(payload.next_tick.command, "npm run hermes:doctor-triage");
+    assert.equal(payload.safe_loop.read_only_runtime_route.command, "npm --silent run hermes:operator-packet");
+    const diagnostic = payload.schedule.find((item) => item.id === "runtime_diagnostic");
+    assert.equal(diagnostic.command, "npm run hermes:doctor-triage");
+    assert.equal(diagnostic.execute_now, false);
+    const route = payload.schedule.find((item) => item.id === "runtime_read_only_route");
+    assert.equal(route.command, "npm --silent run hermes:operator-packet");
+    assert.equal(route.execute_now, false);
+    assert.equal(route.provider_api_call_allowed, false);
+    assert.equal(route.can_create_paper_orders, false);
+    assert.equal(route.can_submit_real_orders, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    const lines = readFileSync(runLog, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const audit = JSON.parse(lines[0]);
+    assert.equal(audit.next_tick.command, "npm run hermes:doctor-triage");
   } finally {
     server.close();
   }

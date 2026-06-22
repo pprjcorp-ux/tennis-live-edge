@@ -248,7 +248,9 @@ surfaces.
 state, quota throttle and local ledger priorities into one operating packet. It
 is the preferred "maximum autonomy without more authority" view: read-only,
 event-driven, no LLM per tick, no provider calls, no paper orders, and no real
-execution.
+execution. When runtime is `runtime_partial`, it recommends the read-only
+runtime lane, keeps diagnostics first, and adds the operator-packet route as a
+summary-only action.
 
 `hermes:source-discovery` maps every useful data class to safe acquisition
 paths: licensed provider APIs, provider websocket, internal FastAPI endpoints,
@@ -292,7 +294,8 @@ implementation priorities instead of manual guesswork.
 `hermes:trigger-policy` turns runtime, event, source-discovery, Grand Slam
 readiness, quota and learning state into safe wakeup triggers for cron,
 Telegram, dashboard, Cloudflare Agent and OpenClaw gateway. It never executes
-trigger commands and keeps LLM work out of per-tick processing.
+trigger commands and keeps LLM work out of per-tick processing. Partial runtime
+emits both a diagnostic trigger and a lower-priority read-only summary trigger.
 
 `hermes:ops-compiler` is the single orchestration packet for agent channels. It
 compiles trigger policy, source discovery, Grand Slam readiness, autonomy brief,
@@ -340,7 +343,9 @@ with adaptive cadence: low-frequency off-calendar, tighter during a configured
 Grand Slam window, and five-minute checks when backend Grand Slam rows are
 paper-ready. The schedule also includes `hermes:grand-slam-mission` at the same
 cadence so channels can consume the full mission packet without calling
-provider APIs.
+provider APIs. If Hermes is `runtime_partial`, the schedule keeps the bounded
+diagnostic command as the next tick and adds the read-only operator-packet
+route as a separate non-executing job candidate.
 
 `hermes:cron-proposal` writes a reviewable local manifest at
 `hermes/runs/cron-proposal.json` with exact `hermes cron add` command previews.

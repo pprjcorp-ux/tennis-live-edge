@@ -1460,6 +1460,34 @@ async function liveController() {
   printJson(await liveControllerData());
 }
 
+async function grandSlamReadiness() {
+  printJson(await grandSlamReadinessData());
+}
+
+async function grandSlamReadinessData() {
+  const [backend, report, matches] = await Promise.all([
+    backendReadinessData(),
+    intelligenceData(),
+    liveMatchesData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  const liveWindowPlan = buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan);
+  const pulse = buildMatchPulse({ report, eventPlan, liveWindowPlan, matches });
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+  return buildGrandSlamReadiness({
+    backend,
+    report,
+    eventPlan,
+    liveWindowPlan,
+    pulse,
+    sourceRoutes,
+    matches,
+  });
+}
+
 async function liveControllerData() {
   const [report, matches] = await Promise.all([
     intelligenceData(),
@@ -2652,6 +2680,7 @@ function buildIntelligenceReport({
       active_plan: costProfile.active_plan,
       estimated_monthly_spend_usd: costProfile.estimated_monthly_spend_usd,
       monthly_budget_usd: costProfile.monthly_budget_usd,
+      coverage_scope: costProfile.coverage_scope ?? [],
       daily_live_api_calls: costReport.live_api_calls,
       cost_per_signal_usd: costReport.cost_per_signal_usd,
     },
@@ -7591,6 +7620,354 @@ function matchPulseAttention({
   return "cold_monitor";
 }
 
+const GRAND_SLAM_MATCHERS = [
+  {
+    id: "australian_open",
+    names: ["australian open"],
+    label: "Australian Open",
+    windows: [{ year: 2026, start: "2026-01-18", end: "2026-02-01" }],
+  },
+  {
+    id: "roland_garros",
+    names: ["roland garros", "french open"],
+    label: "Roland Garros",
+    windows: [{ year: 2026, start: "2026-05-24", end: "2026-06-07" }],
+  },
+  {
+    id: "wimbledon",
+    names: ["wimbledon", "the championships"],
+    label: "Wimbledon",
+    windows: [{ year: 2026, start: "2026-06-29", end: "2026-07-12" }],
+  },
+  {
+    id: "us_open",
+    names: ["us open", "u.s. open", "united states open"],
+    label: "US Open",
+    windows: [{ year: 2026, start: "2026-08-24", end: "2026-09-13" }],
+  },
+];
+
+function buildGrandSlamReadiness({
+  backend,
+  report,
+  eventPlan,
+  liveWindowPlan,
+  pulse,
+  sourceRoutes,
+  matches,
+}) {
+  const today = grandSlamToday();
+  const activeSlams = activeGrandSlams(today);
+  const slamMatches = matches
+    .map((analysis) => grandSlamMatchRow(analysis))
+    .filter((row) => row.is_grand_slam);
+  const pulseByMatchId = new Map((pulse.watchlist ?? []).map((row) => [row.match_id, row]));
+  const predictionRows = slamMatches
+    .map((row) => ({
+      ...row,
+      pulse: pulseByMatchId.get(row.match_id) ?? null,
+    }))
+    .filter((row) => grandSlamPredictionAvailable(row));
+  const gates = grandSlamReadinessGates({
+    backend,
+    report,
+    liveWindowPlan,
+    activeSlams,
+    slamMatches,
+    predictionRows,
+  });
+  const blockers = gates.filter((gate) => gate.status === "fail").map((gate) => gate.id);
+  const status = grandSlamReadinessStatus({ gates, activeSlams, slamMatches, predictionRows, liveWindowPlan });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "grand_slam_readiness",
+    status,
+    prediction_ready: ["prediction_ready", "paper_ready"].includes(status),
+    paper_ready: status === "paper_ready",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    date: today.toISOString().slice(0, 10),
+    active_grand_slams: activeSlams.map((slam) => ({
+      id: slam.id,
+      label: slam.label,
+      window: slam.window,
+    })),
+    coverage_scope: report.cost_snapshot?.coverage_scope ?? backendUnavailableCostProfile().coverage_scope,
+    backend_status: backend.status,
+    provider_mode: report.data_snapshot?.provider_mode,
+    live_window_status: liveWindowPlan.status,
+    source_route: sourceRoutes.next_route ? {
+      id: sourceRoutes.next_route.id,
+      lane: sourceRoutes.next_route.lane,
+      status: sourceRoutes.next_route.status,
+      cost_tier: sourceRoutes.next_route.cost_tier,
+      command: sourceRoutes.next_route.command,
+    } : null,
+    matches: {
+      total_visible: matches.length,
+      grand_slam_visible: slamMatches.length,
+      prediction_rows: predictionRows.length,
+      paper_candidates: predictionRows.filter((row) => row.pulse?.attention === "paper_candidate").length,
+      preview: predictionRows.slice(0, 8).map(grandSlamPredictionPreview),
+    },
+    gates,
+    blockers,
+    next_action: grandSlamReadinessNextAction({
+      status,
+      backend,
+      report,
+      liveWindowPlan,
+      sourceRoutes,
+      activeSlams,
+      slamMatches,
+    }),
+    operating_policy: {
+      hermes_role: "supervisor_and_router",
+      probability_engine: "fastapi_deterministic_backend",
+      allowed_paths: report.allowed_collection_paths ?? [],
+      forbidden_paths: report.forbidden_collection_paths ?? [],
+      provider_spend_requires_operator: true,
+      sportsbook_browser_automation_allowed: false,
+      bypass_allowed: false,
+    },
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block === true,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function grandSlamToday() {
+  const override = optionValue("--date") ?? process.env.HERMES_GRAND_SLAM_DATE;
+  const date = override ? new Date(`${override}T12:00:00Z`) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function activeGrandSlams(date) {
+  const day = date.toISOString().slice(0, 10);
+  return GRAND_SLAM_MATCHERS.flatMap((slam) => (
+    slam.windows
+      .filter((window) => day >= window.start && day <= window.end)
+      .map((window) => ({ ...slam, window }))
+  ));
+}
+
+function grandSlamMatchRow(analysis) {
+  const match = analysis.match ?? {};
+  const tournament = String(match.tournament ?? "");
+  const matcher = grandSlamMatcherForTournament(tournament);
+  return {
+    match_id: match.id ?? null,
+    label: `${match.player1?.name ?? "Player 1"} vs ${match.player2?.name ?? "Player 2"}`,
+    tournament,
+    tour: match.tour ?? null,
+    round: match.round ?? null,
+    status: match.state?.status ?? null,
+    grand_slam_id: matcher?.id ?? null,
+    grand_slam_label: matcher?.label ?? null,
+    is_grand_slam: Boolean(matcher),
+    prediction: analysis.prediction ?? null,
+    signals: analysis.signals ?? [],
+    freshness: analysis.freshness ?? {},
+  };
+}
+
+function grandSlamMatcherForTournament(tournament) {
+  const normalized = tournament.toLowerCase();
+  return GRAND_SLAM_MATCHERS.find((slam) => (
+    slam.names.some((name) => normalized.includes(name))
+  )) ?? null;
+}
+
+function grandSlamPredictionAvailable(row) {
+  const prediction = row.prediction ?? {};
+  return Number.isFinite(Number(prediction.p1_win_prob))
+    && Number.isFinite(Number(prediction.p2_win_prob));
+}
+
+function grandSlamPredictionPreview(row) {
+  return {
+    match_id: row.match_id,
+    label: row.label,
+    tournament: row.tournament,
+    tour: row.tour,
+    round: row.round,
+    status: row.status,
+    p1_win_prob: row.prediction?.p1_win_prob,
+    p2_win_prob: row.prediction?.p2_win_prob,
+    confidence: row.prediction?.confidence,
+    model_version: row.prediction?.model_version,
+    signal_status: row.pulse?.signal?.status ?? null,
+    attention: row.pulse?.attention ?? null,
+    score_age_ms: Number.isFinite(Number(row.freshness?.score_age_ms))
+      ? Number(row.freshness.score_age_ms)
+      : null,
+    odds_age_ms: Number.isFinite(Number(row.freshness?.odds_age_ms))
+      ? Number(row.freshness.odds_age_ms)
+      : null,
+  };
+}
+
+function grandSlamReadinessGates({
+  backend,
+  report,
+  liveWindowPlan,
+  activeSlams,
+  slamMatches,
+  predictionRows,
+}) {
+  const coverage = report.cost_snapshot?.coverage_scope ?? [];
+  return [
+    grandSlamGate({
+      id: "real_execution_hard_block",
+      status: report.safety?.real_execution_hard_block === true
+        && report.safety?.can_submit_real_orders !== true ? "pass" : "fail",
+      summary: "Real execution must remain hard-blocked.",
+    }),
+    grandSlamGate({
+      id: "backend_ready",
+      status: backend.status === "ready" ? "pass" : "fail",
+      summary: `Backend readiness is ${backend.status}.`,
+    }),
+    grandSlamGate({
+      id: "grand_slam_coverage",
+      status: coverage.includes("grand_slam_men") && coverage.includes("grand_slam_women") ? "pass" : "fail",
+      summary: `Coverage scope is ${(coverage.length ? coverage : ["unknown"]).join(",")}.`,
+    }),
+    grandSlamGate({
+      id: "grand_slam_window_or_matches",
+      status: activeSlams.length || slamMatches.length ? "pass" : "warn",
+      summary: activeSlams.length
+        ? `${activeSlams.map((slam) => slam.label).join(", ")} is inside configured Grand Slam window.`
+        : `${slamMatches.length} Grand Slam match rows are visible outside configured windows.`,
+    }),
+    grandSlamGate({
+      id: "grand_slam_matches_visible",
+      status: slamMatches.length ? "pass" : "warn",
+      summary: `${slamMatches.length} Grand Slam match rows are visible to Hermes.`,
+    }),
+    grandSlamGate({
+      id: "prediction_rows_available",
+      status: predictionRows.length ? "pass" : "warn",
+      summary: `${predictionRows.length} Grand Slam rows include backend model probabilities.`,
+    }),
+    grandSlamGate({
+      id: "live_window_not_safety_stop",
+      status: liveWindowPlan.status === "safety_stop" ? "fail" : liveWindowPlan.status === "blocked" ? "warn" : "pass",
+      summary: `Live-window status is ${liveWindowPlan.status}.`,
+    }),
+  ];
+}
+
+function grandSlamGate({ id, status, summary }) {
+  return { id, status, summary };
+}
+
+function grandSlamReadinessStatus({ gates, activeSlams, slamMatches, predictionRows, liveWindowPlan }) {
+  if (gates.some((gate) => gate.status === "fail")) return "blocked";
+  if (!activeSlams.length && !slamMatches.length) return "off_calendar";
+  if (!slamMatches.length) return "waiting_for_draw_or_feed";
+  if (!predictionRows.length) return "monitor";
+  if (liveWindowPlan.status === "paper_ready") return "paper_ready";
+  return "prediction_ready";
+}
+
+function grandSlamReadinessNextAction({
+  status,
+  backend,
+  report,
+  liveWindowPlan,
+  sourceRoutes,
+  activeSlams,
+  slamMatches,
+}) {
+  if (status === "blocked") {
+    const backendAction = backend.next_action;
+    return grandSlamAction({
+      id: backendAction?.id ?? "restore_backend_or_events",
+      command: backendAction?.command ?? "npm --silent run hermes:events",
+      reason: backendAction?.reason ?? "Resolve backend/safety blockers before Grand Slam prediction readiness.",
+      mutatesRuntimeIfRun: Boolean(backendAction?.mutates_runtime_if_run),
+      requiresOperatorConfirmation: Boolean(backendAction?.requires_operator_confirmation),
+    });
+  }
+  if (status === "off_calendar") {
+    return grandSlamAction({
+      id: "wait_for_grand_slam_window",
+      command: "npm --silent run hermes:grand-slam-readiness",
+      reason: "No configured Grand Slam window or visible Grand Slam match rows; keep scheduled readiness checks low-frequency.",
+    });
+  }
+  if (status === "waiting_for_draw_or_feed") {
+    return grandSlamAction({
+      id: "onboard_or_refresh_score_feed",
+      command: report.budget_chain_snapshot?.budget_chain_completed
+        ? "npm --silent run hermes:collection-plan"
+        : "npm --silent run hermes:budget-chain",
+      reason: activeSlams.length
+        ? "Grand Slam window is open but no match rows are visible; follow budget onboarding or score-feed refresh path."
+        : "Grand Slam matches are not visible yet; keep provider calls operator-gated.",
+    });
+  }
+  if (status === "monitor") {
+    return grandSlamAction({
+      id: "inspect_match_pulse",
+      command: "npm --silent run hermes:match-pulse",
+      reason: "Grand Slam rows are visible but model probabilities are missing or incomplete.",
+    });
+  }
+  if (status === "paper_ready") {
+    return grandSlamAction({
+      id: liveWindowPlan.next_action?.id ?? "paper_autopilot",
+      command: liveWindowPlan.next_action?.command ?? "npm run hermes:autopilot",
+      reason: liveWindowPlan.next_action?.reason ?? "Grand Slam prediction rows are paper-ready; backend still controls paper order creation.",
+      requiresAdminToken: true,
+      canCreatePaperOrders: true,
+    });
+  }
+  return grandSlamAction({
+    id: sourceRoutes.next_route?.id ?? "observe_predictions",
+    command: "npm --silent run hermes:grand-slam-readiness",
+    reason: `${slamMatches.length} Grand Slam matches have prediction rows; keep observing internal state until live-window/paper gates improve.`,
+  });
+}
+
+function grandSlamAction({
+  id,
+  command,
+  reason,
+  requiresAdminToken = false,
+  canCreatePaperOrders = false,
+  mutatesRuntimeIfRun = false,
+  requiresOperatorConfirmation = false,
+}) {
+  return {
+    id,
+    command,
+    reason,
+    requires_admin_token: requiresAdminToken,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: canCreatePaperOrders,
+    llm_per_tick_allowed: false,
+    executes_now: false,
+    mutates_runtime_if_run: Boolean(mutatesRuntimeIfRun),
+    requires_operator_confirmation: Boolean(requiresOperatorConfirmation),
+  };
+}
+
 function matchPulseAction({ attention, eventPlan, liveWindowPlan }) {
   if (attention === "paper_candidate") {
     return {
@@ -8532,6 +8909,7 @@ const commands = {
   "live-stats": liveStats,
   "live-window": liveWindow,
   "match-pulse": matchPulse,
+  "grand-slam-readiness": grandSlamReadiness,
   "collection-plan": collectionPlan,
   "quota-plan": quotaPlan,
   "live-controller": liveController,

@@ -175,6 +175,11 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   is a read-only watchlist/ranking packet over `/api/v1/live/matches`, must not
   create paper orders itself, and should only point to protected backend paper
   autopilot when the global live-window gate is `paper_ready`.
+- Hermes Grand Slam prediction readiness should consume
+  `npm run hermes:grand-slam-readiness`; it is read-only, checks Grand Slam
+  calendar/match visibility, coverage, backend readiness, live-window gates,
+  and prediction rows, and must not call providers, scrape public scoreboards,
+  create paper orders, or run LLM-per-tick reasoning.
 - Hermes collection cadence planning should consume
   `npm run hermes:collection-plan`; it converts match-pulse priorities into
   desired score/odds polling lanes, but must remain read-only, must not execute
@@ -287,6 +292,7 @@ npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
+npm run hermes:grand-slam-readiness
 npm run hermes:collection-plan
 npm run hermes:quota-plan
 npm run hermes:budget-chain

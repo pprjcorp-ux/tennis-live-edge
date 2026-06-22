@@ -4379,6 +4379,213 @@ test("match-pulse ranks match attention without creating orders", async () => {
   }
 });
 
+test("grand-slam-readiness reports off-calendar state without provider calls", async () => {
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": [],
+    "/api/v1/signals/live": [],
+    "/api/v1/cost-profile": {
+      active_plan: "lean_atp",
+      estimated_monthly_spend_usd: 377,
+      monthly_budget_usd: 500,
+      coverage_scope: ["atp_main", "grand_slam_men", "grand_slam_women"],
+    },
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          steps: [],
+        },
+        source_summary: {
+          total_matches: 0,
+          persisted_matches: 0,
+          match_freshness: [],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli([
+      "grand-slam-readiness",
+      `--api-base=${apiBase}`,
+      "--date=2026-06-22",
+    ]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "grand_slam_readiness");
+    assert.equal(payload.status, "off_calendar");
+    assert.equal(payload.prediction_ready, false);
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.deepEqual(payload.active_grand_slams, []);
+    assert.equal(payload.matches.grand_slam_visible, 0);
+    assert.equal(payload.gates.find((gate) => gate.id === "grand_slam_coverage").status, "pass");
+    assert.equal(payload.next_action.id, "wait_for_grand_slam_window");
+    assert.equal(payload.operating_policy.bypass_allowed, false);
+    assert.equal(payload.operating_policy.sportsbook_browser_automation_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("grand-slam-readiness exposes paper-ready Slam predictions without executing actions", async () => {
+  const match = {
+    match: {
+      id: "wimbledon_live_edge",
+      tournament: "Wimbledon",
+      round: "R64",
+      tour: "WTA",
+      competition_level: "GRAND_SLAM",
+      surface: "grass",
+      player1: { id: "p1", name: "Player One" },
+      player2: { id: "p2", name: "Player Two" },
+      state: {
+        status: "live",
+        p1_sets: 0,
+        p2_sets: 0,
+        p1_games: 3,
+        p2_games: 2,
+        point_score: "30-15",
+        server_player_id: "p1",
+        is_tiebreak: false,
+        is_break_point: false,
+      },
+    },
+    prediction: {
+      p1_win_prob: 0.64,
+      p2_win_prob: 0.36,
+      confidence: "Alta",
+      model_version: "baseline_v0",
+    },
+    signals: [
+      {
+        id: "sig_wimbledon_edge",
+        match_id: "wimbledon_live_edge",
+        player_id: "p1",
+        player_name: "Player One",
+        status: "Entrada",
+        edge: 0.075,
+        threshold: 0.03,
+        confidence: "Alta",
+        best_odds: 2.02,
+        reason: "fresh Grand Slam edge",
+      },
+    ],
+    freshness: {
+      source: "live",
+      persisted: true,
+      score_age_ms: 3000,
+      odds_age_ms: 2500,
+      provider_lineage: ["api_tennis", "odds_api_io"],
+    },
+  };
+  const fixtures = eventRouterFixtures({
+    "/api/v1/live/matches": [match],
+    "/api/v1/signals/live": [match.signals[0]],
+    "/api/v1/cost-profile": {
+      active_plan: "lean_atp",
+      estimated_monthly_spend_usd: 377,
+      monthly_budget_usd: 500,
+      coverage_scope: ["atp_main", "grand_slam_men", "grand_slam_women"],
+    },
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "live_with_keys",
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 12,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: true,
+          enterprise_eligible: false,
+          current_step: null,
+          steps: [],
+        },
+        source_summary: {
+          total_matches: 1,
+          persisted_matches: 1,
+          match_freshness: [
+            {
+              match_id: "wimbledon_live_edge",
+              source: "live",
+              persisted: true,
+              score_age_ms: 3000,
+              odds_age_ms: 2500,
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli([
+      "grand-slam-readiness",
+      `--api-base=${apiBase}`,
+      "--date=2026-07-01",
+    ]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "grand_slam_readiness");
+    assert.equal(payload.status, "paper_ready");
+    assert.equal(payload.prediction_ready, true);
+    assert.equal(payload.paper_ready, true);
+    assert.equal(payload.active_grand_slams[0].id, "wimbledon");
+    assert.equal(payload.matches.grand_slam_visible, 1);
+    assert.equal(payload.matches.prediction_rows, 1);
+    assert.equal(payload.matches.paper_candidates, 1);
+    assert.equal(payload.matches.preview[0].match_id, "wimbledon_live_edge");
+    assert.equal(payload.matches.preview[0].p1_win_prob, 0.64);
+    assert.equal(payload.next_action.command, "npm run hermes:autopilot");
+    assert.equal(payload.next_action.executes_now, false);
+    assert.equal(payload.next_action.can_create_paper_orders, true);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.safety.can_submit_real_orders, false);
+    assert.equal(payload.safety.llm_per_tick_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("collection-plan converts match pulse into safe polling cadence", async () => {
   const matches = [
     {

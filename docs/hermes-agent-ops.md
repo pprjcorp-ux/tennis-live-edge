@@ -18,6 +18,7 @@ npm run hermes:anomalies
 npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:intelligence
+npm run hermes:events
 ADMIN_API_TOKEN=... npm run hermes:ops:daily
 ADMIN_API_TOKEN=... npm run hermes:autopilot
 ```
@@ -54,6 +55,14 @@ It reads internal APIs only and emits one machine-readable recommendation:
 This gives Hermes enough state to choose between monitoring, safe paper
 autopilot, replay hardening, provider onboarding, and weekly learning review
 without scraping or bypassing external systems.
+
+Use `hermes:events` when Hermes cron, webhook, Telegram, or the dashboard needs
+an action router instead of a broad status packet. It converts the intelligence
+state into deterministic events with one allowed command, whether an admin token
+is required, whether paper orders can be created, and
+`can_submit_real_orders=false`. It blocks paper autopilot when preflight,
+provider health, cursor resync, data quality, budget-chain, or real-execution
+safety blockers exist.
 
 ## Audit Trail
 

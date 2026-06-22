@@ -113,6 +113,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   geolocation workaround may place bets directly.
 - Agents may only explain, monitor, review, or call internal APIs that enforce
   deterministic backend gates.
+- Hermes cron/webhook/Telegram routing should consume `npm run hermes:events`;
+  it may only create paper orders when that router reports
+  `can_run_paper_autopilot=true` and the backend still approves the protected
+  `hermes:autopilot` call.
 - Real execution requires a separate compliance/account/API activation task.
 
 ## Verification
@@ -128,6 +132,7 @@ printf '{"event_id":"smoke-event","seq":1,"timestamp":"2026-06-07T20:00:00Z","da
 npm --prefix apps/web run build
 python3 scripts/check_private_runtime.py
 npm run api:check:operational-truth -- --pretty
+npm run hermes:events
 ```
 
 `api:check:operational-truth` is the required integrated smoke before API

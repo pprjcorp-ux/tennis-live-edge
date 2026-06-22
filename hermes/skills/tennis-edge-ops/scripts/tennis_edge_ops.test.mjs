@@ -32,6 +32,83 @@ async function runCli(args, { stdin = "", env = {} } = {}) {
   return { exit, stdout, stderr };
 }
 
+function eventRouterFixtures(overrides = {}) {
+  return {
+    "/api/v1/agent/briefing": {
+      summary: "Hermes can monitor 2 matches.",
+      autopilot_enabled: true,
+      entry_signals: 1,
+      provider_alerts: 0,
+      readiness_status: "collecting",
+    },
+    "/api/v1/agent/preflight": {
+      status: "ready",
+      checks: [{ name: "real_execution_hard_block", status: "pass", summary: "blocked" }],
+      generated_at: "2026-06-21T20:00:00Z",
+    },
+    "/api/v1/agent/anomalies": [],
+    "/api/v1/provider-health": [
+      { provider: "api_tennis", status: "healthy" },
+      { provider: "odds_api_io", status: "healthy" },
+    ],
+    "/api/v1/provider-cursors": [],
+    "/api/v1/data-quality": [],
+    "/api/v1/cost-profile": {
+      active_plan: "lean_atp",
+      estimated_monthly_spend_usd: 377,
+      monthly_budget_usd: 500,
+    },
+    "/api/v1/cost-report/daily": {
+      live_api_calls: 3,
+      cost_per_signal_usd: 0.25,
+    },
+    "/api/v1/paper/performance": {
+      readiness_status: "collecting",
+      roi: 0.02,
+      clv: 0.01,
+      settled_orders: 42,
+    },
+    "/api/v1/execution/status": {
+      real_execution_hard_block: true,
+      can_submit_real_orders: false,
+      stage: "paper",
+    },
+    "/api/v1/bankroll": {
+      balance: 10000,
+      currency: "USD",
+      open_exposure: 0,
+      daily_pnl: 0,
+      weekly_pnl: 0,
+    },
+    "/api/v1/signals/live": [
+      { id: "sig_1", status: "Entrada" },
+      { id: "sig_2", status: "Bloqueado" },
+    ],
+    "/api/v1/ingestion/runs": [
+      {
+        id: "ingest_1",
+        run_type: "live_budget_cycle",
+        source: "cli",
+        status: "completed",
+      },
+    ],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: { budget_chain_completed: true },
+      },
+    },
+    ...overrides,
+  };
+}
+
 test("autopilot aborts before protected action when preflight is blocked", async () => {
   let autopilotCalled = false;
   const { server, apiBase } = await startServer((request, response) => {
@@ -361,6 +438,83 @@ test("intelligence produces a safe operator packet from internal APIs only", asy
       "manual_operator_note",
     ]);
     assert.equal(payload.forbidden_collection_paths.includes("anti_bot_bypass"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("events routes clean Entrada state to paper autopilot only", async () => {
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["events", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.source_mode, "paper_autopilot_candidate");
+    assert.equal(payload.can_run_paper_autopilot, true);
+    const paperEvent = payload.events.find((event) => event.type === "paper_autopilot_candidate");
+    assert.equal(paperEvent.allowed_command, "npm run hermes:autopilot");
+    assert.equal(paperEvent.requires_admin_token, true);
+    assert.equal(paperEvent.can_create_orders, true);
+    assert.equal(paperEvent.can_submit_real_orders, false);
+    assert.equal(payload.safety.sportsbook_bypass_allowed, false);
+    assert.equal(payload.forbidden_actions.includes("credential_or_session_extraction"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("events blocks paper autopilot when provider cursor requires resync", async () => {
+  const fixtures = eventRouterFixtures({
+    "/api/v1/provider-cursors": [
+      {
+        provider: "odds_api_io",
+        stream: "tennis:h2h",
+        status: "gap",
+        last_seq: 10,
+        expected_next_seq: 11,
+        gap_count: 1,
+        resync_required: true,
+        note: "missing seq 11",
+      },
+    ],
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["events", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.source_mode, "investigate");
+    assert.equal(payload.can_run_paper_autopilot, false);
+    assert.equal(payload.events.some((event) => event.type === "cursor_resync_required"), true);
+    assert.equal(payload.events.some((event) => event.can_create_orders), false);
+    assert.equal(payload.recommended_commands.includes("npm run api:check:operational-truth -- --pretty"), true);
   } finally {
     server.close();
   }

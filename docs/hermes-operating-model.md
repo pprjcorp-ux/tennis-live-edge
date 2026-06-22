@@ -63,7 +63,8 @@ data through browser tricks.
 
 ### Level 0: Observe
 
-Run `npm run hermes:intelligence` and `npm run hermes:preflight`. No writes.
+Run `npm run hermes:intelligence`, `npm run hermes:events` and
+`npm run hermes:preflight`. No writes.
 
 ### Level 1: Rehearse
 
@@ -74,8 +75,8 @@ API calls.
 ### Level 2: Paper Autopilot
 
 Run `npm run hermes:autopilot` only when preflight is not blocked and the
-intelligence packet recommends `paper_autopilot_candidate`. The backend still
-decides whether paper orders are created.
+event router reports `can_run_paper_autopilot=true`. The backend still decides
+whether paper orders are created.
 
 ### Level 3: Learning Review
 
@@ -91,6 +92,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 ## Recommended Cron Graph
 
 - Every 5 minutes during active windows: `npm run hermes:intelligence`.
+- Every 5 minutes during active windows: `npm run hermes:events`.
 - Every 15 minutes: `npm run hermes:preflight`.
 - Every 15 minutes: `npm run hermes:anomalies`.
 - Daily morning: `npm run hermes:ops:daily`.
@@ -98,6 +100,14 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 
 Do not run LLM analysis on every odds tick. Tick math belongs to Python and
 Postgres; Hermes wakes only on summarized state or event thresholds.
+
+`hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
+turns the internal intelligence packet into compact events such as
+`cursor_resync_required`, `provider_health_degraded`,
+`budget_chain_next_step`, `learning_data_collection`,
+`paper_autopilot_candidate`, and `real_execution_safety_violation`. Each event
+includes one allowed command, whether an admin token is required, and whether
+paper orders may be created. It never marks real order submission as allowed.
 
 ## Evidence Required Before More Autonomy
 

@@ -76,6 +76,15 @@ async function preflight() {
 }
 
 async function intelligence() {
+  printJson(await intelligenceData());
+}
+
+async function events() {
+  const report = await intelligenceData();
+  printJson(buildEventPlan(report));
+}
+
+async function intelligenceData() {
   const [
     briefing,
     preflightData,
@@ -107,7 +116,7 @@ async function intelligence() {
     request("/api/v1/ingestion/runs"),
     request("/api/v1/dashboard/live-state"),
   ]);
-  printJson(buildIntelligenceReport({
+  return buildIntelligenceReport({
     briefing,
     preflightData,
     anomaliesData,
@@ -122,7 +131,7 @@ async function intelligence() {
     liveSignals,
     ingestionRuns,
     dashboardState,
-  }));
+  });
 }
 
 async function ingestionRuns() {
@@ -526,12 +535,246 @@ function chooseRecommendedMode({
   };
 }
 
+function buildEventPlan(report) {
+  const events = [];
+  const blockers = report.blockers ?? [];
+  const costSnapshot = report.cost_snapshot ?? {};
+  const safety = report.safety ?? {};
+  const learning = report.learning_snapshot ?? {};
+
+  if (safety.can_submit_real_orders || safety.real_execution_hard_block !== true) {
+    events.push(event({
+      type: "real_execution_safety_violation",
+      severity: "critical",
+      reason: "Real execution is not hard-blocked or the API reports real order submission as possible.",
+      action: "Stop all automation and restore REAL_EXECUTION_HARD_BLOCK=true before continuing.",
+      allowedCommand: "npm run hermes:preflight",
+      requiresAdminToken: false,
+      canCreateOrders: false,
+    }));
+  }
+
+  for (const blocker of blockers) {
+    events.push(eventFromBlocker(blocker));
+  }
+
+  const monthlyBudget = Number(costSnapshot.monthly_budget_usd ?? 0);
+  const estimatedSpend = Number(costSnapshot.estimated_monthly_spend_usd ?? 0);
+  if (monthlyBudget > 0 && estimatedSpend >= monthlyBudget * 0.9) {
+    events.push(event({
+      type: "budget_or_quota_risk",
+      severity: estimatedSpend > monthlyBudget ? "high" : "medium",
+      reason: `Estimated monthly spend is ${estimatedSpend} against budget ${monthlyBudget}.`,
+      action: "Keep live polling selective and review provider quota before adding paid traffic.",
+      allowedCommand: "npm --silent run hermes:intelligence",
+      requiresAdminToken: false,
+      canCreateOrders: false,
+    }));
+  }
+
+  if (report.mode === "paper_autopilot_candidate" && !events.some((item) => blocksPaperOrders(item))) {
+    events.push(event({
+      type: "paper_autopilot_candidate",
+      severity: "medium",
+      reason: "Backend has valid Entrada signals and no safety/data blockers were reported.",
+      action: "Run paper autopilot through the backend only; never request real execution.",
+      allowedCommand: "npm run hermes:autopilot",
+      requiresAdminToken: true,
+      canCreateOrders: true,
+    }));
+  }
+
+  if (report.mode === "budget_chain_buildout") {
+    events.push(event({
+      type: "budget_chain_next_step",
+      severity: "medium",
+      reason: "Budget onboarding is not complete, so enterprise remains locked.",
+      action: "Run operational truth checks and complete the next budget provider smoke before enterprise work.",
+      allowedCommand: "npm run api:check:operational-truth -- --pretty",
+      requiresAdminToken: false,
+      canCreateOrders: false,
+    }));
+  }
+
+  if (!learning.can_run_live_backtest || learning.readiness_status !== "ready_for_review") {
+    events.push(event({
+      type: "learning_data_collection",
+      severity: "low",
+      reason: "Model Lab does not yet have enough production learning evidence for promotion review.",
+      action: "Keep collecting settled paper outcomes and run the daily ops rehearsal.",
+      allowedCommand: "npm run hermes:ops:daily",
+      requiresAdminToken: true,
+      canCreateOrders: false,
+    }));
+  }
+
+  if (!events.length) {
+    events.push(event({
+      type: "steady_state_monitoring",
+      severity: "low",
+      reason: "No operational blockers or paper candidates were reported.",
+      action: "Continue scheduled intelligence, preflight, anomaly scans, and daily ops rehearsal.",
+      allowedCommand: "npm --silent run hermes:intelligence",
+      requiresAdminToken: false,
+      canCreateOrders: false,
+    }));
+  }
+
+  const normalizedEvents = dedupeEvents(events).sort((a, b) => (
+    severityRank(b.severity) - severityRank(a.severity) || a.type.localeCompare(b.type)
+  ));
+  const canRunPaperAutopilot = normalizedEvents.some(
+    (item) => item.type === "paper_autopilot_candidate" && item.can_create_orders
+  );
+  return {
+    generated_at: new Date().toISOString(),
+    source_mode: report.mode,
+    severity: highestSeverity(normalizedEvents),
+    summary: summarizeEventPlan(report, normalizedEvents),
+    can_run_paper_autopilot: canRunPaperAutopilot,
+    events: normalizedEvents,
+    recommended_commands: recommendedCommands(normalizedEvents),
+    safety: {
+      real_execution_hard_block: safety.real_execution_hard_block,
+      can_submit_real_orders: safety.can_submit_real_orders,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+    forbidden_actions: report.forbidden_collection_paths ?? [],
+    allowed_collection_paths: report.allowed_collection_paths ?? [],
+  };
+}
+
+function eventFromBlocker(blocker) {
+  if (blocker.startsWith("preflight:")) {
+    return event({
+      type: "preflight_blocked",
+      severity: "high",
+      reason: blocker,
+      action: "Run Hermes preflight and fix failed checks before any autopilot action.",
+      allowedCommand: "npm run hermes:preflight",
+      requiresAdminToken: false,
+      canCreateOrders: false,
+    });
+  }
+  if (blocker.startsWith("cursor:")) {
+    return event({
+      type: "cursor_resync_required",
+      severity: "high",
+      reason: blocker,
+      action: "Run replay/contracts and apply provider resync only after a trusted snapshot is reconciled.",
+      allowedCommand: "npm run api:check:operational-truth -- --pretty",
+      requiresAdminToken: false,
+      canCreateOrders: false,
+    });
+  }
+  if (blocker.startsWith("provider:")) {
+    return event({
+      type: "provider_health_degraded",
+      severity: "high",
+      reason: blocker,
+      action: "Inspect provider health, quota, credentials, and last tick before spending more live calls.",
+      allowedCommand: "npm run hermes:preflight",
+      requiresAdminToken: false,
+      canCreateOrders: false,
+    });
+  }
+  if (blocker.startsWith("data_quality:")) {
+    return event({
+      type: "data_quality_degraded",
+      severity: "high",
+      reason: blocker,
+      action: "Keep entries blocked until stale ticks, blocked signals, or sequence gaps clear.",
+      allowedCommand: "npm --silent run hermes:intelligence",
+      requiresAdminToken: false,
+      canCreateOrders: false,
+    });
+  }
+  if (blocker === "execution:real_orders_enabled") {
+    return event({
+      type: "real_execution_safety_violation",
+      severity: "critical",
+      reason: blocker,
+      action: "Disable real execution before running any agent automation.",
+      allowedCommand: "npm run hermes:preflight",
+      requiresAdminToken: false,
+      canCreateOrders: false,
+    });
+  }
+  return event({
+    type: "operator_investigation_required",
+    severity: "medium",
+    reason: blocker,
+    action: "Inspect the intelligence packet and keep Hermes in monitor mode.",
+    allowedCommand: "npm --silent run hermes:intelligence",
+    requiresAdminToken: false,
+    canCreateOrders: false,
+  });
+}
+
+function event({
+  type,
+  severity,
+  reason,
+  action,
+  allowedCommand,
+  requiresAdminToken,
+  canCreateOrders,
+}) {
+  return {
+    type,
+    severity,
+    reason,
+    action,
+    allowed_command: allowedCommand,
+    requires_admin_token: requiresAdminToken,
+    can_create_orders: canCreateOrders,
+    can_submit_real_orders: false,
+  };
+}
+
+function blocksPaperOrders(item) {
+  return ["critical", "high"].includes(item.severity) || item.type === "budget_chain_next_step";
+}
+
+function dedupeEvents(events) {
+  const seen = new Set();
+  return events.filter((item) => {
+    const key = `${item.type}:${item.reason}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function severityRank(severity) {
+  return { low: 1, medium: 2, high: 3, critical: 4 }[severity] ?? 0;
+}
+
+function highestSeverity(events) {
+  return events.reduce(
+    (highest, item) => (severityRank(item.severity) > severityRank(highest) ? item.severity : highest),
+    "low"
+  );
+}
+
+function recommendedCommands(events) {
+  return [...new Set(events.map((item) => item.allowed_command).filter(Boolean))];
+}
+
+function summarizeEventPlan(report, events) {
+  const highest = highestSeverity(events);
+  const eventTypes = [...new Set(events.map((item) => item.type))].join(", ");
+  return `Hermes event router: source_mode=${report.mode}, severity=${highest}, events=${eventTypes}`;
+}
+
 const commands = {
   briefing,
   anomalies,
   runs,
   preflight,
   intelligence,
+  events,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

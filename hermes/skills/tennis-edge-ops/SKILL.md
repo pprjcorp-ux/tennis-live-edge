@@ -31,6 +31,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ingestion-runs
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs preflight
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs intelligence
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs events
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
@@ -65,6 +66,10 @@ The `intelligence` command is the preferred cron/Telegram status packet. It
 reads only internal FastAPI endpoints and produces a redacted JSON decision
 brief with operational mode, blockers, allowed collection paths, forbidden
 collection paths, learning state, cost state, and safety state.
+The `events` command converts the intelligence packet into deterministic
+dispatch events for cron/webhook/Telegram. It reports an allowed command,
+admin-token requirement, and paper-order permission for each event; it never
+permits real order submission.
 The `autopilot` command also runs preflight internally and aborts before calling
 protected backend actions when the preflight status is `blocked`.
 

@@ -72,6 +72,17 @@ hermes cron add \
   --timeout-seconds 60
 ```
 
+Event router every 5 minutes during active windows:
+
+```bash
+hermes cron add \
+  --name tennis-edge-event-router \
+  --every 5m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:events from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report severity, events, recommended_commands, can_run_paper_autopilot, and safety. Do not create orders from this cron." \
+  --timeout-seconds 60
+```
+
 Paper autopilot every 5 minutes during live windows, only after
 `ADMIN_API_TOKEN` is available to Hermes as a local secret:
 

@@ -32,6 +32,7 @@ npm run hermes:anomalies
 npm run hermes:runs
 npm run hermes:preflight
 npm run hermes:intelligence
+npm run hermes:events
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
@@ -54,6 +55,13 @@ aggregates provider health, cursor gaps, data quality, cost, paper performance,
 bankroll, live signals, replay lab and onboarding state. It recommends one safe
 mode: investigate, budget-chain buildout, paper-autopilot candidate, collect
 learning data, replay-lab hardening, or steady monitoring.
+
+`hermes:events` converts that packet into deterministic event triggers for
+cron/webhook routing. It can recommend commands such as `hermes:preflight`,
+`api:check:operational-truth`, `hermes:ops:daily`, or `hermes:autopilot`.
+Paper order creation is only marked possible for `paper_autopilot_candidate`
+when no high-severity data, cursor, provider, preflight, budget-chain, or real
+execution safety blocker exists.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

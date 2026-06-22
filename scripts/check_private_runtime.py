@@ -549,7 +549,11 @@ def main() -> int:
                 errors.append(f"Hermes script contains forbidden reference {forbidden}")
         for required in [
             "async function intelligence()",
+            "async function events()",
             "buildIntelligenceReport",
+            "buildEventPlan",
+            "paper_autopilot_candidate",
+            "can_submit_real_orders: false",
             "sportsbook_bypass_allowed: false",
             "anti_bot_bypass",
             "geolocation_bypass",
@@ -569,6 +573,8 @@ def main() -> int:
             hermes_docs += path.read_text()
     for required in [
         "hermes:intelligence",
+        "hermes:events",
+        "can_run_paper_autopilot",
         "licensed provider APIs",
         "internal FastAPI endpoints",
         "sportsbook UI automation",

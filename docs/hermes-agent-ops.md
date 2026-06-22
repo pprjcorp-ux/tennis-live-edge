@@ -256,9 +256,11 @@ as live state.
 
 Use `hermes:enterprise-accuracy-plan` when working on the no-budget-limit
 accuracy branch. It ranks the top-tier provider stack, access requirements,
-model layers and Grand Slam scoreline forecast contract. It is a planning
-packet only: no provider calls, scraping, quota spend, paper orders or real
-execution.
+model layers, Grand Slam scoreline forecast contract and enterprise
+due-diligence matrix. The matrix turns provider research into RFP questions,
+sample-payload requirements, proof artifacts and acceptance tests. It is a
+planning packet only: no provider calls, scraping, quota spend, paper orders or
+real execution.
 
 Use `hermes:grand-slam-mission` as the product-level packet for Grand Slam
 match-day prediction. It compiles readiness, historical priors, collection,

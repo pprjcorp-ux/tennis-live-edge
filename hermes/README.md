@@ -284,7 +284,9 @@ any future importer exists.
 
 `hermes:enterprise-accuracy-plan` is the no-budget-limit accuracy packet. It
 ranks top-tier scoring, shot-by-shot and odds feeds, maps the model layers they
-unlock, and defines the Grand Slam scoreline forecast contract. It stays
+unlock, defines the Grand Slam scoreline forecast contract, and emits an
+enterprise due-diligence matrix for provider contracting: required fields,
+proof artifacts, acceptance tests and Hermes review evidence. It stays
 read-only: no provider calls, no scraping, no quota spend, no paper orders and
 no real execution. The ops compiler, experiment lab, scheduler rehearsal and
 cron proposal include it as recurring review evidence only.

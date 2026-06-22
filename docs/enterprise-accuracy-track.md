@@ -77,8 +77,12 @@ Priority 2 is price discovery from multiple independent odds routes:
 - Odds-API.io WebSocket and TheOddsAPI remain comparison/fallback feeds.
 
 Use `hermes:enterprise-accuracy-plan` before contracting work. It ranks
-Sportradar, Stats Perform/Opta WTA, TXODDS, Betradar UOF, Betfair market data
-and fallback odds aggregators by the prediction layers they unlock.
+Sportradar, Tennis Data Innovations, Stats Perform/Opta WTA, TXODDS, Betradar
+UOF, exchange market data, premium point-by-point fallback providers and odds
+aggregators by the prediction layers they unlock. The same packet includes an
+enterprise due-diligence matrix: required fields, proof artifacts, acceptance
+tests and the exact evidence Hermes must see before any provider can influence
+production features.
 
 ### Context and historical base
 
@@ -155,6 +159,8 @@ documentation, replay fixtures, or parser tests.
 Hermes should operate as an event-driven supervisor:
 
 - emit `enterprise-accuracy-plan` for no-budget provider/access decisions;
+- compile provider RFP questions, sample-payload requirements and proof
+  artifacts from the enterprise due-diligence matrix;
 - check whether a Grand Slam live window is open;
 - summarize provider health and data freshness;
 - route anomalies to operator packets;

@@ -243,10 +243,13 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes enterprise/no-budget accuracy planning should consume
   `npm run hermes:enterprise-accuracy-plan`; it ranks top-tier data/odds feeds
   for Grand Slam scoreline prediction, lists access requirements and model
-  layers, and must stay read-only with `provider_api_call_allowed=false` until
-  operator contracts and budget-chain gates are complete. Ops compiler,
-  experiment lab, scheduler rehearsal, and cron proposal should include this
-  packet as review evidence only, never as provider activation.
+  layers, and emits the enterprise due-diligence matrix: required fields,
+  proof artifacts, sample-payload expectations and acceptance tests for every
+  contracted provider. It must stay read-only with
+  `provider_api_call_allowed=false` until operator contracts and budget-chain
+  gates are complete. Ops compiler, experiment lab, scheduler rehearsal, and
+  cron proposal should include this packet as review evidence only, never as
+  provider activation.
 - Hermes Grand Slam scoreline forecasting should consume
   `npm run hermes:grand-slam-scoreline-forecast`; it projects winners and
   plausible set scorelines (`3-0/3-1/3-2` for ATP Grand Slam BO5,

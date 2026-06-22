@@ -4783,6 +4783,8 @@ function buildEnterpriseAccuracyPlan({
     },
     no_budget_provider_stack: stack,
     access_requirements: access,
+    enterprise_data_due_diligence: enterpriseDataDueDiligenceMatrix(),
+    hermes_enterprise_playbook: enterpriseHermesDataPlaybook(),
     model_architecture: enterpriseAccuracyModelArchitecture(),
     scoreline_forecast_contract: enterpriseScorelineForecastContract(),
     hermes_operating_role: enterpriseHermesOperatingRole({ loop, report }),
@@ -4847,8 +4849,21 @@ function enterpriseAccuracyProviderStack({ enterpriseEligible, report, sourceRou
       sourceUrl: "https://developer.sportradar.com/tennis/docs/ig-api-basics",
     }),
     enterpriseAccuracyProvider({
-      id: "stats_perform_opta_wta_fast_data",
+      id: "tennis_data_innovations_atp_official",
       rank: 2,
+      provider: "Tennis Data Innovations",
+      role: "official ATP/Challenger data and streaming rights route for contracted products",
+      coverage: ["ATP Tour", "ATP Challenger", "ATP Media products"],
+      unlocks: ["official_atp_identity_spine", "atp_match_context", "atp_live_streaming_rights_review", "atp_data_license_clarity"],
+      latencyTarget: "official contracted ATP data route by product tier",
+      status,
+      access: ["TDI commercial agreement", "permitted-use terms", "ATP data product scope"],
+      evidence: [`enterprise_eligible=${enterpriseEligible}`],
+      sourceUrl: "https://www.tennisdata.com/",
+    }),
+    enterpriseAccuracyProvider({
+      id: "stats_perform_opta_wta_fast_data",
+      rank: 3,
       provider: "Stats Perform / Opta WTA",
       role: "official WTA shot_by_shot and deep match statistics",
       coverage: ["WTA Tour", "WTA qualifiers", "WTA live video where licensed"],
@@ -4861,7 +4876,7 @@ function enterpriseAccuracyProviderStack({ enterpriseEligible, report, sourceRou
     }),
     enterpriseAccuracyProvider({
       id: "txodds_fusion_in_running",
-      rank: 3,
+      rank: 4,
       provider: "TXODDS",
       role: "ultra_low_latency in_running odds and historical market archive",
       coverage: ["global tennis odds", "in-play markets", "historical odds"],
@@ -4874,7 +4889,7 @@ function enterpriseAccuracyProviderStack({ enterpriseEligible, report, sourceRou
     }),
     enterpriseAccuracyProvider({
       id: "betradar_uof_market_state",
-      rank: 4,
+      rank: 5,
       provider: "Betradar UOF",
       role: "market_state, odds, suspensions and settlement-grade reference",
       coverage: ["bookmaker market feeds", "in-running tennis markets"],
@@ -4887,7 +4902,7 @@ function enterpriseAccuracyProviderStack({ enterpriseEligible, report, sourceRou
     }),
     enterpriseAccuracyProvider({
       id: "betfair_exchange_stream_market_data",
-      rank: 5,
+      rank: 6,
       provider: "Betfair Exchange Stream API",
       role: "exchange order_book, traded_volume and closing_line_reference",
       coverage: ["exchange tennis markets where account jurisdiction permits"],
@@ -4899,8 +4914,21 @@ function enterpriseAccuracyProviderStack({ enterpriseEligible, report, sourceRou
       sourceUrl: null,
     }),
     enterpriseAccuracyProvider({
+      id: "premium_point_by_point_fallback",
+      rank: 7,
+      provider: "Goalserve / Data Sports Group / Podium Sports fallback review",
+      role: "secondary point_by_point coverage and redundancy if official primary feeds miss events",
+      coverage: ["Grand Slam", "ATP", "WTA", "ITF depending on contract"],
+      unlocks: ["redundant_point_events", "provider_disagreement_alerts", "coverage_gap_fill", "fallback_replay_payloads"],
+      latencyTarget: "fallback only; must be measured against official primary feeds",
+      status: enterpriseEligible ? "vendor_review_required" : "locked_until_budget_gate",
+      access: ["commercial trial", "sample payloads", "license review", "latency SLA"],
+      evidence: ["fallback must never override fresher official primary data without conflict review"],
+      sourceUrl: "https://datasportsgroup.com/coverage/tennis/",
+    }),
+    enterpriseAccuracyProvider({
       id: "opticodds_or_theoddsapi_consensus",
-      rank: 6,
+      rank: 8,
       provider: "OpticOdds / TheOddsAPI / Odds-API.io",
       role: "odds consensus, archive fallback and provider disagreement checks",
       coverage: ["bookmaker odds comparison", "REST archive", "WebSocket where licensed"],
@@ -4961,6 +4989,152 @@ function enterpriseAccuracyAccessRequirements(stack) {
     free_or_low_cost: provider.id === "opticodds_or_theoddsapi_consensus",
     blocks_accuracy_lane: provider.rank <= 4,
   }));
+}
+
+function enterpriseDataDueDiligenceMatrix() {
+  return [
+    enterpriseDataDueDiligenceRow({
+      id: "official_score_and_identity",
+      objective: "Lock canonical match/player/tournament identity before any model or market decision.",
+      primaryProviders: ["sportradar_tennis_tier1", "tennis_data_innovations_atp_official", "stats_perform_opta_wta_fast_data"],
+      requiredFields: ["canonical_match_id", "canonical_player_id", "tour", "round", "surface", "best_of_sets", "retirement_walkover_delay"],
+      proofArtifacts: ["provider_sample_payload", "canonical_mapping_test", "conflict_review_queue"],
+      acceptanceTests: [
+        "same player names map to stable internal IDs across providers",
+        "Grand Slam ATP rows resolve BO5 and WTA rows resolve BO3",
+        "retirement, walkover and delay states block scoreline forecasts",
+      ],
+      accuracyImpact: "highest",
+    }),
+    enterpriseDataDueDiligenceRow({
+      id: "point_by_point_live_state",
+      objective: "Feed the Markov engine with current server, point score, game score and tiebreak state.",
+      primaryProviders: ["sportradar_tennis_tier1", "premium_point_by_point_fallback"],
+      requiredFields: ["server_player_id", "point_score", "game_score", "set_score", "tiebreak_state", "break_point", "timestamp"],
+      proofArtifacts: ["replay_contract", "sequence_gap_test", "latency_histogram"],
+      acceptanceTests: [
+        "missed point sequence triggers resync_required and blocks signals",
+        "tiebreak and deciding-set rules are preserved in replay",
+        "source timestamp and ingest timestamp are stored for every point",
+      ],
+      accuracyImpact: "highest",
+    }),
+    enterpriseDataDueDiligenceRow({
+      id: "shot_and_rally_quality",
+      objective: "Improve live serve/return/fatigue estimates beyond scoreboard state.",
+      primaryProviders: ["stats_perform_opta_wta_fast_data", "tennis_data_innovations_atp_official"],
+      requiredFields: ["serve_speed", "serve_location", "return_depth", "rally_length", "winner_error_type", "movement_or_fatigue_proxy"],
+      proofArtifacts: ["sample_payload_dictionary", "feature_snapshot", "model_ablation_report"],
+      acceptanceTests: [
+        "feature snapshots are timestamped before prediction time",
+        "ablation improves Brier/log loss or CLV without worse drawdown",
+        "missing shot data downgrades confidence instead of fabricating features",
+      ],
+      accuracyImpact: "high",
+    }),
+    enterpriseDataDueDiligenceRow({
+      id: "market_microstructure",
+      objective: "Separate true model edge from stale odds and sharp market information.",
+      primaryProviders: ["txodds_fusion_in_running", "betradar_uof_market_state", "betfair_exchange_stream_market_data"],
+      requiredFields: ["moneyline_price", "suspension_state", "bookmaker", "sequence_id", "traded_volume_or_depth", "closing_line_proxy"],
+      proofArtifacts: ["odds_tick_replay", "market_suspension_test", "clv_report"],
+      acceptanceTests: [
+        "stale odds and market suspension hard-block signals",
+        "closing-line proxy is unavailable at decision timestamp and added only after settlement",
+        "provider disagreement is visible before stake sizing",
+      ],
+      accuracyImpact: "high",
+    }),
+    enterpriseDataDueDiligenceRow({
+      id: "historical_backtest_depth",
+      objective: "Train and calibrate only on time-valid examples with enough surface/tour/odds coverage.",
+      primaryProviders: ["txodds_fusion_in_running", "opticodds_or_theoddsapi_consensus", "premium_point_by_point_fallback"],
+      requiredFields: ["pre_match_odds", "in_play_odds", "score_state_history", "match_result", "closing_price", "provider_latency"],
+      proofArtifacts: ["source_manifest", "license_review", "walk_forward_backtest"],
+      acceptanceTests: [
+        "no post-match or closing-line features appear before simulated decision time",
+        "calibration is reported by odds bucket, surface, tour and provider",
+        "challenger/fallback data cannot promote a production model alone",
+      ],
+      accuracyImpact: "medium_high",
+    }),
+  ];
+}
+
+function enterpriseDataDueDiligenceRow({
+  id,
+  objective,
+  primaryProviders,
+  requiredFields,
+  proofArtifacts,
+  acceptanceTests,
+  accuracyImpact,
+}) {
+  return {
+    id,
+    objective,
+    primary_provider_ids: primaryProviders,
+    required_fields: requiredFields,
+    proof_artifacts: proofArtifacts,
+    acceptance_tests: acceptanceTests,
+    accuracy_impact: accuracyImpact,
+    hermes_role: "compile_requirements_and_review_evidence_only",
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function enterpriseHermesDataPlaybook() {
+  return {
+    operating_model: "Hermes is the enterprise data operations analyst, not a scraper, model executor or betting executor.",
+    safe_jailbreak_definition: "Find permitted routes around missing coverage by ranking licensed APIs, replay, historical manifests and operator-provided evidence.",
+    stages: [
+      {
+        id: "rfp_packet",
+        command: "npm --silent run hermes:enterprise-accuracy-plan",
+        purpose: "Produce provider questions, sample-payload requirements and feature proof criteria.",
+        provider_api_call_allowed: false,
+      },
+      {
+        id: "sample_payload_review",
+        command: "npm run api:check:operational-truth -- --pretty",
+        purpose: "Validate sample payloads only after operator stores them in approved local fixtures.",
+        provider_api_call_allowed: false,
+      },
+      {
+        id: "replay_contracts",
+        command: "npm run api:replay:contracts",
+        purpose: "Prove parser, timestamp, cursor and block behavior before live credentials are used.",
+        provider_api_call_allowed: false,
+      },
+      {
+        id: "operator_live_smoke",
+        command: "npm run hermes:provider-smoke -- --execute-provider-call",
+        purpose: "Run only from a local operator shell after contracts, keys and quotas are explicitly approved.",
+        provider_api_call_allowed: false,
+        operator_must_enable_provider_call: true,
+      },
+      {
+        id: "model_ablation",
+        command: "npm --silent run hermes:learning-review",
+        purpose: "Promote features only through walk-forward ROI, CLV, Brier/log-loss, calibration and drawdown evidence.",
+        provider_api_call_allowed: false,
+      },
+    ],
+    forbidden_shortcuts: [
+      "scoreboard_scraping",
+      "sportsbook_browser_automation",
+      "paywall_or_geolocation_bypass",
+      "credential_or_session_extraction",
+      "provider_quota_spend_from_cron",
+      "real_money_execution",
+    ],
+  };
 }
 
 function enterpriseAccuracyModelArchitecture() {
@@ -5128,6 +5302,7 @@ function enterpriseAccuracySummary(plan) {
       role: plan.no_budget_provider_stack[0].role,
     } : null,
     provider_count: plan.no_budget_provider_stack?.length ?? 0,
+    due_diligence_area_count: plan.enterprise_data_due_diligence?.length ?? 0,
     scoreline_gate_count: plan.scoreline_forecast_contract?.acceptance_gates?.length ?? 0,
     next_action: plan.next_action,
     safe_jailbreak_policy: plan.safe_jailbreak_policy,

@@ -188,8 +188,11 @@ license-aware.
 `hermes:enterprise-accuracy-plan` is the preferred packet for the no-budget
 enterprise branch. It turns top-tier scoring, point-by-point, shot-by-shot,
 exchange and odds-feed research into an operator-reviewed provider stack,
-access checklist, model architecture and Grand Slam scoreline forecast contract.
-It remains read-only and keeps `provider_api_call_allowed=false`.
+access checklist, model architecture, Grand Slam scoreline forecast contract
+and enterprise due-diligence matrix. Hermes uses that matrix to ask for sample
+payloads, prove required fields, define replay contracts and reject any provider
+that cannot supply timestamped, license-cleared evidence. It remains read-only
+and keeps `provider_api_call_allowed=false`.
 
 `hermes:grand-slam-scoreline-forecast` is the preferred packet for the concrete
 Grand Slam match-day output: projected winner plus plausible set scoreline.

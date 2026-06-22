@@ -2178,6 +2178,56 @@ test("autonomy-gates does not skip blocked earlier gates when paper is otherwise
   }
 });
 
+test("autonomy-gates routes running-gateway doctor timeouts to doctor-triage", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-autonomy-gates-doctor-timeout-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('Gateway Service\\n  Status:       ✓ running'); process.exit(0); }",
+      "else if (process.argv[2] === 'doctor') { setTimeout(() => {}, 10000); }",
+      "else { process.exit(2); }",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["autonomy-gates", `--api-base=${apiBase}`], {
+      env: {
+        HERMES_BIN: fakeHermes,
+        ADMIN_API_TOKEN: "local-admin",
+      },
+      timeoutMs: 12_000,
+    });
+
+    assert.equal(result.exit, 0);
+    const payload = JSON.parse(result.stdout);
+    const byId = Object.fromEntries(payload.gates.map((gate) => [gate.id, gate]));
+    assert.equal(byId.channel_ready.status, "blocked");
+    assert.equal(byId.channel_ready.command, "npm run hermes:doctor-triage");
+    assert.equal(byId.channel_ready.blockers.includes("doctor_timed_out"), true);
+    assert.equal(payload.next_required_gate.id, "channel_ready");
+    assert.equal(payload.next_required_gate.command, "npm run hermes:doctor-triage");
+    assert.equal(payload.safety.can_submit_real_orders, false);
+    assert.equal(payload.safety.provider_api_call_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("experiment-lab ranks safe Hermes experiments without executing actions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-experiment-lab-"));
   const fakeHermes = join(tempDir, "hermes-fake.mjs");

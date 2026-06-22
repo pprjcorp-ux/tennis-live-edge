@@ -3433,6 +3433,7 @@ function buildAutonomyGateRows({ loop, report, eventPlan, sourcePlan, activation
   if (loop.safety?.real_execution_hard_block !== true) paperBlockers.push("real_execution_hard_block_missing");
   const learningReady = loop.learning_review?.review_status === "ready";
   const enterpriseEligible = loop.budget_chain?.enterprise_eligible === true;
+  const runtimeFindings = loop.runtime?.runtime_findings ?? {};
   return [
     autonomyGate({
       id: "observe",
@@ -3456,18 +3457,18 @@ function buildAutonomyGateRows({ loop, report, eventPlan, sourcePlan, activation
       id: "channel_ready",
       label: "Use local channels and runtime packets",
       status: loop.runtime?.status === "ready"
-        && loop.runtime?.runtime_findings?.gateway_service_status === "running"
-        && !["timed_out", "failed"].includes(loop.runtime?.runtime_findings?.doctor_status)
+        && runtimeFindings.gateway_service_status === "running"
+        && !["timed_out", "failed"].includes(runtimeFindings.doctor_status)
         ? "pass"
         : "blocked",
-      command: "npm run hermes:runtime-check",
+      command: channelReadyGateCommand(runtimeFindings),
       reason: "Telegram, dashboard, cron and local channel packets need a healthy local runtime first.",
       evidence: [
         `runtime.status=${loop.runtime?.status ?? "unknown"}`,
-        `gateway_service_status=${loop.runtime?.runtime_findings?.gateway_service_status ?? "unknown"}`,
-        `doctor_status=${loop.runtime?.runtime_findings?.doctor_status ?? "unknown"}`,
+        `gateway_service_status=${runtimeFindings.gateway_service_status ?? "unknown"}`,
+        `doctor_status=${runtimeFindings.doctor_status ?? "unknown"}`,
       ],
-      blockers: loop.runtime?.runtime_findings?.blockers ?? [],
+      blockers: runtimeFindings.blockers ?? [],
     }),
     autonomyGate({
       id: "cron_ready",
@@ -3521,6 +3522,15 @@ function buildAutonomyGateRows({ loop, report, eventPlan, sourcePlan, activation
       blockers: enterpriseEligible ? [] : ["budget_chain_not_enterprise_eligible"],
     }),
   ];
+}
+
+function channelReadyGateCommand(runtimeFindings) {
+  if (runtimeFindings?.gateway_service_status === "running"
+    && runtimeFindings?.doctor_status === "timed_out"
+    && (runtimeFindings?.blockers ?? []).includes("doctor_timed_out")) {
+    return "npm run hermes:doctor-triage";
+  }
+  return "npm run hermes:runtime-check";
 }
 
 function autonomyGate({
@@ -3967,6 +3977,7 @@ function buildBacklogItems({ experimentReport, operatorReport, missionReport, ru
       ],
       validationCommands: [
         "npm run hermes:runtime-check",
+        "npm run hermes:doctor-triage",
         "npm --silent run hermes:autonomy-gates",
         "npm --silent run hermes:experiment-ledger-report",
         "npm --silent run hermes:mission-ledger-report",

@@ -32,6 +32,7 @@ npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:operator-packet
+npm run hermes:operator-ledger
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist
@@ -149,6 +150,10 @@ spend quota, or submit real orders.
 Use `hermes:operator-packet` for Telegram/OpenClaw summaries. It compresses the
 safe-loop into priority, headline, short message, next safe action, cost guard
 and safety flags while staying read-only.
+
+Use `hermes:operator-ledger` when an operator-channel decision should be
+audited locally. It appends one JSONL row with the packet, `outcome=observed`
+and `action_executed=false`; it never executes the reported next action.
 
 Use `hermes:scheduler-rehearsal` before creating or changing real Hermes cron
 jobs. It converts the current safe-loop packet into proposed intervals and

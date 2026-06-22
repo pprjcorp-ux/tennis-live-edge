@@ -95,6 +95,17 @@ hermes cron add \
   --timeout-seconds 90
 ```
 
+Local operator ledger every 5 minutes:
+
+```bash
+hermes cron add \
+  --name tennis-edge-operator-ledger \
+  --every 5m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:operator-ledger from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report status, priority, ledger path, next_action_command, and safety. Do not execute the recorded next action, create orders, run provider smoke, or spend provider quota from this cron." \
+  --timeout-seconds 90
+```
+
 Scheduler rehearsal before creating or changing real cron jobs:
 
 ```bash

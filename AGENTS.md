@@ -165,6 +165,9 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes channel summaries should consume `npm run hermes:operator-packet`;
   it compresses safe-loop for Telegram/OpenClaw and must never execute the
   `next_action` it reports.
+- Hermes operator decision auditing should consume `npm run hermes:operator-ledger`;
+  it may write only local JSONL rows under `hermes/runs/` and must record
+  `action_executed=false`.
 - Hermes scheduler rehearsal should consume `npm run hermes:scheduler-rehearsal`;
   it may write only local JSONL audit rows under `hermes/runs/`, must not create
   real cron jobs, and must never execute the commands it schedules.

@@ -46,6 +46,7 @@ npm run hermes:budget-chain
 npm run hermes:provider-smoke
 npm run hermes:safe-loop
 npm run hermes:operator-packet
+npm run hermes:operator-ledger
 npm run hermes:scheduler-rehearsal
 npm run hermes:cron-proposal
 npm run hermes:activation-checklist
@@ -149,6 +150,10 @@ calls provider smoke execution, or submits real orders.
 `hermes:operator-packet` compresses the latest safe-loop decision for
 Telegram/OpenClaw channels. It reports priority, headline, short message, next
 safe action, cost guard and safety flags in a compact read-only JSON packet.
+
+`hermes:operator-ledger` appends the operator packet to
+`hermes/runs/operator-ledger.jsonl` by default. It records the recommendation as
+`observed` with `action_executed=false`; it does not execute the next action.
 
 `hermes:scheduler-rehearsal` turns the latest safe-loop output into a proposed
 local schedule and appends a JSONL audit row to `hermes/runs/`. It does not

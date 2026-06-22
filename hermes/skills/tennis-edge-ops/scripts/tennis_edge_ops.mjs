@@ -201,6 +201,14 @@ async function operatorPacket() {
   printJson(buildOperatorPacket(loop));
 }
 
+async function operatorLedger() {
+  const loop = await safeLoopData();
+  const packet = buildOperatorPacket(loop);
+  const ledger = buildOperatorLedger(packet);
+  writeOperatorLedger(ledger.record);
+  printJson(ledger);
+}
+
 async function safeLoopData() {
   const [runtime, report, matches] = await Promise.all([
     runtimeCheckData(),
@@ -1301,6 +1309,59 @@ function buildOperatorPacket(loop) {
     },
     forbidden_actions: loop.forbidden_actions ?? [],
   };
+}
+
+function buildOperatorLedger(packet) {
+  const path = operatorLedgerPath();
+  const record = {
+    generated_at: new Date().toISOString(),
+    mode: "operator_ledger_record",
+    packet,
+    outcome: "observed",
+    action_executed: false,
+    executed_commands: [],
+    next_action_command: packet.next_action?.command ?? null,
+    safety: packet.safety,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "operator_ledger",
+    status: packet.status,
+    priority: packet.priority,
+    read_only: false,
+    writes: true,
+    write_scope: "local_operator_jsonl_only",
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    executed_commands: [],
+    ledger: {
+      path,
+      format: "jsonl",
+      retention_note: "Local Hermes operator trace; do not commit runtime logs.",
+    },
+    record,
+    safety: {
+      real_execution_hard_block: packet.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+    },
+  };
+}
+
+function operatorLedgerPath() {
+  return process.env.HERMES_OPERATOR_LEDGER_PATH || "hermes/runs/operator-ledger.jsonl";
+}
+
+function writeOperatorLedger(record) {
+  const path = operatorLedgerPath();
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
 }
 
 function operatorPriority(loop) {
@@ -3496,6 +3557,7 @@ const commands = {
   "provider-smoke": providerSmoke,
   "safe-loop": safeLoop,
   "operator-packet": operatorPacket,
+  "operator-ledger": operatorLedger,
   "scheduler-rehearsal": schedulerRehearsal,
   "cron-proposal": cronProposal,
   "activation-checklist": activationChecklist,

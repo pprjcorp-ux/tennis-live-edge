@@ -100,6 +100,7 @@ npm run hermes:source-route-matrix
 npm run hermes:source-route-ledger
 npm run hermes:source-route-ledger-report
 npm run hermes:replay-backfill-contract
+npm run hermes:source-use-manifest
 npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
@@ -334,6 +335,17 @@ persisted matches, score ticks, odds ticks, signals, paper orders and replay
 lab evidence into implementation inputs and acceptance criteria. It is
 read-only: no provider calls, no browser scraping, no sportsbook automation, no
 bypass, no paper order creation and no real execution.
+
+`hermes:source-use-manifest` is the audit layer between safe source discovery
+and collection/import work. It creates one source-use row per collection route,
+historical source and enterprise shadow provider, with allowed/deferred/
+operator-required status, license and attribution gates, quota permissions,
+required evidence and forbidden actions. It is read-only: no provider calls, no
+public dataset fetch, no browser scraping, no sportsbook automation, no bypass,
+no paper order creation and no real execution.
+The JSON mode is `source_use_manifest`; evidence rows require
+`license_terms_reviewed` where applicable and block
+`provider_quota_spend_without_operator`.
 
 `hermes:historical-backfill-plan` ranks offline data sources that can improve
 priors, backtests and calibration: internal replay, Jeff Sackmann ATP/WTA/Slam

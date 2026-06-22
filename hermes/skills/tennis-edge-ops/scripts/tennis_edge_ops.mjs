@@ -1795,6 +1795,32 @@ async function replayBackfillContract() {
   }));
 }
 
+async function sourceUseManifest() {
+  const [report, grandSlam] = await Promise.all([
+    intelligenceData(),
+    grandSlamReadinessData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+  const historicalBackfill = buildHistoricalBackfillPlan({
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    grandSlam,
+  });
+  const enterpriseReadiness = buildEnterpriseReadinessPacket({ report, eventPlan });
+  printJson(buildSourceUseManifest({
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    historicalBackfill,
+    enterpriseReadiness,
+  }));
+}
+
 async function historicalBackfillPlan() {
   const [report, grandSlam] = await Promise.all([
     intelligenceData(),
@@ -4612,6 +4638,421 @@ function replayBackfillNextAction({ blockingGates, sourceRouteReport, route }) {
     id: "implement_replay_backfill_evidence",
     command: route?.command ?? "npm run api:check:operational-truth -- --pretty",
     reason: "Replay backfill evidence is ready to become a backend/read-model implementation task without provider spend.",
+    executes_now: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+  };
+}
+
+function buildSourceUseManifest({
+  report,
+  eventPlan,
+  sourcePlan,
+  sourceRoutes,
+  historicalBackfill,
+  enterpriseReadiness,
+}) {
+  const sourceRows = [
+    ...(sourceRoutes.routes ?? []).map((route) => sourceUseManifestRouteRow({ route, sourcePlan })),
+    ...(historicalBackfill.sources ?? []).map((source) => sourceUseManifestHistoricalRow(source)),
+    ...(enterpriseReadiness.replay_gate?.providers ?? []).map((provider) => (
+      sourceUseManifestEnterpriseRow(provider, enterpriseReadiness)
+    )),
+  ].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+  const blockedRows = sourceRows.filter((row) => row.decision === "forbidden");
+  const operatorRows = sourceRows.filter((row) => row.decision === "operator_required");
+  const deferredRows = sourceRows.filter((row) => row.decision === "deferred");
+  const allowedRows = sourceRows.filter((row) => row.decision === "allowed");
+  const sourceIds = new Set(sourceRows.map((row) => row.id));
+  const requiredIds = [
+    "route:replay_backfill",
+    "route:live_statistics",
+    "route:historical_public_backfill",
+    "route:odds_live_websocket",
+    "historical:jeff_sackmann_atp",
+    "historical:jeff_sackmann_wta",
+    "historical:tennis_data_results_odds",
+    "enterprise:sportradar",
+    "enterprise:betradar_uof",
+    "enterprise:txodds",
+    "enterprise:betfair",
+  ];
+  const missingRequiredIds = requiredIds.filter((id) => !sourceIds.has(id));
+  const gates = sourceUseManifestGates({
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRows,
+    missingRequiredIds,
+  });
+  const failingGates = gates.filter((gate) => gate.status !== "pass");
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "source_use_manifest",
+    objective: "turn_safe_jailbreak_routes_into_auditable_source_use_contracts_before_collection_or_import",
+    status: failingGates.some((gate) => gate.status === "fail") || blockedRows.length
+      ? "blocked"
+      : operatorRows.length || deferredRows.length
+        ? "review_required"
+        : "ready",
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    safe_jailbreak_policy: {
+      meaning: "Use only permitted alternate routes: internal APIs, persisted replay, licensed provider contracts, license-reviewed historical data and operator notes with source metadata.",
+      allowed_paths: [
+        "internal_fastapi_endpoint",
+        "persisted_postgres_replay",
+        "licensed_provider_api",
+        "provider_websocket_after_cursor_health",
+        "license_reviewed_historical_file",
+        "manual_operator_note_with_source_manifest",
+      ],
+      forbidden_paths: [
+        "sportsbook_ui_automation",
+        "browser_sportsbook_scrape",
+        "anti_bot_bypass",
+        "geolocation_bypass",
+        "credential_or_session_extraction",
+        "paywall_or_terms_bypass",
+        "llm_per_odds_tick",
+        "provider_quota_spend_without_operator",
+        "real_money_execution",
+      ],
+    },
+    summary: {
+      total_sources: sourceRows.length,
+      allowed: allowedRows.length,
+      operator_required: operatorRows.length,
+      deferred: deferredRows.length,
+      forbidden: blockedRows.length,
+      missing_required_ids: missingRequiredIds,
+      budget_chain_completed: Boolean(report.budget_chain_snapshot?.budget_chain_completed),
+      enterprise_eligible: Boolean(report.budget_chain_snapshot?.enterprise_eligible),
+      cursor_resync_required: Number(report.cursor_summary?.resync_required ?? 0),
+    },
+    manifest: sourceRows,
+    gates,
+    next_action: sourceUseManifestNextAction({ failingGates, operatorRows, deferredRows, allowedRows }),
+    acceptance_criteria: [
+      "every_collection_route_has_source_use_manifest_row",
+      "historical_sources_require_license_review_before_import",
+      "enterprise_sources_remain_deferred_until_enterprise_eligible",
+      "odds_websocket_requires_resync_required=false_before_use",
+      "sportsbook_browser_scraping_and_bypass_are_forbidden",
+      "provider_api_call_allowed=false",
+      "can_submit_real_orders=false",
+    ],
+    validation_commands: [
+      "npm --silent run hermes:source-use-manifest",
+      "npm --silent run hermes:source-route-matrix",
+      "npm --silent run hermes:historical-backfill-plan",
+      "npm --silent run hermes:enterprise-readiness",
+      "python3 scripts/check_private_runtime.py",
+    ],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block === true,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      anti_bot_bypass_allowed: false,
+      geolocation_bypass_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      paywall_or_terms_bypass_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function sourceUseManifestRouteRow({ route, sourcePlan }) {
+  const protectedRoute = ["odds_live_websocket", "score_state_budget", "odds_archive_budget_smoke"].includes(route.id);
+  const operatorRequired = Boolean(route.operator_required || protectedRoute);
+  const decision = sourceUseDecision({
+    routeStatus: route.status,
+    operatorRequired,
+    deferred: false,
+    forbidden: route.status === "blocked",
+  });
+  return {
+    id: `route:${route.id}`,
+    source_id: route.id,
+    source_type: "collection_route",
+    priority: route.priority,
+    decision,
+    status: route.status,
+    lane: route.lane,
+    primary_path: route.primary_path,
+    command: route.command,
+    cost_tier: route.cost_tier,
+    operator_required: operatorRequired,
+    provider: route.provider,
+    license_review_required: ["historical_public_backfill", "public_context_operator_note"].includes(route.id),
+    attribution_required: ["historical_public_backfill", "public_context_operator_note", "manual_operator_note"].includes(route.id),
+    quota_spend_allowed: false,
+    import_allowed_now: route.id === "replay_backfill" || route.id === "live_statistics",
+    required_evidence: route.success_evidence ?? [],
+    blocked_when: route.blocked_when ?? [],
+    forbidden_actions: sourceUseForbiddenActions(sourcePlan),
+    reason: route.reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function sourceUseManifestHistoricalRow(source) {
+  const licenseBlocked = Boolean(source.license_review_required || source.commercial_clearance_required);
+  return {
+    id: `historical:${source.id}`,
+    source_id: source.id,
+    source_type: "historical_backfill_source",
+    priority: 200 + Number(source.priority ?? 0),
+    decision: sourceUseDecision({
+      routeStatus: source.status,
+      operatorRequired: licenseBlocked,
+      deferred: false,
+      forbidden: false,
+    }),
+    status: source.status,
+    provider: source.provider,
+    dataset: source.dataset,
+    coverage: source.coverage ?? [],
+    use_cases: source.use_cases ?? [],
+    source_url: source.source_url,
+    command: source.command,
+    cost_tier: source.cost_tier,
+    license: source.license,
+    license_review_required: Boolean(source.license_review_required),
+    commercial_clearance_required: Boolean(source.commercial_clearance_required),
+    attribution_required: Boolean(source.attribution_required),
+    quota_spend_allowed: false,
+    import_allowed_now: !licenseBlocked && source.status === "ready",
+    required_evidence: [
+      "source_url_or_local_path",
+      "license_terms_reviewed",
+      "attribution_recorded",
+      "source_timestamp",
+      "offline_import_fixture",
+      "no_live_scraping",
+    ],
+    blocked_when: source.blockers ?? [],
+    forbidden_actions: [
+      "live_scoreboard_scraping",
+      "terms_restricted_scraping",
+      "paywall_bypass",
+      "credential_or_session_extraction",
+    ],
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function sourceUseManifestEnterpriseRow(provider, readiness) {
+  const enterpriseEligible = Boolean(readiness.budget_gate?.enterprise_eligible);
+  return {
+    id: `enterprise:${provider.provider}`,
+    source_id: provider.provider,
+    source_type: "enterprise_shadow_contract",
+    priority: 500,
+    decision: enterpriseEligible ? "operator_required" : "deferred",
+    status: provider.status,
+    provider: provider.provider,
+    adapter_contract: provider.adapter_contract,
+    fake_api: provider.fake_api,
+    scenarios: provider.scenarios ?? [],
+    output_contracts: provider.output_contracts ?? [],
+    command: "npm --silent run hermes:enterprise-readiness",
+    cost_tier: "enterprise_contract_deferred",
+    license_review_required: true,
+    commercial_clearance_required: true,
+    attribution_required: false,
+    quota_spend_allowed: false,
+    import_allowed_now: false,
+    required_evidence: [
+      "operator_contract_review",
+      "sample_payload_terms",
+      "timestamp_semantics",
+      "latency_sla",
+      "redistribution_restrictions",
+      "offline_replay_fixture",
+    ],
+    blocked_when: enterpriseEligible ? ["operator_contract_not_reviewed"] : ["enterprise_eligible=false"],
+    forbidden_actions: [
+      "provider_api_call_from_manifest",
+      "credential_or_session_extraction",
+      "provider_quota_spend_without_operator_contract",
+      "real_money_execution",
+    ],
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function sourceUseDecision({ routeStatus, operatorRequired, deferred, forbidden }) {
+  if (forbidden || routeStatus === "blocked") return "forbidden";
+  if (deferred || routeStatus === "deferred" || String(routeStatus).startsWith("locked")) return "deferred";
+  if (operatorRequired || ["operator_ready", "operator_review", "operator_note_only"].includes(routeStatus)) {
+    return "operator_required";
+  }
+  return "allowed";
+}
+
+function sourceUseForbiddenActions(sourcePlan) {
+  return [
+    ...(sourcePlan.forbidden_actions ?? []),
+    "sportsbook_ui_automation",
+    "browser_sportsbook_scrape",
+    "anti_bot_bypass",
+    "geolocation_bypass",
+    "credential_or_session_extraction",
+    "paywall_or_terms_bypass",
+    "provider_quota_spend_without_operator",
+  ];
+}
+
+function sourceUseManifestGates({ report, eventPlan, sourcePlan, sourceRows, missingRequiredIds }) {
+  const cursorBlocked = eventPlan.events.some((event) => event.type === "cursor_resync_required");
+  const protectedClaims = sourceRows.filter((row) => (
+    row.provider_api_call_allowed === true
+      || row.can_submit_real_orders === true
+      || row.live_api_calls === true
+  ));
+  return [
+    sourceUseGate({
+      id: "manifest_coverage",
+      status: missingRequiredIds.length ? "fail" : "pass",
+      evidence: [`missing_required_ids=${missingRequiredIds.join(",") || "none"}`],
+      command: "npm --silent run hermes:source-use-manifest",
+    }),
+    sourceUseGate({
+      id: "safe_jailbreak_policy",
+      status: sourcePlan.safe_jailbreak_policy?.bypass_allowed === false ? "pass" : "fail",
+      evidence: [
+        `bypass_allowed=${sourcePlan.safe_jailbreak_policy?.bypass_allowed}`,
+        "sportsbook_browser_automation_allowed=false",
+      ],
+      command: "npm --silent run hermes:source-discovery",
+    }),
+    sourceUseGate({
+      id: "no_protected_execution",
+      status: protectedClaims.length ? "fail" : "pass",
+      evidence: [`protected_claim_count=${protectedClaims.length}`],
+      command: "python3 scripts/check_private_runtime.py",
+    }),
+    sourceUseGate({
+      id: "real_execution_hard_block",
+      status: report.safety?.real_execution_hard_block === true ? "pass" : "fail",
+      evidence: [`real_execution_hard_block=${report.safety?.real_execution_hard_block}`],
+      command: "npm --silent run hermes:preflight",
+    }),
+    sourceUseGate({
+      id: "cursor_resync_blocks_live_odds",
+      status: cursorBlocked
+        ? sourceRows.some((row) => row.id === "route:odds_live_websocket" && row.decision === "forbidden")
+          ? "pass"
+          : "fail"
+        : "pass",
+      evidence: [`cursor_resync_required=${cursorBlocked}`],
+      command: "npm --silent run hermes:events",
+    }),
+    sourceUseGate({
+      id: "license_review_visible",
+      status: sourceRows.some((row) => row.license_review_required) ? "pass" : "warn",
+      evidence: [`license_review_rows=${sourceRows.filter((row) => row.license_review_required).length}`],
+      command: "npm --silent run hermes:historical-backfill-plan",
+    }),
+  ];
+}
+
+function sourceUseGate({ id, status, evidence, command }) {
+  return {
+    id,
+    status,
+    evidence,
+    command,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+  };
+}
+
+function sourceUseManifestNextAction({ failingGates, operatorRows, deferredRows, allowedRows }) {
+  const hardGate = failingGates.find((gate) => gate.status === "fail");
+  if (hardGate) {
+    return {
+      id: `resolve_${hardGate.id}`,
+      command: hardGate.command,
+      reason: `Source-use manifest is blocked by ${hardGate.id}.`,
+      executes_now: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+    };
+  }
+  const replay = allowedRows.find((row) => row.id === "route:replay_backfill");
+  if (replay) {
+    return {
+      id: "implement_allowed_replay_or_internal_route",
+      command: "npm --silent run hermes:replay-backfill-contract",
+      reason: "Free local replay/internal source routes are allowed and should be hardened before provider spend.",
+      executes_now: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+    };
+  }
+  const operatorRow = operatorRows[0];
+  if (operatorRow) {
+    return {
+      id: `operator_review_${operatorRow.source_id}`,
+      command: operatorRow.command,
+      reason: `${operatorRow.source_id} requires operator review before collection/import.`,
+      executes_now: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+    };
+  }
+  const deferredRow = deferredRows[0];
+  if (deferredRow) {
+    return {
+      id: `keep_deferred_${deferredRow.source_id}`,
+      command: deferredRow.command,
+      reason: `${deferredRow.source_id} remains deferred until gates pass.`,
+      executes_now: false,
+      provider_api_call_allowed: false,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+    };
+  }
+  return {
+    id: "monitor_source_manifest",
+    command: "npm --silent run hermes:source-use-manifest",
+    reason: "All source-use rows are allowed or safely accounted for.",
     executes_now: false,
     provider_api_call_allowed: false,
     can_submit_real_orders: false,
@@ -13252,6 +13693,7 @@ const commands = {
   "source-route-ledger": sourceRouteLedger,
   "source-route-ledger-report": sourceRouteLedgerReport,
   "replay-backfill-contract": replayBackfillContract,
+  "source-use-manifest": sourceUseManifest,
   "historical-backfill-plan": historicalBackfillPlan,
   "enterprise-accuracy-plan": enterpriseAccuracyPlan,
   "enterprise-readiness": enterpriseReadiness,

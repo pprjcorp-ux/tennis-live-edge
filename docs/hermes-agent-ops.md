@@ -48,6 +48,7 @@ npm run hermes:source-route-matrix
 npm run hermes:source-route-ledger
 npm run hermes:source-route-ledger-report
 npm run hermes:replay-backfill-contract
+npm run hermes:source-use-manifest
 npm run hermes:historical-backfill-plan
 npm run hermes:trigger-policy
 npm run hermes:ops-compiler
@@ -318,6 +319,13 @@ persisted match/score/odds/signal/paper-order inputs, `ReplayBackfillEvidence`,
 replay lab gates,
 implementation steps and validation commands. It stays read-only and cannot run
 provider APIs, browser scraping, sportsbook automation, bypasses or orders.
+
+Use `hermes:source-use-manifest` before adding collection/import code or asking
+Hermes to "jailbreak" a source gap. It audits collection routes, historical
+sources and enterprise shadow providers into allowed/deferred/operator-required
+rows with license/attribution gates, quota permissions, required evidence and
+forbidden actions. It is read-only and cannot fetch datasets, call providers,
+scrape, bypass, create paper orders or submit real orders.
 
 Use `hermes:historical-backfill-plan` when Hermes needs more offline evidence
 for priors, calibration or backtests. It ranks internal replay, public

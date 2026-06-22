@@ -104,6 +104,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes when Hermes needs the highest-level autonomy decision: `npm run hermes:autonomy-brief`.
 - Every 5-15 minutes during collection work: `npm run hermes:source-discovery`.
 - During Grand Slam windows: `npm run hermes:grand-slam-mission`.
+- Before collection/import work from any new route: `npm run hermes:source-use-manifest`.
 - Manual/weekly review for offline priors: `npm run hermes:historical-backfill-plan`.
 - Every 5 minutes for cron/webhook wakeup policy: `npm run hermes:trigger-policy`.
 - Every 5 minutes for an all-in-one agent-channel payload: `npm run hermes:ops-compiler`.
@@ -177,6 +178,15 @@ backfill and historical public backfill to allowed acquisition paths. It can
 say "use public allowed research" or "record a manual operator note", but it
 must never scrape restricted pages, open sportsbook UIs, bypass anti-bot/
 geolocation controls, extract sessions, or spend provider quota.
+
+`hermes:source-use-manifest` is the contract between route discovery and real
+collection/import implementation. It emits one row per collection route,
+historical source and enterprise shadow provider, classifying each as allowed,
+operator-required, deferred or forbidden. Rows include license and attribution
+requirements, quota permissions, required evidence and blocked conditions. This
+is the safe interpretation of "jailbreak": Hermes may find permitted alternate
+routes, but every route must be source-manifested before code imports data or
+spends provider quota.
 
 `hermes:historical-backfill-plan` is the preferred packet for offline priors and
 backtest depth. It ranks internal persisted replay, Jeff Sackmann ATP/WTA/Slam

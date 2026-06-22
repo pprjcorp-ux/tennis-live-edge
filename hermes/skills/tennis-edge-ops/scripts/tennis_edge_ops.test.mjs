@@ -7659,6 +7659,62 @@ test("budget-chain emits a dry-run provider onboarding plan without spending quo
   }
 });
 
+test("source-use-manifest audits allowed routes before collection or import", async () => {
+  const called = [];
+  const fixtures = eventRouterFixtures();
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["source-use-manifest", `--api-base=${apiBase}`]);
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.method === "POST"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "source_use_manifest");
+    assert.equal(payload.objective, "turn_safe_jailbreak_routes_into_auditable_source_use_contracts_before_collection_or_import");
+    assert.equal(payload.read_only, true);
+    assert.equal(payload.writes, false);
+    assert.equal(payload.live_api_calls, false);
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.safe_jailbreak_policy.allowed_paths.includes("persisted_postgres_replay"), true);
+    assert.equal(payload.safe_jailbreak_policy.forbidden_paths.includes("sportsbook_ui_automation"), true);
+    assert.equal(payload.safe_jailbreak_policy.forbidden_paths.includes("provider_quota_spend_without_operator"), true);
+    assert.equal(payload.summary.missing_required_ids.length, 0);
+    assert.equal(payload.summary.enterprise_eligible, false);
+    assert.equal(payload.manifest.some((row) => row.id === "route:replay_backfill" && row.decision === "allowed"), true);
+    assert.equal(payload.manifest.some((row) => row.id === "route:historical_public_backfill" && row.license_review_required === true), true);
+    assert.equal(payload.manifest.some((row) => row.id === "historical:jeff_sackmann_atp" && row.decision === "operator_required"), true);
+    assert.equal(payload.manifest.some((row) => row.id === "historical:tennis_data_results_odds" && row.required_evidence.includes("license_terms_reviewed")), true);
+    assert.equal(payload.manifest.some((row) => row.id === "enterprise:sportradar" && row.decision === "deferred"), true);
+    assert.equal(payload.manifest.some((row) => row.id === "enterprise:betfair" && row.provider_api_call_allowed === false), true);
+    assert.equal(payload.manifest.every((row) => row.executes_now === false), true);
+    assert.equal(payload.manifest.every((row) => row.provider_api_call_allowed === false), true);
+    assert.equal(payload.manifest.every((row) => row.can_submit_real_orders === false), true);
+    assert.equal(payload.gates.every((gate) => gate.status === "pass"), true);
+    assert.equal(payload.acceptance_criteria.includes("sportsbook_browser_scraping_and_bypass_are_forbidden"), true);
+    assert.equal(payload.validation_commands.includes("npm --silent run hermes:source-use-manifest"), true);
+    assert.equal(payload.next_action.command, "npm --silent run hermes:replay-backfill-contract");
+    assert.equal(payload.safety.browser_sportsbook_automation_allowed, false);
+    assert.equal(payload.safety.credential_or_session_extraction_allowed, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("enterprise-readiness reports shadow contracts without provider calls", async () => {
   const called = [];
   const fixtures = eventRouterFixtures({

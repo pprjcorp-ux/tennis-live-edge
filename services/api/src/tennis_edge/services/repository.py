@@ -55,6 +55,7 @@ from tennis_edge.domain import (
     ProviderCursorResyncResult,
     ProviderHealth,
     RawProviderPayload,
+    ReplayBackfillEvidence,
     ReplayContractRunRequest,
     ReplayContractRunResult,
     ReplayContractScenarioResult,
@@ -899,6 +900,9 @@ class AnalysisRepository:
             target_date,
             performance,
         )
+
+    async def replay_backfill_evidence(self) -> ReplayBackfillEvidence:
+        return self.operational_state.replay_backfill_evidence()
 
     async def live_dashboard_snapshot(self, target_date: date) -> LiveDashboardSnapshot:
         performance = await self.paper_performance()

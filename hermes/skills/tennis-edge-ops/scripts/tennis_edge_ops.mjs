@@ -2483,6 +2483,39 @@ function backendUnavailableDataQuality({ error }) {
   ];
 }
 
+function backendUnavailableReplayBackfillEvidence({ error }) {
+  return {
+    status: "collecting",
+    source: "operational_state_replay_lab",
+    contract_id: "replay_backfill_to_operational_truth",
+    adapter_boundary: "internal_fastapi_read_models",
+    provider_api_call_allowed: false,
+    browser_sportsbook_automation_allowed: false,
+    bypass_allowed: false,
+    can_submit_real_orders: false,
+    replay_lab_status: "collecting",
+    replay_contract_ready: false,
+    persisted_matches: 0,
+    score_ticks: 0,
+    odds_ticks: 0,
+    raw_payloads_saved: 0,
+    score_ticks_saved: 0,
+    odds_ticks_saved: 0,
+    cursors_saved: 0,
+    provider_latency_saved: 0,
+    resync_required: false,
+    scenarios_passed: [],
+    scenarios_blocked: [],
+    closing_line_proxy_seed_ready: false,
+    paper_learning_seed_ready: false,
+    signal_gate_regression_ready: false,
+    gates: {
+      backend_reachable: false,
+    },
+    notes: [`ReplayBackfillEvidence endpoint unavailable: ${String(error.message ?? error)}`],
+  };
+}
+
 function backendUnavailableCostProfile() {
   return {
     active_plan: "lean_atp",
@@ -2603,6 +2636,7 @@ async function intelligenceData() {
     safeRequest("/api/v1/signals/live", [], "live_signals"),
     safeRequest("/api/v1/ingestion/runs", backendUnavailableIngestionRuns, "ingestion_runs"),
     safeRequest("/api/v1/dashboard/live-state", backendUnavailableDashboardState, "dashboard_state"),
+    safeRequest("/api/v1/replay/backfill-evidence", backendUnavailableReplayBackfillEvidence, "replay_backfill_evidence"),
   ]);
   const [
     briefing,
@@ -2619,6 +2653,7 @@ async function intelligenceData() {
     liveSignals,
     ingestionRuns,
     dashboardState,
+    replayBackfillEvidence,
   ] = responses.map((response) => response.data);
   const requestErrors = responses.map((response) => response.error).filter(Boolean);
   return buildIntelligenceReport({
@@ -2636,6 +2671,7 @@ async function intelligenceData() {
     liveSignals,
     ingestionRuns,
     dashboardState,
+    replayBackfillEvidence,
     requestErrors,
   });
 }
@@ -3212,6 +3248,7 @@ function buildIntelligenceReport({
   liveSignals,
   ingestionRuns,
   dashboardState,
+  replayBackfillEvidence,
   requestErrors = [],
 }) {
   const failedPreflight = (preflightData.checks ?? []).filter((check) => check.status === "fail");
@@ -3286,6 +3323,7 @@ function buildIntelligenceReport({
       persisted_matches: sourceSummary.persisted_matches ?? 0,
       match_freshness: compactMatchFreshness(sourceSummary.match_freshness ?? []),
       replay_contract_ready: replayLab.status ?? "unknown",
+      replay_backfill_evidence: compactReplayBackfillEvidence(replayBackfillEvidence),
       enterprise_shadow_providers: enterpriseShadowProviders.map(compactReplayContractProvider),
       enterprise_shadow_provider_count: enterpriseShadowProviders.length,
       data_quality_non_pass: staleQuality.length,
@@ -3597,6 +3635,37 @@ function compactReplayContractProvider(provider) {
     scenarios: (provider.scenarios ?? []).slice(0, 6),
     output_contracts: (provider.output_contracts ?? []).slice(0, 8),
     notes: (provider.notes ?? []).slice(0, 3),
+  };
+}
+
+function compactReplayBackfillEvidence(evidence = {}) {
+  return {
+    status: evidence.status ?? "collecting",
+    source: evidence.source ?? "operational_state_replay_lab",
+    contract_id: evidence.contract_id ?? "replay_backfill_to_operational_truth",
+    adapter_boundary: evidence.adapter_boundary ?? "internal_fastapi_read_models",
+    provider_api_call_allowed: Boolean(evidence.provider_api_call_allowed),
+    can_submit_real_orders: Boolean(evidence.can_submit_real_orders),
+    replay_lab_status: evidence.replay_lab_status ?? "unknown",
+    replay_contract_ready: Boolean(evidence.replay_contract_ready),
+    last_contract_run_id: evidence.last_contract_run_id ?? null,
+    last_replay_run_id: evidence.last_replay_run_id ?? null,
+    persisted_matches: Number(evidence.persisted_matches ?? 0),
+    score_ticks: Number(evidence.score_ticks ?? 0),
+    odds_ticks: Number(evidence.odds_ticks ?? 0),
+    raw_payloads_saved: Number(evidence.raw_payloads_saved ?? 0),
+    score_ticks_saved: Number(evidence.score_ticks_saved ?? 0),
+    odds_ticks_saved: Number(evidence.odds_ticks_saved ?? 0),
+    cursors_saved: Number(evidence.cursors_saved ?? 0),
+    provider_latency_saved: Number(evidence.provider_latency_saved ?? 0),
+    resync_required: Boolean(evidence.resync_required),
+    scenarios_passed: (evidence.scenarios_passed ?? []).slice(0, 6),
+    scenarios_blocked: (evidence.scenarios_blocked ?? []).slice(0, 6),
+    closing_line_proxy_seed_ready: Boolean(evidence.closing_line_proxy_seed_ready),
+    paper_learning_seed_ready: Boolean(evidence.paper_learning_seed_ready),
+    signal_gate_regression_ready: Boolean(evidence.signal_gate_regression_ready),
+    gates: evidence.gates ?? {},
+    notes: (evidence.notes ?? []).slice(0, 4),
   };
 }
 
@@ -4500,6 +4569,7 @@ function buildReplayBackfillContract({
 }) {
   const route = sourceRoutes.routes?.find((item) => item.id === "replay_backfill") ?? null;
   const persistedMatches = Number(report.data_snapshot?.persisted_matches ?? 0);
+  const backendEvidence = report.data_snapshot?.replay_backfill_evidence ?? {};
   const replayStatus = report.data_snapshot?.replay_contract_ready ?? "unknown";
   const replayReady = replayStatus === "ready";
   const routeReady = route?.status === "ready_now";
@@ -4530,6 +4600,7 @@ function buildReplayBackfillContract({
     sourceRouteReport,
     sourceIntakeReport,
     sourceIntakeAllowedReplay,
+    backendEvidence,
     safeCounters,
     eventPlan,
   });
@@ -4595,6 +4666,15 @@ function buildReplayBackfillContract({
       dataset_fetch_attempted_count: sourceIntakeReport.dataset_fetch_attempted_count,
       provider_command_executed_count: sourceRouteReport.provider_command_executed_count,
       source_intake_provider_command_executed_count: sourceIntakeReport.provider_command_executed_count,
+      backend_replay_backfill_status: backendEvidence.status ?? "collecting",
+      backend_replay_backfill_contract_id: backendEvidence.contract_id ?? null,
+      backend_replay_backfill_persisted_matches: backendEvidence.persisted_matches ?? 0,
+      backend_replay_backfill_score_ticks: backendEvidence.score_ticks ?? 0,
+      backend_replay_backfill_odds_ticks: backendEvidence.odds_ticks ?? 0,
+      backend_replay_backfill_closing_line_proxy_seed_ready: Boolean(backendEvidence.closing_line_proxy_seed_ready),
+      backend_replay_backfill_paper_learning_seed_ready: Boolean(backendEvidence.paper_learning_seed_ready),
+      backend_replay_backfill_signal_gate_regression_ready: Boolean(backendEvidence.signal_gate_regression_ready),
+      backend_replay_backfill_gates: backendEvidence.gates ?? {},
       bypass_attempted_count: sourceRouteReport.bypass_attempted_count + sourceIntakeReport.bypass_attempted_count,
       data_quality_non_pass: report.data_snapshot?.data_quality_non_pass ?? 0,
       cursors_requiring_resync: report.data_snapshot?.cursors_requiring_resync ?? 0,
@@ -4611,6 +4691,7 @@ function buildReplayBackfillContract({
       "replay_backfill.route.status=ready_now",
       "offline_contract.id=replay_backfill_to_operational_truth",
       "validation_command=npm run api:check:operational-truth -- --pretty",
+      "backend_replay_backfill_evidence.status=ready",
       "provider_api_call_allowed=false",
       "browser_sportsbook_automation_allowed=false",
       "bypass_allowed=false",
@@ -4668,6 +4749,7 @@ function replayBackfillContractGates({
   sourceRouteReport,
   sourceIntakeReport,
   sourceIntakeAllowedReplay,
+  backendEvidence,
   safeCounters,
   eventPlan,
 }) {
@@ -4686,9 +4768,21 @@ function replayBackfillContractGates({
     }),
     replayBackfillGate({
       id: "persisted_canonical_state",
-      status: persistedMatches > 0 ? "pass" : "collecting",
+      status: persistedMatches > 0 || Number(backendEvidence.persisted_matches ?? 0) > 0 ? "pass" : "collecting",
       evidence: [`persisted_matches=${persistedMatches}`],
       command: "npm run api:check:operational-truth -- --pretty",
+    }),
+    replayBackfillGate({
+      id: "backend_replay_backfill_evidence",
+      status: backendEvidence.status === "ready" ? "pass" : "collecting",
+      evidence: [
+        `status=${backendEvidence.status ?? "collecting"}`,
+        `contract_id=${backendEvidence.contract_id ?? "none"}`,
+        `closing_line_proxy_seed_ready=${Boolean(backendEvidence.closing_line_proxy_seed_ready)}`,
+        `paper_learning_seed_ready=${Boolean(backendEvidence.paper_learning_seed_ready)}`,
+        `signal_gate_regression_ready=${Boolean(backendEvidence.signal_gate_regression_ready)}`,
+      ],
+      command: "curl -fsS http://127.0.0.1:8000/api/v1/replay/backfill-evidence",
     }),
     replayBackfillGate({
       id: "source_route_pressure",

@@ -1264,6 +1264,101 @@ def test_replay_lab_readiness_exposes_fake_api_contracts_without_live_keys() -> 
     assert "RawProviderPayload" in providers[Provider.THE_ODDS_API].input_contracts
 
 
+def test_replay_backfill_evidence_derives_read_model_without_provider_calls() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(data_mode="live", persistence_enabled=True),
+        StoreStub(
+            ingestion_runs=[
+                _replay_contract_run(generated_at=generated_at),
+                IngestionRunRecord(
+                    id="ingest_replay_ready_1",
+                    run_type="replay_run",
+                    source="api",
+                    status="completed",
+                    summary={
+                        "events_replayed": 3,
+                        "score_ticks": 1,
+                        "odds_ticks": 12,
+                        "resync_required": False,
+                    },
+                    started_at=generated_at,
+                    completed_at=generated_at,
+                ),
+            ]
+        ),
+    )
+
+    evidence = service.replay_backfill_evidence()
+
+    assert evidence.status == "ready"
+    assert evidence.source == "operational_state_replay_lab"
+    assert evidence.contract_id == "replay_backfill_to_operational_truth"
+    assert evidence.adapter_boundary == "internal_fastapi_read_models"
+    assert evidence.provider_api_call_allowed is False
+    assert evidence.browser_sportsbook_automation_allowed is False
+    assert evidence.bypass_allowed is False
+    assert evidence.can_submit_real_orders is False
+    assert evidence.replay_lab_status == "ready"
+    assert evidence.replay_contract_ready is True
+    assert evidence.last_contract_run_id == "ingest_replay_contract_1"
+    assert evidence.last_replay_run_id == "ingest_replay_ready_1"
+    assert evidence.persisted_matches == 1
+    assert evidence.score_ticks == 1
+    assert evidence.odds_ticks == 12
+    assert evidence.raw_payloads_saved == 11
+    assert evidence.score_ticks_saved == 3
+    assert evidence.odds_ticks_saved == 14
+    assert evidence.cursors_saved == 3
+    assert evidence.provider_latency_saved == 6
+    assert evidence.resync_required is False
+    assert evidence.scenarios_passed == ["healthy"]
+    assert evidence.scenarios_blocked == ["gap", "resync_required"]
+    assert evidence.closing_line_proxy_seed_ready is True
+    assert evidence.paper_learning_seed_ready is True
+    assert evidence.signal_gate_regression_ready is True
+    assert evidence.gates["replay_lab_ready"] is True
+    assert evidence.gates["contract_run_persisted"] is True
+    assert evidence.gates["replay_run_persisted"] is True
+    assert evidence.gates["no_live_keys_required"] is True
+    assert evidence.gates["no_replay_resync_required"] is True
+    assert any("No provider call" in note for note in evidence.notes)
+
+
+def test_replay_backfill_evidence_collects_until_replay_run_is_safe() -> None:
+    generated_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    service = OperationalStateService(
+        Settings(data_mode="live", persistence_enabled=True),
+        StoreStub(
+            ingestion_runs=[
+                _replay_contract_run(generated_at=generated_at),
+                IngestionRunRecord(
+                    id="ingest_replay_resync_1",
+                    run_type="replay_run",
+                    source="api",
+                    status="degraded",
+                    summary={
+                        "events_replayed": 3,
+                        "score_ticks": 1,
+                        "odds_ticks": 12,
+                        "resync_required": True,
+                    },
+                    started_at=generated_at,
+                    completed_at=generated_at,
+                ),
+            ]
+        ),
+    )
+
+    evidence = service.replay_backfill_evidence()
+
+    assert evidence.status == "collecting"
+    assert evidence.resync_required is True
+    assert evidence.closing_line_proxy_seed_ready is False
+    assert evidence.gates["no_replay_resync_required"] is False
+    assert any("requires resync" in note for note in evidence.notes)
+
+
 def test_replay_lab_readiness_collects_until_contract_run_is_persisted() -> None:
     service = OperationalStateService(Settings(data_mode="live"), StoreStub())
 

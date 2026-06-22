@@ -106,6 +106,46 @@ function eventRouterFixtures(overrides = {}) {
         status: "completed",
       },
     ],
+    "/api/v1/replay/backfill-evidence": {
+      status: "ready",
+      source: "operational_state_replay_lab",
+      contract_id: "replay_backfill_to_operational_truth",
+      adapter_boundary: "internal_fastapi_read_models",
+      provider_api_call_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      bypass_allowed: false,
+      can_submit_real_orders: false,
+      replay_lab_status: "ready",
+      replay_contract_ready: true,
+      last_contract_run_id: "ingest_replay_contract_1",
+      last_replay_run_id: "ingest_replay_1",
+      persisted_matches: 2,
+      score_ticks: 2,
+      odds_ticks: 12,
+      raw_payloads_saved: 11,
+      score_ticks_saved: 3,
+      odds_ticks_saved: 14,
+      cursors_saved: 3,
+      provider_latency_saved: 6,
+      resync_required: false,
+      scenarios_passed: ["healthy"],
+      scenarios_blocked: ["gap", "resync_required"],
+      closing_line_proxy_seed_ready: true,
+      paper_learning_seed_ready: true,
+      signal_gate_regression_ready: true,
+      gates: {
+        replay_lab_ready: true,
+        contract_run_persisted: true,
+        contract_passed: true,
+        replay_run_persisted: true,
+        persisted_events_present: true,
+        score_ticks_present: true,
+        odds_ticks_present: true,
+        no_live_keys_required: true,
+        no_replay_resync_required: true,
+      },
+      notes: ["fixture backend replay backfill evidence"],
+    },
     "/api/v1/dashboard/live-state": {
       operational_state: {
         provider_mode: "replay",
@@ -527,6 +567,26 @@ test("intelligence produces a safe operator packet from internal APIs only", asy
         status: "completed",
       },
     ],
+    "/api/v1/replay/backfill-evidence": {
+      status: "ready",
+      source: "operational_state_replay_lab",
+      contract_id: "replay_backfill_to_operational_truth",
+      adapter_boundary: "internal_fastapi_read_models",
+      provider_api_call_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      bypass_allowed: false,
+      can_submit_real_orders: false,
+      replay_lab_status: "ready",
+      replay_contract_ready: true,
+      persisted_matches: 2,
+      score_ticks: 2,
+      odds_ticks: 12,
+      closing_line_proxy_seed_ready: true,
+      paper_learning_seed_ready: true,
+      signal_gate_regression_ready: true,
+      gates: { replay_lab_ready: true },
+      notes: [],
+    },
     "/api/v1/dashboard/live-state": {
       operational_state: {
         provider_mode: "replay",
@@ -1620,6 +1680,7 @@ test("mission-ledger appends mission-control decisions without executing actions
     assert.equal(result.exit, 0);
     assert.equal(called.every((call) => call.method === "GET"), true);
     assert.equal(called.some((call) => call.method === "POST"), false);
+    assert.equal(called.some((call) => call.url === "/api/v1/replay/backfill-evidence"), true);
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.mode, "mission_ledger");
     assert.equal(payload.status, "blocked");
@@ -2480,16 +2541,23 @@ test("replay-backfill-contract turns replay route into offline evidence contract
     assert.equal(payload.evidence.persisted_matches, 2);
     assert.equal(payload.evidence.replay_contract_ready, "ready");
     assert.equal(payload.evidence.source_route_top_next_route, "replay_backfill");
+    assert.equal(payload.evidence.backend_replay_backfill_status, "ready");
+    assert.equal(payload.evidence.backend_replay_backfill_contract_id, "replay_backfill_to_operational_truth");
+    assert.equal(payload.evidence.backend_replay_backfill_closing_line_proxy_seed_ready, true);
+    assert.equal(payload.evidence.backend_replay_backfill_paper_learning_seed_ready, true);
+    assert.equal(payload.evidence.backend_replay_backfill_signal_gate_regression_ready, true);
     assert.equal(payload.evidence.route_command_executed_count, 0);
     assert.equal(payload.evidence.provider_command_executed_count, 0);
     assert.equal(payload.evidence.bypass_attempted_count, 0);
     assert.equal(payload.implementation_steps.includes("map_persisted_matches_score_ticks_odds_ticks_and_signals_into_replay_backfill_evidence"), true);
     assert.equal(payload.implementation_steps.includes("prove_no_provider_api_calls_no_browser_scraping_and_no_bypass"), true);
     assert.equal(payload.acceptance_criteria.includes("offline_contract.id=replay_backfill_to_operational_truth"), true);
+    assert.equal(payload.acceptance_criteria.includes("backend_replay_backfill_evidence.status=ready"), true);
     assert.equal(payload.acceptance_criteria.includes("provider_api_call_allowed=false"), true);
     assert.equal(payload.validation_commands.includes("npm --silent run hermes:replay-backfill-contract"), true);
     assert.equal(payload.validation_commands.includes("npm run api:check:operational-truth -- --pretty"), true);
     assert.equal(payload.gates.every((gate) => gate.status === "pass"), true);
+    assert.equal(payload.gates.find((gate) => gate.id === "backend_replay_backfill_evidence").status, "pass");
     assert.equal(payload.next_action.id, "implement_replay_backfill_evidence");
     assert.equal(payload.next_action.provider_api_call_allowed, false);
     assert.equal(payload.allowed_inputs.includes("persisted_postgres_replay"), true);
@@ -2573,6 +2641,7 @@ test("replay-backfill-contract accepts source-intake allowed contract evidence",
     assert.equal(result.exit, 0);
     assert.equal(called.every((call) => call.method === "GET"), true);
     assert.equal(called.some((call) => call.method === "POST"), false);
+    assert.equal(called.some((call) => call.url === "/api/v1/replay/backfill-evidence"), true);
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.mode, "replay_backfill_contract");
     assert.equal(payload.status, "ready");
@@ -2589,6 +2658,8 @@ test("replay-backfill-contract accepts source-intake allowed contract evidence",
     assert.equal(payload.evidence.intake_command_executed_count, 0);
     assert.equal(payload.evidence.dataset_fetch_attempted_count, 0);
     assert.equal(payload.evidence.source_intake_provider_command_executed_count, 0);
+    assert.equal(payload.evidence.backend_replay_backfill_status, "ready");
+    assert.equal(payload.evidence.backend_replay_backfill_contract_id, "replay_backfill_to_operational_truth");
     assert.equal(payload.evidence.bypass_attempted_count, 0);
     assert.equal(payload.implementation_steps.includes("use_source_intake_allowed_contract_when_it_proves_route_replay_backfill"), true);
     assert.equal(payload.acceptance_criteria.includes("intake_command_executed_count=0"), true);

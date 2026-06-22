@@ -244,6 +244,10 @@ The emitted packet should expose `source_intake_pressure`, include
 `local_source_intake_ledger` as an allowed input, and list
 `use_source_intake_allowed_contract_when_it_proves_route_replay_backfill` as an
 implementation step.
+When `/api/v1/replay/backfill-evidence` is available, copy backend
+`ReplayBackfillEvidence` into the packet so `closing_line_proxy_seed_ready`,
+`paper_learning_seed_ready`, and `signal_gate_regression_ready` come from
+canonical FastAPI evidence rather than Hermes inference.
 The `source-use-manifest` command audits each collection route, historical
 source and enterprise shadow provider before collection or import. It records
 allowed/deferred/operator-required status, license and attribution gates,

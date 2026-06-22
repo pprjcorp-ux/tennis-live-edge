@@ -321,6 +321,9 @@ persisted match/score/odds/signal/paper-order inputs, `ReplayBackfillEvidence`,
 replay lab gates,
 implementation steps and validation commands. It stays read-only and cannot run
 provider APIs, browser scraping, sportsbook automation, bypasses or orders.
+The command reads `/api/v1/replay/backfill-evidence` when available and treats
+that backend read-model as canonical proof for `closing_line_proxy_seed_ready`,
+`paper_learning_seed_ready` and `signal_gate_regression_ready`.
 
 Use `hermes:source-use-manifest` before adding collection/import code or asking
 Hermes to "jailbreak" a source gap. It audits collection routes, historical

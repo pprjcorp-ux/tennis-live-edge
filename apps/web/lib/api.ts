@@ -27,6 +27,7 @@ import type {
   PaperSettlement,
   ProviderCursor,
   ProviderHealth,
+  ReplayBackfillEvidence,
   ReplayContractRunResult,
   ReplayOddsScenario,
   ReplayRunResult,
@@ -100,6 +101,10 @@ export function getProviderCursors(): Promise<ProviderCursor[]> {
 
 export function getOperationalState(): Promise<OperationalStateSnapshot> {
   return getJson<OperationalStateSnapshot>("/api/v1/operational-state");
+}
+
+export function getReplayBackfillEvidence(): Promise<ReplayBackfillEvidence> {
+  return getJson<ReplayBackfillEvidence>("/api/v1/replay/backfill-evidence");
 }
 
 export function getModelRegistry(): Promise<ModelRegistryEntry[]> {

@@ -24,6 +24,7 @@ from tennis_edge.domain import (
     ProviderCursor,
     ProviderHealth,
     ProviderModeStep,
+    ReplayBackfillEvidence,
     ReplayContractProvider,
     ReplayProviderContractEvidence,
     ReplayContractScenarioEvidence,
@@ -563,6 +564,79 @@ class OperationalStateService:
             last_replay_odds_ticks=int(last_summary.get("odds_ticks") or 0),
             last_replay_resync_required=bool(last_summary.get("resync_required") is True),
             can_validate_without_live_keys=True,
+            notes=notes,
+        )
+
+    def replay_backfill_evidence(self) -> ReplayBackfillEvidence:
+        replay_lab = self.replay_lab_readiness()
+        contract_rows = replay_lab.last_contract_persistence
+        raw_payloads_saved = sum(row.raw_payloads_saved for row in contract_rows)
+        score_ticks_saved = sum(row.score_ticks_saved for row in contract_rows)
+        odds_ticks_saved = sum(row.odds_ticks_saved for row in contract_rows)
+        cursors_saved = sum(row.cursors_saved for row in contract_rows)
+        provider_latency_saved = sum(
+            row.provider_latency_saved for row in contract_rows
+        )
+        scenarios_passed = [
+            row.scenario for row in contract_rows if row.passed and not row.resync_required
+        ]
+        scenarios_blocked = [
+            row.scenario for row in contract_rows if not row.passed or row.resync_required
+        ]
+        replay_contract_ready = replay_lab.last_contract_passed
+        persisted_matches = 1 if replay_lab.last_replay_events > 0 else 0
+        gates = {
+            "replay_lab_ready": replay_lab.status == "ready",
+            "contract_run_persisted": replay_lab.last_contract_run_id is not None,
+            "contract_passed": replay_contract_ready,
+            "replay_run_persisted": replay_lab.last_replay_run_id is not None,
+            "persisted_events_present": replay_lab.last_replay_events > 0,
+            "score_ticks_present": replay_lab.last_replay_score_ticks > 0
+            or score_ticks_saved > 0,
+            "odds_ticks_present": replay_lab.last_replay_odds_ticks > 0
+            or odds_ticks_saved > 0,
+            "no_live_keys_required": replay_lab.can_validate_without_live_keys,
+            "no_replay_resync_required": not replay_lab.last_replay_resync_required,
+        }
+        notes = [
+            "ReplayBackfillEvidence is derived from persisted replay/contract runs only.",
+            "No provider call, browser automation, dataset fetch, paper order or real order is performed.",
+            *replay_lab.notes,
+        ]
+        if replay_lab.last_replay_resync_required:
+            notes.append("Latest replay run requires resync; use evidence for regression only.")
+        status = (
+            "ready"
+            if all(gates.values())
+            else "blocked"
+            if replay_lab.status == "blocked"
+            else "collecting"
+        )
+        return ReplayBackfillEvidence(
+            status=status,
+            replay_lab_status=replay_lab.status,
+            replay_contract_ready=replay_contract_ready,
+            last_contract_run_id=replay_lab.last_contract_run_id,
+            last_replay_run_id=replay_lab.last_replay_run_id,
+            persisted_matches=persisted_matches,
+            score_ticks=replay_lab.last_replay_score_ticks,
+            odds_ticks=replay_lab.last_replay_odds_ticks,
+            raw_payloads_saved=raw_payloads_saved,
+            score_ticks_saved=score_ticks_saved,
+            odds_ticks_saved=odds_ticks_saved,
+            cursors_saved=cursors_saved,
+            provider_latency_saved=provider_latency_saved,
+            resync_required=replay_lab.last_replay_resync_required,
+            scenarios_passed=scenarios_passed,
+            scenarios_blocked=scenarios_blocked,
+            closing_line_proxy_seed_ready=odds_ticks_saved > 0
+            and not replay_lab.last_replay_resync_required,
+            paper_learning_seed_ready=replay_lab.last_replay_events > 0
+            and replay_contract_ready,
+            signal_gate_regression_ready=score_ticks_saved > 0
+            and odds_ticks_saved > 0
+            and replay_contract_ready,
+            gates=gates,
             notes=notes,
         )
 

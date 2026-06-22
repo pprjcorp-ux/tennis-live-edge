@@ -119,6 +119,10 @@ decide whether the system behaves as budget or enterprise.
     `ReplayLabSnapshot.last_contract_persistence`, so operators can inspect
     per-scenario materialization proof after restart instead of trusting a
     transient contract response.
+    `GET /api/v1/replay/backfill-evidence` derives
+    `ReplayBackfillEvidence` from the same persisted operational truth, exposing
+    `closing_line_proxy_seed_ready`, `paper_learning_seed_ready` and
+    `signal_gate_regression_ready` without provider calls or runtime mutation.
 18. Live model registry reads persisted `model_versions`; without persisted
     metrics it exposes only a clearly unvalidated runtime default instead of
     demo ROI/CLV.

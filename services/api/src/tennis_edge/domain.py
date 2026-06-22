@@ -1142,6 +1142,37 @@ class ReplayLabSnapshot(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class ReplayBackfillEvidence(BaseModel):
+    status: Literal["ready", "collecting", "blocked"]
+    source: Literal["operational_state_replay_lab"] = "operational_state_replay_lab"
+    contract_id: str = "replay_backfill_to_operational_truth"
+    adapter_boundary: str = "internal_fastapi_read_models"
+    provider_api_call_allowed: bool = False
+    browser_sportsbook_automation_allowed: bool = False
+    bypass_allowed: bool = False
+    can_submit_real_orders: bool = False
+    replay_lab_status: Literal["ready", "collecting", "blocked"]
+    replay_contract_ready: bool = False
+    last_contract_run_id: str | None = None
+    last_replay_run_id: str | None = None
+    persisted_matches: int = 0
+    score_ticks: int = 0
+    odds_ticks: int = 0
+    raw_payloads_saved: int = 0
+    score_ticks_saved: int = 0
+    odds_ticks_saved: int = 0
+    cursors_saved: int = 0
+    provider_latency_saved: int = 0
+    resync_required: bool = False
+    scenarios_passed: list[str] = Field(default_factory=list)
+    scenarios_blocked: list[str] = Field(default_factory=list)
+    closing_line_proxy_seed_ready: bool = False
+    paper_learning_seed_ready: bool = False
+    signal_gate_regression_ready: bool = False
+    gates: dict[str, bool] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
+
+
 class OperationalMatchFreshness(BaseModel):
     match_id: str
     source: Literal["provider_live", "persisted_fallback", "sample", "empty"] = "sample"

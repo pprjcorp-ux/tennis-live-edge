@@ -55,6 +55,7 @@ def test_v1_enterprise_observability_endpoints() -> None:
     data_quality = client.get("/api/v1/data-quality")
     cursors = client.get("/api/v1/provider-cursors")
     operational_state = client.get("/api/v1/operational-state")
+    replay_backfill = client.get("/api/v1/replay/backfill-evidence")
     registry = client.get("/api/v1/models/registry")
     champion = client.get("/api/v1/models/champion")
     conflicts = client.get("/api/v1/entity-resolution/conflicts")
@@ -63,6 +64,7 @@ def test_v1_enterprise_observability_endpoints() -> None:
     assert data_quality.status_code == 200
     assert cursors.status_code == 200
     assert operational_state.status_code == 200
+    assert replay_backfill.status_code == 200
     assert registry.status_code == 200
     assert champion.status_code == 200
     assert conflicts.status_code == 200
@@ -73,6 +75,10 @@ def test_v1_enterprise_observability_endpoints() -> None:
     assert operational_state.json()["daily_cost_report"]["estimated_monthly_spend_usd"] <= 500
     assert operational_state.json()["execution_status"]["can_submit_real_orders"] is False
     assert "ingestion_runs" in operational_state.json()
+    assert replay_backfill.json()["contract_id"] == "replay_backfill_to_operational_truth"
+    assert replay_backfill.json()["provider_api_call_allowed"] is False
+    assert replay_backfill.json()["can_submit_real_orders"] is False
+    assert replay_backfill.json()["status"] in {"ready", "collecting", "blocked"}
     assert champion.json()["model_version"] == "baseline_v0"
 
 

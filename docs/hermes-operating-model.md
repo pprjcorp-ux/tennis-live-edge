@@ -322,6 +322,10 @@ that path: it maps `replay_backfill` to
 `replay_backfill_to_operational_truth` using persisted matches, score/odds
 ticks, signals, paper orders and replay lab gates. It is read-only and reports
 implementation evidence only.
+Hermes also reads `GET /api/v1/replay/backfill-evidence` as backend
+`ReplayBackfillEvidence`, so the contract can use canonical FastAPI evidence
+for closing-line proxy seeds, paper-learning seeds and signal-gate regression
+without spending provider quota.
 
 `hermes:operator-packet` is the compact channel packet. It derives from
 safe-loop and emits priority, headline, a short message, the next safe command,

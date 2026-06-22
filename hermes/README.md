@@ -346,6 +346,11 @@ paper order creation and no real execution.
 The contract exposes `source_intake_pressure`, accepts
 `local_source_intake_ledger` as an allowed input, and includes the implementation
 step `use_source_intake_allowed_contract_when_it_proves_route_replay_backfill`.
+It also reads `/api/v1/replay/backfill-evidence` when available and copies the
+backend `ReplayBackfillEvidence` status plus `closing_line_proxy_seed_ready`,
+`paper_learning_seed_ready`, and `signal_gate_regression_ready` into the
+contract evidence. The acceptance marker is
+`backend_replay_backfill_evidence.status=ready`.
 
 `hermes:source-use-manifest` is the audit layer between safe source discovery
 and collection/import work. It creates one source-use row per collection route,

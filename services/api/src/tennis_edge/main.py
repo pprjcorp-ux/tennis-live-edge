@@ -50,6 +50,7 @@ from tennis_edge.domain import (
     ProviderCursorResyncRequest,
     ProviderCursorResyncResult,
     ProviderHealth,
+    ReplayBackfillEvidence,
     ReplayContractRunRequest,
     ReplayContractRunResult,
     ReplayRunRequest,
@@ -184,6 +185,13 @@ async def v1_operational_state(
     repo: AnalysisRepository = Depends(repository),
 ) -> OperationalStateSnapshot:
     return await repo.operational_state_snapshot(date.today())
+
+
+@app.get("/api/v1/replay/backfill-evidence", response_model=ReplayBackfillEvidence)
+async def v1_replay_backfill_evidence(
+    repo: AnalysisRepository = Depends(repository),
+) -> ReplayBackfillEvidence:
+    return await repo.replay_backfill_evidence()
 
 
 @app.post("/api/v1/ingestion/run", response_model=IngestionRunResult)

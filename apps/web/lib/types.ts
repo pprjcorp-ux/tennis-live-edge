@@ -347,6 +347,37 @@ export type ReplayLabSnapshot = {
   notes: string[];
 };
 
+export type ReplayBackfillEvidence = {
+  status: "ready" | "collecting" | "blocked";
+  source: "operational_state_replay_lab";
+  contract_id: string;
+  adapter_boundary: string;
+  provider_api_call_allowed: boolean;
+  browser_sportsbook_automation_allowed: boolean;
+  bypass_allowed: boolean;
+  can_submit_real_orders: boolean;
+  replay_lab_status: "ready" | "collecting" | "blocked";
+  replay_contract_ready: boolean;
+  last_contract_run_id: string | null;
+  last_replay_run_id: string | null;
+  persisted_matches: number;
+  score_ticks: number;
+  odds_ticks: number;
+  raw_payloads_saved: number;
+  score_ticks_saved: number;
+  odds_ticks_saved: number;
+  cursors_saved: number;
+  provider_latency_saved: number;
+  resync_required: boolean;
+  scenarios_passed: string[];
+  scenarios_blocked: string[];
+  closing_line_proxy_seed_ready: boolean;
+  paper_learning_seed_ready: boolean;
+  signal_gate_regression_ready: boolean;
+  gates: Record<string, boolean>;
+  notes: string[];
+};
+
 export type IngestionRunRecord = {
   id: string;
   run_type:

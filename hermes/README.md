@@ -40,6 +40,7 @@ npm run hermes:live-stats
 npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
+npm run hermes:safe-loop
 npm run hermes:ops:daily
 npm run hermes:autopilot
 ```
@@ -109,6 +110,12 @@ provider smoke. Without `--execute-provider-call`, it returns a blocked dry-run
 packet with `provider_api_call_allowed=false` and the command it would run. Do
 not put `--execute-provider-call` in cron or Telegram automation; use it only
 from a local operator shell when you intentionally want to spend provider quota.
+
+`hermes:safe-loop` is the preferred autonomous status packet. It aggregates the
+local runtime check, intelligence, event routing, unblock plan, playbook,
+live-stats, budget-chain, and weekly-learning packets into one read-only JSON
+decision. It never creates paper orders, spends provider quota, calls provider
+smoke execution, or submits real orders.
 
 Cron creation examples are in `hermes/cron.examples.md`; create them only after
 Telegram pairing/allowlist and local admin secrets are configured.

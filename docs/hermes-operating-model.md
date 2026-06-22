@@ -100,6 +100,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 ## Recommended Cron Graph
 
 - Every 5 minutes during active windows: `npm run hermes:intelligence`.
+- Every 5 minutes when Hermes needs one autonomous packet: `npm run hermes:safe-loop`.
 - Every 1-5 minutes during active windows: `npm run hermes:live-stats`.
 - Every 15 minutes during onboarding: `npm run hermes:budget-chain`.
 - Every 5 minutes during active windows: `npm run hermes:events`.
@@ -113,6 +114,14 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 
 Do not run LLM analysis on every odds tick. Tick math belongs to Python and
 Postgres; Hermes wakes only on summarized state or event thresholds.
+
+`hermes:safe-loop` is the preferred autonomous packet when a channel or cron
+job needs the broadest safe context. It runs local runtime diagnostics and
+internal FastAPI reads, then combines intelligence, event routing, unblock
+lanes, playbook phases, live stats, budget-chain state, and learning review
+into one JSON decision. It is read-only and keeps
+`provider_api_call_allowed=false`, `llm_per_tick_allowed=false`, and
+`can_submit_real_orders=false`.
 
 `hermes:events` is the preferred input for Hermes cron/webhook dispatch. It
 turns the internal intelligence packet into compact events such as

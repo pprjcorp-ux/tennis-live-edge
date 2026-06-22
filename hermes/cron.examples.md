@@ -72,6 +72,18 @@ hermes cron add \
   --timeout-seconds 60
 ```
 
+Safe-loop packet every 5 minutes when Hermes needs one complete autonomous
+decision packet:
+
+```bash
+hermes cron add \
+  --name tennis-edge-safe-loop \
+  --every 5m \
+  --model gpt-5.4-mini \
+  --message "Use the tennis-edge-ops skill. Run npm --silent run hermes:safe-loop from /Users/ppfahd/Workspace/projects/tennis-live-edge. Report status, runtime, active_phase, next_best_command, safe_commands, budget_chain, and safety. Do not execute recommended commands, create orders, run provider smoke, or spend provider quota from this cron." \
+  --timeout-seconds 90
+```
+
 Event router every 5 minutes during active windows:
 
 ```bash

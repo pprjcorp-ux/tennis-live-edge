@@ -141,6 +141,10 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
 - Hermes provider smoke execution must go through `npm run hermes:provider-smoke`;
   without `--execute-provider-call` it is blocked dry-run only. Never place that
   flag in cron, Telegram, webhook, or autonomous LLM routes.
+- Hermes autonomous loop routing should consume `npm run hermes:safe-loop`;
+  it aggregates runtime, intelligence, event routing, playbook, live stats,
+  budget-chain, and learning review packets, but must remain read-only and must
+  never create paper orders, spend provider quota, or submit real orders itself.
 - Real execution requires a separate compliance/account/API activation task.
 
 ## Verification
@@ -160,6 +164,7 @@ npm run hermes:events
 npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:budget-chain
+npm run hermes:safe-loop
 ```
 
 `api:check:operational-truth` is the required integrated smoke before API

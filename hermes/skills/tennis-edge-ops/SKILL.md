@@ -39,6 +39,7 @@ node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs live-stats
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs learning-review
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs budget-chain
 node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs provider-smoke
+node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs safe-loop
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs ops-daily --token-stdin
 printf "%s" "$ADMIN_API_TOKEN" | node hermes/skills/tennis-edge-ops/scripts/tennis_edge_ops.mjs autopilot --token-stdin
 ```
@@ -99,6 +100,10 @@ The `provider-smoke` command is the explicit local gate for the current budget
 provider smoke. By default it returns blocked dry-run JSON; only
 `--execute-provider-call` may run a supported smoke, and that flag must not be
 used from cron or Telegram automation.
+The `safe-loop` command is the preferred autonomous packet. It aggregates
+runtime, intelligence, events, unblock-plan, playbook, live-stats, budget-chain,
+and learning review into one read-only decision and never creates orders or
+spends provider quota.
 The `autopilot` command also runs preflight internally and aborts before calling
 protected backend actions when the preflight status is `blocked`.
 

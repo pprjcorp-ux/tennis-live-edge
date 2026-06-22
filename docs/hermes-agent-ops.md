@@ -26,6 +26,7 @@ npm run hermes:live-stats
 npm run hermes:learning-review
 npm run hermes:budget-chain
 npm run hermes:provider-smoke
+npm run hermes:safe-loop
 ADMIN_API_TOKEN=... npm run hermes:ops:daily
 ADMIN_API_TOKEN=... npm run hermes:autopilot
 ```
@@ -107,6 +108,13 @@ Use `hermes:provider-smoke` only as the local confirmation gate. The default
 run is blocked dry-run output. Adding `--execute-provider-call` may spend
 provider quota, so that flag must remain out of cron, Telegram, webhooks, and
 LLM-triggered automation.
+
+Use `hermes:safe-loop` as the default autonomous packet when Hermes needs the
+widest safe context in one call. It aggregates runtime diagnostics,
+intelligence, event routing, unblock lanes, playbook phases, live stats,
+budget-chain state, and learning review into one read-only decision. It does
+not create paper orders, execute provider smoke, spend quota, or submit real
+orders.
 
 ## Audit Trail
 

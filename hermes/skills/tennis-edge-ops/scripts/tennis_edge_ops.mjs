@@ -76,6 +76,10 @@ async function preflight() {
 }
 
 async function runtimeCheck() {
+  printJson(await runtimeCheckData());
+}
+
+async function runtimeCheckData() {
   const hermesBin = process.env.HERMES_BIN || "hermes";
   const commands = [
     await runLocalCommand("hermes status", hermesBin, ["status"]),
@@ -83,7 +87,7 @@ async function runtimeCheck() {
   ];
   const hasMissingCommand = commands.some((item) => item.error_code === "command_not_found");
   const hasFailure = commands.some((item) => item.exit_code !== 0 || item.timed_out || item.error_code);
-  printJson({
+  return {
     generated_at: new Date().toISOString(),
     mode: "local_runtime_check",
     status: hasMissingCommand ? "missing" : hasFailure ? "degraded" : "ready",
@@ -94,7 +98,7 @@ async function runtimeCheck() {
     can_submit_real_orders: false,
     commands,
     next_actions: runtimeCheckActions({ hasMissingCommand, hasFailure }),
-  });
+  };
 }
 
 async function intelligence() {
@@ -137,6 +141,29 @@ async function budgetChain() {
   const report = await intelligenceData();
   const eventPlan = buildEventPlan(report);
   printJson(buildBudgetChainPlan(report, eventPlan));
+}
+
+async function safeLoop() {
+  const [runtime, report] = await Promise.all([
+    runtimeCheckData(),
+    intelligenceData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const budgetPlan = buildBudgetChainPlan(report, eventPlan);
+  const unblock = buildUnblockPlan(report, eventPlan, budgetPlan);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  const learningPlan = buildLearningReview(report, eventPlan, playbookPlan);
+  printJson(buildSafeLoop({
+    runtime,
+    report,
+    eventPlan,
+    budgetPlan,
+    unblock,
+    playbookPlan,
+    liveStatsPlan,
+    learningPlan,
+  }));
 }
 
 async function providerSmoke() {
@@ -927,6 +954,213 @@ function buildUnblockPlan(report, eventPlan, budgetPlan) {
       forbidden_actions: report.forbidden_collection_paths ?? [],
     },
   };
+}
+
+function buildSafeLoop({
+  runtime,
+  report,
+  eventPlan,
+  budgetPlan,
+  unblock,
+  playbookPlan,
+  liveStatsPlan,
+  learningPlan,
+}) {
+  const safeCommands = safeLoopCommands({
+    runtime,
+    eventPlan,
+    budgetPlan,
+    unblock,
+    playbookPlan,
+    liveStatsPlan,
+  });
+  const nextBestCommand = chooseSafeLoopCommand({ runtime, unblock, eventPlan, safeCommands });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "safe_loop",
+    status: safeLoopStatus({ runtime, eventPlan }),
+    summary: `Hermes safe loop: runtime=${runtime.status}, phase=${playbookPlan.active_phase}, mode=${report.mode}`,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    active_phase: playbookPlan.active_phase,
+    source_mode: report.mode,
+    runtime: {
+      status: runtime.status,
+      commands: runtime.commands.map((item) => ({
+        name: item.name,
+        exit_code: item.exit_code,
+        timed_out: item.timed_out,
+        error_code: item.error_code,
+      })),
+      next_actions: runtime.next_actions,
+    },
+    event_summary: {
+      severity: eventPlan.severity,
+      can_run_paper_autopilot: eventPlan.can_run_paper_autopilot,
+      events: eventPlan.events.map((item) => ({
+        type: item.type,
+        severity: item.severity,
+        can_create_orders: item.can_create_orders,
+      })),
+    },
+    live_stats: {
+      collection_status: liveStatsPlan.collection_status?.status,
+      processing_status: liveStatsPlan.processing_status?.status,
+      health_scores: liveStatsPlan.health_scores,
+      sampling_policy: liveStatsPlan.sampling_policy,
+    },
+    budget_chain: {
+      completed: budgetPlan.budget_chain_completed,
+      enterprise_eligible: budgetPlan.enterprise_eligible,
+      current_step_label: budgetPlan.current_step_label,
+      current_step: budgetPlan.current_step,
+      provider_api_call_allowed: false,
+    },
+    learning_review: {
+      review_status: learningPlan.review_status,
+      model_route: learningPlan.model_route,
+      real_execution_recommendation: learningPlan.real_execution_recommendation,
+    },
+    next_best_command: nextBestCommand,
+    safe_commands: safeCommands,
+    forbidden_actions: report.forbidden_collection_paths ?? [],
+    allowed_collection_paths: report.allowed_collection_paths ?? [],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block,
+      can_submit_real_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+  };
+}
+
+function safeLoopStatus({ runtime, eventPlan }) {
+  if (eventPlan.events.some((item) => item.type === "real_execution_safety_violation")) {
+    return "safety_stop";
+  }
+  if (runtime.status !== "ready") {
+    return "runtime_degraded";
+  }
+  if (["critical", "high"].includes(eventPlan.severity)) {
+    return "blocked";
+  }
+  if (eventPlan.can_run_paper_autopilot) {
+    return "paper_candidate";
+  }
+  return "monitor";
+}
+
+function safeLoopCommands({ runtime, eventPlan, budgetPlan, unblock, playbookPlan, liveStatsPlan }) {
+  const commands = [];
+  commands.push(loopCommand({
+    id: "observe_intelligence",
+    command: "npm --silent run hermes:intelligence",
+    reason: "Read internal APIs and summarize the operator packet.",
+  }));
+  commands.push(loopCommand({
+    id: "route_events",
+    command: "npm --silent run hermes:events",
+    reason: "Convert state into deterministic event triggers.",
+  }));
+  commands.push(loopCommand({
+    id: "live_stats",
+    command: "npm --silent run hermes:live-stats",
+    reason: `Current sampling policy is ${liveStatsPlan.sampling_policy?.name ?? "unknown"}.`,
+  }));
+  if (runtime.status !== "ready" || unblock.lanes.some((lane) => lane.id === "local_runtime")) {
+    commands.push(loopCommand({
+      id: "runtime_check",
+      command: "npm run hermes:runtime-check",
+      reason: "Hermes local runtime is missing or degraded; collect CLI diagnostics without repair.",
+    }));
+  }
+  for (const step of playbookPlan.steps.filter((item) => item.status === "ready")) {
+    commands.push(loopCommand({
+      id: step.id,
+      command: step.command,
+      reason: step.reason,
+      writes: step.writes,
+      liveApiCalls: step.live_api_calls,
+      requiresAdminToken: step.requires_admin_token,
+      canCreatePaperOrders: false,
+    }));
+  }
+  if (budgetPlan.current_step && !budgetPlan.current_step.smoke_completed) {
+    commands.push(loopCommand({
+      id: "provider_smoke_dry_run",
+      command: "npm run hermes:provider-smoke",
+      reason: "Show the current budget provider smoke plan; execution still requires explicit operator flag.",
+      writes: false,
+      liveApiCalls: false,
+    }));
+  }
+  if (eventPlan.can_run_paper_autopilot) {
+    commands.push(loopCommand({
+      id: "paper_autopilot_candidate",
+      command: "npm run hermes:autopilot",
+      reason: "Paper-only candidate exists, but safe-loop itself never creates orders.",
+      writes: true,
+      liveApiCalls: false,
+      requiresAdminToken: true,
+      canCreatePaperOrders: true,
+    }));
+  }
+  return dedupeLoopCommands(commands);
+}
+
+function chooseSafeLoopCommand({ runtime, unblock, eventPlan, safeCommands }) {
+  if (eventPlan.events.some((item) => item.type === "real_execution_safety_violation")) {
+    return safeCommands.find((item) => item.id === "route_events") ?? safeCommands[0] ?? null;
+  }
+  if (runtime.status !== "ready" || unblock.lanes.some((lane) => lane.id === "local_runtime")) {
+    return safeCommands.find((item) => item.id === "runtime_check") ?? safeCommands[0] ?? null;
+  }
+  if (["critical", "high"].includes(eventPlan.severity)) {
+    return safeCommands.find((item) => item.id === "route_events") ?? safeCommands[0] ?? null;
+  }
+  if (eventPlan.can_run_paper_autopilot) {
+    return safeCommands.find((item) => item.id === "paper_autopilot_candidate") ?? safeCommands[0] ?? null;
+  }
+  return safeCommands.find((item) => item.id === "live_stats") ?? safeCommands[0] ?? null;
+}
+
+function loopCommand({
+  id,
+  command,
+  reason,
+  writes = false,
+  liveApiCalls = false,
+  requiresAdminToken = false,
+  canCreatePaperOrders = false,
+}) {
+  return {
+    id,
+    command,
+    reason,
+    writes,
+    live_api_calls: liveApiCalls,
+    requires_admin_token: requiresAdminToken,
+    can_create_paper_orders: canCreatePaperOrders,
+    can_submit_real_orders: false,
+    provider_api_call_allowed: false,
+  };
+}
+
+function dedupeLoopCommands(commands) {
+  const seen = new Set();
+  return commands.filter((item) => {
+    const key = item.command;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function localRuntimeLanes(report) {
@@ -1786,6 +2020,7 @@ const commands = {
   "learning-review": learningReview,
   "budget-chain": budgetChain,
   "provider-smoke": providerSmoke,
+  "safe-loop": safeLoop,
   "ingestion-runs": ingestionRuns,
   autopilot,
   "ops-daily": opsDaily,

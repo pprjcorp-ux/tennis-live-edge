@@ -784,6 +784,108 @@ test("runtime-check captures Hermes local diagnostics without failing protected 
   assert.match(payload.commands[1].stderr, /gateway unreachable/);
 });
 
+test("safe-loop aggregates runtime and budget signals without protected actions", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tennis-edge-hermes-loop-"));
+  const fakeHermes = join(tempDir, "hermes-fake.mjs");
+  writeFileSync(
+    fakeHermes,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'status') { console.log('gateway: stopped'); process.exit(0); }",
+      "if (process.argv[2] === 'doctor') { console.error('gateway unreachable'); process.exit(1); }",
+      "process.exit(2);",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const called = [];
+  const fixtures = eventRouterFixtures({
+    "/api/v1/agent/preflight": {
+      status: "blocked",
+      checks: [
+        {
+          name: "hermes_gateway",
+          status: "fail",
+          summary: "Hermes loopback gateway is not reachable.",
+        },
+        {
+          name: "real_execution_hard_block",
+          status: "pass",
+          summary: "blocked",
+        },
+      ],
+      generated_at: "2026-06-21T20:00:00Z",
+    },
+    "/api/v1/signals/live": [],
+    "/api/v1/dashboard/live-state": {
+      operational_state: {
+        provider_mode: "replay",
+        source_summary: { total_matches: 2, persisted_matches: 2 },
+        replay_lab: { status: "ready" },
+        model_lab: {
+          status: "collecting",
+          production_training_examples: 0,
+          can_run_live_backtest: false,
+        },
+        api_onboarding: {
+          core_ready: true,
+          budget_chain_completed: false,
+          enterprise_eligible: false,
+          current_step: "1. theoddsapi:archive_odds",
+          steps: [
+            {
+              order: 1,
+              provider: "theoddsapi",
+              capability: "archive_odds",
+              status: "ready_next",
+              configured: true,
+              current: true,
+              smoke_completed: false,
+              required_before_enable: [],
+              next_action: "Run TheOddsAPI archive-sync smoke and confirm persisted payload evidence.",
+              notes: [],
+            },
+          ],
+        },
+      },
+    },
+  });
+  const { server, apiBase } = await startServer((request, response) => {
+    called.push({ url: request.url, method: request.method });
+    const payload = fixtures[request.url];
+    if (payload !== undefined && request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  try {
+    const result = await runCli(["safe-loop", `--api-base=${apiBase}`], {
+      env: { HERMES_BIN: fakeHermes },
+    });
+
+    assert.equal(result.exit, 0);
+    assert.equal(called.every((call) => call.method === "GET"), true);
+    assert.equal(called.some((call) => call.url === "/api/v1/agent/autopilot/evaluate"), false);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.mode, "safe_loop");
+    assert.equal(payload.runtime.status, "degraded");
+    assert.equal(payload.active_phase, "stabilize_data");
+    assert.equal(payload.provider_api_call_allowed, false);
+    assert.equal(payload.can_submit_real_orders, false);
+    assert.equal(payload.can_create_paper_orders, false);
+    assert.equal(payload.llm_per_tick_allowed, false);
+    assert.equal(payload.next_best_command.command, "npm run hermes:runtime-check");
+    assert.equal(payload.safe_commands.some((command) => command.command === "npm run hermes:provider-smoke"), true);
+    assert.equal(payload.forbidden_actions.includes("sportsbook_ui_automation"), true);
+  } finally {
+    server.close();
+  }
+});
+
 test("playbook prioritizes data stabilization when cursor resync is required", async () => {
   const fixtures = eventRouterFixtures({
     "/api/v1/provider-cursors": [

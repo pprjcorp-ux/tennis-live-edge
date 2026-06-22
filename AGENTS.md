@@ -20,6 +20,12 @@ scoped to this repo.
 Do not commit `.env`, `.logs/`, `.venv/`, `.next/`, `node_modules/`,
 `.DS_Store`, secrets, or machine-specific files.
 
+For developer handoff, keep [README.md](README.md),
+[docs/developer-onboarding.md](docs/developer-onboarding.md), and
+[docs/api-access-purchasing-guide.md](docs/api-access-purchasing-guide.md)
+current. The repo is public; never place operational secrets or licensed
+provider data in docs, tests, fixtures, issues, or PR text.
+
 ## Architecture
 
 - `services/api`: FastAPI backend, provider adapters, feature/model/signal

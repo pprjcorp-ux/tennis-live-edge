@@ -4,6 +4,10 @@ This runbook turns the remaining account work into a checklist. It keeps real
 execution blocked until a separate compliance activation task explicitly changes
 `REAL_EXECUTION_HARD_BLOCK`.
 
+For purchase links and developer handoff instructions, start with
+[API access purchasing guide](api-access-purchasing-guide.md). This runbook is
+for local account activation after the provider has been bought or approved.
+
 ## Current Local State
 
 - GitHub is connected and the repo is public with `budget` as default.

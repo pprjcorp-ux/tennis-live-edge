@@ -3574,6 +3574,11 @@ test("scheduler-rehearsal records a safe loop plan without executing commands", 
     assert.equal(grandSlamItem.every_minutes, 30);
     assert.equal(grandSlamItem.provider_api_call_allowed, false);
     assert.equal(grandSlamItem.can_create_paper_orders, false);
+    const grandSlamMissionItem = payload.schedule.find((item) => item.id === "grand_slam_mission");
+    assert.equal(grandSlamMissionItem.command, "npm --silent run hermes:grand-slam-mission");
+    assert.equal(grandSlamMissionItem.every_minutes, 30);
+    assert.equal(grandSlamMissionItem.provider_api_call_allowed, false);
+    assert.equal(grandSlamMissionItem.can_create_paper_orders, false);
     assert.equal(payload.grand_slam_readiness.status, "blocked");
     assert.equal(payload.grand_slam_readiness.cadence.every_minutes, 30);
     assert.equal(payload.audit_log.path, runLog);
@@ -3712,6 +3717,11 @@ test("scheduler-rehearsal tightens Grand Slam cadence when paper-ready without e
     assert.equal(payload.grand_slam_readiness.paper_ready, true);
     assert.equal(payload.grand_slam_readiness.grand_slam_visible, 1);
     assert.equal(grandSlamItem.every_minutes, 5);
+    const grandSlamMissionItem = payload.schedule.find((item) => item.id === "grand_slam_mission");
+    assert.equal(grandSlamMissionItem.every_minutes, 5);
+    assert.equal(grandSlamMissionItem.live_api_calls, false);
+    assert.equal(grandSlamMissionItem.provider_api_call_allowed, false);
+    assert.equal(grandSlamMissionItem.can_create_paper_orders, false);
     assert.equal(grandSlamItem.live_api_calls, false);
     assert.equal(grandSlamItem.provider_api_call_allowed, false);
     assert.equal(grandSlamItem.can_create_paper_orders, false);
@@ -3791,6 +3801,12 @@ test("cron-proposal writes reviewable Hermes cron commands without creating jobs
     assert.equal(grandSlamJob.message.includes("Report status, active_grand_slams"), true);
     assert.equal(grandSlamJob.can_create_paper_orders, false);
     assert.equal(grandSlamJob.provider_api_call_allowed, false);
+    const grandSlamMissionJob = payload.jobs.find((job) => job.name === "tennis-edge-grand-slam-mission");
+    assert.equal(grandSlamMissionJob.every, "30m");
+    assert.equal(grandSlamMissionJob.source_command, "npm --silent run hermes:grand-slam-mission");
+    assert.equal(grandSlamMissionJob.message.includes("Report active_phase"), true);
+    assert.equal(grandSlamMissionJob.can_create_paper_orders, false);
+    assert.equal(grandSlamMissionJob.provider_api_call_allowed, false);
     assert.equal(payload.jobs.every((job) => job.command_preview.startsWith("hermes cron add")), true);
     assert.equal(payload.jobs.every((job) => job.command_preview.includes("--message")), true);
     assert.equal(payload.jobs.every((job) => !job.command_preview.includes("--execute-provider-call")), true);
@@ -4775,7 +4791,7 @@ test("grand-slam-readiness reports off-calendar state without provider calls", a
   }
 });
 
-test("grand-slam-readiness exposes paper-ready Slam predictions without executing actions", async () => {
+test("grand-slam-readiness and mission expose paper-ready Slam predictions without executing actions", async () => {
   const match = {
     match: {
       id: "wimbledon_live_edge",
@@ -4903,6 +4919,38 @@ test("grand-slam-readiness exposes paper-ready Slam predictions without executin
     assert.equal(payload.provider_api_call_allowed, false);
     assert.equal(payload.safety.can_submit_real_orders, false);
     assert.equal(payload.safety.llm_per_tick_allowed, false);
+
+    const missionResult = await runCli([
+      "grand-slam-mission",
+      `--api-base=${apiBase}`,
+      "--date=2026-07-01",
+    ]);
+    assert.equal(missionResult.exit, 0);
+    const mission = JSON.parse(missionResult.stdout);
+    assert.equal(mission.mode, "grand_slam_mission");
+    assert.equal(mission.status, "ready");
+    assert.equal(mission.active_phase, "paper_learning");
+    assert.equal(mission.read_only, true);
+    assert.equal(mission.provider_api_call_allowed, false);
+    assert.equal(mission.can_submit_real_orders, false);
+    assert.equal(mission.can_create_paper_orders, false);
+    assert.equal(mission.llm_per_tick_allowed, false);
+    assert.equal(mission.grand_slam_readiness.paper_ready, true);
+    assert.equal(mission.grand_slam_readiness.matches.prediction_rows, 1);
+    assert.equal(mission.next_action.command, "npm run hermes:autopilot");
+    assert.equal(mission.next_action.executes_now, false);
+    const phases = Object.fromEntries(mission.phases.map((phase) => [phase.id, phase]));
+    assert.equal(phases.operational_truth.status, "pass");
+    assert.equal(phases.historical_priors.status, "pass");
+    assert.equal(phases.grand_slam_visibility.status, "pass");
+    assert.equal(phases.prediction_quality.status, "pass");
+    assert.equal(phases.paper_learning.status, "pass");
+    assert.equal(phases.paper_learning.can_create_paper_orders, true);
+    assert.equal(mission.historical_backfill.review_summary.total_sources >= 6, true);
+    assert.equal(mission.safe_jailbreak_policy.bypass_allowed, false);
+    assert.equal(mission.safe_jailbreak_policy.live_scraping_allowed, false);
+    assert.equal(mission.forbidden_actions.includes("grand_slam_live_scoreboard_scraping"), true);
+    assert.equal(mission.evidence_contract.some((item) => item.id === "match_day_prediction"), true);
   } finally {
     server.close();
   }

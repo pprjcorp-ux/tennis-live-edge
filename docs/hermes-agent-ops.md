@@ -33,6 +33,7 @@ npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
+npm run hermes:grand-slam-mission
 npm run hermes:collection-plan
 npm run hermes:quota-plan
 npm run hermes:learning-review
@@ -238,6 +239,11 @@ for priors, calibration or backtests. It ranks internal replay, public
 historical datasets and licensed archive odds with license/attribution gates.
 It must not fetch, scrape, import, spend quota, create orders or treat old data
 as live state.
+
+Use `hermes:grand-slam-mission` as the product-level packet for Grand Slam
+match-day prediction. It compiles readiness, historical priors, collection,
+quota, live-controller and learning state into mission phases. It never creates
+paper orders itself and cannot spend provider quota or submit real orders.
 
 Use `hermes:trigger-policy` when cron, Telegram, dashboard, Cloudflare Agent or
 OpenClaw needs to know when Hermes should wake up. It emits debounced triggers

@@ -103,6 +103,7 @@ separate compliance/account/API task changes `REAL_EXECUTION_HARD_BLOCK`.
 - Every 5 minutes when Hermes needs one autonomous packet: `npm run hermes:safe-loop`.
 - Every 5 minutes when Hermes needs the highest-level autonomy decision: `npm run hermes:autonomy-brief`.
 - Every 5-15 minutes during collection work: `npm run hermes:source-discovery`.
+- During Grand Slam windows: `npm run hermes:grand-slam-mission`.
 - Manual/weekly review for offline priors: `npm run hermes:historical-backfill-plan`.
 - Every 5 minutes for cron/webhook wakeup policy: `npm run hermes:trigger-policy`.
 - Every 5 minutes for an all-in-one agent-channel payload: `npm run hermes:ops-compiler`.
@@ -177,6 +178,14 @@ datasets, Tennis-Data CSVs and licensed archive odds while exposing license,
 attribution, commercial-clearance and source-manifest gates. It does not fetch
 or import data; future import scripts must be separate, operator-approved and
 license-aware.
+
+`hermes:grand-slam-mission` is the product-level mission packet. It answers:
+"Can Hermes supervise Grand Slam predictions today, and what is the next safe
+step?" It compiles operational truth, Grand Slam readiness, historical backfill,
+collection cadence, quota throttle, live-controller decisions and learning
+review into phases. It may point to protected paper autopilot when all backend
+gates are paper-ready, but the mission packet itself is read-only and cannot
+create orders, call providers, scrape, or run LLM-per-tick reasoning.
 
 `hermes:trigger-policy` is the preferred packet for deciding when Hermes should
 wake up. It turns runtime, events, source-discovery, Grand Slam readiness, quota

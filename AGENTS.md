@@ -180,6 +180,12 @@ cursor requires resync, keep the dashboard alive and abstain instead of forcing
   calendar/match visibility, coverage, backend readiness, live-window gates,
   and prediction rows, and must not call providers, scrape public scoreboards,
   create paper orders, or run LLM-per-tick reasoning.
+- Hermes Grand Slam mission orchestration should consume
+  `npm run hermes:grand-slam-mission`; it is the product-level packet for
+  match-day Slam prediction and should compile operational truth, readiness,
+  historical backfill, collection, quota, live-controller and learning phases
+  without fetching/importing historical data, spending provider quota, creating
+  paper orders, scraping, or enabling real execution.
 - Hermes collection cadence planning should consume
   `npm run hermes:collection-plan`; it converts match-pulse priorities into
   desired score/odds polling lanes, but must remain read-only, must not execute
@@ -304,6 +310,7 @@ npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
 npm run hermes:grand-slam-readiness
+npm run hermes:grand-slam-mission
 npm run hermes:collection-plan
 npm run hermes:quota-plan
 npm run hermes:budget-chain

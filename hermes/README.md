@@ -47,6 +47,7 @@ npm run hermes:playbook
 npm run hermes:live-stats
 npm run hermes:live-window
 npm run hermes:match-pulse
+npm run hermes:grand-slam-mission
 npm run hermes:collection-plan
 npm run hermes:quota-plan
 npm run hermes:learning-review
@@ -259,6 +260,14 @@ operator-review only: it does not fetch, scrape, import, spend quota or create
 orders, and it flags license, attribution and commercial-clearance gates before
 any future importer exists.
 
+`hermes:grand-slam-mission` is the one-packet command for the core product
+goal: predicting and monitoring Grand Slam matches of the day. It compiles
+backend readiness, Grand Slam visibility, historical backfill, match pulse,
+collection cadence, quota throttle, live-controller decision and learning
+review into explicit mission phases. It reports when paper learning would be
+available, but it does not create paper orders, spend provider quota, scrape, or
+submit real orders.
+
 `hermes:trigger-policy` turns runtime, event, source-discovery, Grand Slam
 readiness, quota and learning state into safe wakeup triggers for cron,
 Telegram, dashboard, Cloudflare Agent and OpenClaw gateway. It never executes
@@ -308,7 +317,9 @@ create real cron jobs, execute commands, create paper orders, spend provider
 quota, or submit real orders. It also includes `hermes:grand-slam-readiness`
 with adaptive cadence: low-frequency off-calendar, tighter during a configured
 Grand Slam window, and five-minute checks when backend Grand Slam rows are
-paper-ready.
+paper-ready. The schedule also includes `hermes:grand-slam-mission` at the same
+cadence so channels can consume the full mission packet without calling
+provider APIs.
 
 `hermes:cron-proposal` writes a reviewable local manifest at
 `hermes/runs/cron-proposal.json` with exact `hermes cron add` command previews.

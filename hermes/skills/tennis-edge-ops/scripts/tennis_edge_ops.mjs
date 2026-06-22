@@ -1464,6 +1464,10 @@ async function grandSlamReadiness() {
   printJson(await grandSlamReadinessData());
 }
 
+async function grandSlamMission() {
+  printJson(await grandSlamMissionData());
+}
+
 async function grandSlamReadinessData() {
   const [backend, report, matches] = await Promise.all([
     backendReadinessData(),
@@ -1485,6 +1489,64 @@ async function grandSlamReadinessData() {
     pulse,
     sourceRoutes,
     matches,
+  });
+}
+
+async function grandSlamMissionData() {
+  const [backend, report, matches] = await Promise.all([
+    backendReadinessData(),
+    intelligenceData(),
+    liveMatchesData(),
+  ]);
+  const eventPlan = buildEventPlan(report);
+  const playbookPlan = buildPlaybook(report, eventPlan);
+  const liveStatsPlan = buildLiveStats(report, eventPlan, playbookPlan);
+  const liveWindowPlan = buildLiveWindow(report, eventPlan, playbookPlan, liveStatsPlan);
+  const pulse = buildMatchPulse({ report, eventPlan, liveWindowPlan, matches });
+  const collection = buildCollectionPlan({ report, eventPlan, liveWindowPlan, pulse });
+  const quota = buildQuotaPlan({ report, collection });
+  const sourcePlan = buildSourceDiscovery({ report, eventPlan });
+  const sourceRoutes = buildSourceRouteMatrix({ report, eventPlan, sourcePlan });
+  const grandSlam = buildGrandSlamReadiness({
+    backend,
+    report,
+    eventPlan,
+    liveWindowPlan,
+    pulse,
+    sourceRoutes,
+    matches,
+  });
+  const historicalBackfill = buildHistoricalBackfillPlan({
+    report,
+    eventPlan,
+    sourcePlan,
+    sourceRoutes,
+    grandSlam,
+  });
+  const learning = buildLearningReview(report, eventPlan, playbookPlan);
+  const liveControllerPlan = buildLiveController({
+    report,
+    eventPlan,
+    liveWindowPlan,
+    pulse,
+    collection,
+    quota,
+    sourceRoutes,
+  });
+  return buildGrandSlamMission({
+    backend,
+    report,
+    eventPlan,
+    liveStatsPlan,
+    liveWindowPlan,
+    pulse,
+    collection,
+    quota,
+    sourceRoutes,
+    historicalBackfill,
+    grandSlam,
+    learning,
+    liveControllerPlan,
   });
 }
 
@@ -4328,6 +4390,401 @@ function historicalBackfillGate({ id, status, summary }) {
   return { id, status, summary };
 }
 
+function buildGrandSlamMission({
+  backend,
+  report,
+  eventPlan,
+  liveStatsPlan,
+  liveWindowPlan,
+  pulse,
+  collection,
+  quota,
+  sourceRoutes,
+  historicalBackfill,
+  grandSlam,
+  learning,
+  liveControllerPlan,
+}) {
+  const phase = grandSlamMissionPhase({ backend, grandSlam, liveWindowPlan, historicalBackfill });
+  const phases = grandSlamMissionPhases({
+    phase,
+    backend,
+    report,
+    liveStatsPlan,
+    liveWindowPlan,
+    pulse,
+    collection,
+    quota,
+    sourceRoutes,
+    historicalBackfill,
+    grandSlam,
+    learning,
+    liveControllerPlan,
+  });
+  const nextAction = grandSlamMissionNextAction({ phase, phases, grandSlam, historicalBackfill, liveControllerPlan });
+  return {
+    generated_at: new Date().toISOString(),
+    mode: "grand_slam_mission",
+    objective: "predict_and_monitor_grand_slam_matches_with_safe_hermes_autonomy",
+    status: phase.status,
+    active_phase: phase.id,
+    read_only: true,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_submit_real_orders: false,
+    can_create_paper_orders: false,
+    llm_per_tick_allowed: false,
+    mission_summary: [
+      `grand_slam=${grandSlam.status}`,
+      `backend=${backend.status}`,
+      `live_window=${liveWindowPlan.status}`,
+      `controller=${liveControllerPlan.status}`,
+      `historical_backfill=${historicalBackfill.status}`,
+    ].join(" | "),
+    next_action: nextAction,
+    phases,
+    grand_slam_readiness: {
+      status: grandSlam.status,
+      prediction_ready: grandSlam.prediction_ready,
+      paper_ready: grandSlam.paper_ready,
+      active_grand_slams: grandSlam.active_grand_slams,
+      matches: grandSlam.matches,
+      next_action: grandSlam.next_action,
+    },
+    live_control: {
+      status: liveControllerPlan.status,
+      decision: liveControllerPlan.operator_decision,
+      quota_throttle: quota.throttle,
+      collection_status: collection.status,
+      provider_command_count: collection.provider_commands.length,
+      provider_commands_allowed: false,
+    },
+    historical_backfill: {
+      status: historicalBackfill.status,
+      next_source: historicalBackfill.next_source,
+      review_summary: historicalBackfill.review_summary,
+      license_gates: historicalBackfill.gates,
+    },
+    learning_review: {
+      status: learning.review_status,
+      metrics: learning.metrics,
+      next_actions: learning.next_actions,
+      real_execution_recommendation: learning.real_execution_recommendation,
+    },
+    evidence_contract: grandSlamMissionEvidenceContract(),
+    safe_jailbreak_policy: {
+      meaning: "Use Hermes to route around missing coverage with allowed internal, replay, licensed and historical-offline paths only.",
+      allowed_paths: [
+        "internal_fastapi_packets",
+        "persisted_postgres_replay",
+        "historical_public_backfill_after_license_review",
+        "licensed_provider_api_after_operator_smoke",
+        "manual_operator_notes_with_sources",
+      ],
+      bypass_allowed: false,
+      live_scraping_allowed: false,
+      sportsbook_browser_automation_allowed: false,
+      credential_or_session_extraction_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+    forbidden_actions: [
+      ...(report.forbidden_collection_paths ?? []),
+      "grand_slam_live_scoreboard_scraping",
+      "sportsbook_ui_automation",
+      "provider_quota_spend_without_operator",
+      "paper_order_creation_from_mission_packet",
+      "real_money_execution",
+    ],
+    safety: {
+      real_execution_hard_block: report.safety?.real_execution_hard_block === true
+        && backend.safety?.real_execution_hard_block === true,
+      can_submit_real_orders: false,
+      can_create_paper_orders: false,
+      provider_api_call_allowed: false,
+      sportsbook_bypass_allowed: false,
+      browser_sportsbook_automation_allowed: false,
+      llm_per_tick_allowed: false,
+    },
+    events: eventPlan.events.map((event) => ({
+      type: event.type,
+      severity: event.severity,
+      allowed_command: event.allowed_command,
+      can_create_orders: event.can_create_orders,
+    })),
+  };
+}
+
+function grandSlamMissionPhase({ backend, grandSlam, liveWindowPlan, historicalBackfill }) {
+  if (backend.status !== "ready" || grandSlam.status === "blocked") {
+    return {
+      id: "restore_operational_truth",
+      status: "blocked",
+      reason: "Backend or Grand Slam readiness is blocked; restore internal operational truth before prediction work.",
+    };
+  }
+  if (grandSlam.status === "off_calendar") {
+    return {
+      id: "offline_backfill",
+      status: historicalBackfill.status === "ready" ? "ready" : "blocked",
+      reason: "No active Grand Slam; maximize future accuracy with offline priors, backtests and license-reviewed data.",
+    };
+  }
+  if (grandSlam.status === "waiting_for_draw_or_feed") {
+    return {
+      id: "feed_visibility",
+      status: "monitor",
+      reason: "Grand Slam window is open but canonical match rows are not visible yet.",
+    };
+  }
+  if (grandSlam.status === "monitor") {
+    return {
+      id: "model_input_gap",
+      status: "monitor",
+      reason: "Grand Slam rows are visible but model probability rows are missing or incomplete.",
+    };
+  }
+  if (grandSlam.status === "prediction_ready" && liveWindowPlan.status !== "paper_ready") {
+    return {
+      id: "prediction_watch",
+      status: "ready",
+      reason: "Grand Slam predictions exist; keep monitoring gates until paper/live-window readiness improves.",
+    };
+  }
+  if (grandSlam.status === "paper_ready") {
+    return {
+      id: "paper_learning",
+      status: "ready",
+      reason: "Grand Slam predictions are paper-ready; protected backend routes control any paper order creation.",
+    };
+  }
+  return {
+    id: "observe",
+    status: "monitor",
+    reason: "No higher-autonomy Grand Slam mission phase is justified.",
+  };
+}
+
+function grandSlamMissionPhases({
+  phase,
+  backend,
+  report,
+  liveStatsPlan,
+  liveWindowPlan,
+  pulse,
+  collection,
+  quota,
+  sourceRoutes,
+  historicalBackfill,
+  grandSlam,
+  learning,
+  liveControllerPlan,
+}) {
+  return [
+    grandSlamMissionPhaseRow({
+      id: "operational_truth",
+      status: backend.status === "ready" ? "pass" : "blocked",
+      command: backend.next_action?.command ?? "npm --silent run hermes:backend-readiness",
+      reason: "Internal FastAPI/Postgres evidence must be reachable before match-day predictions.",
+      evidence: [
+        `backend=${backend.status}`,
+        `provider_mode=${report.data_snapshot?.provider_mode ?? "unknown"}`,
+        `persisted_matches=${report.data_snapshot?.persisted_matches ?? 0}`,
+      ],
+      blockers: (backend.checks ?? []).filter((check) => check.status === "fail").map((check) => check.id),
+      active: phase.id === "restore_operational_truth",
+    }),
+    grandSlamMissionPhaseRow({
+      id: "historical_priors",
+      status: historicalBackfill.status === "ready" ? "pass" : "monitor",
+      command: "npm --silent run hermes:historical-backfill-plan",
+      reason: "Offline historical sources improve priors and backtests without live scraping.",
+      evidence: [
+        `sources=${historicalBackfill.review_summary?.total_sources ?? 0}`,
+        `license_review_required=${historicalBackfill.review_summary?.license_review_required ?? 0}`,
+        `next_source=${historicalBackfill.next_source?.id ?? "none"}`,
+      ],
+      blockers: historicalBackfill.gates?.filter((gate) => gate.status === "fail").map((gate) => gate.id) ?? [],
+      active: phase.id === "offline_backfill",
+    }),
+    grandSlamMissionPhaseRow({
+      id: "grand_slam_visibility",
+      status: grandSlam.matches?.grand_slam_visible > 0 ? "pass" : grandSlam.active_grand_slams?.length ? "monitor" : "waiting",
+      command: "npm --silent run hermes:grand-slam-readiness",
+      reason: "Grand Slam window and canonical match visibility determine whether today's score prediction mission can run.",
+      evidence: [
+        `active_slams=${grandSlam.active_grand_slams?.length ?? 0}`,
+        `visible_matches=${grandSlam.matches?.grand_slam_visible ?? 0}`,
+        `prediction_rows=${grandSlam.matches?.prediction_rows ?? 0}`,
+      ],
+      blockers: grandSlam.blockers ?? [],
+      active: ["feed_visibility", "model_input_gap", "prediction_watch", "paper_learning"].includes(phase.id),
+    }),
+    grandSlamMissionPhaseRow({
+      id: "live_collection_control",
+      status: ["paper_ready", "live_watch", "throttled"].includes(liveControllerPlan.status) ? "pass" : liveControllerPlan.status,
+      command: liveControllerPlan.operator_decision?.next_safe_command?.command ?? "npm --silent run hermes:live-controller",
+      reason: "Collection and quota decisions stay event-driven and operator-gated.",
+      evidence: [
+        `live_window=${liveWindowPlan.status}`,
+        `collection=${collection.status}`,
+        `quota=${quota.throttle?.level ?? "unknown"}`,
+        `pulse_matches=${pulse.matches_seen ?? 0}`,
+      ],
+      blockers: liveWindowPlan.blockers ?? [],
+      active: ["model_input_gap", "prediction_watch", "paper_learning"].includes(phase.id),
+    }),
+    grandSlamMissionPhaseRow({
+      id: "prediction_quality",
+      status: grandSlam.prediction_ready ? "pass" : "monitor",
+      command: grandSlam.prediction_ready ? "npm --silent run hermes:grand-slam-readiness" : "npm --silent run hermes:match-pulse",
+      reason: "Backend model probability rows must exist before Hermes can supervise match-day predictions.",
+      evidence: [
+        `prediction_ready=${grandSlam.prediction_ready}`,
+        `paper_candidates=${grandSlam.matches?.paper_candidates ?? 0}`,
+        `health_scores=${JSON.stringify(liveStatsPlan.health_scores ?? {})}`,
+      ],
+      active: ["prediction_watch", "paper_learning"].includes(phase.id),
+    }),
+    grandSlamMissionPhaseRow({
+      id: "paper_learning",
+      status: grandSlam.paper_ready ? "pass" : "locked",
+      command: grandSlam.paper_ready ? "npm run hermes:autopilot" : "npm --silent run hermes:learning-review",
+      reason: "Paper learning starts only when Grand Slam rows are paper-ready and backend protected routes approve.",
+      evidence: [
+        `paper_ready=${grandSlam.paper_ready}`,
+        `learning_status=${learning.review_status ?? "unknown"}`,
+        `settled_orders=${learning.metrics?.settled_orders ?? 0}`,
+      ],
+      blockers: grandSlam.paper_ready ? [] : ["grand_slam_not_paper_ready"],
+      requiresAdminToken: grandSlam.paper_ready,
+      canCreatePaperOrders: grandSlam.paper_ready,
+      active: phase.id === "paper_learning",
+    }),
+    grandSlamMissionPhaseRow({
+      id: "enterprise_review",
+      status: report.budget_chain_snapshot?.enterprise_eligible ? "pass" : "locked",
+      command: "npm run api:check:operational-truth -- --pretty",
+      reason: "Enterprise/no-budget feeds remain locked until budget chain evidence proves readiness.",
+      evidence: [
+        `budget_chain_completed=${Boolean(report.budget_chain_snapshot?.budget_chain_completed)}`,
+        `enterprise_eligible=${Boolean(report.budget_chain_snapshot?.enterprise_eligible)}`,
+        `source_next_route=${sourceRoutes.next_route?.id ?? "none"}`,
+      ],
+      blockers: report.budget_chain_snapshot?.enterprise_eligible ? [] : ["budget_chain_not_enterprise_eligible"],
+    }),
+  ];
+}
+
+function grandSlamMissionPhaseRow({
+  id,
+  status,
+  command,
+  reason,
+  evidence,
+  blockers = [],
+  requiresAdminToken = false,
+  canCreatePaperOrders = false,
+  active = false,
+}) {
+  return {
+    id,
+    status,
+    active: Boolean(active),
+    command,
+    reason,
+    evidence,
+    blockers,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    requires_admin_token: Boolean(requiresAdminToken),
+    can_create_paper_orders: Boolean(canCreatePaperOrders),
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function grandSlamMissionNextAction({ phase, phases, grandSlam, historicalBackfill, liveControllerPlan }) {
+  if (phase.id === "offline_backfill") {
+    return {
+      ...missionActionFromPhase(phases.find((item) => item.id === "historical_priors")),
+      source_id: historicalBackfill.next_source?.id ?? null,
+    };
+  }
+  if (phase.id === "paper_learning") {
+    return missionActionFromPhase(phases.find((item) => item.id === "paper_learning"));
+  }
+  if (phase.id === "prediction_watch") {
+    return missionActionFromPhase(phases.find((item) => item.id === "live_collection_control"));
+  }
+  if (phase.id === "model_input_gap") {
+    return missionActionFromPhase(phases.find((item) => item.id === "prediction_quality"));
+  }
+  if (phase.id === "feed_visibility") {
+    return missionActionFromPhase(phases.find((item) => item.id === "grand_slam_visibility"));
+  }
+  if (phase.id === "restore_operational_truth") {
+    return missionActionFromPhase(phases.find((item) => item.id === "operational_truth"));
+  }
+  return {
+    id: grandSlam.next_action?.id ?? liveControllerPlan.operator_decision?.action ?? "observe",
+    command: grandSlam.next_action?.command
+      ?? liveControllerPlan.operator_decision?.next_safe_command?.command
+      ?? "npm --silent run hermes:grand-slam-readiness",
+    reason: phase.reason,
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function missionActionFromPhase(phase) {
+  return {
+    id: phase?.id ?? "observe",
+    command: phase?.command ?? "npm --silent run hermes:grand-slam-mission",
+    reason: phase?.reason ?? "Observe Grand Slam mission state.",
+    requires_admin_token: Boolean(phase?.requires_admin_token),
+    executes_now: false,
+    writes: false,
+    live_api_calls: false,
+    provider_api_call_allowed: false,
+    can_create_paper_orders: false,
+    can_submit_real_orders: false,
+    llm_per_tick_allowed: false,
+  };
+}
+
+function grandSlamMissionEvidenceContract() {
+  return [
+    {
+      id: "match_day_prediction",
+      proof: ["grand_slam_visible>0", "prediction_rows>0", "backend_ready", "fresh_score_and_odds_gates"],
+    },
+    {
+      id: "live_collection",
+      proof: ["live_window_not_safety_stop", "quota_not_blocked", "provider_commands_operator_only"],
+    },
+    {
+      id: "offline_accuracy",
+      proof: ["historical_sources_ranked", "license_review_queue_visible", "source_manifest_before_import"],
+    },
+    {
+      id: "learning_loop",
+      proof: ["paper_ready_before_autopilot", "settled_paper_examples", "roi_clv_calibration_review"],
+    },
+    {
+      id: "safety",
+      proof: ["real_execution_hard_block=true", "no_scraping", "no_provider_quota_spend_from_mission", "no_llm_per_tick"],
+    },
+  ];
+}
+
 function buildExperimentLab({ loop, report, eventPlan, sourcePlan, capabilityAuditPlan, gates, backlogPlan }) {
   const experiments = buildExperimentRows({
     loop,
@@ -6615,6 +7072,12 @@ function schedulerSchedule(loop, grandSlam = null) {
       reason: grandSlamCadence.reason,
     }),
     schedulerItem({
+      id: "grand_slam_mission",
+      command: "npm --silent run hermes:grand-slam-mission",
+      everyMinutes: grandSlamCadence.every_minutes,
+      reason: "Compile the full Grand Slam prediction mission across readiness, backfill, collection, quota, live-control and learning without executing actions.",
+    }),
+    schedulerItem({
       id: "ops_compiler",
       command: "npm --silent run hermes:ops-compiler",
       everyMinutes: 5,
@@ -6867,6 +7330,8 @@ function cronMessageFor(item, rehearsal) {
           ? "Report health_scores, freshness, sampling_policy, budget_chain, and safety only."
           : item.id === "grand_slam_readiness"
             ? "Report status, active_grand_slams, matches, prediction_ready, paper_ready, next_action, and safety only."
+            : item.id === "grand_slam_mission"
+              ? "Report active_phase, grand_slam_readiness, live_control, historical_backfill, learning_review, next_action, and safety only."
           : item.id === "budget_chain"
             ? "Report current_step, blockers, smoke_command, and provider_api_call_allowed."
             : "Report review_status, gates, blockers, next_actions, and real_execution_recommendation.";
@@ -9379,6 +9844,7 @@ const commands = {
   "live-window": liveWindow,
   "match-pulse": matchPulse,
   "grand-slam-readiness": grandSlamReadiness,
+  "grand-slam-mission": grandSlamMission,
   "collection-plan": collectionPlan,
   "quota-plan": quotaPlan,
   "live-controller": liveController,
